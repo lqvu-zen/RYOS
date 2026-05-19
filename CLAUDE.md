@@ -14,15 +14,24 @@ If `uv` is not installed: `pip install uv` or see https://docs.astral.sh/uv/gett
 
 All dependencies are from the standard library (tkinter, sqlite3, subprocess, threading). On Linux, tkinter may require a separate system package (`python3-tk` on Debian/Ubuntu).
 
+## Building the Executable
+
+```bash
+uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
+# or double-click build.bat
+```
+
+Output: `dist/RYOS.exe`
+
 ## Architecture
 
 Single-file desktop app (`script_runner.py`) with three layers:
 
-1. **`ScriptDB` class** (lines 32–105) — SQLite wrapper using context managers. Database file `scripts.db` is created on first run in the working directory.
+1. **`ScriptDB` class** — SQLite wrapper using context managers. Database file `scripts.db` is created on first run in the working directory (or next to `RYOS.exe` when frozen).
 
-2. **Helper functions** (lines 110–138) — `detect_interpreter()` maps file extensions to executables; `build_command()` assembles the subprocess command list.
+2. **Helper functions** — `detect_interpreter()` maps file extensions to executables; `build_command()` assembles the subprocess command list.
 
-3. **`ScriptRunnerApp` class** (lines 144–482) — Tkinter (`tk.Tk`) UI. Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained by a recurring `after(80, ...)` timer to keep the UI responsive. Subprocess stdout/stderr are merged via `STDOUT`.
+3. **`RYOSApp` class** — Tkinter (`tk.Tk`) UI. Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained by a recurring `after(80, ...)` timer to keep the UI responsive. Subprocess stdout/stderr are merged via `STDOUT`.
 
 ## Key Design Choices
 

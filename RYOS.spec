@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ScriptRunner',
+    name='RYOS',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

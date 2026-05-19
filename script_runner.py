@@ -4,7 +4,7 @@
 # dependencies = []
 # ///
 """
-Script Runner - Tkinter app for saving and running scripts
+RYOS (Run Your Own Scripts) - Tkinter app for saving and running scripts
 """
 
 import os
@@ -364,10 +364,10 @@ class ScriptCard(tk.Frame):
 # ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
-class ScriptRunnerApp(tk.Tk):
+class RYOSApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Script Runner")
+        self.title("RYOS — Run Your Own Scripts")
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
         self.update_idletasks()
@@ -390,7 +390,7 @@ class ScriptRunnerApp(tk.Tk):
         # Header
         header = tk.Frame(self, bg=C["header_bg"], pady=14, padx=18)
         header.pack(fill="x")
-        tk.Label(header, text="⚡  Script Runner", bg=C["header_bg"], fg="#ffffff",
+        tk.Label(header, text="⚡  RYOS", bg=C["header_bg"], fg="#ffffff",
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         add_btn = _flat_button(header, "+ Add Script", C["accent"], C["accent2"],
                                self._add_script, width=12)
@@ -629,5 +629,5 @@ class ScriptRunnerApp(tk.Tk):
 
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    app = ScriptRunnerApp()
+    app = RYOSApp()
     app.mainloop()

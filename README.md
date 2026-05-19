@@ -1,4 +1,4 @@
-# Script Runner
+# RYOS — Run Your Own Scripts
 
 A desktop app for saving and running scripts from a clean card-based UI. Supports Python, Node.js, Bash, PowerShell, Batch, and any other executable — with live output, execution history, and a standalone Windows build.
 
@@ -15,7 +15,7 @@ run.bat
 
 **Run the standalone exe** (no Python or uv needed):
 ```
-dist/ScriptRunner.exe
+dist/RYOS.exe
 ```
 
 ---
@@ -42,11 +42,11 @@ dist/ScriptRunner.exe
 build.bat
 ```
 
-Output: `dist/ScriptRunner.exe` — single file, no dependencies required on the target machine. The database (`scripts.db`) is created next to the exe on first run.
+Output: `dist/RYOS.exe` — single file, no dependencies required on the target machine. The database (`scripts.db`) is created next to the exe on first run.
 
 To rebuild after code changes:
 ```bash
-uv run --with pyinstaller pyinstaller ScriptRunner.spec --noconfirm
+uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
 ```
 
 ---
@@ -108,12 +108,12 @@ Re-run `seed_db.py` at any time; it skips entries that already exist.
 ```
 script_runner.py   — main application (single file)
 run.bat            — launch via uv run
-build.bat          — rebuild dist/ScriptRunner.exe
-ScriptRunner.spec  — PyInstaller build config
+build.bat          — rebuild dist/RYOS.exe
+RYOS.spec          — PyInstaller build config
 scripts.db         — SQLite database (created on first run)
 tests/
   seed_db.py       — populate database with test scripts
   *.py / *.bat / *.sh / .ps1 / .js — sample test scripts
 dist/
-  ScriptRunner.exe — standalone Windows executable
+  RYOS.exe         — standalone Windows executable
 ```
