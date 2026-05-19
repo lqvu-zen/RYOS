@@ -50,17 +50,24 @@ class ScriptDB:
                     params      TEXT DEFAULT '',
                     interpreter TEXT DEFAULT '',
                     created_at  TEXT NOT NULL,
-                    last_run_at TEXT
+                    last_run_at TEXT,
+                    order_index INTEGER DEFAULT 0
                 )
                 """
             )
+            # migrate existing databases that lack order_index
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
+            if "order_index" not in cols:
+                conn.execute("ALTER TABLE scripts ADD COLUMN order_index INTEGER DEFAULT 0")
+                conn.execute("UPDATE scripts SET order_index = id")
             conn.commit()
 
     def add(self, name: str, path: str, params: str, interpreter: str) -> int:
         with self._connect() as conn:
+            max_order = conn.execute("SELECT COALESCE(MAX(order_index), 0) FROM scripts").fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO scripts (name, path, params, interpreter, created_at) VALUES (?, ?, ?, ?, ?)",
-                (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds")),
+                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index) VALUES (?, ?, ?, ?, ?, ?)",
+                (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds"), max_order + 1),
             )
             conn.commit()
             return cur.lastrowid
@@ -78,6 +85,16 @@ class ScriptDB:
             conn.execute("DELETE FROM scripts WHERE id=?", (script_id,))
             conn.commit()
 
+    def delete_many(self, ids: list[int]):
+        with self._connect() as conn:
+            conn.executemany("DELETE FROM scripts WHERE id=?", [(i,) for i in ids])
+            conn.commit()
+
+    def delete_all(self):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM scripts")
+            conn.commit()
+
     def mark_run(self, script_id: int):
         with self._connect() as conn:
             conn.execute(
@@ -90,9 +107,23 @@ class ScriptDB:
         with self._connect() as conn:
             cur = conn.execute(
                 "SELECT id, name, path, params, interpreter, created_at, last_run_at "
-                "FROM scripts ORDER BY name ASC"
+                "FROM scripts ORDER BY order_index ASC, id ASC"
             )
             return cur.fetchall()
+
+    def swap_order(self, id_a: int, id_b: int):
+        with self._connect() as conn:
+            oa = conn.execute("SELECT order_index FROM scripts WHERE id=?", (id_a,)).fetchone()[0]
+            ob = conn.execute("SELECT order_index FROM scripts WHERE id=?", (id_b,)).fetchone()[0]
+            conn.execute("UPDATE scripts SET order_index=? WHERE id=?", (ob, id_a))
+            conn.execute("UPDATE scripts SET order_index=? WHERE id=?", (oa, id_b))
+            conn.commit()
+
+    def move_to_top(self, script_id: int):
+        with self._connect() as conn:
+            min_order = conn.execute("SELECT MIN(order_index) FROM scripts").fetchone()[0]
+            conn.execute("UPDATE scripts SET order_index=? WHERE id=?", (min_order - 1, script_id))
+            conn.commit()
 
     def get(self, script_id: int):
         with self._connect() as conn:
@@ -295,7 +326,7 @@ def _flat_button(parent, text, bg, hover_bg, command, width=9):
 class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
-    def __init__(self, parent, record, db: ScriptDB, runner, on_refresh):
+    def __init__(self, parent, record, db: ScriptDB, runner, on_refresh, on_move_up, on_move_down, on_move_top):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         sid, name, path, params, interp, _created, last_run = record
@@ -303,9 +334,27 @@ class ScriptCard(tk.Frame):
         self.db = db
         self.runner = runner
         self.on_refresh = on_refresh
+        self.selected = tk.BooleanVar(value=False)
 
         # Left accent strip
         tk.Frame(self, bg=C["accent"], width=5).pack(side="left", fill="y")
+
+        # Checkbox (hidden until select mode is on)
+        self._chk = tk.Checkbutton(self, variable=self.selected,
+                                   bg=C["card_bg"], activebackground=C["card_bg"],
+                                   relief="flat", bd=0, cursor="hand2")
+
+        # Up/down reorder buttons (vertically centered)
+        self._order_area = order_area = tk.Frame(self, bg=C["card_bg"], padx=4)
+        order_area.pack(side="left", fill="y")
+        btn_wrapper = tk.Frame(order_area, bg=C["card_bg"])
+        btn_wrapper.pack(expand=True)
+        for text, cmd in (("⤒", on_move_top), ("▲", on_move_up), ("▼", on_move_down)):
+            tk.Button(btn_wrapper, text=text, command=cmd,
+                      bg=C["card_bg"], fg=C["path_fg"],
+                      activebackground=C["card_hover"], activeforeground=C["accent"],
+                      relief="flat", bd=0, cursor="hand2",
+                      font=("Segoe UI", 8)).pack()
 
         # Text area
         text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
@@ -333,6 +382,13 @@ class ScriptCard(tk.Frame):
         for widget in (self, text_area):
             widget.bind("<Enter>", self._on_enter)
             widget.bind("<Leave>", self._on_leave)
+
+    def show_checkbox(self):
+        self._chk.pack(side="left", padx=(6, 0), before=self._order_area)
+
+    def hide_checkbox(self):
+        self._chk.pack_forget()
+        self.selected.set(False)
 
     def _on_enter(self, _e=None):
         self.config(bg=C["card_hover"])
@@ -379,6 +435,8 @@ class RYOSApp(tk.Tk):
         self.db = ScriptDB()
         self.current_process = None
         self.output_queue: queue.Queue = queue.Queue()
+        self._cards: list[ScriptCard] = []
+        self._select_mode = False
 
         self._build_ui()
         self._refresh()
@@ -396,6 +454,13 @@ class RYOSApp(tk.Tk):
                                self._add_script, width=12)
         add_btn.config(bg=C["accent"])
         add_btn.pack(side="right")
+        _flat_button(header, "🗑 Delete All", "#7f1f1f", "#a02020",
+                     self._delete_all, width=12).pack(side="right", padx=6)
+        self._select_btn = _flat_button(header, "☑ Select", "#3a3a3a", "#555",
+                                        self._toggle_select_mode, width=9)
+        self._select_btn.pack(side="right", padx=6)
+        self._del_selected_btn = _flat_button(header, "🗑 Delete Selected", "#5a2d2d", "#7a3d3d",
+                                              self._delete_selected, width=15)
 
         # Scrollable card list
         container = tk.Frame(self, bg=C["bg"])
@@ -424,7 +489,7 @@ class RYOSApp(tk.Tk):
         self._canvas = canvas
 
         # Output panel (always visible, collapsible) — packed after cards container
-        self._out_expanded = True
+        self._out_expanded = False
         self.out_panel = tk.Frame(self, bg="#1e1e1e")
 
         out_header = tk.Frame(self.out_panel, bg="#2d2d2d", pady=4, padx=10)
@@ -432,7 +497,7 @@ class RYOSApp(tk.Tk):
         self.out_title = tk.Label(out_header, text="Output", bg="#2d2d2d", fg="#aaa",
                                   font=("Segoe UI", 9, "bold"), anchor="w")
         self.out_title.pack(side="left")
-        self._toggle_btn = tk.Button(out_header, text="▼", bg="#2d2d2d", fg="#aaa",
+        self._toggle_btn = tk.Button(out_header, text="▲  Show Output", bg="#2d2d2d", fg="#aaa",
                                      activebackground="#3d3d3d", activeforeground="#fff",
                                      relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                                      command=self._toggle_output)
@@ -454,7 +519,7 @@ class RYOSApp(tk.Tk):
             self.out_panel, wrap="word", height=10, font=("Consolas", 10),
             bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
         )
-        self.out_text.pack(fill="both", expand=True, padx=0, pady=0)
+        # not packed on init — starts collapsed
         self.out_text.tag_config("stderr", foreground="#ff8080")
         self.out_text.tag_config("info",   foreground="#7ec0ee")
         self.out_text.tag_config("ok",     foreground="#90ee90")
@@ -469,6 +534,11 @@ class RYOSApp(tk.Tk):
 
     # ---------- refresh ----------
     def _refresh(self):
+        self._cards: list[ScriptCard] = []
+        if self._select_mode:
+            self._select_mode = False
+            self._del_selected_btn.pack_forget()
+            self._select_btn.config(text="☑ Select", bg="#3a3a3a")
         for w in self.cards_frame.winfo_children():
             w.destroy()
 
@@ -479,12 +549,64 @@ class RYOSApp(tk.Tk):
                      bg=C["bg"], fg=C["path_fg"],
                      font=("Segoe UI", 10), justify="center").pack(pady=60)
         else:
-            for rec in scripts:
-                card = ScriptCard(self.cards_frame, rec, self.db, self._run_script, self._refresh)
+            ids = [r[0] for r in scripts]
+            for i, rec in enumerate(scripts):
+                sid = rec[0]
+                up_id   = ids[i - 1] if i > 0 else None
+                down_id = ids[i + 1] if i < len(ids) - 1 else None
+
+                def make_move(a, b):
+                    def _move():
+                        self.db.swap_order(a, b)
+                        self._refresh()
+                    return _move
+
+                def make_top(s):
+                    def _top():
+                        self.db.move_to_top(s)
+                        self._refresh()
+                    return _top
+
+                card = ScriptCard(
+                    self.cards_frame, rec, self.db, self._run_script, self._refresh,
+                    on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
+                    on_move_down = make_move(sid, down_id) if down_id else lambda: None,
+                    on_move_top  = make_top(sid)           if up_id   else lambda: None,
+                )
                 card.pack(fill="x", pady=5, ipady=2)
+                self._cards.append(card)
 
     def _add_script(self):
         ScriptDialog(self, self.db, on_save=self._refresh)
+
+    def _toggle_select_mode(self):
+        self._select_mode = not self._select_mode
+        if self._select_mode:
+            self._select_btn.config(text="✕ Cancel", bg="#555")
+            self._del_selected_btn.pack(side="right", before=self._select_btn)
+            for card in self._cards:
+                card.show_checkbox()
+        else:
+            self._del_selected_btn.pack_forget()
+            self._select_btn.config(text="☑ Select", bg="#3a3a3a")
+            for card in self._cards:
+                card.hide_checkbox()
+
+    def _delete_selected(self):
+        ids = [c.script_id for c in self._cards if c.selected.get()]
+        if not ids:
+            messagebox.showinfo("Nothing Selected", "Tick the checkboxes next to the scripts you want to delete.")
+            return
+        if messagebox.askyesno("Delete Selected", f"Delete {len(ids)} selected script(s)?"):
+            self.db.delete_many(ids)
+            self._refresh()
+
+    def _delete_all(self):
+        if not self._cards:
+            return
+        if messagebox.askyesno("Delete All", f"Delete all {len(self._cards)} scripts? This cannot be undone."):
+            self.db.delete_all()
+            self._refresh()
 
     # ---------- execution ----------
     def _run_script(self, script_id, name, path, params, interpreter):
@@ -562,11 +684,11 @@ class RYOSApp(tk.Tk):
     def _toggle_output(self):
         if self._out_expanded:
             self.out_text.pack_forget()
-            self._toggle_btn.config(text="▲")
+            self._toggle_btn.config(text="▲  Show Output")
             self._out_expanded = False
         else:
             self.out_text.pack(fill="both", expand=True)
-            self._toggle_btn.config(text="▼")
+            self._toggle_btn.config(text="▼  Hide Output")
             self._out_expanded = True
 
     def _append_output(self, text: str, tag: str | None = None):
