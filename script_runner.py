@@ -9,6 +9,7 @@ RYOS (Run Your Own Scripts) - Tkinter app for saving and running scripts
 
 import os
 import sys
+import json
 import shlex
 import sqlite3
 import subprocess
@@ -94,6 +95,45 @@ class ScriptDB:
         with self._connect() as conn:
             conn.execute("DELETE FROM scripts")
             conn.commit()
+
+    def export_to_file(self, path: str):
+        scripts = self.list_all()
+        data = {
+            "version": 1,
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "scripts": [
+                {
+                    "name": s[1], "path": s[2], "params": s[3],
+                    "interpreter": s[4], "order_index": i,
+                }
+                for i, s in enumerate(scripts)
+            ],
+        }
+        Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def import_from_file(self, path: str, replace: bool = False) -> tuple[int, int]:
+        """Returns (added, skipped) counts."""
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        scripts = data.get("scripts", [])
+        now = datetime.now().isoformat(timespec="seconds")
+        added = skipped = 0
+        with self._connect() as conn:
+            if replace:
+                conn.execute("DELETE FROM scripts")
+            existing = {r[0] for r in conn.execute("SELECT path FROM scripts")}
+            for s in scripts:
+                if not replace and s["path"] in existing:
+                    skipped += 1
+                    continue
+                conn.execute(
+                    "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (s["name"], s["path"], s.get("params", ""),
+                     s.get("interpreter", ""), now, s.get("order_index", 0)),
+                )
+                added += 1
+            conn.commit()
+        return added, skipped
 
     def mark_run(self, script_id: int):
         with self._connect() as conn:
@@ -454,13 +494,26 @@ class RYOSApp(tk.Tk):
                                self._add_script, width=12)
         add_btn.config(bg=C["accent"])
         add_btn.pack(side="right")
-        _flat_button(header, "🗑 Delete All", "#7f1f1f", "#a02020",
-                     self._delete_all, width=12).pack(side="right", padx=6)
-        self._select_btn = _flat_button(header, "☑ Select", "#3a3a3a", "#555",
-                                        self._toggle_select_mode, width=9)
-        self._select_btn.pack(side="right", padx=6)
+
+        # Options dropdown
+        self._options_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
+                                     activebackground=C["accent"], activeforeground="#ffffff",
+                                     borderwidth=0, relief="flat")
+        self._options_menu.add_command(label="☑  Select scripts",  command=self._toggle_select_mode)
+        self._options_menu.add_separator()
+        self._options_menu.add_command(label="📤  Export config",   command=self._export_config)
+        self._options_menu.add_command(label="📥  Import config",   command=self._import_config)
+        self._options_menu.add_separator()
+        self._options_menu.add_command(label="🗑  Delete All",      command=self._delete_all)
+
+        options_btn = _flat_button(header, "⋮ Options", "#3a3a3a", "#555",
+                                   self._show_options_menu, width=10)
+        options_btn.pack(side="right", padx=8)
+        self._options_btn = options_btn
+
         self._del_selected_btn = _flat_button(header, "🗑 Delete Selected", "#5a2d2d", "#7a3d3d",
                                               self._delete_selected, width=15)
+        self._select_btn = None  # managed via menu label update
 
         # Scrollable card list
         container = tk.Frame(self, bg=C["bg"])
@@ -538,7 +591,7 @@ class RYOSApp(tk.Tk):
         if self._select_mode:
             self._select_mode = False
             self._del_selected_btn.pack_forget()
-            self._select_btn.config(text="☑ Select", bg="#3a3a3a")
+            self._options_menu.entryconfig(0, label="☑  Select scripts")
         for w in self.cards_frame.winfo_children():
             w.destroy()
 
@@ -579,16 +632,23 @@ class RYOSApp(tk.Tk):
     def _add_script(self):
         ScriptDialog(self, self.db, on_save=self._refresh)
 
+    def _show_options_menu(self):
+        btn = self._options_btn
+        self._options_menu.tk_popup(
+            btn.winfo_rootx(),
+            btn.winfo_rooty() + btn.winfo_height(),
+        )
+
     def _toggle_select_mode(self):
         self._select_mode = not self._select_mode
         if self._select_mode:
-            self._select_btn.config(text="✕ Cancel", bg="#555")
-            self._del_selected_btn.pack(side="right", before=self._select_btn)
+            self._options_menu.entryconfig(0, label="✕  Cancel select")
+            self._del_selected_btn.pack(side="right", before=self._options_btn)
             for card in self._cards:
                 card.show_checkbox()
         else:
+            self._options_menu.entryconfig(0, label="☑  Select scripts")
             self._del_selected_btn.pack_forget()
-            self._select_btn.config(text="☑ Select", bg="#3a3a3a")
             for card in self._cards:
                 card.hide_checkbox()
 
@@ -607,6 +667,40 @@ class RYOSApp(tk.Tk):
         if messagebox.askyesno("Delete All", f"Delete all {len(self._cards)} scripts? This cannot be undone."):
             self.db.delete_all()
             self._refresh()
+
+    def _export_config(self):
+        path = filedialog.asksaveasfilename(
+            title="Export Scripts",
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json"), ("All Files", "*.*")],
+            initialfile="ryos_scripts.json",
+        )
+        if not path:
+            return
+        try:
+            self.db.export_to_file(path)
+            self.status_var.set(f"Exported {len(self._cards)} script(s) to {Path(path).name}")
+        except Exception as e:
+            messagebox.showerror("Export Failed", str(e))
+
+    def _import_config(self):
+        path = filedialog.askopenfilename(
+            title="Import Scripts",
+            filetypes=[("JSON", "*.json"), ("All Files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            replace = messagebox.askyesno(
+                "Import Mode",
+                "Replace all existing scripts with the imported ones?\n\n"
+                "Yes = Replace all\nNo = Merge (skip duplicates by path)",
+            )
+            added, skipped = self.db.import_from_file(path, replace=replace)
+            self._refresh()
+            self.status_var.set(f"Import done — {added} added, {skipped} skipped.")
+        except Exception as e:
+            messagebox.showerror("Import Failed", str(e))
 
     # ---------- execution ----------
     def _run_script(self, script_id, name, path, params, interpreter):
