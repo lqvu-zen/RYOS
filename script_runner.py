@@ -1,0 +1,633 @@
+# -*- coding: utf-8 -*-
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+"""
+Script Runner - Tkinter app for saving and running scripts
+"""
+
+import os
+import sys
+import shlex
+import sqlite3
+import subprocess
+import threading
+import queue
+from datetime import datetime
+from pathlib import Path
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+
+
+# ---------------------------------------------------------------------------
+# Database layer
+# ---------------------------------------------------------------------------
+# When frozen by PyInstaller, store DB next to the .exe; otherwise next to this file.
+_BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+DB_PATH = _BASE / "scripts.db"
+
+
+class ScriptDB:
+    """SQLite wrapper - manages saved scripts."""
+
+    def __init__(self, db_path: Path = DB_PATH):
+        self.db_path = db_path
+        self._init_db()
+
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
+
+    def _init_db(self):
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scripts (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name        TEXT NOT NULL,
+                    path        TEXT NOT NULL,
+                    params      TEXT DEFAULT '',
+                    interpreter TEXT DEFAULT '',
+                    created_at  TEXT NOT NULL,
+                    last_run_at TEXT
+                )
+                """
+            )
+            conn.commit()
+
+    def add(self, name: str, path: str, params: str, interpreter: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO scripts (name, path, params, interpreter, created_at) VALUES (?, ?, ?, ?, ?)",
+                (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds")),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def update(self, script_id: int, name: str, path: str, params: str, interpreter: str):
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE scripts SET name=?, path=?, params=?, interpreter=? WHERE id=?",
+                (name, path, params, interpreter, script_id),
+            )
+            conn.commit()
+
+    def delete(self, script_id: int):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM scripts WHERE id=?", (script_id,))
+            conn.commit()
+
+    def mark_run(self, script_id: int):
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE scripts SET last_run_at=? WHERE id=?",
+                (datetime.now().isoformat(timespec="seconds"), script_id),
+            )
+            conn.commit()
+
+    def list_all(self):
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT id, name, path, params, interpreter, created_at, last_run_at "
+                "FROM scripts ORDER BY name ASC"
+            )
+            return cur.fetchall()
+
+    def get(self, script_id: int):
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT id, name, path, params, interpreter FROM scripts WHERE id=?",
+                (script_id,),
+            )
+            return cur.fetchone()
+
+
+# ---------------------------------------------------------------------------
+# Execution helpers
+# ---------------------------------------------------------------------------
+def detect_interpreter(path: str) -> str:
+    ext = Path(path).suffix.lower()
+    mapping = {
+        ".py":  sys.executable,
+        ".js":  "node",
+        ".ts":  "ts-node",
+        ".rb":  "ruby",
+        ".pl":  "perl",
+        ".php": "php",
+        ".sh":  "bash",
+        ".ps1": "powershell",
+        ".bat": "",
+        ".cmd": "",
+        ".exe": "",
+    }
+    return mapping.get(ext, "")
+
+
+def build_command(path: str, params: str, interpreter: str):
+    cmd = []
+    if interpreter.strip():
+        cmd.extend(shlex.split(interpreter, posix=(os.name != "nt")))
+    cmd.append(path)
+    if params.strip():
+        cmd.extend(shlex.split(params, posix=(os.name != "nt")))
+    return cmd
+
+
+# ---------------------------------------------------------------------------
+# Edit / Add dialog
+# ---------------------------------------------------------------------------
+class ScriptDialog(tk.Toplevel):
+    """Modal dialog for adding or editing a script entry."""
+
+    def __init__(self, parent, db: ScriptDB, script_id: int | None = None, on_save=None):
+        super().__init__(parent)
+        self.db = db
+        self.script_id = script_id
+        self.on_save = on_save
+        self.result = None
+
+        self.title("Edit Script" if script_id else "Add Script")
+        self.resizable(False, False)
+        self.grab_set()
+
+        self._build()
+
+        if script_id:
+            rec = db.get(script_id)
+            if rec:
+                _, name, path, params, interp = rec
+                self.e_name.insert(0, name)
+                self.e_path.insert(0, path)
+                self.e_params.insert(0, params)
+                self.e_interp.insert(0, interp)
+
+        self.transient(parent)
+        self.update_idletasks()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        w = self.winfo_reqwidth()
+        h = self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        self.wait_visibility()
+        self.focus_set()
+
+    def _build(self):
+        pad = {"padx": 8, "pady": 4}
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+
+        ttk.Label(frame, text="Name:").grid(row=0, column=0, sticky="w", **pad)
+        self.e_name = ttk.Entry(frame, width=40)
+        self.e_name.grid(row=0, column=1, columnspan=2, sticky="ew", **pad)
+
+        ttk.Label(frame, text="Path:").grid(row=1, column=0, sticky="w", **pad)
+        self.e_path = ttk.Entry(frame, width=40)
+        self.e_path.grid(row=1, column=1, sticky="ew", **pad)
+        ttk.Button(frame, text="Browse…", command=self._browse).grid(row=1, column=2, **pad)
+
+        ttk.Label(frame, text="Parameters:").grid(row=2, column=0, sticky="w", **pad)
+        self.e_params = ttk.Entry(frame, width=40)
+        self.e_params.grid(row=2, column=1, columnspan=2, sticky="ew", **pad)
+
+        ttk.Label(frame, text="Interpreter:").grid(row=3, column=0, sticky="w", **pad)
+        self.e_interp = ttk.Entry(frame, width=40)
+        self.e_interp.grid(row=3, column=1, columnspan=2, sticky="ew", **pad)
+        ttk.Label(frame, text="Leave blank for auto-detection", foreground="#888").grid(
+            row=4, column=1, columnspan=2, sticky="w", padx=8
+        )
+
+        sep = ttk.Separator(frame, orient="horizontal")
+        sep.grid(row=5, column=0, columnspan=3, sticky="ew", pady=8)
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=6, column=0, columnspan=3, sticky="e")
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
+        ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
+
+        if self.script_id:
+            ttk.Button(btn_row, text="Delete", command=self._delete).pack(side="left", padx=4)
+
+    def _browse(self):
+        path = filedialog.askopenfilename(
+            title="Select Script",
+            filetypes=[("All Files", "*.*"), ("Python", "*.py"), ("Shell", "*.sh"),
+                       ("Batch", "*.bat;*.cmd"), ("Executable", "*.exe")],
+        )
+        if path:
+            self.e_path.delete(0, tk.END)
+            self.e_path.insert(0, path)
+            if not self.e_name.get().strip():
+                self.e_name.insert(0, Path(path).stem)
+
+    def _save(self):
+        name = self.e_name.get().strip()
+        path = self.e_path.get().strip()
+        params = self.e_params.get().strip()
+        interp = self.e_interp.get().strip()
+
+        if not name or not path:
+            messagebox.showwarning("Missing Info", "Name and path are required.", parent=self)
+            return
+        if not Path(path).exists():
+            if not messagebox.askyesno("Warning", f"File not found:\n{path}\n\nSave anyway?", parent=self):
+                return
+
+        if self.script_id:
+            self.db.update(self.script_id, name, path, params, interp)
+        else:
+            self.script_id = self.db.add(name, path, params, interp)
+
+        if self.on_save:
+            self.on_save()
+        self.destroy()
+
+    def _delete(self):
+        if messagebox.askyesno("Delete", "Delete this script?", parent=self):
+            self.db.delete(self.script_id)
+            if self.on_save:
+                self.on_save()
+            self.destroy()
+
+
+
+
+# ---------------------------------------------------------------------------
+# Color palette
+# ---------------------------------------------------------------------------
+C = {
+    "bg":         "#f0f2f5",
+    "card_bg":    "#ffffff",
+    "card_hover": "#f5f7ff",
+    "accent":     "#4a6fa5",
+    "accent2":    "#3d5d8a",
+    "header_bg":  "#1e2a3a",
+    "name_fg":    "#1a1a2e",
+    "path_fg":    "#8892a0",
+    "btn_run_bg": "#2ecc71",
+    "btn_run_hover": "#27ae60",
+    "btn_mod_bg": "#4a6fa5",
+    "btn_mod_hover": "#3d5d8a",
+    "btn_fg":     "#ffffff",
+    "border":     "#dde2ea",
+    "status_bg":  "#e8ebf0",
+}
+
+
+def _flat_button(parent, text, bg, hover_bg, command, width=9):
+    """Borderless button with hover color swap."""
+    btn = tk.Button(
+        parent, text=text, command=command,
+        bg=bg, fg=C["btn_fg"],
+        activebackground=hover_bg, activeforeground=C["btn_fg"],
+        relief="flat", bd=0, padx=12, pady=5,
+        font=("Segoe UI", 9, "bold"), cursor="hand2", width=width,
+    )
+    btn.bind("<Enter>", lambda e: btn.config(bg=hover_bg))
+    btn.bind("<Leave>", lambda e: btn.config(bg=bg))
+    return btn
+
+
+# ---------------------------------------------------------------------------
+# Script card
+# ---------------------------------------------------------------------------
+class ScriptCard(tk.Frame):
+    """A single styled card: accent strip + name/path + Modify + Run."""
+
+    def __init__(self, parent, record, db: ScriptDB, runner, on_refresh):
+        super().__init__(parent, bg=C["card_bg"],
+                         highlightbackground=C["border"], highlightthickness=1)
+        sid, name, path, params, interp, _created, last_run = record
+        self.script_id = sid
+        self.db = db
+        self.runner = runner
+        self.on_refresh = on_refresh
+
+        # Left accent strip
+        tk.Frame(self, bg=C["accent"], width=5).pack(side="left", fill="y")
+
+        # Text area
+        text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
+        text_area.pack(side="left", fill="both", expand=True)
+
+        tk.Label(text_area, text=name, bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x")
+        tk.Label(text_area, text=path, bg=C["card_bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x")
+
+        if last_run and last_run != "-":
+            tk.Label(text_area, text=f"Last run: {last_run}", bg=C["card_bg"],
+                     fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(fill="x")
+
+        # Buttons
+        btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
+        btn_area.pack(side="right", fill="y")
+
+        _flat_button(btn_area, "✏  Modify", C["btn_mod_bg"], C["btn_mod_hover"],
+                     self._modify).pack(side="left", padx=4)
+        _flat_button(btn_area, "▶  Run", C["btn_run_bg"], C["btn_run_hover"],
+                     self._run).pack(side="left", padx=4)
+
+        # Hover highlight on whole card
+        for widget in (self, text_area):
+            widget.bind("<Enter>", self._on_enter)
+            widget.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, _e=None):
+        self.config(bg=C["card_hover"])
+        for child in self.winfo_children():
+            try:
+                child.config(bg=C["card_hover"])
+            except Exception:
+                pass
+
+    def _on_leave(self, _e=None):
+        self.config(bg=C["card_bg"])
+        for child in self.winfo_children():
+            try:
+                child.config(bg=C["card_bg"])
+            except Exception:
+                pass
+
+    def _modify(self):
+        ScriptDialog(self.winfo_toplevel(), self.db,
+                     script_id=self.script_id, on_save=self.on_refresh)
+
+    def _run(self):
+        rec = self.db.get(self.script_id)
+        if rec:
+            _, name, path, params, interp = rec
+            self.runner(self.script_id, name, path, params, interp)
+
+
+# ---------------------------------------------------------------------------
+# Main app
+# ---------------------------------------------------------------------------
+class ScriptRunnerApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Script Runner")
+        self.minsize(480, 320)
+        self.configure(bg=C["bg"])
+        self.update_idletasks()
+        w, h = 660, 540
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+
+        self.db = ScriptDB()
+        self.current_process = None
+        self.output_queue: queue.Queue = queue.Queue()
+
+        self._build_ui()
+        self._refresh()
+        self.after(80, self._drain_output_queue)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ---------- UI ----------
+    def _build_ui(self):
+        # Header
+        header = tk.Frame(self, bg=C["header_bg"], pady=14, padx=18)
+        header.pack(fill="x")
+        tk.Label(header, text="⚡  Script Runner", bg=C["header_bg"], fg="#ffffff",
+                 font=("Segoe UI", 14, "bold")).pack(side="left")
+        add_btn = _flat_button(header, "+ Add Script", C["accent"], C["accent2"],
+                               self._add_script, width=12)
+        add_btn.config(bg=C["accent"])
+        add_btn.pack(side="right")
+
+        # Scrollable card list
+        container = tk.Frame(self, bg=C["bg"])
+        container.pack(fill="both", expand=True, padx=12, pady=12)
+
+        canvas = tk.Canvas(container, highlightthickness=0, bg=C["bg"])
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        self.cards_frame = tk.Frame(canvas, bg=C["bg"])
+        self._canvas_window = canvas.create_window((0, 0), window=self.cards_frame, anchor="nw")
+
+        self.cards_frame.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(
+            self._canvas_window, width=e.width))
+        def _on_wheel(e):
+            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        self._canvas = canvas
+
+        # Output panel (always visible, collapsible) — packed after cards container
+        self._out_expanded = True
+        self.out_panel = tk.Frame(self, bg="#1e1e1e")
+
+        out_header = tk.Frame(self.out_panel, bg="#2d2d2d", pady=4, padx=10)
+        out_header.pack(fill="x")
+        self.out_title = tk.Label(out_header, text="Output", bg="#2d2d2d", fg="#aaa",
+                                  font=("Segoe UI", 9, "bold"), anchor="w")
+        self.out_title.pack(side="left")
+        self._toggle_btn = tk.Button(out_header, text="▼", bg="#2d2d2d", fg="#aaa",
+                                     activebackground="#3d3d3d", activeforeground="#fff",
+                                     relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
+                                     command=self._toggle_output)
+        self._toggle_btn.pack(side="right")
+        tk.Button(out_header, text="⏹ Stop", bg="#2d2d2d", fg="#ff8080",
+                  activebackground="#3d3d3d", activeforeground="#ff8080",
+                  relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
+                  command=self._stop_running).pack(side="right", padx=8)
+        tk.Button(out_header, text="⎘ Copy", bg="#2d2d2d", fg="#aaa",
+                  activebackground="#3d3d3d", activeforeground="#fff",
+                  relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
+                  command=self._copy_log).pack(side="right", padx=4)
+        tk.Button(out_header, text="🗑 Clear", bg="#2d2d2d", fg="#aaa",
+                  activebackground="#3d3d3d", activeforeground="#fff",
+                  relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
+                  command=self._clear_log).pack(side="right", padx=4)
+
+        self.out_text = scrolledtext.ScrolledText(
+            self.out_panel, wrap="word", height=10, font=("Consolas", 10),
+            bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
+        )
+        self.out_text.pack(fill="both", expand=True, padx=0, pady=0)
+        self.out_text.tag_config("stderr", foreground="#ff8080")
+        self.out_text.tag_config("info",   foreground="#7ec0ee")
+        self.out_text.tag_config("ok",     foreground="#90ee90")
+
+        # Status bar (bottom) then output panel above it
+        self.status_var = tk.StringVar(value="Ready.")
+        self._status_bar = tk.Label(self, textvariable=self.status_var, anchor="w",
+                                    bg=C["status_bg"], fg="#555", font=("Segoe UI", 8),
+                                    padx=10, pady=4)
+        self._status_bar.pack(fill="x", side="bottom")
+        self.out_panel.pack(fill="both", expand=False, side="bottom")
+
+    # ---------- refresh ----------
+    def _refresh(self):
+        for w in self.cards_frame.winfo_children():
+            w.destroy()
+
+        scripts = self.db.list_all()
+        if not scripts:
+            tk.Label(self.cards_frame,
+                     text="No scripts yet.\nClick '+ Add Script' to get started.",
+                     bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 10), justify="center").pack(pady=60)
+        else:
+            for rec in scripts:
+                card = ScriptCard(self.cards_frame, rec, self.db, self._run_script, self._refresh)
+                card.pack(fill="x", pady=5, ipady=2)
+
+    def _add_script(self):
+        ScriptDialog(self, self.db, on_save=self._refresh)
+
+    # ---------- execution ----------
+    def _run_script(self, script_id, name, path, params, interpreter):
+        if self.current_process and self.current_process.poll() is None:
+            messagebox.showinfo("Already Running",
+                                "A script is already running. Wait for it to finish or close its output window.")
+            return
+
+        if not Path(path).exists():
+            messagebox.showerror("File Not Found", f"File does not exist:\n{path}")
+            return
+
+        final_interp = interpreter if interpreter.strip() else detect_interpreter(path)
+        try:
+            cmd = build_command(path, params, final_interp)
+        except ValueError as e:
+            messagebox.showerror("Parameter Error", f"Could not parse parameters:\n{e}")
+            return
+
+        self._show_output(name)
+        self._append_output(
+            f"\n{'━'*60}\n"
+            f"  ▶  {name}\n"
+            f"  {datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}    {' '.join(cmd)}\n"
+            f"{'━'*60}\n\n",
+            tag="info",
+        )
+        self.status_var.set(f"Running: {name}")
+        self.db.mark_run(script_id)
+        self._refresh()
+
+        thread = threading.Thread(
+            target=self._run_subprocess, args=(cmd, name), daemon=True
+        )
+        thread.start()
+
+    def _run_subprocess(self, cmd, name):
+        try:
+            self.current_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,
+                text=True,
+                cwd=str(Path(cmd[-1] if len(cmd) == 1 else cmd[1]).parent)
+                    if Path(cmd[-1] if len(cmd) == 1 else cmd[1]).exists() else None,
+            )
+        except FileNotFoundError as e:
+            self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
+            self.output_queue.put(("done", f"❌ Interpreter/file not found: {name}\n"))
+            return
+        except Exception as e:
+            self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
+            self.output_queue.put(("done", f"❌ Error: {name}\n"))
+            return
+
+        assert self.current_process.stdout is not None
+        for line in self.current_process.stdout:
+            self.output_queue.put(("stdout", line))
+
+        self.current_process.wait()
+        rc = self.current_process.returncode
+        tag = "ok" if rc == 0 else "stderr"
+        self.output_queue.put((
+            "done_tag", tag,
+            f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
+        ))
+
+    def _show_output(self, name: str):
+        self.out_title.config(text=f"Output — {name}")
+        # Expand if currently minimized
+        if not self._out_expanded:
+            self._toggle_output()
+
+    def _toggle_output(self):
+        if self._out_expanded:
+            self.out_text.pack_forget()
+            self._toggle_btn.config(text="▲")
+            self._out_expanded = False
+        else:
+            self.out_text.pack(fill="both", expand=True)
+            self._toggle_btn.config(text="▼")
+            self._out_expanded = True
+
+    def _append_output(self, text: str, tag: str | None = None):
+        self.out_text.configure(state="normal")
+        if tag:
+            self.out_text.insert(tk.END, text, tag)
+        else:
+            self.out_text.insert(tk.END, text)
+        self.out_text.see(tk.END)
+
+    def _clear_log(self):
+        self.out_text.configure(state="normal")
+        self.out_text.delete("1.0", tk.END)
+        self.out_title.config(text="Output")
+
+    def _copy_log(self):
+        text = self.out_text.get("1.0", tk.END).strip()
+        if text:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.status_var.set("Log copied to clipboard.")
+
+    def _stop_running(self):
+        if self.current_process and self.current_process.poll() is None:
+            self.current_process.terminate()
+            self._append_output("\n[STOPPED by user]\n", tag="stderr")
+            self.status_var.set("Stopped.")
+        else:
+            self.status_var.set("No script is currently running.")
+
+    def _drain_output_queue(self):
+        try:
+            while True:
+                item = self.output_queue.get_nowait()
+                if item[0] == "done":
+                    self._append_output(item[1], tag="info")
+                    self.status_var.set("Done.")
+                elif item[0] == "done_tag":
+                    _, tag, text = item
+                    self._append_output(text, tag=tag)
+                    self.status_var.set("Done.")
+                elif item[0] == "stderr":
+                    self._append_output(item[1], tag="stderr")
+                else:
+                    self._append_output(item[1])
+        except queue.Empty:
+            pass
+        self.after(80, self._drain_output_queue)
+
+    def _on_close(self):
+        if self.current_process and self.current_process.poll() is None:
+            if not messagebox.askyesno("Still Running", "A script is still running. Exit anyway?"):
+                return
+            try:
+                self.current_process.terminate()
+            except Exception:
+                pass
+        self.destroy()
+
+
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    app = ScriptRunnerApp()
+    app.mainloop()

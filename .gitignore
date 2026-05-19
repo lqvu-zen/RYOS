@@ -1,0 +1,18 @@
+# PyInstaller
+build/
+dist/
+
+# Database
+scripts.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# uv
+.venv/
+.python-version
+
+# Claude
+.claude/settings.local.json
