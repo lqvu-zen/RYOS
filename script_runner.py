@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import threading
 import queue
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -37,8 +38,17 @@ class ScriptDB:
         self.db_path = db_path
         self._init_db()
 
+    @contextmanager
     def _connect(self):
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _init_db(self):
         with self._connect() as conn:
