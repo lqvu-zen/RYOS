@@ -61,16 +61,19 @@ class ScriptDB:
                     params      TEXT DEFAULT '',
                     interpreter TEXT DEFAULT '',
                     created_at  TEXT NOT NULL,
-                    last_run_at TEXT,
-                    order_index INTEGER DEFAULT 0
+                    last_run_at     TEXT,
+                    last_run_status TEXT,
+                    order_index     INTEGER DEFAULT 0
                 )
                 """
             )
-            # migrate existing databases that lack order_index
+            # migrate existing databases that lack newer columns
             cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
             if "order_index" not in cols:
                 conn.execute("ALTER TABLE scripts ADD COLUMN order_index INTEGER DEFAULT 0")
                 conn.execute("UPDATE scripts SET order_index = id")
+            if "last_run_status" not in cols:
+                conn.execute("ALTER TABLE scripts ADD COLUMN last_run_status TEXT")
             conn.commit()
 
     def add(self, name: str, path: str, params: str, interpreter: str) -> int:
@@ -148,15 +151,23 @@ class ScriptDB:
     def mark_run(self, script_id: int):
         with self._connect() as conn:
             conn.execute(
-                "UPDATE scripts SET last_run_at=? WHERE id=?",
+                "UPDATE scripts SET last_run_at=?, last_run_status=NULL WHERE id=?",
                 (datetime.now().isoformat(timespec="seconds"), script_id),
+            )
+            conn.commit()
+
+    def mark_run_status(self, script_id: int, status: str):
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE scripts SET last_run_status=? WHERE id=?",
+                (status, script_id),
             )
             conn.commit()
 
     def list_all(self):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT id, name, path, params, interpreter, created_at, last_run_at "
+                "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status "
                 "FROM scripts ORDER BY order_index ASC, id ASC"
             )
             return cur.fetchall()
@@ -399,8 +410,9 @@ class ScriptCard(tk.Frame):
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh, on_move_up, on_move_down, on_move_top):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
-        sid, name, path, params, interp, _created, last_run = record
+        sid, name, path, params, interp, _created, last_run, last_run_status = record
         self.script_id = sid
+        self._name = name
         self.db = db
         self.runner = runner
         self.on_refresh = on_refresh
@@ -441,15 +453,21 @@ class ScriptCard(tk.Frame):
                  font=("Segoe UI", 8), anchor="w").pack(fill="x")
 
         if last_run and last_run != "-":
-            tk.Label(text_area, text=f"Last run: {last_run}", bg=C["card_bg"],
-                     fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(fill="x")
+            meta_row = tk.Frame(text_area, bg=C["card_bg"])
+            meta_row.pack(fill="x")
+            tk.Label(meta_row, text=f"Last run: {last_run}", bg=C["card_bg"],
+                     fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(side="left")
+            if last_run_status == "error":
+                tk.Label(meta_row, text="✕ Failed", bg="#c0392b", fg="#ffffff",
+                         font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
         # Buttons
         btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
         btn_area.pack(side="right", fill="y")
 
-        _flat_button(btn_area, "✏  Modify", C["btn_mod_bg"], C["btn_mod_hover"],
-                     self._modify).pack(side="left", padx=4)
+        self._actions_btn = _flat_button(btn_area, "⋯", C["btn_mod_bg"], C["btn_mod_hover"],
+                                         self._show_actions_menu, width=3)
+        self._actions_btn.pack(side="left", padx=4)
         _flat_button(btn_area, "▶  Run", C["btn_run_bg"], C["btn_run_hover"],
                      self._run).pack(side="left", padx=4)
 
@@ -466,24 +484,50 @@ class ScriptCard(tk.Frame):
         self.selected.set(False)
 
     def _on_enter(self, _e=None):
-        self.config(bg=C["card_hover"])
-        for child in self.winfo_children():
-            try:
-                child.config(bg=C["card_hover"])
-            except Exception:
-                pass
+        self._set_card_bg(self, C["card_hover"])
 
     def _on_leave(self, _e=None):
-        self.config(bg=C["card_bg"])
-        for child in self.winfo_children():
-            try:
-                child.config(bg=C["card_bg"])
-            except Exception:
-                pass
+        self._set_card_bg(self, C["card_bg"])
+
+    def _set_card_bg(self, widget, color):
+        try:
+            if widget.cget("bg") in (C["card_bg"], C["card_hover"]):
+                widget.config(bg=color)
+        except Exception:
+            pass
+        for child in widget.winfo_children():
+            self._set_card_bg(child, color)
+
+    def _show_actions_menu(self):
+        menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
+                       bg="#2d2d2d", fg="#ffffff",
+                       activebackground=C["accent"], activeforeground="#ffffff",
+                       font=("Segoe UI", 10))
+        menu.add_command(label="✏  Modify", command=self._modify)
+        menu.add_command(label="⧉  Clone",  command=self._clone)
+        menu.add_separator()
+        menu.add_command(label="🗑  Delete", command=self._delete_card,
+                         foreground="#ff8080", activeforeground="#ff8080")
+        menu.tk_popup(
+            self._actions_btn.winfo_rootx(),
+            self._actions_btn.winfo_rooty() + self._actions_btn.winfo_height(),
+        )
 
     def _modify(self):
         ScriptDialog(self.winfo_toplevel(), self.db,
                      script_id=self.script_id, on_save=self.on_refresh)
+
+    def _clone(self):
+        rec = self.db.get(self.script_id)
+        if rec:
+            _, name, path, params, interp = rec
+            self.db.add(f"{name} (copy)", path, params, interp)
+            self.on_refresh()
+
+    def _delete_card(self):
+        if messagebox.askyesno("Delete", f"Delete '{self._name}'?", parent=self):
+            self.db.delete(self.script_id)
+            self.on_refresh()
 
     def _run(self):
         rec = self.db.get(self.script_id)
@@ -502,7 +546,7 @@ class RYOSApp(tk.Tk):
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
         self.update_idletasks()
-        w, h = 660, 540
+        w, h = 540, 640
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
@@ -611,6 +655,10 @@ class RYOSApp(tk.Tk):
                   activebackground="#3d3d3d", activeforeground="#ff8080",
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._stop_running).pack(side="right", padx=8)
+        tk.Button(out_header, text="💾 Save", bg="#2d2d2d", fg="#aaa",
+                  activebackground="#3d3d3d", activeforeground="#fff",
+                  relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
+                  command=self._save_log).pack(side="right", padx=4)
         tk.Button(out_header, text="⎘ Copy", bg="#2d2d2d", fg="#aaa",
                   activebackground="#3d3d3d", activeforeground="#fff",
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
@@ -780,11 +828,11 @@ class RYOSApp(tk.Tk):
         self._refresh()
 
         thread = threading.Thread(
-            target=self._run_subprocess, args=(cmd, name), daemon=True
+            target=self._run_subprocess, args=(cmd, name, script_id), daemon=True
         )
         thread.start()
 
-    def _run_subprocess(self, cmd, name):
+    def _run_subprocess(self, cmd, name, script_id):
         try:
             self.current_process = subprocess.Popen(
                 cmd,
@@ -797,11 +845,11 @@ class RYOSApp(tk.Tk):
             )
         except FileNotFoundError as e:
             self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
-            self.output_queue.put(("done", f"❌ Interpreter/file not found: {name}\n"))
+            self.output_queue.put(("done", script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
             return
         except Exception as e:
             self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
-            self.output_queue.put(("done", f"❌ Error: {name}\n"))
+            self.output_queue.put(("done", script_id, "error", f"❌ Error: {name}\n"))
             return
 
         assert self.current_process.stdout is not None
@@ -811,8 +859,9 @@ class RYOSApp(tk.Tk):
         self.current_process.wait()
         rc = self.current_process.returncode
         tag = "ok" if rc == 0 else "stderr"
+        status = "ok" if rc == 0 else "error"
         self.output_queue.put((
-            "done_tag", tag,
+            "done_tag", script_id, status, tag,
             f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
         ))
 
@@ -850,6 +899,20 @@ class RYOSApp(tk.Tk):
         self.out_text.delete("1.0", tk.END)
         self.out_title.config(text="Output")
 
+    def _save_log(self):
+        text = self.out_text.get("1.0", tk.END).strip()
+        if not text:
+            self.status_var.set("Nothing to save.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            title="Save output",
+        )
+        if path:
+            Path(path).write_text(text, encoding="utf-8")
+            self.status_var.set(f"Saved to {path}")
+
     def _copy_log(self):
         text = self.out_text.get("1.0", tk.END).strip()
         if text:
@@ -870,12 +933,17 @@ class RYOSApp(tk.Tk):
             while True:
                 item = self.output_queue.get_nowait()
                 if item[0] == "done":
-                    self._append_output(item[1], tag="info")
+                    _, sid, status, text = item
+                    self._append_output(text, tag="info")
+                    self.db.mark_run_status(sid, status)
                     self.status_var.set("Done.")
+                    self._refresh()
                 elif item[0] == "done_tag":
-                    _, tag, text = item
+                    _, sid, status, tag, text = item
                     self._append_output(text, tag=tag)
+                    self.db.mark_run_status(sid, status)
                     self.status_var.set("Done.")
+                    self._refresh()
                 elif item[0] == "stderr":
                     self._append_output(item[1], tag="stderr")
                 else:
