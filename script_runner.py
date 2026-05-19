@@ -205,6 +205,26 @@ def detect_interpreter(path: str) -> str:
     return mapping.get(ext, "")
 
 
+def _script_tag(path: str) -> tuple[str, str]:
+    """Return (label, bg_color) for the script type badge."""
+    ext = Path(path).suffix.lower()
+    tags = {
+        ".py":  ("Python",     "#2B5B84"),
+        ".js":  ("JavaScript", "#B8860B"),
+        ".ts":  ("TypeScript", "#2B6CB0"),
+        ".rb":  ("Ruby",       "#A02020"),
+        ".pl":  ("Perl",       "#0067A3"),
+        ".php": ("PHP",        "#3D4A7A"),
+        ".sh":  ("Shell",      "#2E7D32"),
+        ".ps1": ("PowerShell", "#1A3A6C"),
+        ".bat": ("Batch",      "#4A4A4A"),
+        ".cmd": ("CMD",        "#4A4A4A"),
+        ".exe": ("EXE",        "#3A3A3A"),
+    }
+    label = ext.lstrip(".").upper() if ext else "Script"
+    return tags.get(ext, (label, "#555555"))
+
+
 def build_command(path: str, params: str, interpreter: str):
     cmd = []
     if interpreter.strip():
@@ -410,8 +430,13 @@ class ScriptCard(tk.Frame):
         text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
         text_area.pack(side="left", fill="both", expand=True)
 
-        tk.Label(text_area, text=name, bg=C["card_bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x")
+        name_row = tk.Frame(text_area, bg=C["card_bg"])
+        name_row.pack(fill="x")
+        tk.Label(name_row, text=name, bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left")
+        tag_text, tag_bg = _script_tag(path)
+        tk.Label(name_row, text=tag_text, bg=tag_bg, fg="#ffffff",
+                 font=("Segoe UI", 7, "bold"), padx=5, pady=2).pack(side="left", padx=(8, 0))
         tk.Label(text_area, text=path, bg=C["card_bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), anchor="w").pack(fill="x")
 
@@ -557,7 +582,11 @@ class RYOSApp(tk.Tk):
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(
             self._canvas_window, width=e.width))
         def _on_wheel(e):
-            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            # only scroll when content is taller than the viewport
+            content_h = self.cards_frame.winfo_reqheight()
+            viewport_h = canvas.winfo_height()
+            if content_h > viewport_h:
+                canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
 
         canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_wheel))
         canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
@@ -595,10 +624,12 @@ class RYOSApp(tk.Tk):
             self.out_panel, wrap="word", height=10, font=("Consolas", 10),
             bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
         )
-        self.out_text.pack(fill="both", expand=True)
+        # not packed on init — starts collapsed; out_panel itself always in paned
         self.out_text.tag_config("stderr", foreground="#ff8080")
         self.out_text.tag_config("info",   foreground="#7ec0ee")
         self.out_text.tag_config("ok",     foreground="#90ee90")
+
+        self._paned.add(self.out_panel, weight=0)
 
 
     # ---------- refresh ----------
@@ -790,13 +821,21 @@ class RYOSApp(tk.Tk):
 
     def _toggle_output(self):
         if self._out_expanded:
-            self._paned.forget(self.out_panel)
+            self._saved_sash_pos = self._paned.sashpos(0)
+            self.out_text.pack_forget()
             self._toggle_btn.config(text="▲  Show Output")
             self._out_expanded = False
+            self.update_idletasks()
+            h = self._paned.winfo_height()
+            self._paned.sashpos(0, h - self.out_panel.winfo_reqheight())
         else:
-            self._paned.add(self.out_panel, weight=1)
+            self.out_text.pack(fill="both", expand=True)
             self._toggle_btn.config(text="▼  Hide Output")
             self._out_expanded = True
+            self.update_idletasks()
+            h = self._paned.winfo_height()
+            sash = getattr(self, "_saved_sash_pos", max(50, h - 200))
+            self._paned.sashpos(0, min(sash, h - 50))
 
     def _append_output(self, text: str, tag: str | None = None):
         self.out_text.configure(state="normal")
