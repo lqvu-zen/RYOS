@@ -2,6 +2,9 @@
 build/
 dist/
 
+# Test scripts
+tests/
+
 # Database
 scripts.db
 
