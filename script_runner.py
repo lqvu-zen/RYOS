@@ -525,8 +525,21 @@ class RYOSApp(tk.Tk):
                                               self._delete_selected, width=15)
         self._select_btn = None  # managed via menu label update
 
-        # Scrollable card list
-        container = tk.Frame(self, bg=C["bg"])
+        # Status bar first — must be packed before paned so it sits at bottom
+        self.status_var = tk.StringVar(value="Ready.")
+        self._status_bar = tk.Label(self, textvariable=self.status_var, anchor="w",
+                                    bg=C["status_bg"], fg="#555", font=("Segoe UI", 8),
+                                    padx=10, pady=4)
+        self._status_bar.pack(fill="x", side="bottom")
+
+        # PanedWindow — resizable split between cards and output
+        self._paned = ttk.PanedWindow(self, orient="vertical")
+        self._paned.pack(fill="both", expand=True)
+
+        # Scrollable card list (top pane)
+        cards_pane = tk.Frame(self._paned, bg=C["bg"])
+        self._paned.add(cards_pane, weight=3)
+        container = tk.Frame(cards_pane, bg=C["bg"])
         container.pack(fill="both", expand=True, padx=12, pady=12)
 
         canvas = tk.Canvas(container, highlightthickness=0, bg=C["bg"])
@@ -551,9 +564,9 @@ class RYOSApp(tk.Tk):
 
         self._canvas = canvas
 
-        # Output panel (always visible, collapsible) — packed after cards container
+        # Output panel (bottom pane, collapsible)
         self._out_expanded = False
-        self.out_panel = tk.Frame(self, bg="#1e1e1e")
+        self.out_panel = tk.Frame(self._paned, bg="#1e1e1e")
 
         out_header = tk.Frame(self.out_panel, bg="#2d2d2d", pady=4, padx=10)
         out_header.pack(fill="x")
@@ -582,18 +595,11 @@ class RYOSApp(tk.Tk):
             self.out_panel, wrap="word", height=10, font=("Consolas", 10),
             bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
         )
-        # not packed on init — starts collapsed
+        self.out_text.pack(fill="both", expand=True)
         self.out_text.tag_config("stderr", foreground="#ff8080")
         self.out_text.tag_config("info",   foreground="#7ec0ee")
         self.out_text.tag_config("ok",     foreground="#90ee90")
 
-        # Status bar (bottom) then output panel above it
-        self.status_var = tk.StringVar(value="Ready.")
-        self._status_bar = tk.Label(self, textvariable=self.status_var, anchor="w",
-                                    bg=C["status_bg"], fg="#555", font=("Segoe UI", 8),
-                                    padx=10, pady=4)
-        self._status_bar.pack(fill="x", side="bottom")
-        self.out_panel.pack(fill="both", expand=False, side="bottom")
 
     # ---------- refresh ----------
     def _refresh(self):
@@ -781,17 +787,14 @@ class RYOSApp(tk.Tk):
 
     def _show_output(self, name: str):
         self.out_title.config(text=f"Output — {name}")
-        # Expand if currently minimized
-        if not self._out_expanded:
-            self._toggle_output()
 
     def _toggle_output(self):
         if self._out_expanded:
-            self.out_text.pack_forget()
+            self._paned.forget(self.out_panel)
             self._toggle_btn.config(text="▲  Show Output")
             self._out_expanded = False
         else:
-            self.out_text.pack(fill="both", expand=True)
+            self._paned.add(self.out_panel, weight=1)
             self._toggle_btn.config(text="▼  Hide Output")
             self._out_expanded = True
 

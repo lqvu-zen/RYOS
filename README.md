@@ -1,53 +1,79 @@
 # RYOS — Run Your Own Scripts
 
-A desktop app for saving and running scripts from a clean card-based UI. Supports Python, Node.js, Bash, PowerShell, Batch, and any other executable — with live output, execution history, and a standalone Windows build.
+A desktop app for saving and running scripts from a clean card-based UI. Supports Python, Node.js, Bash, PowerShell, Batch, and any other executable.
 
 ---
 
-## Quick Start
+## Getting Started
+
+**Run the standalone exe** (no Python needed):
+```
+RYOS.exe
+```
 
 **Run from source** (requires [uv](https://docs.astral.sh/uv/getting-started/installation/)):
 ```bash
-uv run script_runner.py
-# or double-click
 run.bat
 ```
 
-**Run the standalone exe** (no Python or uv needed):
-```
-dist/RYOS.exe
-```
-
 ---
 
-## Features
+## How to Use
 
-- Card-based script list — name, path, last run time
-- One-click **Run** and **Modify** per card
-- Auto-detect interpreter from file extension
-- Override interpreter per script
-- Pass parameters to scripts
-- Real-time output panel with color-coded stdout/stderr
-- Stop a running script at any time
-- Copy or clear the log
-- Collapsible output panel
-- SQLite-backed — persists scripts and run history
+### Adding a Script
 
----
+Click **+ Add Script** in the top-right corner. Fill in:
 
-## Building the Executable
+| Field | Description |
+|-------|-------------|
+| **Name** | Display name shown on the card |
+| **Path** | Full path to the script file (e.g. `C:\scripts\backup.py`) |
+| **Interpreter** | Leave blank to auto-detect from extension, or enter a custom command (e.g. `python -u`, `node`) |
+| **Parameters** | Arguments passed to the script on each run (e.g. `--verbose output.txt`) |
 
-```bash
-# double-click, or:
-build.bat
-```
+Click **Save** to add it to your list.
 
-Output: `dist/RYOS.exe` — single file, no dependencies required on the target machine. The database (`scripts.db`) is created next to the exe on first run.
+### Running a Script
 
-To rebuild after code changes:
-```bash
-uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
-```
+Click **Run** on any card. The script executes immediately in the background.
+
+- The card's **last run time** updates after each execution.
+- To see output, click **Show Output** at the bottom of the window.
+- To stop a running script, click **Stop** in the output panel header.
+
+### Output Panel
+
+The output panel sits at the bottom of the window and is hidden by default.
+
+- Click **Show Output / Hide Output** to toggle it.
+- Drag the **divider** between the card list and the output panel to resize it.
+- **stdout** appears in the default color; **stderr** appears in red.
+- Use **Copy** to copy the full log to clipboard.
+- Use **Clear** to wipe the log.
+
+### Editing a Script
+
+Click **Modify** on a card to change its name, path, interpreter, or parameters. Click **Save** to apply.
+
+### Reordering Scripts
+
+Use the **↑** and **↓** arrows on each card to move it up or down in the list.
+
+### Deleting Scripts
+
+**Single script** — click **Modify**, then **Delete** in the edit dialog.
+
+**Multiple scripts** — open **Options → Select scripts**, check the cards you want to remove, then click **Delete Selected**.
+
+**All scripts** — open **Options → Delete All**.
+
+### Export / Import
+
+Use **Options → Export config** to save your script list as a JSON file.
+
+Use **Options → Import config** to restore from a JSON file. You can choose to:
+- **Merge** — add imported scripts while keeping existing ones (duplicates are skipped)
+- **Replace** — clear the current list and load the imported scripts
 
 ---
 
@@ -55,7 +81,7 @@ uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
 
 | Extension | Interpreter |
 |-----------|-------------|
-| `.py` | Python (current) |
+| `.py` | Python |
 | `.js` | node |
 | `.ts` | ts-node |
 | `.sh` | bash |
@@ -65,55 +91,16 @@ uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
 | `.php` | php |
 | `.bat` `.cmd` `.exe` | direct |
 
-Leave the **Interpreter** field blank for auto-detection, or type any custom command (e.g. `python -u`).
+Leave **Interpreter** blank for auto-detection, or type any custom command.
 
 ---
 
-## Test Scripts
-
-Populate the database with 11 ready-made test scripts:
+## Building the Executable
 
 ```bash
-uv run tests/seed_db.py
+build.bat
+# or:
+uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
 ```
 
-| Script | Purpose |
-|--------|---------|
-| `hello_python.py` | Python version & platform info |
-| `hello_node.js` | Node.js version & platform info |
-| `hello_powershell.ps1` | PowerShell version info |
-| `hello_batch.bat` | Windows Batch |
-| `hello_cmd.cmd` | Windows CMD |
-| `hello_bash.sh` | Bash version & hostname |
-| `args_echo.py` | Echoes arguments back (pre-filled: `hello world`) |
-| `slow_counter.py` | Counts to 30 at 1 s/step — test the Stop button |
-| `exit_error.py` | Exits with code 2 — test red error output |
-| `env_info.py` | Python executable, CWD, PATH |
-| `flood_output.py` | 500 lines fast — test scroll performance |
-
-Re-run `seed_db.py` at any time; it skips entries that already exist.
-
----
-
-## Requirements
-
-- **uv** — for running from source or building the exe
-- **Linux only**: `sudo apt install python3-tk` (tkinter is bundled on Windows and macOS)
-- All other dependencies are Python standard library
-
----
-
-## Project Structure
-
-```
-script_runner.py   — main application (single file)
-run.bat            — launch via uv run
-build.bat          — rebuild dist/RYOS.exe
-RYOS.spec          — PyInstaller build config
-scripts.db         — SQLite database (created on first run)
-tests/
-  seed_db.py       — populate database with test scripts
-  *.py / *.bat / *.sh / .ps1 / .js — sample test scripts
-dist/
-  RYOS.exe         — standalone Windows executable
-```
+Output: `dist/RYOS.exe` — single file, no dependencies on the target machine. The database (`scripts.db`) is created next to the exe on first run.
