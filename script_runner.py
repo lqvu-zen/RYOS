@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 
 
@@ -99,6 +100,22 @@ class ScriptDB:
             if "sort_order" not in gcols:
                 conn.execute("ALTER TABLE groups ADD COLUMN sort_order INTEGER DEFAULT 0")
                 conn.execute("UPDATE groups SET sort_order = id")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pipelines (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL,
+                    group_name TEXT NOT NULL DEFAULT '',
+                    sort_order INTEGER DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pipeline_steps (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    pipeline_id INTEGER NOT NULL,
+                    script_id   INTEGER NOT NULL,
+                    step_order  INTEGER DEFAULT 0
+                )
+            """)
             conn.commit()
 
     def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "") -> int:
@@ -225,12 +242,78 @@ class ScriptDB:
         with self._connect() as conn:
             conn.execute("UPDATE groups SET name=? WHERE name=?", (new, old))
             conn.execute("UPDATE scripts SET group_name=? WHERE group_name=?", (new, old))
+            conn.execute("UPDATE pipelines SET group_name=? WHERE group_name=?", (new, old))
             conn.commit()
 
     def delete_group(self, name: str):
         with self._connect() as conn:
             conn.execute("DELETE FROM groups WHERE name=?", (name,))
             conn.execute("UPDATE scripts SET group_name='' WHERE group_name=?", (name,))
+            conn.execute("UPDATE pipelines SET group_name='' WHERE group_name=?", (name,))
+            conn.commit()
+
+    def create_pipeline(self, name: str, group_name: str) -> int:
+        with self._connect() as conn:
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM pipelines WHERE group_name=?", (group_name,)
+            ).fetchone()[0]
+            cur = conn.execute(
+                "INSERT INTO pipelines (name, group_name, sort_order) VALUES (?, ?, ?)",
+                (name, group_name, max_order + 1),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def delete_pipeline(self, pipeline_id: int):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM pipeline_steps WHERE pipeline_id=?", (pipeline_id,))
+            conn.execute("DELETE FROM pipelines WHERE id=?", (pipeline_id,))
+            conn.commit()
+
+    def rename_pipeline(self, pipeline_id: int, name: str):
+        with self._connect() as conn:
+            conn.execute("UPDATE pipelines SET name=? WHERE id=?", (name, pipeline_id))
+            conn.commit()
+
+    def list_pipelines(self, group_name: str) -> list:
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT id, name FROM pipelines WHERE group_name=? ORDER BY sort_order ASC, id ASC",
+                (group_name,),
+            ).fetchall()
+
+    def list_pipeline_steps(self, pipeline_id: int) -> list:
+        """Returns list of (step_id, script_id, name, path, params, interpreter)."""
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter "
+                "FROM pipeline_steps ps JOIN scripts s ON s.id = ps.script_id "
+                "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
+                (pipeline_id,),
+            ).fetchall()
+
+    def add_pipeline_step(self, pipeline_id: int, script_id: int) -> int:
+        with self._connect() as conn:
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(step_order), -1) FROM pipeline_steps WHERE pipeline_id=?",
+                (pipeline_id,),
+            ).fetchone()[0]
+            cur = conn.execute(
+                "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) VALUES (?, ?, ?)",
+                (pipeline_id, script_id, max_order + 1),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def remove_pipeline_step(self, step_id: int):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM pipeline_steps WHERE id=?", (step_id,))
+            conn.commit()
+
+    def reorder_pipeline_steps(self, pipeline_id: int, ordered_step_ids: list[int]):
+        with self._connect() as conn:
+            for i, sid in enumerate(ordered_step_ids):
+                conn.execute("UPDATE pipeline_steps SET step_order=? WHERE id=?", (i * 10, sid))
             conn.commit()
 
     def swap_order(self, id_a: int, id_b: int):
@@ -249,6 +332,66 @@ class ScriptDB:
                 "SELECT COALESCE(MIN(order_index), 0) FROM scripts WHERE COALESCE(group_name,'')=?", (grp,)
             ).fetchone()[0]
             conn.execute("UPDATE scripts SET order_index=? WHERE id=?", (min_order - 1, script_id))
+            conn.commit()
+
+    def reorder_script(self, script_id: int, group_name: str, before_id: int | None):
+        """Place script_id before before_id within group_name (None = append at end)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM scripts WHERE COALESCE(group_name,'')=? AND id!=? "
+                "ORDER BY order_index ASC, id ASC",
+                (group_name, script_id),
+            ).fetchall()
+            ids = [r[0] for r in rows]
+            if before_id is not None and before_id in ids:
+                ids.insert(ids.index(before_id), script_id)
+            else:
+                ids.append(script_id)
+            for i, sid in enumerate(ids):
+                conn.execute("UPDATE scripts SET order_index=? WHERE id=?", (i * 10, sid))
+            conn.commit()
+
+    def move_to_group(self, script_id: int, new_group: str):
+        """Move script to a different group, appended at the end."""
+        with self._connect() as conn:
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(order_index), -1) FROM scripts WHERE COALESCE(group_name,'')=?",
+                (new_group,),
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE scripts SET group_name=?, order_index=? WHERE id=?",
+                (new_group, max_order + 10, script_id),
+            )
+            conn.commit()
+
+    def reorder_pipeline(self, pipeline_id: int, group_name: str, before_id: int | None):
+        """Place pipeline_id before before_id within group_name (None = append at end)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM pipelines WHERE group_name=? AND id!=? "
+                "ORDER BY sort_order ASC, id ASC",
+                (group_name, pipeline_id),
+            ).fetchall()
+            ids = [r[0] for r in rows]
+            if before_id is not None and before_id in ids:
+                ids.insert(ids.index(before_id), pipeline_id)
+            else:
+                ids.append(pipeline_id)
+            for i, pid in enumerate(ids):
+                conn.execute("UPDATE pipelines SET sort_order=? WHERE id=?", (i * 10, pid))
+            conn.commit()
+
+    def move_pipeline_to_group(self, pipeline_id: int, new_group: str):
+        """Move pipeline to a different group, appended at the end."""
+        with self._connect() as conn:
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM pipelines WHERE group_name=?",
+                (new_group,),
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE pipelines SET group_name=?, sort_order=? WHERE id=?",
+                (new_group, max_order + 10, pipeline_id),
+            )
             conn.commit()
 
     def get(self, script_id: int):
@@ -452,6 +595,175 @@ class ScriptDialog(tk.Toplevel):
             self.destroy()
 
 
+# ---------------------------------------------------------------------------
+# Pipeline editor dialog
+# ---------------------------------------------------------------------------
+class PipelineEditorDialog(tk.Toplevel):
+    def __init__(self, parent, db: ScriptDB, pipeline_id: int,
+                 pipeline_name: str, group_name: str, on_save):
+        super().__init__(parent)
+        self.db = db
+        self.pipeline_id = pipeline_id
+        self.group_name = group_name
+        self.on_save = on_save
+        self._steps: list = []
+
+        self.title("Edit Pipeline")
+        self.resizable(True, True)
+        self.configure(bg=C["card_bg"])
+        self.grab_set()
+        self.geometry("440x520")
+        self.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width() - 440) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - 520) // 2
+        self.geometry(f"440x520+{x}+{y}")
+
+        # Name field
+        nf = tk.Frame(self, bg=C["card_bg"], padx=16, pady=12)
+        nf.pack(fill="x")
+        tk.Label(nf, text="Pipeline Name", bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9, "bold")).pack(anchor="w")
+        self._name_var = tk.StringVar(value=pipeline_name)
+        tk.Entry(nf, textvariable=self._name_var,
+                 font=("Segoe UI", 10)).pack(fill="x", pady=(4, 0))
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
+
+        # Steps section header
+        sh = tk.Frame(self, bg=C["bg"], padx=16, pady=8)
+        sh.pack(fill="x")
+        tk.Label(sh, text="Steps", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9, "bold")).pack(side="left")
+
+        # Scrollable steps list
+        list_frame = tk.Frame(self, bg=C["bg"])
+        list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 4))
+        sb = ttk.Scrollbar(list_frame)
+        sb.pack(side="right", fill="y")
+        self._listbox = tk.Listbox(
+            list_frame, yscrollcommand=sb.set,
+            selectmode="single", font=("Segoe UI", 10),
+            bg="#f8f9fc", fg=C["name_fg"],
+            selectbackground=C["accent"], selectforeground="#ffffff",
+            relief="flat", highlightthickness=1,
+            highlightbackground=C["border"], activestyle="none",
+        )
+        sb.config(command=self._listbox.yview)
+        self._listbox.pack(side="left", fill="both", expand=True)
+
+        # Step control buttons
+        ctrl = tk.Frame(self, bg=C["card_bg"], padx=12, pady=4)
+        ctrl.pack(fill="x")
+        for label, cmd in (("▲ Up", self._move_up), ("▼ Down", self._move_down),
+                           ("✕ Remove", self._remove_selected)):
+            tk.Button(ctrl, text=label, command=cmd,
+                      bg="#e8eaf0", fg=C["name_fg"],
+                      activebackground=C["card_hover"], relief="flat",
+                      bd=0, padx=10, pady=4, cursor="hand2",
+                      font=("Segoe UI", 9)).pack(side="left", padx=2)
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
+
+        # Add step section
+        af = tk.Frame(self, bg=C["card_bg"], padx=16, pady=10)
+        af.pack(fill="x")
+        tk.Label(af, text="Add Step", bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
+        combo_row = tk.Frame(af, bg=C["card_bg"])
+        combo_row.pack(fill="x")
+        scripts = [s for s in db.list_all() if (s[8] or "") == group_name]
+        # Build label → id map, disambiguating duplicate names with filename
+        name_count: dict[str, int] = {}
+        for s in scripts:
+            name_count[s[1]] = name_count.get(s[1], 0) + 1
+        self._script_map: dict[str, int] = {}
+        for s in scripts:
+            lbl = s[1] if name_count[s[1]] == 1 else f"{s[1]}  ({Path(s[2]).name})"
+            self._script_map[lbl] = s[0]
+        keys = list(self._script_map.keys())
+        self._combo_var = tk.StringVar(value=keys[0] if keys else "")
+        self._add_combo = ttk.Combobox(
+            combo_row, textvariable=self._combo_var,
+            values=keys, state="readonly", font=("Segoe UI", 9),
+        )
+        self._add_combo.pack(side="left", fill="x", expand=True)
+        tk.Button(combo_row, text="Add", command=self._add_step,
+                  bg=C["accent"], fg="#ffffff", activebackground=C["accent2"],
+                  relief="flat", padx=10, pady=4, cursor="hand2",
+                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(6, 0))
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
+
+        # Save / Cancel
+        br = tk.Frame(self, bg=C["card_bg"], padx=16, pady=12)
+        br.pack(fill="x")
+        tk.Button(br, text="Save", command=self._save,
+                  bg=C["accent"], fg="#ffffff", activebackground=C["accent2"],
+                  relief="flat", padx=16, pady=6, cursor="hand2",
+                  font=("Segoe UI", 9, "bold")).pack(side="right")
+        tk.Button(br, text="Cancel", command=self.destroy,
+                  bg="#e0e0e0", fg="#333333",
+                  activebackground="#d0d0d0", relief="flat",
+                  padx=16, pady=6, cursor="hand2",
+                  font=("Segoe UI", 9)).pack(side="right", padx=(0, 8))
+
+        self._reload_steps()
+
+    def _reload_steps(self):
+        self._steps = list(self.db.list_pipeline_steps(self.pipeline_id))
+        self._listbox.delete(0, tk.END)
+        for i, (step_id, sid, name, path, params, interp) in enumerate(self._steps):
+            self._listbox.insert(tk.END, f"  {i + 1}.  {name}")
+
+    def _selected_index(self) -> int | None:
+        sel = self._listbox.curselection()
+        return sel[0] if sel else None
+
+    def _add_step(self):
+        sel = self._combo_var.get()
+        script_id = self._script_map.get(sel)
+        if script_id is None:
+            return
+        self.db.add_pipeline_step(self.pipeline_id, script_id)
+        self._reload_steps()
+        self._listbox.selection_set(tk.END)
+
+    def _remove_selected(self):
+        idx = self._selected_index()
+        if idx is None:
+            return
+        step_id = self._steps[idx][0]
+        self.db.remove_pipeline_step(step_id)
+        self._reload_steps()
+
+    def _move_up(self):
+        idx = self._selected_index()
+        if idx is None or idx == 0:
+            return
+        ids = [s[0] for s in self._steps]
+        ids[idx], ids[idx - 1] = ids[idx - 1], ids[idx]
+        self.db.reorder_pipeline_steps(self.pipeline_id, ids)
+        self._reload_steps()
+        self._listbox.selection_set(idx - 1)
+
+    def _move_down(self):
+        idx = self._selected_index()
+        if idx is None or idx >= len(self._steps) - 1:
+            return
+        ids = [s[0] for s in self._steps]
+        ids[idx], ids[idx + 1] = ids[idx + 1], ids[idx]
+        self.db.reorder_pipeline_steps(self.pipeline_id, ids)
+        self._reload_steps()
+        self._listbox.selection_set(idx + 1)
+
+    def _save(self):
+        name = self._name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Name Required", "Enter a pipeline name.", parent=self)
+            return
+        self.db.rename_pipeline(self.pipeline_id, name)
+        self.on_save()
+        self.destroy()
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +803,174 @@ def _flat_button(parent, text, bg, hover_bg, command, width=9):
 
 
 # ---------------------------------------------------------------------------
+# Scrolling name label
+# ---------------------------------------------------------------------------
+class ScrollingLabel(tk.Canvas):
+    """Clips and horizontally scrolls text that is wider than the widget."""
+    _IDLE_MS = 1500
+    _SPEED   = 1
+    _TICK_MS = 25
+    _GAP     = 80
+
+    def __init__(self, parent, text, fg, bg, height=22):
+        super().__init__(parent, bg=bg, highlightthickness=0, height=height)
+        self._text   = text
+        self._fg     = fg
+        self._offset = 0
+        self._job    = None
+        self._tw     = 0
+        self._font   = tkfont.Font(family="Segoe UI", size=11, weight="bold")
+
+        self.bind("<Configure>", self._on_configure)
+        self.bind("<Destroy>",   lambda e: self._cancel())
+        self.bind("<Enter>",     lambda e: self._pause())
+        self.bind("<Leave>",     lambda e: self._schedule())
+
+    def _on_configure(self, e):
+        self._tw = self._font.measure(self._text)
+        self._offset = 0
+        self._draw()
+        self._schedule()
+
+    def _draw(self):
+        h = max(self.winfo_height(), 1)
+        self.delete("all")
+        self.create_text(-self._offset, h // 2,
+                         text=self._text, font=self._font,
+                         fill=self._fg, anchor="w")
+
+    def _schedule(self):
+        self._cancel()
+        if self._tw > self.winfo_width():
+            self._job = self.after(self._IDLE_MS, self._tick)
+
+    def _tick(self):
+        self._offset += self._SPEED
+        self._draw()
+        if self._offset >= self._tw + self._GAP:
+            self._offset = 0
+            self._draw()
+            self._job = self.after(self._IDLE_MS, self._tick)
+        else:
+            self._job = self.after(self._TICK_MS, self._tick)
+
+    def _pause(self):
+        self._cancel()
+        self._offset = 0
+        self._draw()
+
+    def _cancel(self):
+        if self._job:
+            self.after_cancel(self._job)
+            self._job = None
+
+
+# ---------------------------------------------------------------------------
+# Pipeline card
+# ---------------------------------------------------------------------------
+class PipelineCard(tk.Frame):
+    """Card displaying a pipeline and its steps summary."""
+    _PIPE_ACCENT  = "#5c4bbd"
+    _PIPE_ACCENT2 = "#7060d0"
+
+    def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
+                 group_name: str, on_run, on_edit, on_refresh):
+        super().__init__(parent, bg=C["card_bg"],
+                         highlightbackground=C["border"], highlightthickness=1)
+        self.pipeline_id = pipeline_id
+        self._name = name
+        self._group_name = group_name
+        self.db = db
+        self.on_run = on_run
+        self.on_edit = on_edit
+        self.on_refresh = on_refresh
+
+        steps = db.list_pipeline_steps(pipeline_id)
+
+        # Left accent strip (indigo, distinct from script cards)
+        tk.Frame(self, bg=self._PIPE_ACCENT, width=5).pack(side="left", fill="y")
+
+        # Buttons (right, packed first so they always claim space)
+        btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
+        btn_area.pack(side="right", fill="y")
+        _flat_button(btn_area, "⚙", C["btn_mod_bg"], C["btn_mod_hover"],
+                     lambda: on_edit(pipeline_id, name)).pack(side="left", padx=3)
+        _flat_button(btn_area, "▶", self._PIPE_ACCENT, self._PIPE_ACCENT2,
+                     lambda: on_run(pipeline_id, name)).pack(side="left", padx=3)
+
+        # Content
+        content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
+        content.pack(side="left", fill="both", expand=True)
+        self._content = content
+
+        # Badge row
+        badge_row = tk.Frame(content, bg=C["card_bg"])
+        badge_row.pack(fill="x")
+        tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg="#ffffff",
+                 font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+
+        # Name (scrolling if long)
+        ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
+
+        # Steps summary
+        n = len(steps)
+        if n == 0:
+            summary = "No steps — click ⚙ to add scripts"
+        else:
+            parts = [s[2] for s in steps[:4]]
+            summary = "  →  ".join(parts)
+            if n > 4:
+                summary += f"  →  +{n - 4} more"
+        tk.Label(content, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary}",
+                 bg=C["card_bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x")
+
+        for widget in (self, content):
+            widget.bind("<Enter>", self._on_enter)
+            widget.bind("<Leave>", self._on_leave)
+
+        self._bind_right_click_all(self)
+
+    def _bind_right_click_all(self, widget):
+        widget.bind("<Button-3>", self._context_menu)
+        for ch in widget.winfo_children():
+            self._bind_right_click_all(ch)
+
+    def _on_enter(self, _e=None):
+        self._set_bg(self, C["card_hover"])
+
+    def _on_leave(self, _e=None):
+        self._set_bg(self, C["card_bg"])
+
+    def _set_bg(self, widget, color):
+        try:
+            if widget.cget("bg") in (C["card_bg"], C["card_hover"]):
+                widget.configure(bg=color)
+        except tk.TclError:
+            pass
+        for ch in widget.winfo_children():
+            self._set_bg(ch, color)
+
+    def _context_menu(self, event):
+        menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
+                       bg="#2d2d2d", fg="#ffffff",
+                       activebackground=C["accent"], activeforeground="#ffffff",
+                       font=("Segoe UI", 10))
+        menu.add_command(label="⚙  Edit",
+                         command=lambda: self.on_edit(self.pipeline_id, self._name))
+        menu.add_separator()
+        menu.add_command(label="🗑  Delete", command=self._delete,
+                         foreground="#ff8080", activeforeground="#ff8080")
+        menu.tk_popup(event.x_root, event.y_root)
+
+    def _delete(self):
+        if messagebox.askyesno("Delete Pipeline",
+                                f"Delete pipeline '{self._name}'?", parent=self):
+            self.db.delete_pipeline(self.pipeline_id)
+            self.on_refresh()
+
+
+# ---------------------------------------------------------------------------
 # Script card
 # ---------------------------------------------------------------------------
 class ScriptCard(tk.Frame):
@@ -502,6 +982,7 @@ class ScriptCard(tk.Frame):
         sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
         self.script_id = sid
         self._name = name
+        self._group_name = _group or ""
         self.db = db
         self.runner = runner
         self.on_refresh = on_refresh
@@ -515,29 +996,22 @@ class ScriptCard(tk.Frame):
                                    bg=C["card_bg"], activebackground=C["card_bg"],
                                    relief="flat", bd=0, cursor="hand2")
 
-        # Up/down reorder buttons (vertically centered)
-        self._order_area = order_area = tk.Frame(self, bg=C["card_bg"], padx=4)
-        order_area.pack(side="left", fill="y")
-        btn_wrapper = tk.Frame(order_area, bg=C["card_bg"])
-        btn_wrapper.pack(expand=True)
-        for text, cmd in (("⤒", on_move_top), ("▲", on_move_up), ("▼", on_move_down)):
-            tk.Button(btn_wrapper, text=text, command=cmd,
-                      bg=C["card_bg"], fg=C["path_fg"],
-                      activebackground=C["card_hover"], activeforeground=C["accent"],
-                      relief="flat", bd=0, cursor="hand2",
-                      font=("Segoe UI", 8)).pack()
+        self._on_move_top = on_move_top
+        self._on_move_up  = on_move_up
+        self._on_move_down = on_move_down
+
+        # Buttons — packed before text_area so they always claim space on the right
+        btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
+        btn_area.pack(side="right", fill="y")
 
         # Text area
-        text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
+        self._text_area = text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
         text_area.pack(side="left", fill="both", expand=True)
 
-        name_row = tk.Frame(text_area, bg=C["card_bg"])
-        name_row.pack(fill="x")
-        tk.Label(name_row, text=name, bg=C["card_bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left")
         tag_text, tag_bg = _script_tag(path)
-        tk.Label(name_row, text=tag_text, bg=tag_bg, fg="#ffffff",
-                 font=("Segoe UI", 7, "bold"), padx=5, pady=2).pack(side="left", padx=(8, 0))
+        tk.Label(text_area, text=tag_text, bg=tag_bg, fg="#ffffff",
+                 font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(anchor="w", pady=(0, 2))
+        ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
         tk.Label(text_area, text=path, bg=C["card_bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), anchor="w").pack(fill="x")
 
@@ -553,24 +1027,21 @@ class ScriptCard(tk.Frame):
                 tk.Label(meta_row, text="✓ OK", bg="#2ecc71", fg="#ffffff",
                          font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
-        # Buttons
-        btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
-        btn_area.pack(side="right", fill="y")
-
-        self._actions_btn = _flat_button(btn_area, "⋯", C["btn_mod_bg"], C["btn_mod_hover"],
-                                         self._show_actions_menu, width=3)
-        self._actions_btn.pack(side="left", padx=4)
-        _flat_button(btn_area, "▶  Run", C["btn_run_bg"], C["btn_run_hover"],
-                     self._run).pack(side="left", padx=4)
+        _flat_button(btn_area, "⚙", C["btn_mod_bg"], C["btn_mod_hover"],
+                     self._modify).pack(side="left", padx=3)
+        _flat_button(btn_area, "▶", C["btn_run_bg"], C["btn_run_hover"],
+                     self._run).pack(side="left", padx=3)
 
         # Hover highlight on whole card
         for widget in (self, text_area):
             widget.bind("<Enter>", self._on_enter)
             widget.bind("<Leave>", self._on_leave)
 
+        self._bind_right_click(self)
+
     def show_checkbox(self, command=None):
         self._chk.config(command=command)
-        self._chk.pack(side="left", padx=(6, 0), before=self._order_area)
+        self._chk.pack(side="left", padx=(6, 0), before=self._text_area)
 
     def hide_checkbox(self):
         self._chk.pack_forget()
@@ -591,20 +1062,25 @@ class ScriptCard(tk.Frame):
         for child in widget.winfo_children():
             self._set_card_bg(child, color)
 
-    def _show_actions_menu(self):
+    def _bind_right_click(self, widget):
+        widget.bind("<Button-3>", self._card_context_menu)
+        for child in widget.winfo_children():
+            self._bind_right_click(child)
+
+    def _card_context_menu(self, event):
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
                        bg="#2d2d2d", fg="#ffffff",
                        activebackground=C["accent"], activeforeground="#ffffff",
                        font=("Segoe UI", 10))
-        menu.add_command(label="✏  Modify", command=self._modify)
-        menu.add_command(label="⧉  Clone",  command=self._clone)
+        menu.add_command(label="⤒  Move to Top", command=self._on_move_top)
+        menu.add_command(label="▲  Move Up",     command=self._on_move_up)
+        menu.add_command(label="▼  Move Down",   command=self._on_move_down)
         menu.add_separator()
-        menu.add_command(label="🗑  Delete", command=self._delete_card,
+        menu.add_command(label="⧉  Clone",       command=self._clone)
+        menu.add_separator()
+        menu.add_command(label="🗑  Delete",      command=self._delete_card,
                          foreground="#ff8080", activeforeground="#ff8080")
-        menu.tk_popup(
-            self._actions_btn.winfo_rootx(),
-            self._actions_btn.winfo_rooty() + self._actions_btn.winfo_height(),
-        )
+        menu.tk_popup(event.x_root, event.y_root)
 
     def _modify(self):
         ScriptDialog(self.winfo_toplevel(), self.db,
@@ -655,7 +1131,20 @@ class RYOSApp(TkinterDnD.Tk):
         self.current_process = None
         self.output_queue: queue.Queue = queue.Queue()
         self._cards: list[ScriptCard] = []
+        self._pipeline_cards: list[PipelineCard] = []
         self._select_mode = False
+        self._pipeline_queue: list = []
+        self._pipeline_step_idx = 0
+        self._pipeline_total = 0
+        # drag-and-drop card state
+        self._drag_card: ScriptCard | None = None
+        self._drag_start_x = self._drag_start_y = 0
+        self._drag_ghost: tk.Toplevel | None = None
+        self._drag_indicator: tk.Frame | None = None
+        self._drag_insert_before: int | None = None
+        self._drag_target_group: str | None = None
+        self._drag_tab_highlight: tuple | None = None
+        self._section_collapsed: dict[str, dict[str, bool]] = {}
         groups = self.db.list_groups()
         self._active_group: str | None = groups[0] if groups else None
 
@@ -710,13 +1199,16 @@ class RYOSApp(TkinterDnD.Tk):
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg="#ffffff",
                  font=("Segoe UI", 14, "bold")).pack(side="left")
-        add_btn = _flat_button(header, "+ Add Script", C["accent"], C["accent2"],
-                               self._add_script, width=12)
+        add_btn = _flat_button(header, "+ Script", C["accent"], C["accent2"],
+                               self._add_script, width=10)
         add_btn.config(bg=C["accent"])
         add_btn.pack(side="right")
-        add_group_btn = _flat_button(header, "+ Add Group", "#3a3a3a", "#555",
-                                     self._create_group, width=12)
+        add_group_btn = _flat_button(header, "+ Group", "#2e7d32", "#388e3c",
+                                     self._create_group, width=10)
         add_group_btn.pack(side="right", padx=(0, 6))
+        self._pipeline_btn = _flat_button(header, "+ Pipeline", "#5c4bbd", "#7060d0",
+                                           self._add_pipeline, width=10)
+        self._pipeline_btn.pack(side="right", padx=(0, 6))
 
         # Options dropdown
         self._options_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
@@ -729,8 +1221,8 @@ class RYOSApp(TkinterDnD.Tk):
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",      command=self._delete_all)
 
-        options_btn = _flat_button(header, "⋮ Options", "#3a3a3a", "#555",
-                                   self._show_options_menu, width=10)
+        options_btn = _flat_button(header, "⚙", "#3a3a3a", "#555",
+                                   self._show_options_menu, width=4)
         options_btn.pack(side="right", padx=8)
         self._options_btn = options_btn
 
@@ -858,6 +1350,46 @@ class RYOSApp(TkinterDnD.Tk):
                  font=("Segoe UI", 8, "bold")).pack(side="left")
         tk.Frame(hdr, bg=C["border"], height=1).pack(
             side="left", fill="x", expand=True, padx=(8, 0), pady=4)
+
+    def _make_section_header(self, parent, group: str, section: str, label: str) -> tk.Frame:
+        """Collapsible section row; returns the content frame."""
+        collapsed = self._section_collapsed.get(group, {}).get(section, False)
+
+        section_frame = tk.Frame(parent, bg=C["bg"])
+        section_frame.pack(fill="x")
+
+        hdr = tk.Frame(section_frame, bg=C["bg"], cursor="hand2")
+        hdr.pack(fill="x", padx=2, pady=(6, 0))
+
+        arrow_var = tk.StringVar(value="▶" if collapsed else "▼")
+        arrow_lbl = tk.Label(hdr, textvariable=arrow_var, bg=C["bg"], fg=C["path_fg"],
+                             font=("Segoe UI", 8), cursor="hand2", width=2)
+        arrow_lbl.pack(side="left")
+        tk.Label(hdr, text=label.upper(), bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8, "bold"), cursor="hand2").pack(side="left")
+        tk.Frame(hdr, bg=C["border"], height=1).pack(
+            side="left", fill="x", expand=True, padx=(6, 0), pady=4)
+
+        content = tk.Frame(section_frame, bg=C["bg"])
+        if not collapsed:
+            content.pack(fill="x")
+
+        def _toggle(_e=None):
+            is_col = self._section_collapsed.get(group, {}).get(section, False)
+            if group not in self._section_collapsed:
+                self._section_collapsed[group] = {}
+            self._section_collapsed[group][section] = not is_col
+            if is_col:
+                arrow_var.set("▼")
+                content.pack(fill="x")
+            else:
+                arrow_var.set("▶")
+                content.pack_forget()
+
+        for w in (hdr, arrow_lbl) + tuple(hdr.winfo_children()):
+            w.bind("<Button-1>", _toggle)
+
+        return content
 
     # ---------- tab bar ----------
     def _refresh_tabs(self):
@@ -1053,21 +1585,7 @@ class RYOSApp(TkinterDnD.Tk):
     def _refresh_cards(self):
         for w in self.cards_frame.winfo_children():
             w.destroy()
-
-        if self._active_group is None:
-            scripts = self.db.list_all()
-        else:
-            scripts = [s for s in self.db.list_all() if (s[8] or "") == self._active_group]
-
-        if not scripts:
-            msg = (
-                f"No scripts in '{self._active_group}' yet.\nClick '+ Add Script' to add one."
-                if self._active_group else
-                "No scripts yet.\nClick '+ Add Script' to get started."
-            )
-            tk.Label(self.cards_frame, text=msg, bg=C["bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 10), justify="center").pack(pady=60)
-            return
+        self._pipeline_cards = []
 
         def make_move(a, b):
             def _move():
@@ -1081,51 +1599,83 @@ class RYOSApp(TkinterDnD.Tk):
                 self._refresh()
             return _top
 
-        if self._active_group is None:
-            # All mode: show group section headers
-            groups_order: list[str] = []
-            group_scripts: dict[str, list] = {}
-            for rec in scripts:
-                g = rec[8] or ""
-                if g not in group_scripts:
-                    groups_order.append(g)
-                    group_scripts[g] = []
-                group_scripts[g].append(rec)
-            any_named = any(g for g in groups_order)
-            for gname in groups_order:
-                if gname:
-                    self._make_group_header(gname)
-                elif any_named:
-                    self._make_group_header("Other")
-                recs = group_scripts[gname]
-                gids = [r[0] for r in recs]
-                for gi, rec in enumerate(recs):
+        def render_group_sections(gname: str, scripts: list):
+            # ── Pipelines ──────────────────────────────────────
+            pipe_content = self._make_section_header(
+                self.cards_frame, gname, "pipelines", "Pipelines"
+            )
+            pipelines = self.db.list_pipelines(gname)
+            if pipelines:
+                for p_id, p_name in pipelines:
+                    pc = PipelineCard(
+                        pipe_content, p_id, p_name, self.db,
+                        group_name=gname,
+                        on_run=self._run_pipeline,
+                        on_edit=self._edit_pipeline,
+                        on_refresh=self._refresh_cards,
+                    )
+                    pc.pack(fill="x", pady=5, ipady=2)
+                    self._bind_pipeline_drag(pc)
+                    self._pipeline_cards.append(pc)
+            else:
+                tk.Label(pipe_content, text="No pipelines yet.",
+                         bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+
+            # ── Scripts ────────────────────────────────────────
+            scr_content = self._make_section_header(
+                self.cards_frame, gname, "scripts", "Scripts"
+            )
+            if scripts:
+                gids = [r[0] for r in scripts]
+                for gi, rec in enumerate(scripts):
                     sid = rec[0]
                     up_id   = gids[gi - 1] if gi > 0 else None
                     down_id = gids[gi + 1] if gi < len(gids) - 1 else None
                     card = ScriptCard(
-                        self.cards_frame, rec, self.db, self._run_script, self._refresh,
+                        scr_content, rec, self.db, self._run_script, self._refresh,
                         on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top  = make_top(sid)           if up_id   else lambda: None,
                     )
                     card.pack(fill="x", pady=5, ipady=2)
+                    self._bind_card_drag(card)
                     self._cards.append(card)
+            else:
+                tk.Label(scr_content, text="No scripts yet.",
+                         bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+
+        if self._active_group is None:
+            # All mode — group headers with two sections each
+            all_scripts = self.db.list_all()
+            groups = self.db.list_groups()
+            if not groups and not all_scripts:
+                tk.Label(self.cards_frame,
+                         text="No scripts yet.\nClick '+ Script' to get started.",
+                         bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 10), justify="center").pack(pady=60)
+                return
+            group_scripts: dict[str, list] = {g: [] for g in groups}
+            group_scripts.setdefault("", [])
+            for rec in all_scripts:
+                g = rec[8] or ""
+                group_scripts.setdefault(g, [])
+                group_scripts[g].append(rec)
+            any_named = bool(groups)
+            for gname in groups:
+                self._make_group_header(gname)
+                render_group_sections(gname, group_scripts.get(gname, []))
+            ungrouped = group_scripts.get("", [])
+            if ungrouped:
+                if any_named:
+                    self._make_group_header("Other")
+                render_group_sections("", ungrouped)
         else:
-            # Single-group mode: no section headers
-            gids = [r[0] for r in scripts]
-            for gi, rec in enumerate(scripts):
-                sid = rec[0]
-                up_id   = gids[gi - 1] if gi > 0 else None
-                down_id = gids[gi + 1] if gi < len(gids) - 1 else None
-                card = ScriptCard(
-                    self.cards_frame, rec, self.db, self._run_script, self._refresh,
-                    on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
-                    on_move_down = make_move(sid, down_id) if down_id else lambda: None,
-                    on_move_top  = make_top(sid)           if up_id   else lambda: None,
-                )
-                card.pack(fill="x", pady=5, ipady=2)
-                self._cards.append(card)
+            # Single-group mode
+            scripts = [s for s in self.db.list_all()
+                       if (s[8] or "") == self._active_group]
+            render_group_sections(self._active_group, scripts)
 
     def _add_script(self):
         groups = self.db.list_groups()
@@ -1145,12 +1695,258 @@ class RYOSApp(TkinterDnD.Tk):
                      existing_groups=groups,
                      default_group=self._active_group or "")
 
+    # ---------- card drag-and-drop ----------
+    _DRAG_THRESHOLD = 6
+
+    def _bind_card_drag(self, card: "ScriptCard"):
+        def recurse(w):
+            w.bind("<ButtonPress-1>",   lambda e, c=card: self._card_drag_press(e, c))
+            w.bind("<B1-Motion>",       lambda e, c=card: self._card_drag_motion(e, c))
+            w.bind("<ButtonRelease-1>", lambda e:         self._card_drag_release(e))
+            for ch in w.winfo_children():
+                recurse(ch)
+        recurse(card._text_area)
+
+    def _bind_pipeline_drag(self, card: "PipelineCard"):
+        def recurse(w):
+            w.bind("<ButtonPress-1>",   lambda e, c=card: self._card_drag_press(e, c))
+            w.bind("<B1-Motion>",       lambda e, c=card: self._card_drag_motion(e, c))
+            w.bind("<ButtonRelease-1>", lambda e:         self._card_drag_release(e))
+            for ch in w.winfo_children():
+                recurse(ch)
+        recurse(card._content)
+
+    def _card_drag_press(self, event, card: "ScriptCard"):
+        self._drag_card = card
+        self._drag_start_x = event.x_root
+        self._drag_start_y = event.y_root
+
+    def _card_drag_motion(self, event, card: "ScriptCard"):
+        if self._drag_card is None:
+            return
+        if (abs(event.x_root - self._drag_start_x) < self._DRAG_THRESHOLD and
+                abs(event.y_root - self._drag_start_y) < self._DRAG_THRESHOLD):
+            return
+        if self._drag_ghost is None:
+            self._create_drag_ghost(card)
+        self._drag_ghost.geometry(f"+{event.x_root + 14}+{event.y_root + 8}")
+        self._update_drag_target(event)
+
+    def _create_drag_ghost(self, card: "ScriptCard"):
+        self._drag_ghost = tk.Toplevel(self)
+        self._drag_ghost.overrideredirect(True)
+        self._drag_ghost.attributes("-alpha", 0.85)
+        self._drag_ghost.configure(bg=C["accent"])
+        tk.Label(self._drag_ghost, text=f"  {card._name}  ",
+                 bg=C["accent"], fg="#ffffff",
+                 font=("Segoe UI", 10, "bold"), padx=6, pady=4).pack()
+
+    def _update_drag_target(self, event):
+        over_tab = self._find_tab_at(event.x_root, event.y_root)
+
+        # Restore previous tab highlight when cursor moves away from it
+        if self._drag_tab_highlight:
+            prev_btn, prev_bg = self._drag_tab_highlight
+            if over_tab is None or over_tab[1] is not prev_btn:
+                try:
+                    prev_btn.config(bg=prev_bg)
+                except tk.TclError:
+                    pass
+                self._drag_tab_highlight = None
+
+        if over_tab is not None:
+            btn = over_tab[1]
+            if self._drag_tab_highlight is None:
+                self._drag_tab_highlight = (btn, btn.cget("bg"))
+                btn.config(bg="#6b7bbd")
+            self._drag_target_group = over_tab[0]
+            self._drag_insert_before = None
+            if self._drag_indicator:
+                self._drag_indicator.place_forget()
+        else:
+            self._drag_target_group = None
+            self._update_insertion_indicator(event)
+
+    def _find_tab_at(self, x_root, y_root):
+        for entry in self._group_tab_btns:
+            _, btn, *_ = entry
+            try:
+                if (btn.winfo_rootx() <= x_root <= btn.winfo_rootx() + btn.winfo_width() and
+                        btn.winfo_rooty() <= y_root <= btn.winfo_rooty() + btn.winfo_height()):
+                    return entry
+            except tk.TclError:
+                pass
+        return None
+
+    def _update_insertion_indicator(self, event):
+        is_pipeline_drag = isinstance(self._drag_card, PipelineCard)
+        active_list = self._pipeline_cards if is_pipeline_drag else self._cards
+        if self._active_group is None or not active_list:
+            if self._drag_indicator:
+                self._drag_indicator.place_forget()
+            return
+
+        insert_y_screen = None
+        before_id = None
+        visible = [c for c in active_list if c is not self._drag_card]
+
+        id_attr = "pipeline_id" if is_pipeline_drag else "script_id"
+        for card in visible:
+            try:
+                mid = card.winfo_rooty() + card.winfo_height() // 2
+            except tk.TclError:
+                continue
+            if event.y_root <= mid:
+                before_id = getattr(card, id_attr)
+                insert_y_screen = card.winfo_rooty()
+                break
+
+        if insert_y_screen is None and visible:
+            last = visible[-1]
+            try:
+                insert_y_screen = last.winfo_rooty() + last.winfo_height()
+            except tk.TclError:
+                pass
+
+        self._drag_insert_before = before_id
+
+        if insert_y_screen is not None:
+            if self._drag_indicator is None:
+                self._drag_indicator = tk.Frame(self, bg=C["accent"], height=3)
+            rel_y = insert_y_screen - self.winfo_rooty()
+            cx    = self._canvas.winfo_rootx() - self.winfo_rootx()
+            self._drag_indicator.place(x=cx, y=rel_y,
+                                       width=self._canvas.winfo_width(), height=3)
+            self._drag_indicator.lift()
+        else:
+            if self._drag_indicator:
+                self._drag_indicator.place_forget()
+
+    def _card_drag_release(self, _event):
+        card = self._drag_card
+        if card is None:
+            return
+        if self._drag_ghost is not None:
+            is_pipeline = isinstance(card, PipelineCard)
+            if self._drag_target_group is not None:
+                if self._drag_target_group != card._group_name:
+                    if is_pipeline:
+                        self.db.move_pipeline_to_group(card.pipeline_id, self._drag_target_group)
+                    else:
+                        self.db.move_to_group(card.script_id, self._drag_target_group)
+                    self._refresh()
+            elif self._active_group is not None:
+                if is_pipeline:
+                    self.db.reorder_pipeline(card.pipeline_id, self._active_group,
+                                             self._drag_insert_before)
+                else:
+                    self.db.reorder_script(card.script_id, self._active_group,
+                                           self._drag_insert_before)
+                self._refresh_cards()
+        self._clear_drag_state()
+
+    def _clear_drag_state(self):
+        if self._drag_ghost:
+            try:
+                self._drag_ghost.destroy()
+            except tk.TclError:
+                pass
+            self._drag_ghost = None
+        if self._drag_indicator:
+            try:
+                self._drag_indicator.place_forget()
+                self._drag_indicator.destroy()
+            except tk.TclError:
+                pass
+            self._drag_indicator = None
+        if self._drag_tab_highlight:
+            btn, orig_bg = self._drag_tab_highlight
+            try:
+                btn.config(bg=orig_bg)
+            except tk.TclError:
+                pass
+            self._drag_tab_highlight = None
+        self._drag_card = None
+        self._drag_insert_before = None
+        self._drag_target_group = None
+
     def _show_options_menu(self):
         btn = self._options_btn
         self._options_menu.tk_popup(
             btn.winfo_rootx(),
             btn.winfo_rooty() + btn.winfo_height(),
         )
+
+    def _add_pipeline(self):
+        if not self._active_group:
+            messagebox.showinfo("Select a Group",
+                                "Please select a group first to create a pipeline.",
+                                parent=self)
+            return
+        name = simpledialog.askstring("New Pipeline", "Pipeline name:", parent=self)
+        if not (name and name.strip()):
+            return
+        pid = self.db.create_pipeline(name.strip(), self._active_group)
+        self._refresh_cards()
+        self._edit_pipeline(pid, name.strip())
+
+    def _edit_pipeline(self, pipeline_id: int, name: str):
+        PipelineEditorDialog(self, self.db, pipeline_id, name,
+                             self._active_group or "", self._refresh_cards)
+
+    def _run_pipeline(self, pipeline_id: int, pipeline_name: str):
+        if self.current_process and self.current_process.poll() is None:
+            messagebox.showinfo("Already Running",
+                                "A script is already running. Stop it first.",
+                                parent=self)
+            return
+        steps = self.db.list_pipeline_steps(pipeline_id)
+        if not steps:
+            messagebox.showinfo("Empty Pipeline",
+                                "This pipeline has no steps.\nClick ⚙ to add scripts.",
+                                parent=self)
+            return
+        self._pipeline_queue = list(steps)
+        self._pipeline_step_idx = 0
+        self._pipeline_total = len(steps)
+        self._show_output(f"Pipeline: {pipeline_name}")
+        if not self._out_expanded:
+            self._toggle_output()
+        self._append_output(
+            f"\n{'━' * 60}\n"
+            f"⚡  {pipeline_name}  ·  {self._pipeline_total} step"
+            f"{'s' if self._pipeline_total != 1 else ''}\n"
+            f"{'━' * 60}\n\n",
+            tag="info",
+        )
+        self._run_next_pipeline_step()
+
+    def _run_next_pipeline_step(self):
+        if not self._pipeline_queue:
+            return
+        step_id, sid, name, path, params, interp = self._pipeline_queue.pop(0)
+        self._pipeline_step_idx += 1
+        n, total = self._pipeline_step_idx, self._pipeline_total
+        self._append_output(
+            f"{'─' * 40}\nStep {n}/{total}:  {name}\n{'─' * 40}\n",
+            tag="info",
+        )
+        self.status_var.set(f"Pipeline step {n}/{total}: {name}")
+        if not Path(path).exists():
+            self.output_queue.put(("stderr", f"[ERROR] File not found: {path}\n"))
+            self.output_queue.put(("done", sid, "error", ""))
+            return
+        final_interp = interp if interp.strip() else detect_interpreter(path)
+        try:
+            cmd = build_command(path, params, final_interp)
+        except ValueError as e:
+            self.output_queue.put(("stderr", f"[ERROR] Parameter error: {e}\n"))
+            self.output_queue.put(("done", sid, "error", ""))
+            return
+        self.db.mark_run(sid)
+        threading.Thread(
+            target=self._run_subprocess, args=(cmd, name, sid), daemon=True,
+        ).start()
 
     def _toggle_select_mode(self):
         self._select_mode = not self._select_mode
@@ -1356,6 +2152,8 @@ class RYOSApp(TkinterDnD.Tk):
             self.status_var.set("Log copied to clipboard.")
 
     def _stop_running(self):
+        self._pipeline_queue.clear()
+        self._pipeline_total = 0
         if self.current_process and self.current_process.poll() is None:
             self.current_process.terminate()
             self._append_output("\n[STOPPED by user]\n", tag="stderr")
@@ -1371,14 +2169,12 @@ class RYOSApp(TkinterDnD.Tk):
                     _, sid, status, text = item
                     self._append_output(text, tag="info")
                     self.db.mark_run_status(sid, status)
-                    self.status_var.set("Done.")
-                    self._refresh()
+                    self._handle_step_done(status)
                 elif item[0] == "done_tag":
                     _, sid, status, tag, text = item
                     self._append_output(text, tag=tag)
                     self.db.mark_run_status(sid, status)
-                    self.status_var.set("Done.")
-                    self._refresh()
+                    self._handle_step_done(status)
                 elif item[0] == "stderr":
                     self._append_output(item[1], tag="stderr")
                 else:
@@ -1386,6 +2182,30 @@ class RYOSApp(TkinterDnD.Tk):
         except queue.Empty:
             pass
         self.after(80, self._drain_output_queue)
+
+    def _handle_step_done(self, status: str):
+        if self._pipeline_total > 0:
+            if status == "ok" and self._pipeline_queue:
+                self._run_next_pipeline_step()
+            elif status == "ok":
+                self._append_output(
+                    f"\n{'━' * 60}\n"
+                    f"✓  Pipeline complete  ·  {datetime.now().strftime('%H:%M:%S')}\n"
+                    f"{'━' * 60}\n",
+                    tag="ok",
+                )
+                self.status_var.set("Pipeline complete.")
+                self._pipeline_total = 0
+                self._refresh()
+            else:
+                self._pipeline_queue.clear()
+                self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr")
+                self.status_var.set("Pipeline stopped (step failed).")
+                self._pipeline_total = 0
+                self._refresh()
+        else:
+            self.status_var.set("Done.")
+            self._refresh()
 
     def _on_close(self):
         if self.current_process and self.current_process.poll() is None:
