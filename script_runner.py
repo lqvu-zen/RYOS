@@ -262,6 +262,7 @@ class ScriptDialog(tk.Toplevel):
         self.title("Edit Script" if script_id else "Add Script")
         self.resizable(False, False)
         self.grab_set()
+        self.configure(bg=C["card_bg"])
 
         self._build()
 
@@ -286,6 +287,17 @@ class ScriptDialog(tk.Toplevel):
 
     def _build(self):
         pad = {"padx": 8, "pady": 4}
+
+        # In-body title strip with border below — matches the design dialog__title
+        title_strip = tk.Frame(self, bg=C["card_bg"])
+        title_strip.pack(fill="x")
+        tk.Label(title_strip,
+                 text="Edit Script" if self.script_id else "Add Script",
+                 bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"),
+                 anchor="w", padx=16, pady=12).pack(fill="x")
+        tk.Frame(title_strip, bg=C["border"], height=1).pack(fill="x")
+
         frame = ttk.Frame(self, padding=16)
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
@@ -314,9 +326,9 @@ class ScriptDialog(tk.Toplevel):
         sep.grid(row=5, column=0, columnspan=3, sticky="ew", pady=8)
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=6, column=0, columnspan=3, sticky="e")
-        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
+        btn_row.grid(row=6, column=0, columnspan=3, sticky="ew")
         ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
 
         if self.script_id:
             ttk.Button(btn_row, text="Delete", command=self._delete).pack(side="left", padx=4)
@@ -460,6 +472,9 @@ class ScriptCard(tk.Frame):
             if last_run_status == "error":
                 tk.Label(meta_row, text="✕ Failed", bg="#c0392b", fg="#ffffff",
                          font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
+            elif last_run_status == "ok":
+                tk.Label(meta_row, text="✓ OK", bg="#2ecc71", fg="#ffffff",
+                         font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
         # Buttons
         btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
@@ -476,7 +491,8 @@ class ScriptCard(tk.Frame):
             widget.bind("<Enter>", self._on_enter)
             widget.bind("<Leave>", self._on_leave)
 
-    def show_checkbox(self):
+    def show_checkbox(self, command=None):
+        self._chk.config(command=command)
         self._chk.pack(side="left", padx=(6, 0), before=self._order_area)
 
     def hide_checkbox(self):
@@ -567,7 +583,11 @@ class RYOSApp(tk.Tk):
         # Header
         header = tk.Frame(self, bg=C["header_bg"], pady=14, padx=18)
         header.pack(fill="x")
-        tk.Label(header, text="⚡  RYOS", bg=C["header_bg"], fg="#ffffff",
+        wm = tk.Frame(header, bg=C["header_bg"])
+        wm.pack(side="left")
+        tk.Label(wm, text="⚡", bg=C["header_bg"], fg="#FFD23F",
+                 font=("Segoe UI", 14, "bold")).pack(side="left")
+        tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg="#ffffff",
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         add_btn = _flat_button(header, "+ Add Script", C["accent"], C["accent2"],
                                self._add_script, width=12)
@@ -590,9 +610,18 @@ class RYOSApp(tk.Tk):
         options_btn.pack(side="right", padx=8)
         self._options_btn = options_btn
 
-        self._del_selected_btn = _flat_button(header, "🗑 Delete Selected", "#5a2d2d", "#7a3d3d",
-                                              self._delete_selected, width=15)
         self._select_btn = None  # managed via menu label update
+
+        # Amber select-mode bar — shown between header and list when select mode is on
+        self._select_bar = tk.Frame(self, bg="#fff7e6",
+                                    highlightbackground="#f3d99a", highlightthickness=1)
+        self._select_bar_var = tk.StringVar(value="Tick the checkboxes next to scripts you want to delete.")
+        tk.Label(self._select_bar, textvariable=self._select_bar_var,
+                 bg="#fff7e6", fg="#7a4a00", font=("Segoe UI", 9),
+                 padx=14, pady=5, anchor="w").pack(side="left", fill="x", expand=True)
+        self._del_selected_btn = _flat_button(self._select_bar, "🗑 Delete Selected",
+                                              "#5a2d2d", "#7a3d3d", self._delete_selected, width=15)
+        self._del_selected_btn.pack(side="right", padx=10, pady=4)
 
         # Status bar first — must be packed before paned so it sits at bottom
         self.status_var = tk.StringVar(value="Ready.")
@@ -685,7 +714,7 @@ class RYOSApp(tk.Tk):
         self._cards: list[ScriptCard] = []
         if self._select_mode:
             self._select_mode = False
-            self._del_selected_btn.pack_forget()
+            self._select_bar.pack_forget()
             self._options_menu.entryconfig(0, label="☑  Select scripts")
         for w in self.cards_frame.winfo_children():
             w.destroy()
@@ -738,14 +767,22 @@ class RYOSApp(tk.Tk):
         self._select_mode = not self._select_mode
         if self._select_mode:
             self._options_menu.entryconfig(0, label="✕  Cancel select")
-            self._del_selected_btn.pack(side="right", before=self._options_btn)
+            self._select_bar_var.set("Tick the checkboxes next to scripts you want to delete.")
+            self._select_bar.pack(fill="x", before=self._paned)
             for card in self._cards:
-                card.show_checkbox()
+                card.show_checkbox(self._update_select_count)
         else:
             self._options_menu.entryconfig(0, label="☑  Select scripts")
-            self._del_selected_btn.pack_forget()
+            self._select_bar.pack_forget()
             for card in self._cards:
                 card.hide_checkbox()
+
+    def _update_select_count(self):
+        n = sum(1 for c in self._cards if c.selected.get())
+        if n:
+            self._select_bar_var.set(f"{n} selected")
+        else:
+            self._select_bar_var.set("Tick the checkboxes next to scripts you want to delete.")
 
     def _delete_selected(self):
         ids = [c.script_id for c in self._cards if c.selected.get()]
