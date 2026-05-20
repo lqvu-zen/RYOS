@@ -874,7 +874,7 @@ class PipelineCard(tk.Frame):
     _PIPE_ACCENT2 = "#7060d0"
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
-                 group_name: str, on_run, on_edit, on_refresh):
+                 group_name: str, on_run, on_edit, on_refresh, *, is_running: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -908,6 +908,9 @@ class PipelineCard(tk.Frame):
         badge_row.pack(fill="x")
         tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg="#ffffff",
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+        if is_running:
+            tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                     font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(4, 0))
 
         # Name (scrolling if long)
         ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
@@ -976,7 +979,8 @@ class PipelineCard(tk.Frame):
 class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
-    def __init__(self, parent, record, db: ScriptDB, runner, on_refresh, on_move_up, on_move_down, on_move_top):
+    def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
+                 on_move_up, on_move_down, on_move_top, *, is_running: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
@@ -1009,8 +1013,13 @@ class ScriptCard(tk.Frame):
         text_area.pack(side="left", fill="both", expand=True)
 
         tag_text, tag_bg = _script_tag(path)
-        tk.Label(text_area, text=tag_text, bg=tag_bg, fg="#ffffff",
-                 font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(anchor="w", pady=(0, 2))
+        badge_row = tk.Frame(text_area, bg=C["card_bg"])
+        badge_row.pack(anchor="w", fill="x", pady=(0, 2))
+        tk.Label(badge_row, text=tag_text, bg=tag_bg, fg="#ffffff",
+                 font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+        if is_running:
+            tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                     font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(4, 0))
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
         tk.Label(text_area, text=path, bg=C["card_bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), anchor="w").pack(fill="x")
@@ -1136,6 +1145,8 @@ class RYOSApp(TkinterDnD.Tk):
         self._pipeline_queue: list = []
         self._pipeline_step_idx = 0
         self._pipeline_total = 0
+        self._running_script_id: int | None = None
+        self._running_pipeline_id: int | None = None
         # drag-and-drop card state
         self._drag_card: ScriptCard | None = None
         self._drag_start_x = self._drag_start_y = 0
@@ -1613,6 +1624,7 @@ class RYOSApp(TkinterDnD.Tk):
                         on_run=self._run_pipeline,
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
+                        is_running=(p_id == self._running_pipeline_id),
                     )
                     pc.pack(fill="x", pady=5, ipady=2)
                     self._bind_pipeline_drag(pc)
@@ -1637,6 +1649,7 @@ class RYOSApp(TkinterDnD.Tk):
                         on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top  = make_top(sid)           if up_id   else lambda: None,
+                        is_running   = (sid == self._running_script_id),
                     )
                     card.pack(fill="x", pady=5, ipady=2)
                     self._bind_card_drag(card)
@@ -1909,6 +1922,9 @@ class RYOSApp(TkinterDnD.Tk):
         self._pipeline_queue = list(steps)
         self._pipeline_step_idx = 0
         self._pipeline_total = len(steps)
+        self._running_pipeline_id = pipeline_id
+        self._running_script_id = None
+        self._refresh_cards()
         self._show_output(f"Pipeline: {pipeline_name}")
         if not self._out_expanded:
             self._toggle_output()
@@ -1944,6 +1960,8 @@ class RYOSApp(TkinterDnD.Tk):
             self.output_queue.put(("done", sid, "error", ""))
             return
         self.db.mark_run(sid)
+        self._running_script_id = sid
+        self._refresh_cards()
         threading.Thread(
             target=self._run_subprocess, args=(cmd, name, sid), daemon=True,
         ).start()
@@ -2056,6 +2074,8 @@ class RYOSApp(TkinterDnD.Tk):
         )
         self.status_var.set(f"Running: {name}")
         self.db.mark_run(script_id)
+        self._running_script_id = script_id
+        self._running_pipeline_id = None
         self._refresh()
 
         thread = threading.Thread(
@@ -2154,12 +2174,15 @@ class RYOSApp(TkinterDnD.Tk):
     def _stop_running(self):
         self._pipeline_queue.clear()
         self._pipeline_total = 0
+        self._running_pipeline_id = None
+        self._running_script_id = None
         if self.current_process and self.current_process.poll() is None:
             self.current_process.terminate()
             self._append_output("\n[STOPPED by user]\n", tag="stderr")
             self.status_var.set("Stopped.")
         else:
             self.status_var.set("No script is currently running.")
+        self._refresh_cards()
 
     def _drain_output_queue(self):
         try:
@@ -2196,14 +2219,19 @@ class RYOSApp(TkinterDnD.Tk):
                 )
                 self.status_var.set("Pipeline complete.")
                 self._pipeline_total = 0
+                self._running_pipeline_id = None
+                self._running_script_id = None
                 self._refresh()
             else:
                 self._pipeline_queue.clear()
                 self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr")
                 self.status_var.set("Pipeline stopped (step failed).")
                 self._pipeline_total = 0
+                self._running_pipeline_id = None
+                self._running_script_id = None
                 self._refresh()
         else:
+            self._running_script_id = None
             self.status_var.set("Done.")
             self._refresh()
 
