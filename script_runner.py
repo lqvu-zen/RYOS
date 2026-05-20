@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # /// script
 # requires-python = ">=3.10"
-# dependencies = []
+# dependencies = ["tkinterdnd2"]
 # ///
 """
 RYOS (Run Your Own Scripts) - Tkinter app for saving and running scripts
@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import threading
 import queue
+from tkinterdnd2 import TkinterDnD, DND_FILES
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -93,6 +94,10 @@ class ScriptDB:
             for (g,) in named:
                 if g not in existing_groups:
                     conn.execute("INSERT OR IGNORE INTO groups (name) VALUES (?)", (g,))
+            gcols = [r[1] for r in conn.execute("PRAGMA table_info(groups)")]
+            if "sort_order" not in gcols:
+                conn.execute("ALTER TABLE groups ADD COLUMN sort_order INTEGER DEFAULT 0")
+                conn.execute("UPDATE groups SET sort_order = id")
             conn.commit()
 
     def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "") -> int:
@@ -199,12 +204,20 @@ class ScriptDB:
 
     def list_groups(self) -> list[str]:
         with self._connect() as conn:
-            cur = conn.execute("SELECT name FROM groups ORDER BY name")
+            cur = conn.execute("SELECT name FROM groups ORDER BY sort_order ASC, id ASC")
             return [r[0] for r in cur.fetchall()]
 
     def create_group(self, name: str):
         with self._connect() as conn:
-            conn.execute("INSERT OR IGNORE INTO groups (name) VALUES (?)", (name,))
+            max_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM groups").fetchone()[0]
+            conn.execute("INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
+                         (name, max_order + 1))
+            conn.commit()
+
+    def reorder_groups(self, names: list[str]):
+        with self._connect() as conn:
+            for i, name in enumerate(names):
+                conn.execute("UPDATE groups SET sort_order=? WHERE name=?", (i, name))
             conn.commit()
 
     def rename_group(self, old: str, new: str):
@@ -619,7 +632,7 @@ class ScriptCard(tk.Frame):
 # ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
-class RYOSApp(tk.Tk):
+class RYOSApp(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         self.title("RYOS — Run Your Own Scripts")
@@ -636,12 +649,48 @@ class RYOSApp(tk.Tk):
         self.output_queue: queue.Queue = queue.Queue()
         self._cards: list[ScriptCard] = []
         self._select_mode = False
-        self._active_group: str | None = None
+        groups = self.db.list_groups()
+        self._active_group: str | None = groups[0] if groups else None
 
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
+        self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ---------- file drag-and-drop ----------
+    def _setup_file_drop(self):
+        self.drop_target_register(DND_FILES)
+        self.dnd_bind("<<Drop>>", self._on_drop_event)
+
+    def _on_drop_event(self, event):
+        paths = self.tk.splitlist(event.data)
+        self._on_files_dropped(list(paths))
+
+    def _on_files_dropped(self, paths: list[str]):
+        groups = self.db.list_groups()
+        if not groups:
+            name = simpledialog.askstring(
+                "Create a Group First",
+                "You have no groups yet.\nEnter a group name to continue:",
+                parent=self,
+            )
+            if not (name and name.strip()):
+                return
+            self.db.create_group(name.strip())
+            self._active_group = name.strip()
+            self._refresh_tabs()
+            groups = self.db.list_groups()
+
+        group = self._active_group or ""
+        added = 0
+        for path in paths:
+            p = Path(path)
+            if p.is_file():
+                self.db.add(p.stem, str(p), "", detect_interpreter(str(p)), group)
+                added += 1
+        if added:
+            self._refresh_cards()
 
     # ---------- UI ----------
     def _build_ui(self):
@@ -658,6 +707,9 @@ class RYOSApp(tk.Tk):
                                self._add_script, width=12)
         add_btn.config(bg=C["accent"])
         add_btn.pack(side="right")
+        add_group_btn = _flat_button(header, "+ Add Group", "#3a3a3a", "#555",
+                                     self._create_group, width=12)
+        add_group_btn.pack(side="right", padx=(0, 6))
 
         # Options dropdown
         self._options_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
@@ -804,45 +856,92 @@ class RYOSApp(tk.Tk):
     def _refresh_tabs(self):
         for w in self._tab_bar.winfo_children():
             w.destroy()
-        self._add_tab_btn(None, "All", self._active_group is None)
+        self._group_tab_btns: list[tuple[str, tk.Button]] = []
+        self._drag_state: dict | None = None
+
         for g in self.db.list_groups():
-            self._add_tab_btn(g, g, self._active_group == g)
+            btn, wrapper, inner, indicator = self._add_tab_btn(g, g, self._active_group == g)
+            idx = len(self._group_tab_btns)
+            self._group_tab_btns.append((g, btn, wrapper, inner, indicator))
+            btn.bind("<ButtonPress-1>",   lambda e, i=idx: self._drag_start(e, i))
+            btn.bind("<B1-Motion>",       self._drag_motion)
+            btn.bind("<ButtonRelease-1>", self._drag_end)
+
         plus = tk.Button(
-            self._tab_bar, text="+ Group",
-            bg=C["bg"], fg=C["path_fg"],
+            self._tab_bar, text="+",
+            bg=C["bg"], fg="#2d3748",
             activebackground=C["card_hover"], activeforeground=C["accent"],
-            relief="flat", bd=0, padx=10, pady=5,
-            font=("Segoe UI", 9), cursor="hand2",
+            relief="flat", bd=0, padx=10, pady=7,
+            font=("Segoe UI", 10), cursor="hand2",
             command=self._create_group,
         )
         plus.bind("<Enter>", lambda e: plus.config(bg=C["card_hover"]))
         plus.bind("<Leave>", lambda e: plus.config(bg=C["bg"]))
         plus.pack(side="left", padx=(8, 2))
 
-    def _add_tab_btn(self, group, label, is_active):
+        self._all_tab_refs = self._add_tab_btn(None, "All", self._active_group is None, side="right")
+
+    def _add_tab_btn(self, group, label, is_active, side="left"):
         if is_active:
-            bg, fg, fw = C["accent"], "#ffffff", "bold"
-            hover_bg = C["accent2"]
+            btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
+            bar_bg   = C["accent"]
+            hover_bg = "#eef2ff"
+            border   = C["card_bg"]
         else:
-            bg, fg, fw = C["bg"], C["path_fg"], "normal"
-            hover_bg = C["card_hover"]
+            btn_bg, fg, fw = "#e4e9f0", "#2d3748", "normal"
+            bar_bg   = "#e4e9f0"    # no underline on inactive
+            hover_bg = "#d8dfe8"
+            border   = "#b8c4d0"
+
+        wrapper = tk.Frame(self._tab_bar, bg=border,
+                           highlightthickness=0, padx=1, pady=1)
+        inner = tk.Frame(wrapper, bg=btn_bg)
+        inner.pack(fill="both", expand=True)
+
         btn = tk.Button(
-            self._tab_bar, text=label,
-            bg=bg, fg=fg,
+            inner, text=label,
+            bg=btn_bg, fg=fg,
             activebackground=hover_bg, activeforeground=fg,
-            relief="flat", bd=0, padx=12, pady=5,
-            font=("Segoe UI", 9, fw), cursor="hand2",
+            relief="flat", bd=0, padx=14, pady=6,
+            font=("Segoe UI", 10, fw), cursor="hand2",
             command=lambda g=group: self._switch_group(g),
         )
+        btn.pack(fill="x")
+        indicator = tk.Frame(inner, bg=bar_bg, height=3)
+        indicator.pack(fill="x")
+
         btn.bind("<Enter>", lambda e, b=btn, h=hover_bg: b.config(bg=h))
-        btn.bind("<Leave>", lambda e, b=btn, ob=bg: b.config(bg=ob))
+        btn.bind("<Leave>", lambda e, b=btn, ob=btn_bg: b.config(bg=ob))
         if group is not None:
             btn.bind("<Button-3>", lambda e, g=group: self._tab_context_menu(e, g))
-        btn.pack(side="left", padx=2)
+        wrapper.pack(side=side, padx=3, pady=(3, 0))
+        return btn, wrapper, inner, indicator
+
+    def _apply_tab_style(self, is_active, btn, wrapper, inner, indicator):
+        if is_active:
+            btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
+            bar_bg, hover_bg, border = C["accent"], "#eef2ff", C["card_bg"]
+        else:
+            btn_bg, fg, fw = "#e4e9f0", "#2d3748", "normal"
+            bar_bg, hover_bg, border = "#e4e9f0", "#d8dfe8", "#b8c4d0"
+        wrapper.config(bg=border)
+        inner.config(bg=btn_bg)
+        btn.config(bg=btn_bg, fg=fg, font=("Segoe UI", 10, fw),
+                   activebackground=hover_bg, activeforeground=fg)
+        indicator.config(bg=bar_bg)
+        btn.bind("<Enter>", lambda e, b=btn, h=hover_bg: b.config(bg=h))
+        btn.bind("<Leave>", lambda e, b=btn, ob=btn_bg: b.config(bg=ob))
+
+    def _update_tab_styles(self):
+        for name, btn, wrapper, inner, indicator in self._group_tab_btns:
+            self._apply_tab_style(self._active_group == name, btn, wrapper, inner, indicator)
+        if hasattr(self, "_all_tab_refs"):
+            self._apply_tab_style(self._active_group is None, *self._all_tab_refs)
 
     def _switch_group(self, group):
         self._active_group = group
-        self._refresh()
+        self._update_tab_styles()
+        self._refresh_cards()
 
     def _create_group(self):
         name = simpledialog.askstring("New Group", "Group name:", parent=self)
@@ -851,6 +950,57 @@ class RYOSApp(tk.Tk):
             self.db.create_group(name)
             self._active_group = name
             self._refresh()
+
+    def _drag_start(self, event, idx: int):
+        self._drag_state = {
+            "src_idx": idx,
+            "start_x": event.x_root,
+            "active": False,
+            "hover_idx": None,
+        }
+
+    def _drag_motion(self, event):
+        if self._drag_state is None:
+            return
+        if abs(event.x_root - self._drag_state["start_x"]) > 5:
+            self._drag_state["active"] = True
+        if not self._drag_state["active"]:
+            return
+
+        hover_idx = None
+        for i, (_, btn, *_rest) in enumerate(self._group_tab_btns):
+            bx = btn.winfo_rootx()
+            if bx <= event.x_root <= bx + btn.winfo_width():
+                hover_idx = i
+                break
+
+        prev = self._drag_state["hover_idx"]
+        if prev != hover_idx:
+            if prev is not None:
+                pname, pbtn = self._group_tab_btns[prev][0], self._group_tab_btns[prev][1]
+                pbtn.config(bg=C["card_bg"] if self._active_group == pname else "#e4e9f0")
+            if hover_idx is not None and hover_idx != self._drag_state["src_idx"]:
+                self._group_tab_btns[hover_idx][1].config(bg="#4a4a6a")
+            self._drag_state["hover_idx"] = hover_idx
+
+    def _drag_end(self, event):
+        if self._drag_state is None:
+            return
+        state = self._drag_state
+        self._drag_state = None
+
+        if not state["active"]:
+            return
+
+        hover_idx = state["hover_idx"]
+        src_idx = state["src_idx"]
+        if hover_idx is not None and hover_idx != src_idx:
+            groups = [entry[0] for entry in self._group_tab_btns]
+            groups.insert(hover_idx, groups.pop(src_idx))
+            self.db.reorder_groups(groups)
+            self._refresh_tabs()
+
+        return "break"
 
     def _rename_group(self, old: str):
         new = simpledialog.askstring("Rename Group", f"New name for '{old}':",
@@ -869,7 +1019,8 @@ class RYOSApp(tk.Tk):
         ):
             self.db.delete_group(name)
             if self._active_group == name:
-                self._active_group = None
+                remaining = self.db.list_groups()
+                self._active_group = remaining[0] if remaining else None
             self._refresh()
 
     def _tab_context_menu(self, event, group: str):
@@ -970,8 +1121,21 @@ class RYOSApp(tk.Tk):
                 self._cards.append(card)
 
     def _add_script(self):
+        groups = self.db.list_groups()
+        if not groups:
+            name = simpledialog.askstring(
+                "Create a Group First",
+                "You have no groups yet.\nEnter a group name to continue:",
+                parent=self,
+            )
+            if not (name and name.strip()):
+                return
+            self.db.create_group(name.strip())
+            self._active_group = name.strip()
+            self._refresh_tabs()
+            groups = self.db.list_groups()
         ScriptDialog(self, self.db, on_save=self._refresh,
-                     existing_groups=self.db.list_groups(),
+                     existing_groups=groups,
                      default_group=self._active_group or "")
 
     def _show_options_menu(self):
