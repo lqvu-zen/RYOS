@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import threading
 import queue
+import ctypes
 from tkinterdnd2 import TkinterDnD, DND_FILES
 from contextlib import contextmanager
 from datetime import datetime
@@ -635,9 +636,15 @@ class ScriptCard(tk.Frame):
 class RYOSApp(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
+        if sys.platform == "win32":
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RYOS.RunYourOwnScripts")
+
         self.title("RYOS — Run Your Own Scripts")
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
+        _icon = _BASE / "icon.ico"
+        if _icon.exists():
+            self.iconbitmap(str(_icon))
         self.update_idletasks()
         w, h = 540, 640
         sw = self.winfo_screenwidth()
