@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +67,14 @@ class ScriptDB:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS groups (
+                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE
+                )
+                """
+            )
             # migrate existing databases that lack newer columns
             cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
             if "order_index" not in cols:
@@ -74,23 +82,36 @@ class ScriptDB:
                 conn.execute("UPDATE scripts SET order_index = id")
             if "last_run_status" not in cols:
                 conn.execute("ALTER TABLE scripts ADD COLUMN last_run_status TEXT")
+            if "group_name" not in cols:
+                conn.execute("ALTER TABLE scripts ADD COLUMN group_name TEXT DEFAULT ''")
+            # populate groups table from existing script group_name values
+            existing_groups = {r[0] for r in conn.execute("SELECT name FROM groups")}
+            named = conn.execute(
+                "SELECT DISTINCT group_name FROM scripts "
+                "WHERE group_name != '' AND group_name IS NOT NULL"
+            ).fetchall()
+            for (g,) in named:
+                if g not in existing_groups:
+                    conn.execute("INSERT OR IGNORE INTO groups (name) VALUES (?)", (g,))
             conn.commit()
 
-    def add(self, name: str, path: str, params: str, interpreter: str) -> int:
+    def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "") -> int:
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(order_index), 0) FROM scripts").fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds"), max_order + 1),
+                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds"),
+                 max_order + 1, group_name),
             )
             conn.commit()
             return cur.lastrowid
 
-    def update(self, script_id: int, name: str, path: str, params: str, interpreter: str):
+    def update(self, script_id: int, name: str, path: str, params: str, interpreter: str, group_name: str = ""):
         with self._connect() as conn:
             conn.execute(
-                "UPDATE scripts SET name=?, path=?, params=?, interpreter=? WHERE id=?",
-                (name, path, params, interpreter, script_id),
+                "UPDATE scripts SET name=?, path=?, params=?, interpreter=?, group_name=? WHERE id=?",
+                (name, path, params, interpreter, group_name, script_id),
             )
             conn.commit()
 
@@ -118,6 +139,7 @@ class ScriptDB:
                 {
                     "name": s[1], "path": s[2], "params": s[3],
                     "interpreter": s[4], "order_index": i,
+                    "group_name": s[8] or "",
                 }
                 for i, s in enumerate(scripts)
             ],
@@ -139,10 +161,11 @@ class ScriptDB:
                     skipped += 1
                     continue
                 conn.execute(
-                    "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (s["name"], s["path"], s.get("params", ""),
-                     s.get("interpreter", ""), now, s.get("order_index", 0)),
+                     s.get("interpreter", ""), now, s.get("order_index", 0),
+                     s.get("group_name", "")),
                 )
                 added += 1
             conn.commit()
@@ -167,10 +190,34 @@ class ScriptDB:
     def list_all(self):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status "
-                "FROM scripts ORDER BY order_index ASC, id ASC"
+                "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status, group_name "
+                "FROM scripts "
+                "ORDER BY CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
+                "group_name ASC, order_index ASC, id ASC"
             )
             return cur.fetchall()
+
+    def list_groups(self) -> list[str]:
+        with self._connect() as conn:
+            cur = conn.execute("SELECT name FROM groups ORDER BY name")
+            return [r[0] for r in cur.fetchall()]
+
+    def create_group(self, name: str):
+        with self._connect() as conn:
+            conn.execute("INSERT OR IGNORE INTO groups (name) VALUES (?)", (name,))
+            conn.commit()
+
+    def rename_group(self, old: str, new: str):
+        with self._connect() as conn:
+            conn.execute("UPDATE groups SET name=? WHERE name=?", (new, old))
+            conn.execute("UPDATE scripts SET group_name=? WHERE group_name=?", (new, old))
+            conn.commit()
+
+    def delete_group(self, name: str):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM groups WHERE name=?", (name,))
+            conn.execute("UPDATE scripts SET group_name='' WHERE group_name=?", (name,))
+            conn.commit()
 
     def swap_order(self, id_a: int, id_b: int):
         with self._connect() as conn:
@@ -182,14 +229,18 @@ class ScriptDB:
 
     def move_to_top(self, script_id: int):
         with self._connect() as conn:
-            min_order = conn.execute("SELECT MIN(order_index) FROM scripts").fetchone()[0]
+            row = conn.execute("SELECT group_name FROM scripts WHERE id=?", (script_id,)).fetchone()
+            grp = (row[0] or "") if row else ""
+            min_order = conn.execute(
+                "SELECT COALESCE(MIN(order_index), 0) FROM scripts WHERE COALESCE(group_name,'')=?", (grp,)
+            ).fetchone()[0]
             conn.execute("UPDATE scripts SET order_index=? WHERE id=?", (min_order - 1, script_id))
             conn.commit()
 
     def get(self, script_id: int):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT id, name, path, params, interpreter FROM scripts WHERE id=?",
+                "SELECT id, name, path, params, interpreter, group_name FROM scripts WHERE id=?",
                 (script_id,),
             )
             return cur.fetchone()
@@ -252,12 +303,16 @@ def build_command(path: str, params: str, interpreter: str):
 class ScriptDialog(tk.Toplevel):
     """Modal dialog for adding or editing a script entry."""
 
-    def __init__(self, parent, db: ScriptDB, script_id: int | None = None, on_save=None):
+    def __init__(self, parent, db: ScriptDB, script_id: int | None = None,
+                 on_save=None, existing_groups: list[str] | None = None,
+                 default_group: str = ""):
         super().__init__(parent)
         self.db = db
         self.script_id = script_id
         self.on_save = on_save
         self.result = None
+        self.existing_groups = existing_groups or []
+        self.default_group = default_group
 
         self.title("Edit Script" if script_id else "Add Script")
         self.resizable(False, False)
@@ -269,11 +324,14 @@ class ScriptDialog(tk.Toplevel):
         if script_id:
             rec = db.get(script_id)
             if rec:
-                _, name, path, params, interp = rec
+                _, name, path, params, interp, grp = rec
                 self.e_name.insert(0, name)
                 self.e_path.insert(0, path)
                 self.e_params.insert(0, params)
                 self.e_interp.insert(0, interp)
+                self.e_group.set(grp or "")
+        else:
+            self.e_group.set(self.default_group)
 
         self.transient(parent)
         self.update_idletasks()
@@ -322,11 +380,15 @@ class ScriptDialog(tk.Toplevel):
             row=4, column=1, columnspan=2, sticky="w", padx=8
         )
 
+        ttk.Label(frame, text="Group:").grid(row=5, column=0, sticky="w", **pad)
+        self.e_group = ttk.Combobox(frame, values=self.existing_groups, width=38)
+        self.e_group.grid(row=5, column=1, columnspan=2, sticky="ew", **pad)
+
         sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=5, column=0, columnspan=3, sticky="ew", pady=8)
+        sep.grid(row=6, column=0, columnspan=3, sticky="ew", pady=8)
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=6, column=0, columnspan=3, sticky="ew")
+        btn_row.grid(row=7, column=0, columnspan=3, sticky="ew")
         ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
         ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
 
@@ -350,6 +412,7 @@ class ScriptDialog(tk.Toplevel):
         path = self.e_path.get().strip()
         params = self.e_params.get().strip()
         interp = self.e_interp.get().strip()
+        group_name = self.e_group.get().strip()
 
         if not name or not path:
             messagebox.showwarning("Missing Info", "Name and path are required.", parent=self)
@@ -359,9 +422,9 @@ class ScriptDialog(tk.Toplevel):
                 return
 
         if self.script_id:
-            self.db.update(self.script_id, name, path, params, interp)
+            self.db.update(self.script_id, name, path, params, interp, group_name)
         else:
-            self.script_id = self.db.add(name, path, params, interp)
+            self.script_id = self.db.add(name, path, params, interp, group_name)
 
         if self.on_save:
             self.on_save()
@@ -422,7 +485,7 @@ class ScriptCard(tk.Frame):
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh, on_move_up, on_move_down, on_move_top):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
-        sid, name, path, params, interp, _created, last_run, last_run_status = record
+        sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
         self.script_id = sid
         self._name = name
         self.db = db
@@ -531,13 +594,14 @@ class ScriptCard(tk.Frame):
 
     def _modify(self):
         ScriptDialog(self.winfo_toplevel(), self.db,
-                     script_id=self.script_id, on_save=self.on_refresh)
+                     script_id=self.script_id, on_save=self.on_refresh,
+                     existing_groups=self.db.list_groups())
 
     def _clone(self):
         rec = self.db.get(self.script_id)
         if rec:
-            _, name, path, params, interp = rec
-            self.db.add(f"{name} (copy)", path, params, interp)
+            _, name, path, params, interp, grp = rec
+            self.db.add(f"{name} (copy)", path, params, interp, grp)
             self.on_refresh()
 
     def _delete_card(self):
@@ -548,7 +612,7 @@ class ScriptCard(tk.Frame):
     def _run(self):
         rec = self.db.get(self.script_id)
         if rec:
-            _, name, path, params, interp = rec
+            _, name, path, params, interp, _grp = rec
             self.runner(self.script_id, name, path, params, interp)
 
 
@@ -572,6 +636,7 @@ class RYOSApp(tk.Tk):
         self.output_queue: queue.Queue = queue.Queue()
         self._cards: list[ScriptCard] = []
         self._select_mode = False
+        self._active_group: str | None = None
 
         self._build_ui()
         self._refresh()
@@ -622,6 +687,17 @@ class RYOSApp(tk.Tk):
         self._del_selected_btn = _flat_button(self._select_bar, "🗑 Delete Selected",
                                               "#5a2d2d", "#7a3d3d", self._delete_selected, width=15)
         self._del_selected_btn.pack(side="right", padx=10, pady=4)
+        self._sel_all_btn = tk.Button(
+            self._select_bar, text="Select All",
+            bg="#fff7e6", fg="#7a4a00",
+            activebackground="#f3d99a", activeforeground="#7a4a00",
+            relief="flat", bd=0, padx=10, pady=5,
+            font=("Segoe UI", 9, "bold"), cursor="hand2",
+            command=self._toggle_select_all,
+        )
+        self._sel_all_btn.bind("<Enter>", lambda e: self._sel_all_btn.config(bg="#f3d99a"))
+        self._sel_all_btn.bind("<Leave>", lambda e: self._sel_all_btn.config(bg="#fff7e6"))
+        self._sel_all_btn.pack(side="right", padx=4, pady=4)
 
         # Status bar first — must be packed before paned so it sits at bottom
         self.status_var = tk.StringVar(value="Ready.")
@@ -637,8 +713,14 @@ class RYOSApp(tk.Tk):
         # Scrollable card list (top pane)
         cards_pane = tk.Frame(self._paned, bg=C["bg"])
         self._paned.add(cards_pane, weight=3)
+
+        # Tab bar
+        self._tab_bar = tk.Frame(cards_pane, bg=C["bg"])
+        self._tab_bar.pack(fill="x", padx=12, pady=(8, 0))
+        tk.Frame(cards_pane, bg=C["border"], height=1).pack(fill="x", padx=12)
+
         container = tk.Frame(cards_pane, bg=C["bg"])
-        container.pack(fill="both", expand=True, padx=12, pady=12)
+        container.pack(fill="both", expand=True, padx=12, pady=(8, 12))
 
         canvas = tk.Canvas(container, highlightthickness=0, bg=C["bg"])
         scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
@@ -709,41 +791,175 @@ class RYOSApp(tk.Tk):
         self._paned.add(self.out_panel, weight=0)
 
 
+    # ---------- group header ----------
+    def _make_group_header(self, name: str):
+        hdr = tk.Frame(self.cards_frame, bg=C["bg"])
+        hdr.pack(fill="x", pady=(16, 2))
+        tk.Label(hdr, text=name.upper(), bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8, "bold")).pack(side="left")
+        tk.Frame(hdr, bg=C["border"], height=1).pack(
+            side="left", fill="x", expand=True, padx=(8, 0), pady=4)
+
+    # ---------- tab bar ----------
+    def _refresh_tabs(self):
+        for w in self._tab_bar.winfo_children():
+            w.destroy()
+        self._add_tab_btn(None, "All", self._active_group is None)
+        for g in self.db.list_groups():
+            self._add_tab_btn(g, g, self._active_group == g)
+        plus = tk.Button(
+            self._tab_bar, text="+ Group",
+            bg=C["bg"], fg=C["path_fg"],
+            activebackground=C["card_hover"], activeforeground=C["accent"],
+            relief="flat", bd=0, padx=10, pady=5,
+            font=("Segoe UI", 9), cursor="hand2",
+            command=self._create_group,
+        )
+        plus.bind("<Enter>", lambda e: plus.config(bg=C["card_hover"]))
+        plus.bind("<Leave>", lambda e: plus.config(bg=C["bg"]))
+        plus.pack(side="left", padx=(8, 2))
+
+    def _add_tab_btn(self, group, label, is_active):
+        if is_active:
+            bg, fg, fw = C["accent"], "#ffffff", "bold"
+            hover_bg = C["accent2"]
+        else:
+            bg, fg, fw = C["bg"], C["path_fg"], "normal"
+            hover_bg = C["card_hover"]
+        btn = tk.Button(
+            self._tab_bar, text=label,
+            bg=bg, fg=fg,
+            activebackground=hover_bg, activeforeground=fg,
+            relief="flat", bd=0, padx=12, pady=5,
+            font=("Segoe UI", 9, fw), cursor="hand2",
+            command=lambda g=group: self._switch_group(g),
+        )
+        btn.bind("<Enter>", lambda e, b=btn, h=hover_bg: b.config(bg=h))
+        btn.bind("<Leave>", lambda e, b=btn, ob=bg: b.config(bg=ob))
+        if group is not None:
+            btn.bind("<Button-3>", lambda e, g=group: self._tab_context_menu(e, g))
+        btn.pack(side="left", padx=2)
+
+    def _switch_group(self, group):
+        self._active_group = group
+        self._refresh()
+
+    def _create_group(self):
+        name = simpledialog.askstring("New Group", "Group name:", parent=self)
+        if name and name.strip():
+            name = name.strip()
+            self.db.create_group(name)
+            self._active_group = name
+            self._refresh()
+
+    def _rename_group(self, old: str):
+        new = simpledialog.askstring("Rename Group", f"New name for '{old}':",
+                                     initialvalue=old, parent=self)
+        if new and new.strip() and new.strip() != old:
+            self.db.rename_group(old, new.strip())
+            if self._active_group == old:
+                self._active_group = new.strip()
+            self._refresh()
+
+    def _delete_group(self, name: str):
+        if messagebox.askyesno(
+            "Delete Group",
+            f"Delete group '{name}'?\n\nScripts in this group will be moved to ungrouped.",
+            parent=self,
+        ):
+            self.db.delete_group(name)
+            if self._active_group == name:
+                self._active_group = None
+            self._refresh()
+
+    def _tab_context_menu(self, event, group: str):
+        menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
+                       activebackground=C["accent"], activeforeground="#ffffff",
+                       font=("Segoe UI", 10))
+        menu.add_command(label="✏  Rename", command=lambda: self._rename_group(group))
+        menu.add_separator()
+        menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
+                         foreground="#ff8080", activeforeground="#ff8080")
+        menu.tk_popup(event.x_root, event.y_root)
+
     # ---------- refresh ----------
     def _refresh(self):
-        self._cards: list[ScriptCard] = []
+        self._cards = []
         if self._select_mode:
             self._select_mode = False
             self._select_bar.pack_forget()
             self._options_menu.entryconfig(0, label="☑  Select scripts")
+        self._refresh_tabs()
+        self._refresh_cards()
+
+    def _refresh_cards(self):
         for w in self.cards_frame.winfo_children():
             w.destroy()
 
-        scripts = self.db.list_all()
-        if not scripts:
-            tk.Label(self.cards_frame,
-                     text="No scripts yet.\nClick '+ Add Script' to get started.",
-                     bg=C["bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 10), justify="center").pack(pady=60)
+        if self._active_group is None:
+            scripts = self.db.list_all()
         else:
-            ids = [r[0] for r in scripts]
-            for i, rec in enumerate(scripts):
+            scripts = [s for s in self.db.list_all() if (s[8] or "") == self._active_group]
+
+        if not scripts:
+            msg = (
+                f"No scripts in '{self._active_group}' yet.\nClick '+ Add Script' to add one."
+                if self._active_group else
+                "No scripts yet.\nClick '+ Add Script' to get started."
+            )
+            tk.Label(self.cards_frame, text=msg, bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 10), justify="center").pack(pady=60)
+            return
+
+        def make_move(a, b):
+            def _move():
+                self.db.swap_order(a, b)
+                self._refresh()
+            return _move
+
+        def make_top(s):
+            def _top():
+                self.db.move_to_top(s)
+                self._refresh()
+            return _top
+
+        if self._active_group is None:
+            # All mode: show group section headers
+            groups_order: list[str] = []
+            group_scripts: dict[str, list] = {}
+            for rec in scripts:
+                g = rec[8] or ""
+                if g not in group_scripts:
+                    groups_order.append(g)
+                    group_scripts[g] = []
+                group_scripts[g].append(rec)
+            any_named = any(g for g in groups_order)
+            for gname in groups_order:
+                if gname:
+                    self._make_group_header(gname)
+                elif any_named:
+                    self._make_group_header("Other")
+                recs = group_scripts[gname]
+                gids = [r[0] for r in recs]
+                for gi, rec in enumerate(recs):
+                    sid = rec[0]
+                    up_id   = gids[gi - 1] if gi > 0 else None
+                    down_id = gids[gi + 1] if gi < len(gids) - 1 else None
+                    card = ScriptCard(
+                        self.cards_frame, rec, self.db, self._run_script, self._refresh,
+                        on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
+                        on_move_down = make_move(sid, down_id) if down_id else lambda: None,
+                        on_move_top  = make_top(sid)           if up_id   else lambda: None,
+                    )
+                    card.pack(fill="x", pady=5, ipady=2)
+                    self._cards.append(card)
+        else:
+            # Single-group mode: no section headers
+            gids = [r[0] for r in scripts]
+            for gi, rec in enumerate(scripts):
                 sid = rec[0]
-                up_id   = ids[i - 1] if i > 0 else None
-                down_id = ids[i + 1] if i < len(ids) - 1 else None
-
-                def make_move(a, b):
-                    def _move():
-                        self.db.swap_order(a, b)
-                        self._refresh()
-                    return _move
-
-                def make_top(s):
-                    def _top():
-                        self.db.move_to_top(s)
-                        self._refresh()
-                    return _top
-
+                up_id   = gids[gi - 1] if gi > 0 else None
+                down_id = gids[gi + 1] if gi < len(gids) - 1 else None
                 card = ScriptCard(
                     self.cards_frame, rec, self.db, self._run_script, self._refresh,
                     on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
@@ -754,7 +970,9 @@ class RYOSApp(tk.Tk):
                 self._cards.append(card)
 
     def _add_script(self):
-        ScriptDialog(self, self.db, on_save=self._refresh)
+        ScriptDialog(self, self.db, on_save=self._refresh,
+                     existing_groups=self.db.list_groups(),
+                     default_group=self._active_group or "")
 
     def _show_options_menu(self):
         btn = self._options_btn
@@ -779,10 +997,19 @@ class RYOSApp(tk.Tk):
 
     def _update_select_count(self):
         n = sum(1 for c in self._cards if c.selected.get())
+        total = len(self._cards)
         if n:
-            self._select_bar_var.set(f"{n} selected")
+            self._select_bar_var.set(f"{n} of {total} selected")
         else:
             self._select_bar_var.set("Tick the checkboxes next to scripts you want to delete.")
+        all_selected = n == total and total > 0
+        self._sel_all_btn.config(text="Deselect All" if all_selected else "Select All")
+
+    def _toggle_select_all(self):
+        all_selected = all(c.selected.get() for c in self._cards) and self._cards
+        for card in self._cards:
+            card.selected.set(not all_selected)
+        self._update_select_count()
 
     def _delete_selected(self):
         ids = [c.script_id for c in self._cards if c.selected.get()]
