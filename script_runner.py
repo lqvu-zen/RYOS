@@ -72,12 +72,24 @@ def _save_settings(settings: dict) -> None:
 
 def _apply_snap_corner(window, corner: str, margin: int = 10) -> None:
     window.update_idletasks()
-    w  = window.winfo_width()
-    h  = window.winfo_height()
-    sw = window.winfo_screenwidth()
-    sh = window.winfo_screenheight()
-    x  = margin if "left"  in corner else sw - w - margin
-    y  = margin if "top"   in corner else sh - h - margin
+    w = window.winfo_width()
+    h = window.winfo_height()
+    # Use work area (excludes taskbar) on Windows; fall back to full screen elsewhere
+    if sys.platform == "win32":
+        try:
+            import ctypes.wintypes
+            wa = ctypes.wintypes.RECT()
+            ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(wa), 0)
+            ax, ay = wa.left, wa.top
+            aw, ah = wa.right - wa.left, wa.bottom - wa.top
+        except Exception:
+            ax, ay = 0, 0
+            aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
+    else:
+        ax, ay = 0, 0
+        aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
+    x = ax + margin if "left" in corner else ax + aw - w - margin
+    y = ay + margin if "top"  in corner else ay + ah - h - margin
     window.geometry(f"+{x}+{y}")
 
 
