@@ -16,6 +16,8 @@ import subprocess
 import threading
 import queue
 import ctypes
+if sys.platform == "win32":
+    import winreg
 try:
     from tkinterdnd2 import TkinterDnD, DND_FILES
     _DND_AVAILABLE = True
@@ -64,6 +66,47 @@ def _save_settings(settings: dict) -> None:
         _SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Windows startup registry helpers
+# ---------------------------------------------------------------------------
+_RUN_KEY  = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_RUN_NAME = "RYOS"
+
+
+def _startup_command() -> str:
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    if not pythonw.exists():
+        pythonw = Path(sys.executable)
+    return f'"{pythonw}" "{Path(__file__).resolve()}"'
+
+
+def _startup_enabled() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            winreg.QueryValueEx(k, _RUN_NAME)
+            return True
+    except OSError:
+        return False
+
+
+def _set_startup(enable: bool) -> None:
+    if sys.platform != "win32":
+        return
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY,
+                        access=winreg.KEY_SET_VALUE) as k:
+        if enable:
+            winreg.SetValueEx(k, _RUN_NAME, 0, winreg.REG_SZ, _startup_command())
+        else:
+            try:
+                winreg.DeleteValue(k, _RUN_NAME)
+            except FileNotFoundError:
+                pass
 
 
 class ScriptDB:
@@ -1291,6 +1334,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self.grab_set()
 
         # ── variables ──────────────────────────────────────────────
+        self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
@@ -1330,6 +1374,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         # ── Startup ────────────────────────────────────────────────
         f = self._section("STARTUP")
+        if sys.platform == "win32":
+            self._chk(f, "Start with Windows",               self._start_with_windows)
         self._chk(f, "Remember last active group",        self._remember_group)
         self._chk(f, "Start minimized",                  self._start_minimized)
         self._chk(f, "Remember window size and position", self._remember_geometry)
@@ -1372,6 +1418,13 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
         })
+        try:
+            _set_startup(self._start_with_windows.get())
+        except Exception as e:
+            messagebox.showerror("Startup Error",
+                                 f"Could not update Windows startup entry:\n{e}",
+                                 parent=self)
+            return
         self._on_save(self._settings)
         self.destroy()
 
