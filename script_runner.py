@@ -158,44 +158,159 @@ class ScriptDB:
             conn.execute("DELETE FROM scripts")
             conn.commit()
 
-    def export_to_file(self, path: str):
-        scripts = self.list_all()
+    def export_to_file(self, path: str, group_name: str | None = None):
+        with self._connect() as conn:
+            if group_name is not None:
+                scripts = conn.execute(
+                    "SELECT name, path, params, interpreter, order_index, group_name "
+                    "FROM scripts WHERE COALESCE(group_name,'')=? "
+                    "ORDER BY order_index ASC, id ASC",
+                    (group_name,),
+                ).fetchall()
+                pipelines = conn.execute(
+                    "SELECT id, name, group_name, sort_order FROM pipelines "
+                    "WHERE group_name=? ORDER BY sort_order ASC, id ASC",
+                    (group_name,),
+                ).fetchall()
+                groups = conn.execute(
+                    "SELECT name, sort_order FROM groups WHERE name=?",
+                    (group_name,),
+                ).fetchall()
+            else:
+                scripts = conn.execute(
+                    "SELECT name, path, params, interpreter, order_index, group_name "
+                    "FROM scripts ORDER BY "
+                    "CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
+                    "group_name ASC, order_index ASC, id ASC"
+                ).fetchall()
+                pipelines = conn.execute(
+                    "SELECT id, name, group_name, sort_order FROM pipelines "
+                    "ORDER BY sort_order ASC, id ASC"
+                ).fetchall()
+                groups = conn.execute(
+                    "SELECT name, sort_order FROM groups ORDER BY sort_order ASC, id ASC"
+                ).fetchall()
+
+            pipeline_data = []
+            for p_id, p_name, p_group, p_order in pipelines:
+                steps = conn.execute(
+                    "SELECT s.path FROM pipeline_steps ps "
+                    "JOIN scripts s ON s.id=ps.script_id "
+                    "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
+                    (p_id,),
+                ).fetchall()
+                pipeline_data.append({
+                    "name": p_name,
+                    "group_name": p_group,
+                    "sort_order": p_order,
+                    "steps": [{"script_path": row[0]} for row in steps],
+                })
+
         data = {
-            "version": 1,
+            "version": 2,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "groups": [{"name": g[0], "sort_order": g[1]} for g in groups],
             "scripts": [
                 {
-                    "name": s[1], "path": s[2], "params": s[3],
-                    "interpreter": s[4], "order_index": i,
-                    "group_name": s[8] or "",
+                    "name": s[0], "path": s[1], "params": s[2],
+                    "interpreter": s[3], "order_index": s[4],
+                    "group_name": s[5] or "",
                 }
-                for i, s in enumerate(scripts)
+                for s in scripts
             ],
+            "pipelines": pipeline_data,
         }
         Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return len(scripts), len(pipeline_data)
 
     def import_from_file(self, path: str, replace: bool = False) -> tuple[int, int]:
-        """Returns (added, skipped) counts."""
+        """Returns (scripts_added, scripts_skipped)."""
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        scripts = data.get("scripts", [])
+        groups    = data.get("groups", [])
+        scripts   = data.get("scripts", [])
+        pipelines = data.get("pipelines", [])
         now = datetime.now().isoformat(timespec="seconds")
         added = skipped = 0
         with self._connect() as conn:
             if replace:
+                conn.execute("DELETE FROM pipeline_steps")
+                conn.execute("DELETE FROM pipelines")
                 conn.execute("DELETE FROM scripts")
-            existing = {r[0] for r in conn.execute("SELECT path FROM scripts")}
+                conn.execute("DELETE FROM groups")
+
+            # Ensure every referenced group exists
+            existing_groups: set[str] = {r[0] for r in conn.execute("SELECT name FROM groups")}
+
+            def _ensure_group(gname: str):
+                if gname and gname not in existing_groups:
+                    max_ord = conn.execute(
+                        "SELECT COALESCE(MAX(sort_order), -1) FROM groups"
+                    ).fetchone()[0]
+                    conn.execute(
+                        "INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
+                        (gname, max_ord + 1),
+                    )
+                    existing_groups.add(gname)
+
+            for g in groups:
+                gname = g["name"]
+                if gname not in existing_groups:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
+                        (gname, g.get("sort_order", 0)),
+                    )
+                    existing_groups.add(gname)
+
+            # Import scripts; build path→id map for pipeline wiring
+            path_to_id: dict[str, int] = {
+                r[0]: r[1] for r in conn.execute("SELECT path, id FROM scripts")
+            }
+            existing_paths = set(path_to_id)
             for s in scripts:
-                if not replace and s["path"] in existing:
+                spath = s["path"]
+                if not replace and spath in existing_paths:
                     skipped += 1
                     continue
-                conn.execute(
-                    "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name) "
+                _ensure_group(s.get("group_name", ""))
+                cur = conn.execute(
+                    "INSERT INTO scripts "
+                    "(name, path, params, interpreter, created_at, order_index, group_name) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (s["name"], s["path"], s.get("params", ""),
-                     s.get("interpreter", ""), now, s.get("order_index", 0),
-                     s.get("group_name", "")),
+                    (s["name"], spath, s.get("params", ""),
+                     s.get("interpreter", ""), now,
+                     s.get("order_index", 0), s.get("group_name", "")),
                 )
+                path_to_id[spath] = cur.lastrowid
                 added += 1
+
+            # Import pipelines
+            for p in pipelines:
+                p_name  = p["name"]
+                p_group = p.get("group_name", "")
+                _ensure_group(p_group)
+                if not replace and conn.execute(
+                    "SELECT id FROM pipelines WHERE name=? AND group_name=?",
+                    (p_name, p_group),
+                ).fetchone():
+                    continue
+                max_ord = conn.execute(
+                    "SELECT COALESCE(MAX(sort_order), -1) FROM pipelines WHERE group_name=?",
+                    (p_group,),
+                ).fetchone()[0]
+                cur = conn.execute(
+                    "INSERT INTO pipelines (name, group_name, sort_order) VALUES (?, ?, ?)",
+                    (p_name, p_group, p.get("sort_order", max_ord + 1)),
+                )
+                p_id = cur.lastrowid
+                for i, step in enumerate(p.get("steps", [])):
+                    sid = path_to_id.get(step.get("script_path"))
+                    if sid:
+                        conn.execute(
+                            "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) "
+                            "VALUES (?, ?, ?)",
+                            (p_id, sid, i * 10),
+                        )
+
             conn.commit()
         return added, skipped
 
@@ -1237,8 +1352,9 @@ class RYOSApp(_BaseWindow):
                                      borderwidth=0, relief="flat")
         self._options_menu.add_command(label="☑  Select scripts",  command=self._toggle_select_mode)
         self._options_menu.add_separator()
-        self._options_menu.add_command(label="📤  Export config",   command=self._export_config)
-        self._options_menu.add_command(label="📥  Import config",   command=self._import_config)
+        self._options_menu.add_command(label="📤  Export all groups",    command=self._export_config)
+        self._options_menu.add_command(label="📤  Export current group", command=self._export_group_config)
+        self._options_menu.add_command(label="📥  Import config",        command=self._import_config)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",      command=self._delete_all)
 
@@ -1502,6 +1618,7 @@ class RYOSApp(_BaseWindow):
         self._active_group = group
         self._update_tab_styles()
         self._refresh_cards()
+        self._canvas.yview_moveto(0)
 
     def _create_group(self):
         name = simpledialog.askstring("New Group", "Group name:", parent=self)
@@ -2022,24 +2139,39 @@ class RYOSApp(_BaseWindow):
             self.db.delete_all()
             self._refresh()
 
-    def _export_config(self):
+    def _export_config(self, group_name: str | None = None):
+        if group_name:
+            initial = f"ryos_{group_name}.json"
+            title   = f"Export Group: {group_name}"
+        else:
+            initial = "ryos_all.json"
+            title   = "Export All Groups"
         path = filedialog.asksaveasfilename(
-            title="Export Scripts",
+            title=title,
             defaultextension=".json",
             filetypes=[("JSON", "*.json"), ("All Files", "*.*")],
-            initialfile="ryos_scripts.json",
+            initialfile=initial,
         )
         if not path:
             return
         try:
-            self.db.export_to_file(path)
-            self.status_var.set(f"Exported {len(self._cards)} script(s) to {Path(path).name}")
+            n_scripts, n_pipelines = self.db.export_to_file(path, group_name=group_name)
+            self.status_var.set(
+                f"Exported {n_scripts} script(s), {n_pipelines} pipeline(s) → {Path(path).name}"
+            )
         except Exception as e:
             messagebox.showerror("Export Failed", str(e))
 
+    def _export_group_config(self):
+        if not self._active_group:
+            messagebox.showinfo("No Group Selected",
+                                "Switch to a specific group tab first, then export.")
+            return
+        self._export_config(group_name=self._active_group)
+
     def _import_config(self):
         path = filedialog.askopenfilename(
-            title="Import Scripts",
+            title="Import Config",
             filetypes=[("JSON", "*.json"), ("All Files", "*.*")],
         )
         if not path:
@@ -2047,12 +2179,12 @@ class RYOSApp(_BaseWindow):
         try:
             replace = messagebox.askyesno(
                 "Import Mode",
-                "Replace all existing scripts with the imported ones?\n\n"
-                "Yes = Replace all\nNo = Merge (skip duplicates by path)",
+                "Replace all existing data with the imported config?\n\n"
+                "Yes = Replace all\nNo = Merge (skip duplicates by path / name)",
             )
             added, skipped = self.db.import_from_file(path, replace=replace)
             self._refresh()
-            self.status_var.set(f"Import done — {added} added, {skipped} skipped.")
+            self.status_var.set(f"Import done — {added} script(s) added, {skipped} skipped.")
         except Exception as e:
             messagebox.showerror("Import Failed", str(e))
 
