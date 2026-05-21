@@ -16,6 +16,8 @@ import subprocess
 import threading
 import queue
 import ctypes
+import urllib.request
+import webbrowser
 if sys.platform == "win32":
     import winreg
 try:
@@ -36,6 +38,10 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
+__version__ = "1.1.4"
+_RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
+_RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
+
 # When frozen by PyInstaller, store DB next to the .exe; otherwise next to this file.
 _BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 DB_PATH       = _BASE / "scripts.db"
@@ -144,6 +150,24 @@ def _set_startup(enable: bool) -> None:
                 winreg.DeleteValue(k, _RUN_NAME)
             except FileNotFoundError:
                 pass
+
+
+def _parse_version(tag: str) -> tuple:
+    try:
+        return tuple(int(x) for x in tag.lstrip("v").split("."))
+    except Exception:
+        return (0,)
+
+
+def _fetch_latest_release() -> tuple[str, str] | None:
+    try:
+        req = urllib.request.Request(
+            _RELEASES_API, headers={"User-Agent": "RYOS-update-check"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read())
+        return data["tag_name"], data["html_url"]
+    except Exception:
+        return None
 
 
 class ScriptDB:
@@ -1795,6 +1819,7 @@ class RYOSApp(_BaseWindow):
         self.after(80, self._drain_output_queue)
         self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        threading.Thread(target=self._check_for_update, daemon=True).start()
         self.attributes("-topmost", self._settings["always_on_top"])
         if corner and corner != "none":
             self.after(0, lambda c=corner: _apply_snap_corner(self, c))
@@ -1869,6 +1894,8 @@ class RYOSApp(_BaseWindow):
         self._options_menu.add_command(label="📥  Import config",      command=self._import_config)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="⚙  Advanced options…",  command=self._open_advanced_options)
+        self._options_menu.add_separator()
+        self._options_menu.add_command(label="🔔  Check for updates",  command=self._manual_update_check)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",         command=self._delete_all)
 
@@ -2912,6 +2939,54 @@ class RYOSApp(_BaseWindow):
             self._running_script_id = None
             self.status_var.set("Done.")
             self._clear_running_state()
+
+    def _check_for_update(self):
+        result = _fetch_latest_release()
+        if result is None:
+            return
+        tag, url = result
+        if _parse_version(tag) > _parse_version(__version__):
+            self.after(0, lambda: self._show_update_banner(tag, url))
+
+    def _show_update_banner(self, tag: str, url: str):
+        if getattr(self, "_update_banner", None):
+            return
+        banner = tk.Frame(self, bg="#1a3a5c", pady=6, padx=12)
+        banner.pack(fill="x", before=self._paned)
+        self._update_banner = banner
+
+        tk.Label(banner, text=f"🔔  Update available: {tag}  (you have v{__version__})",
+                 bg="#1a3a5c", fg="#90cdf4",
+                 font=("Segoe UI", 9)).pack(side="left")
+        tk.Button(banner, text="Download", bg="#2b6cb0", fg="#ffffff",
+                  activebackground="#2c5282", activeforeground="#ffffff",
+                  relief="flat", bd=0, font=("Segoe UI", 9, "bold"),
+                  padx=8, pady=1, cursor="hand2",
+                  command=lambda: webbrowser.open(url)).pack(side="left", padx=(10, 0))
+        tk.Button(banner, text="✕", bg="#1a3a5c", fg="#90cdf4",
+                  activebackground="#2a4a6c", activeforeground="#ffffff",
+                  relief="flat", bd=0, font=("Segoe UI", 9),
+                  cursor="hand2",
+                  command=banner.destroy).pack(side="right")
+
+    def _manual_update_check(self):
+        def _check():
+            result = _fetch_latest_release()
+            if result is None:
+                self.after(0, lambda: messagebox.showinfo(
+                    "Update Check",
+                    "Could not reach GitHub. Check your internet connection.",
+                    parent=self))
+                return
+            tag, url = result
+            if _parse_version(tag) > _parse_version(__version__):
+                self.after(0, lambda: self._show_update_banner(tag, url))
+            else:
+                self.after(0, lambda: messagebox.showinfo(
+                    "Up to date",
+                    f"You are running the latest version ({__version__}).",
+                    parent=self))
+        threading.Thread(target=_check, daemon=True).start()
 
     def _open_advanced_options(self):
         def _apply(new_settings: dict):
