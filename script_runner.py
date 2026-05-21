@@ -1146,7 +1146,7 @@ class PipelineCard(tk.Frame):
     _PIPE_ACCENT2 = "#7060d0"
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
-                 group_name: str, on_run, on_edit, on_refresh, *, is_running: bool = False):
+                 group_name: str, on_run, on_edit, on_refresh, on_stop=None, *, is_running: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -1169,6 +1169,20 @@ class PipelineCard(tk.Frame):
                      lambda: on_edit(pipeline_id, name)).pack(side="left", padx=3)
         _flat_button(btn_area, "▶", self._PIPE_ACCENT, self._PIPE_ACCENT2,
                      lambda: on_run(pipeline_id, name)).pack(side="left", padx=3)
+        _stop_btn = tk.Button(
+            btn_area, text="⏹",
+            bg=C["card_bg"], fg="#ff8080" if is_running else "#666666",
+            activebackground="#5a1a1a", activeforeground="#ff8080",
+            disabledforeground="#444444",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+            state="normal" if is_running else "disabled",
+            cursor="hand2" if is_running else "arrow",
+            command=on_stop or (lambda: None),
+        )
+        _stop_btn.pack(side="left", padx=3)
+        if is_running:
+            _stop_btn.bind("<Enter>", lambda e: _stop_btn.config(bg="#5a1a1a"))
+            _stop_btn.bind("<Leave>", lambda e: _stop_btn.config(bg=C["card_bg"]))
 
         # Content
         content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
@@ -1257,7 +1271,7 @@ class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
-                 on_move_up, on_move_down, on_move_top, *, is_running: bool = False):
+                 on_move_up, on_move_down, on_move_top, on_stop=None, *, is_running: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
@@ -1317,6 +1331,20 @@ class ScriptCard(tk.Frame):
                      self._modify).pack(side="left", padx=3)
         _flat_button(btn_area, "▶", C["btn_run_bg"], C["btn_run_hover"],
                      self._run).pack(side="left", padx=3)
+        _stop_btn = tk.Button(
+            btn_area, text="⏹",
+            bg=C["card_bg"], fg="#ff8080" if is_running else "#666666",
+            activebackground="#5a1a1a", activeforeground="#ff8080",
+            disabledforeground="#444444",
+            relief="flat", bd=0, font=("Segoe UI", 10),
+            state="normal" if is_running else "disabled",
+            cursor="hand2" if is_running else "arrow",
+            command=on_stop or (lambda: None),
+        )
+        _stop_btn.pack(side="left", padx=3)
+        if is_running:
+            _stop_btn.bind("<Enter>", lambda e: _stop_btn.config(bg="#5a1a1a"))
+            _stop_btn.bind("<Leave>", lambda e: _stop_btn.config(bg=C["card_bg"]))
 
         # Hover highlight on whole card
         for widget in (self, text_area):
@@ -1787,10 +1815,6 @@ class RYOSApp(_BaseWindow):
                                      relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                                      command=self._toggle_output)
         self._toggle_btn.pack(side="right")
-        tk.Button(out_header, text="⏹ Stop", bg="#2d2d2d", fg="#ff8080",
-                  activebackground="#3d3d3d", activeforeground="#ff8080",
-                  relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
-                  command=self._stop_running).pack(side="right", padx=8)
         tk.Button(out_header, text="💾 Save", bg="#2d2d2d", fg="#aaa",
                   activebackground="#3d3d3d", activeforeground="#fff",
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
@@ -2090,6 +2114,7 @@ class RYOSApp(_BaseWindow):
                         on_run=self._run_pipeline,
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
+                        on_stop=self._stop_running,
                         is_running=(p_id == self._running_pipeline_id),
                     )
                     pc.pack(fill="x", pady=5, ipady=2)
@@ -2115,6 +2140,7 @@ class RYOSApp(_BaseWindow):
                         on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top  = make_top(sid)           if up_id   else lambda: None,
+                        on_stop      = self._stop_running,
                         is_running   = (sid == self._running_script_id),
                     )
                     card.pack(fill="x", pady=5, ipady=2)
