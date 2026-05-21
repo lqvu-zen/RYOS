@@ -41,6 +41,16 @@ _BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(_
 DB_PATH       = _BASE / "scripts.db"
 _SETTINGS_PATH = _BASE / "settings.json"
 
+_CORNER_CHOICES = [
+    ("↘  Bottom right", "bottom_right"),
+    ("↙  Bottom left",  "bottom_left"),
+    ("↗  Top right",    "top_right"),
+    ("↖  Top left",     "top_left"),
+    ("Off",             "none"),
+]
+_CORNER_VAL_TO_LABEL = {v: l for l, v in _CORNER_CHOICES}
+_CORNER_LABEL_TO_VAL = {l: v for l, v in _CORNER_CHOICES}
+
 _SETTINGS_DEFAULTS: dict = {
     "remember_last_group":    True,
     "last_group":             None,
@@ -1361,7 +1371,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
         # ── variables ──────────────────────────────────────────────
         self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
         self._always_on_top     = tk.BooleanVar(value=self._settings["always_on_top"])
-        self._snap_corner       = tk.StringVar(value=self._settings.get("snap_corner") or "none")
+        self._snap_corner       = tk.StringVar(
+            value=_CORNER_VAL_TO_LABEL.get(self._settings.get("snap_corner") or "none", "Off"))
         self._snap_corner.trace_add("write", self._on_corner_change)
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
@@ -1377,9 +1388,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self.geometry(f"+{pw + 60}+{ph + 60}")
 
     def _on_corner_change(self, *_):
-        corner = self._snap_corner.get()
-        if corner and corner != "none":
-            _apply_snap_corner(self.master, corner)
+        val = _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none")
+        if val and val != "none":
+            _apply_snap_corner(self.master, val)
 
     # ── helpers ────────────────────────────────────────────────────
     def _section(self, text: str) -> tk.Frame:
@@ -1415,18 +1426,14 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Remember window size and position", self._remember_geometry)
 
         # Corner picker
-        tk.Label(f, text="Snap to screen corner on launch:", bg=C["bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 2))
-        grid = tk.Frame(f, bg=C["bg"])
-        grid.pack(anchor="w")
-        rb_kw = dict(bg=C["bg"], fg=C["name_fg"], selectcolor=C["card_bg"],
-                     activebackground=C["bg"], activeforeground=C["name_fg"],
-                     variable=self._snap_corner, font=("Segoe UI", 9))
-        tk.Radiobutton(grid, text="↖  Top left",     value="top_left",     **rb_kw).grid(row=0, column=0, sticky="w", padx=(0, 20))
-        tk.Radiobutton(grid, text="↗  Top right",    value="top_right",    **rb_kw).grid(row=0, column=1, sticky="w")
-        tk.Radiobutton(grid, text="↙  Bottom left",  value="bottom_left",  **rb_kw).grid(row=1, column=0, sticky="w", padx=(0, 20))
-        tk.Radiobutton(grid, text="↘  Bottom right", value="bottom_right", **rb_kw).grid(row=1, column=1, sticky="w")
-        tk.Radiobutton(grid, text="Off",              value="none",         **rb_kw).grid(row=2, column=0, sticky="w", pady=(2, 0))
+        row = tk.Frame(f, bg=C["bg"])
+        row.pack(fill="x", pady=(8, 2))
+        tk.Label(row, text="Snap to screen corner:", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(side="left")
+        ttk.Combobox(row, textvariable=self._snap_corner,
+                     values=[l for l, _ in _CORNER_CHOICES],
+                     state="readonly", width=18,
+                     font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
         # ── Output ─────────────────────────────────────────────────
         f = self._section("OUTPUT")
@@ -1460,7 +1467,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
         self._settings.update({
             "always_on_top":            self._always_on_top.get(),
-            "snap_corner":              self._snap_corner.get(),
+            "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
             "remember_last_group":      self._remember_group.get(),
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
