@@ -1352,9 +1352,8 @@ class RYOSApp(_BaseWindow):
                                      borderwidth=0, relief="flat")
         self._options_menu.add_command(label="☑  Select scripts",  command=self._toggle_select_mode)
         self._options_menu.add_separator()
-        self._options_menu.add_command(label="📤  Export all groups",    command=self._export_config)
-        self._options_menu.add_command(label="📤  Export current group", command=self._export_group_config)
-        self._options_menu.add_command(label="📥  Import config",        command=self._import_config)
+        self._options_menu.add_command(label="📤  Export all groups", command=self._export_config)
+        self._options_menu.add_command(label="📥  Import config",     command=self._import_config)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",      command=self._delete_all)
 
@@ -1705,6 +1704,7 @@ class RYOSApp(_BaseWindow):
                        activebackground=C["accent"], activeforeground="#ffffff",
                        font=("Segoe UI", 10))
         menu.add_command(label="✏  Rename", command=lambda: self._rename_group(group))
+        menu.add_command(label="📤  Export group", command=lambda: self._export_config(group_name=group))
         menu.add_separator()
         menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
                          foreground="#ff8080", activeforeground="#ff8080")
@@ -2162,13 +2162,6 @@ class RYOSApp(_BaseWindow):
             )
         except Exception as e:
             messagebox.showerror("Export Failed", str(e))
-
-    def _export_group_config(self):
-        if not self._active_group:
-            messagebox.showinfo("No Group Selected",
-                                "Switch to a specific group tab first, then export.")
-            return
-        self._export_config(group_name=self._active_group)
 
     def _import_config(self):
         path = filedialog.askopenfilename(
