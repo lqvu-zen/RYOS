@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.2.3"
+__version__ = "1.2.4"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
@@ -858,6 +858,7 @@ class ScriptDialog(tk.Toplevel):
         ttk.Label(frame, text="Parameters:").grid(row=2, column=0, sticky="w", **pad)
         self.e_params = ttk.Entry(frame, width=40)
         self.e_params.grid(row=2, column=1, columnspan=2, sticky="ew", **pad)
+        self.e_params.bind("<FocusOut>", self._auto_name_from_params)
 
         ttk.Label(frame, text="Interpreter:").grid(row=3, column=0, sticky="w", **pad)
         self.e_interp = ttk.Combobox(frame, width=38, values=[
@@ -882,6 +883,13 @@ class ScriptDialog(tk.Toplevel):
 
         if self.script_id:
             ttk.Button(btn_row, text="Delete", command=self._delete).pack(side="left", padx=4)
+
+    def _auto_name_from_params(self, _event=None):
+        if not self.e_name.get().strip():
+            params = self.e_params.get().strip()
+            if params:
+                self.e_name.delete(0, tk.END)
+                self.e_name.insert(0, params)
 
     def _browse(self):
         path = filedialog.askopenfilename(
