@@ -1828,6 +1828,7 @@ class RYOSApp(_BaseWindow):
         self._pipeline_total = 0
         self._running_script_id: int | None = None
         self._running_pipeline_id: int | None = None
+        self._run_start_time: datetime | None = None
         # drag-and-drop card state
         self._drag_card: ScriptCard | None = None
         self._drag_start_x = self._drag_start_y = 0
@@ -2632,6 +2633,7 @@ class RYOSApp(_BaseWindow):
         self._running_pipeline_id = pipeline_id
         self._running_pipeline_name = pipeline_name
         self._running_script_id = None
+        self._run_start_time = datetime.now()
         for _pc in self._pipeline_cards:
             _pc.set_running(_pc.pipeline_id == pipeline_id,
                             self._stop_running if _pc.pipeline_id == pipeline_id else None)
@@ -2804,6 +2806,7 @@ class RYOSApp(_BaseWindow):
         self._running_script_id = script_id
         self._running_script_name = name
         self._running_pipeline_id = None
+        self._run_start_time = datetime.now()
         for _c in self._cards:
             _c.set_running(_c.script_id == script_id,
                            self._stop_running if _c.script_id == script_id else None)
@@ -2952,6 +2955,11 @@ class RYOSApp(_BaseWindow):
 
     def _handle_step_done(self, status: str):
         notify = self._settings.get("notify_on_complete", True)
+        elapsed = ""
+        if self._run_start_time:
+            secs = (datetime.now() - self._run_start_time).total_seconds()
+            elapsed = f"{int(secs // 60)} m {secs % 60:.0f} s" if secs >= 60 else f"{secs:.1f} s"
+
         if self._pipeline_total > 0:
             if status == "ok" and self._pipeline_queue:
                 self._run_next_pipeline_step()
@@ -2964,34 +2972,49 @@ class RYOSApp(_BaseWindow):
                 )
                 self.status_var.set("Pipeline complete.")
                 name = getattr(self, "_running_pipeline_name", "Pipeline")
+                total = self._pipeline_total
                 self._pipeline_total = 0
                 self._running_pipeline_id = None
                 self._running_script_id = None
                 self._clear_running_state()
                 if notify:
-                    _show_notification("RYOS — Pipeline complete", f"✓  {name}")
+                    _show_notification(
+                        "RYOS — Pipeline passed",
+                        f"✓  {name}  ·  {total} step{'s' if total != 1 else ''}  ·  {elapsed}",
+                    )
             else:
                 self._pipeline_queue.clear()
                 self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr")
                 self.status_var.set("Pipeline stopped (step failed).")
                 name = getattr(self, "_running_pipeline_name", "Pipeline")
+                failed_at = getattr(self, "_pipeline_step_idx", 1)
+                total = self._pipeline_total
                 self._pipeline_total = 0
                 self._running_pipeline_id = None
                 self._running_script_id = None
                 self._clear_running_state()
                 if notify:
-                    _show_notification("RYOS — Pipeline failed", f"✗  {name}")
+                    _show_notification(
+                        "RYOS — Pipeline failed",
+                        f"✗  {name}  ·  failed at step {failed_at}/{total}  ·  {elapsed}",
+                    )
         else:
             name = getattr(self, "_running_script_name", "Script")
             self._running_script_id = None
             if status == "ok":
                 self.status_var.set("Done.")
                 if notify:
-                    _show_notification("RYOS", f"✓  {name}  —  passed")
+                    _show_notification(
+                        "RYOS — Script passed",
+                        f"✓  {name}  ·  {elapsed}",
+                    )
             else:
                 self.status_var.set("Failed.")
                 if notify:
-                    _show_notification("RYOS", f"✗  {name}  —  failed")
+                    _show_notification(
+                        "RYOS — Script failed",
+                        f"✗  {name}  ·  {elapsed}",
+                    )
             self._clear_running_state()
 
     def _check_for_update(self):
