@@ -47,6 +47,7 @@ _SETTINGS_DEFAULTS: dict = {
     "start_minimized":        False,
     "remember_window_geometry": True,
     "window_geometry":        None,
+    "always_on_top":          False,
     "max_output_lines":       2000,
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
@@ -1335,6 +1336,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         # ── variables ──────────────────────────────────────────────
         self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
+        self._always_on_top     = tk.BooleanVar(value=self._settings["always_on_top"])
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
@@ -1376,6 +1378,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         f = self._section("STARTUP")
         if sys.platform == "win32":
             self._chk(f, "Start with Windows",               self._start_with_windows)
+        self._chk(f, "Always on top",                     self._always_on_top)
         self._chk(f, "Remember last active group",        self._remember_group)
         self._chk(f, "Start minimized",                  self._start_minimized)
         self._chk(f, "Remember window size and position", self._remember_geometry)
@@ -1411,6 +1414,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         except ValueError:
             max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
         self._settings.update({
+            "always_on_top":            self._always_on_top.get(),
             "remember_last_group":      self._remember_group.get(),
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
@@ -1489,6 +1493,7 @@ class RYOSApp(_BaseWindow):
         self.after(80, self._drain_output_queue)
         self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.attributes("-topmost", self._settings["always_on_top"])
         if self._settings["start_minimized"]:
             self.after(0, self.iconify)
 
@@ -2592,6 +2597,7 @@ class RYOSApp(_BaseWindow):
         def _apply(new_settings: dict):
             self._settings = new_settings
             _save_settings(self._settings)
+            self.attributes("-topmost", self._settings["always_on_top"])
         AdvancedOptionsDialog(self, self._settings, _apply)
 
     def _on_close(self):
