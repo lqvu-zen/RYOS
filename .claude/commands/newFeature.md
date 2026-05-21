@@ -29,13 +29,24 @@ Read the relevant sections with the Read tool before editing.
 - If the feature has a user-facing toggle, add it to `_SETTINGS_DEFAULTS` and `AdvancedOptionsDialog`.
 - If the feature touches card running state, use `set_running()` — never call `_refresh_cards()` from run/stop paths.
 
-### 4. Bump the version
+### 4. Test and fix
+
+Launch the app and exercise the new feature end-to-end before declaring it done:
+```bash
+cd D:/Projects/RYOS && uv run script_runner.py 2>&1
+```
+- Walk through the happy path: does the feature work as requested?
+- Check for regressions: do existing features (run/stop, groups, output panel, drag-drop) still work?
+- If the app crashes or prints tracebacks, read the error, fix the code, and re-test.
+- Repeat until the app runs without errors and the feature behaves correctly.
+
+### 5. Bump the version
 ```bash
 cd D:/Projects/RYOS && grep -n "__version__" script_runner.py 2>&1
 ```
 Update `__version__` to the next appropriate value (patch = `x.y.Z+1`, minor = `x.Y+1.0`).
 
-### 5. Commit and push
+### 6. Commit and push
 ```bash
 cd D:/Projects/RYOS && git add script_runner.py && git commit -m "$(cat <<'EOF'
 <short description of the feature>
@@ -47,7 +58,7 @@ EOF
 )" && git push 2>&1
 ```
 
-### 6. Report
+### 7. Report
 Tell the user:
 - What was added and where it lives in the UI
 - The new `__version__` value
