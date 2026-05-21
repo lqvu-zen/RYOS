@@ -505,6 +505,37 @@ class ScriptDB:
             conn.commit()
             return cur.lastrowid
 
+    def clone_pipeline(self, pipeline_id: int) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT name, group_name FROM pipelines WHERE id=?", (pipeline_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Pipeline {pipeline_id} not found")
+            name, group_name = row
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM pipelines WHERE group_name=?",
+                (group_name,),
+            ).fetchone()[0]
+            cur = conn.execute(
+                "INSERT INTO pipelines (name, group_name, sort_order) VALUES (?, ?, ?)",
+                (f"{name} (copy)", group_name, max_order + 1),
+            )
+            new_id = cur.lastrowid
+            steps = conn.execute(
+                "SELECT script_id, step_order FROM pipeline_steps "
+                "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
+                (pipeline_id,),
+            ).fetchall()
+            for script_id, step_order in steps:
+                conn.execute(
+                    "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) "
+                    "VALUES (?, ?, ?)",
+                    (new_id, script_id, step_order),
+                )
+            conn.commit()
+            return new_id
+
     def delete_pipeline(self, pipeline_id: int):
         with self._connect() as conn:
             conn.execute("DELETE FROM pipeline_steps WHERE pipeline_id=?", (pipeline_id,))
@@ -1202,10 +1233,15 @@ class PipelineCard(tk.Frame):
                        font=("Segoe UI", 10))
         menu.add_command(label="⚙  Edit",
                          command=lambda: self.on_edit(self.pipeline_id, self._name))
+        menu.add_command(label="⧉  Clone", command=self._clone)
         menu.add_separator()
         menu.add_command(label="🗑  Delete", command=self._delete,
                          foreground="#ff8080", activeforeground="#ff8080")
         menu.tk_popup(event.x_root, event.y_root)
+
+    def _clone(self):
+        self.db.clone_pipeline(self.pipeline_id)
+        self.on_refresh()
 
     def _delete(self):
         if messagebox.askyesno("Delete Pipeline",
