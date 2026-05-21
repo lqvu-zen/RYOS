@@ -48,6 +48,7 @@ _SETTINGS_DEFAULTS: dict = {
     "remember_window_geometry": True,
     "window_geometry":        None,
     "always_on_top":          False,
+    "snap_corner":            "bottom_right",
     "max_output_lines":       2000,
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
@@ -67,6 +68,17 @@ def _save_settings(settings: dict) -> None:
         _SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
     except Exception:
         pass
+
+
+def _apply_snap_corner(window, corner: str, margin: int = 10) -> None:
+    window.update_idletasks()
+    w  = window.winfo_width()
+    h  = window.winfo_height()
+    sw = window.winfo_screenwidth()
+    sh = window.winfo_screenheight()
+    x  = margin if "left"  in corner else sw - w - margin
+    y  = margin if "top"   in corner else sh - h - margin
+    window.geometry(f"+{x}+{y}")
 
 
 # ---------------------------------------------------------------------------
@@ -1337,6 +1349,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         # ── variables ──────────────────────────────────────────────
         self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
         self._always_on_top     = tk.BooleanVar(value=self._settings["always_on_top"])
+        self._snap_corner       = tk.StringVar(value=self._settings.get("snap_corner") or "none")
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
@@ -1383,6 +1396,20 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Start minimized",                  self._start_minimized)
         self._chk(f, "Remember window size and position", self._remember_geometry)
 
+        # Corner picker
+        tk.Label(f, text="Snap to screen corner on launch:", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(8, 2))
+        grid = tk.Frame(f, bg=C["bg"])
+        grid.pack(anchor="w")
+        rb_kw = dict(bg=C["bg"], fg=C["name_fg"], selectcolor=C["card_bg"],
+                     activebackground=C["bg"], activeforeground=C["name_fg"],
+                     variable=self._snap_corner, font=("Segoe UI", 9))
+        tk.Radiobutton(grid, text="↖  Top left",     value="top_left",     **rb_kw).grid(row=0, column=0, sticky="w", padx=(0, 20))
+        tk.Radiobutton(grid, text="↗  Top right",    value="top_right",    **rb_kw).grid(row=0, column=1, sticky="w")
+        tk.Radiobutton(grid, text="↙  Bottom left",  value="bottom_left",  **rb_kw).grid(row=1, column=0, sticky="w", padx=(0, 20))
+        tk.Radiobutton(grid, text="↘  Bottom right", value="bottom_right", **rb_kw).grid(row=1, column=1, sticky="w")
+        tk.Radiobutton(grid, text="Off",              value="none",         **rb_kw).grid(row=2, column=0, sticky="w", pady=(2, 0))
+
         # ── Output ─────────────────────────────────────────────────
         f = self._section("OUTPUT")
         self._chk(f, "Auto-clear output before each run", self._auto_clear)
@@ -1415,6 +1442,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
         self._settings.update({
             "always_on_top":            self._always_on_top.get(),
+            "snap_corner":              self._snap_corner.get(),
             "remember_last_group":      self._remember_group.get(),
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
@@ -1485,8 +1513,11 @@ class RYOSApp(_BaseWindow):
         else:
             self._active_group = groups[0] if groups else None
 
-        if self._settings["remember_window_geometry"] and self._settings.get("window_geometry"):
-            self.geometry(self._settings["window_geometry"])
+        corner = self._settings.get("snap_corner") or ""
+        if not corner or corner == "none":
+            # Only restore saved geometry when snap is disabled
+            if self._settings["remember_window_geometry"] and self._settings.get("window_geometry"):
+                self.geometry(self._settings["window_geometry"])
 
         self._build_ui()
         self._refresh()
@@ -1494,6 +1525,8 @@ class RYOSApp(_BaseWindow):
         self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.attributes("-topmost", self._settings["always_on_top"])
+        if corner and corner != "none":
+            self.after(0, lambda c=corner: _apply_snap_corner(self, c))
         if self._settings["start_minimized"]:
             self.after(0, self.iconify)
 
@@ -2598,6 +2631,9 @@ class RYOSApp(_BaseWindow):
             self._settings = new_settings
             _save_settings(self._settings)
             self.attributes("-topmost", self._settings["always_on_top"])
+            corner = self._settings.get("snap_corner") or ""
+            if corner and corner != "none":
+                _apply_snap_corner(self, corner)
         AdvancedOptionsDialog(self, self._settings, _apply)
 
     def _on_close(self):
