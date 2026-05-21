@@ -1231,6 +1231,7 @@ class PipelineCard(tk.Frame):
 
         summary_row = tk.Frame(content, bg=C["card_bg"])
         summary_row.pack(fill="x")
+        self._summary_row = summary_row
         self._expand_arrow = tk.Label(
             summary_row, text="▸ ", bg=C["card_bg"], fg=C["path_fg"],
             font=("Segoe UI", 8), cursor="hand2")
@@ -2336,6 +2337,8 @@ class RYOSApp(_BaseWindow):
 
     def _bind_pipeline_drag(self, card: "PipelineCard"):
         def recurse(w):
+            if w is card._summary_row:
+                return
             w.bind("<ButtonPress-1>",   lambda e, c=card: self._card_drag_press(e, c))
             w.bind("<B1-Motion>",       lambda e, c=card: self._card_drag_motion(e, c))
             w.bind("<ButtonRelease-1>", lambda e:         self._card_drag_release(e))
