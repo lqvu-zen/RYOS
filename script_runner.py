@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.2.4"
+__version__ = "1.3.0"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
@@ -1851,6 +1851,8 @@ class RYOSApp(_BaseWindow):
         self._drag_target_group: str | None = None
         self._drag_tab_highlight: tuple | None = None
         self._section_collapsed: dict[str, dict[str, bool]] = {}
+        self._output_tabs: dict = {}
+        self._active_tab_key: str | None = None
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -2035,9 +2037,8 @@ class RYOSApp(_BaseWindow):
 
         out_header = tk.Frame(self.out_panel, bg="#2d2d2d", pady=4, padx=10)
         out_header.pack(fill="x")
-        self.out_title = tk.Label(out_header, text="Output", bg="#2d2d2d", fg="#aaa",
-                                  font=("Segoe UI", 9, "bold"), anchor="w")
-        self.out_title.pack(side="left")
+        tk.Label(out_header, text="Output", bg="#2d2d2d", fg="#aaa",
+                 font=("Segoe UI", 9, "bold"), anchor="w").pack(side="left")
         self._toggle_btn = tk.Button(out_header, text="▲  Show Output", bg="#2d2d2d", fg="#aaa",
                                      activebackground="#3d3d3d", activeforeground="#fff",
                                      relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
@@ -2056,14 +2057,9 @@ class RYOSApp(_BaseWindow):
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._clear_log).pack(side="right", padx=4)
 
-        self.out_text = scrolledtext.ScrolledText(
-            self.out_panel, wrap="word", height=10, font=("Consolas", 10),
-            bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
-        )
-        # not packed on init — starts collapsed; out_panel itself always in paned
-        self.out_text.tag_config("stderr", foreground="#ff8080")
-        self.out_text.tag_config("info",   foreground="#7ec0ee")
-        self.out_text.tag_config("ok",     foreground="#90ee90")
+        # tab bar and body — not packed on init (starts collapsed)
+        self._tab_bar = tk.Frame(self.out_panel, bg="#252525")
+        self._tab_body = tk.Frame(self.out_panel, bg="#1e1e1e")
 
         self._paned.add(self.out_panel, weight=0)
 
@@ -2653,11 +2649,7 @@ class RYOSApp(_BaseWindow):
                             self._stop_running if _pc.pipeline_id == pipeline_id else None)
         for _c in self._cards:
             _c.set_running(False)
-        self._show_output(f"Pipeline: {pipeline_name}")
-        if not self._out_expanded:
-            self._toggle_output()
-        if self._settings["auto_clear_output"]:
-            self._clear_log()
+        self._get_or_create_tab(f"pipeline:{pipeline_id}", f"⚡ {pipeline_name}")
         self._append_output(
             f"\n{'━' * 60}\n"
             f"⚡  {pipeline_name}  ·  {self._pipeline_total} step"
@@ -2805,9 +2797,7 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Parameter Error", f"Could not parse parameters:\n{e}")
             return
 
-        self._show_output(name)
-        if self._settings["auto_clear_output"]:
-            self._clear_log()
+        self._get_or_create_tab(f"script:{script_id}", name)
         self._append_output(
             f"\n{'━'*60}\n"
             f"  ▶  {name}\n"
@@ -2865,20 +2855,82 @@ class RYOSApp(_BaseWindow):
             f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
         ))
 
-    def _show_output(self, name: str):
-        self.out_title.config(text=f"Output — {name}")
+    def _get_or_create_tab(self, key: str, name: str):
+        if key in self._output_tabs:
+            tab = self._output_tabs[key]
+            tab["text"].configure(state="normal")
+            tab["text"].delete("1.0", tk.END)
+            tab["name_lbl"].config(text=name)
+            self._activate_tab(key)
+        else:
+            text = scrolledtext.ScrolledText(
+                self._tab_body, wrap="word", height=10, font=("Consolas", 10),
+                bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
+            )
+            text.tag_config("stderr", foreground="#ff8080")
+            text.tag_config("info",   foreground="#7ec0ee")
+            text.tag_config("ok",     foreground="#90ee90")
+
+            btn = tk.Frame(self._tab_bar, bg="#2d2d2d", cursor="hand2")
+            btn.pack(side="left", padx=(1, 0), pady=(2, 0))
+            name_lbl = tk.Label(btn, text=name, bg="#2d2d2d", fg="#aaa",
+                                font=("Segoe UI", 9), cursor="hand2", padx=8, pady=3)
+            name_lbl.pack(side="left")
+            close_lbl = tk.Label(btn, text="×", bg="#2d2d2d", fg="#555",
+                                 font=("Segoe UI", 9), cursor="hand2", padx=4, pady=3)
+            close_lbl.pack(side="left")
+
+            self._output_tabs[key] = {"text": text, "btn": btn,
+                                      "name_lbl": name_lbl, "close_lbl": close_lbl}
+            name_lbl.bind("<Button-1>", lambda e, k=key: self._activate_tab(k))
+            btn.bind("<Button-1>",      lambda e, k=key: self._activate_tab(k))
+            close_lbl.bind("<Button-1>", lambda e, k=key: self._close_tab(k))
+            self._activate_tab(key)
+
+        if not self._out_expanded:
+            self._toggle_output()
+
+    def _activate_tab(self, key: str):
+        if self._active_tab_key and self._active_tab_key in self._output_tabs:
+            old = self._output_tabs[self._active_tab_key]
+            for w in [old["btn"], old["name_lbl"], old["close_lbl"]]:
+                w.config(bg="#2d2d2d")
+            old["name_lbl"].config(fg="#aaa")
+            old["close_lbl"].config(fg="#555")
+            old["text"].pack_forget()
+        self._active_tab_key = key
+        tab = self._output_tabs[key]
+        for w in [tab["btn"], tab["name_lbl"], tab["close_lbl"]]:
+            w.config(bg="#1e1e1e")
+        tab["name_lbl"].config(fg="#ffffff")
+        tab["close_lbl"].config(fg="#888")
+        tab["text"].pack(fill="both", expand=True)
+
+    def _close_tab(self, key: str):
+        if key not in self._output_tabs:
+            return
+        tab = self._output_tabs.pop(key)
+        tab["text"].pack_forget()
+        tab["text"].destroy()
+        tab["btn"].destroy()
+        if key == self._active_tab_key:
+            self._active_tab_key = None
+            if self._output_tabs:
+                self._activate_tab(next(iter(self._output_tabs)))
 
     def _toggle_output(self):
         if self._out_expanded:
             self._saved_sash_pos = self._paned.sashpos(0)
-            self.out_text.pack_forget()
+            self._tab_bar.pack_forget()
+            self._tab_body.pack_forget()
             self._toggle_btn.config(text="▲  Show Output")
             self._out_expanded = False
             self.update_idletasks()
             h = self._paned.winfo_height()
             self._paned.sashpos(0, h - self.out_panel.winfo_reqheight())
         else:
-            self.out_text.pack(fill="both", expand=True)
+            self._tab_bar.pack(fill="x")
+            self._tab_body.pack(fill="both", expand=True)
             self._toggle_btn.config(text="▼  Hide Output")
             self._out_expanded = True
             self.update_idletasks()
@@ -2887,26 +2939,33 @@ class RYOSApp(_BaseWindow):
             self._paned.sashpos(0, min(sash, h - 50))
 
     def _append_output(self, text: str, tag: str | None = None):
-        self.out_text.configure(state="normal")
+        if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
+            return
+        out_text = self._output_tabs[self._active_tab_key]["text"]
+        out_text.configure(state="normal")
         if tag:
-            self.out_text.insert(tk.END, text, tag)
+            out_text.insert(tk.END, text, tag)
         else:
-            self.out_text.insert(tk.END, text)
-        # Trim oldest lines when buffer exceeds the max
+            out_text.insert(tk.END, text)
         max_lines = self._settings.get("max_output_lines", 2000)
-        line_count = int(self.out_text.index(tk.END).split(".")[0]) - 1
+        line_count = int(out_text.index(tk.END).split(".")[0]) - 1
         if line_count > max_lines:
-            self.out_text.delete("1.0", f"{line_count - max_lines + 1}.0")
+            out_text.delete("1.0", f"{line_count - max_lines + 1}.0")
         if self._settings.get("auto_scroll_output", True):
-            self.out_text.see(tk.END)
+            out_text.see(tk.END)
 
     def _clear_log(self):
-        self.out_text.configure(state="normal")
-        self.out_text.delete("1.0", tk.END)
-        self.out_title.config(text="Output")
+        if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
+            return
+        out_text = self._output_tabs[self._active_tab_key]["text"]
+        out_text.configure(state="normal")
+        out_text.delete("1.0", tk.END)
 
     def _save_log(self):
-        text = self.out_text.get("1.0", tk.END).strip()
+        if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
+            self.status_var.set("Nothing to save.")
+            return
+        text = self._output_tabs[self._active_tab_key]["text"].get("1.0", tk.END).strip()
         if not text:
             self.status_var.set("Nothing to save.")
             return
@@ -2920,7 +2979,9 @@ class RYOSApp(_BaseWindow):
             self.status_var.set(f"Saved to {path}")
 
     def _copy_log(self):
-        text = self.out_text.get("1.0", tk.END).strip()
+        if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
+            return
+        text = self._output_tabs[self._active_tab_key]["text"].get("1.0", tk.END).strip()
         if text:
             self.clipboard_clear()
             self.clipboard_append(text)
