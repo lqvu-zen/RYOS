@@ -16,7 +16,12 @@ import subprocess
 import threading
 import queue
 import ctypes
-from tkinterdnd2 import TkinterDnD, DND_FILES
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    _DND_AVAILABLE = True
+except ImportError:
+    _DND_AVAILABLE = False
+    DND_FILES = None
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -1118,7 +1123,10 @@ class ScriptCard(tk.Frame):
 # ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
-class RYOSApp(TkinterDnD.Tk):
+_BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
+
+
+class RYOSApp(_BaseWindow):
     def __init__(self):
         super().__init__()
         if sys.platform == "win32":
@@ -1167,6 +1175,8 @@ class RYOSApp(TkinterDnD.Tk):
 
     # ---------- file drag-and-drop ----------
     def _setup_file_drop(self):
+        if not _DND_AVAILABLE:
+            return
         self.drop_target_register(DND_FILES)
         self.dnd_bind("<<Drop>>", self._on_drop_event)
 
