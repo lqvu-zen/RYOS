@@ -1135,7 +1135,7 @@ class RYOSApp(_BaseWindow):
         self.title("RYOS — Run Your Own Scripts")
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
-        _icon = _BASE / "icon.ico"
+        _icon = Path(getattr(sys, "_MEIPASS", str(_BASE))) / "icon.ico"
         if _icon.exists():
             self.iconbitmap(str(_icon))
         self.update_idletasks()
