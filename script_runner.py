@@ -1723,6 +1723,7 @@ class RYOSApp(_BaseWindow):
     def _refresh_cards(self):
         for w in self.cards_frame.winfo_children():
             w.destroy()
+        self._cards = []
         self._pipeline_cards = []
 
         def make_move(a, b):
