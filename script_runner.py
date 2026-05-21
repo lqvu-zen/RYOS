@@ -59,6 +59,8 @@ _SETTINGS_DEFAULTS: dict = {
     "window_geometry":        None,
     "always_on_top":          False,
     "snap_corner":            "bottom_right",
+    "window_width":           540,
+    "window_height":          640,
     "max_output_lines":       2000,
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
@@ -1377,6 +1379,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
+        self._win_width         = tk.StringVar(value=str(self._settings.get("window_width",  540)))
+        self._win_height        = tk.StringVar(value=str(self._settings.get("window_height", 640)))
         self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
         self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
@@ -1425,6 +1429,27 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Start minimized",                  self._start_minimized)
         self._chk(f, "Remember window size and position", self._remember_geometry)
 
+        # Window size
+        size_row = tk.Frame(f, bg=C["bg"])
+        size_row.pack(fill="x", pady=(8, 2))
+        vcmd_int = (self.register(lambda s: s.isdigit() or s == ""), "%P")
+        tk.Label(size_row, text="Window size:", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(side="left")
+        tk.Spinbox(size_row, from_=400, to=3840, increment=10,
+                   textvariable=self._win_width, width=6,
+                   validate="key", validatecommand=vcmd_int,
+                   bg=C["card_bg"], fg=C["name_fg"],
+                   buttonbackground=C["card_bg"],
+                   font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+        tk.Label(size_row, text="×", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(side="left", padx=4)
+        tk.Spinbox(size_row, from_=300, to=2160, increment=10,
+                   textvariable=self._win_height, width=6,
+                   validate="key", validatecommand=vcmd_int,
+                   bg=C["card_bg"], fg=C["name_fg"],
+                   buttonbackground=C["card_bg"],
+                   font=("Segoe UI", 9)).pack(side="left")
+
         # Corner picker
         row = tk.Frame(f, bg=C["bg"])
         row.pack(fill="x", pady=(8, 2))
@@ -1465,9 +1490,16 @@ class AdvancedOptionsDialog(tk.Toplevel):
             max_lines = max(100, int(self._max_lines.get() or 100))
         except ValueError:
             max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
+        try:
+            win_w = max(400, int(self._win_width.get()  or 540))
+            win_h = max(300, int(self._win_height.get() or 640))
+        except ValueError:
+            win_w, win_h = 540, 640
         self._settings.update({
             "always_on_top":            self._always_on_top.get(),
             "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
+            "window_width":             win_w,
+            "window_height":            win_h,
             "remember_last_group":      self._remember_group.get(),
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
@@ -1504,14 +1536,15 @@ class RYOSApp(_BaseWindow):
         _icon = Path(getattr(sys, "_MEIPASS", str(_BASE))) / "icon.ico"
         if _icon.exists():
             self.iconbitmap(str(_icon))
+        self.db = ScriptDB()
+        self._settings: dict = _load_settings()
+
         self.update_idletasks()
-        w, h = 540, 640
+        w = self._settings.get("window_width",  540)
+        h = self._settings.get("window_height", 640)
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-
-        self.db = ScriptDB()
-        self._settings: dict = _load_settings()
         self.current_process = None
         self.output_queue: queue.Queue = queue.Queue()
         self._cards: list[ScriptCard] = []
@@ -2656,6 +2689,7 @@ class RYOSApp(_BaseWindow):
             self._settings = new_settings
             _save_settings(self._settings)
             self.attributes("-topmost", self._settings["always_on_top"])
+            self.geometry(f"{self._settings['window_width']}x{self._settings['window_height']}")
             corner = self._settings.get("snap_corner") or ""
             if corner and corner != "none":
                 _apply_snap_corner(self, corner)
