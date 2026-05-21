@@ -71,6 +71,7 @@ _SETTINGS_DEFAULTS: dict = {
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
     "auto_check_update":      True,
+    "notify_on_complete":     True,
 }
 
 
@@ -151,6 +152,34 @@ def _set_startup(enable: bool) -> None:
                 winreg.DeleteValue(k, _RUN_NAME)
             except FileNotFoundError:
                 pass
+
+
+def _show_notification(title: str, body: str) -> None:
+    """Fire a Windows toast notification (fire-and-forget, Windows 10/11 only)."""
+    if sys.platform != "win32":
+        return
+    # Use PowerShell's own registered AppId so no app registration is needed.
+    _APP_ID = r"{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe"
+    ps = (
+        "[void][Windows.UI.Notifications.ToastNotificationManager,"
+        "Windows.UI.Notifications,ContentType=WindowsRuntime];"
+        "$xml=[Windows.UI.Notifications.ToastNotificationManager]"
+        "::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
+        "$el=$xml.GetElementsByTagName('text');"
+        f"$el[0].InnerText='{title.replace(chr(39), chr(39)*2)}';"
+        f"$el[1].InnerText='{body.replace(chr(39), chr(39)*2)}';"
+        f"[Windows.UI.Notifications.ToastNotificationManager]"
+        f"::CreateToastNotifier('{_APP_ID}')"
+        ".Show([Windows.UI.Notifications.ToastNotification]::new($xml))"
+    )
+    try:
+        subprocess.Popen(
+            ["powershell", "-WindowStyle", "Hidden", "-NoProfile", "-Command", ps],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 
 
 def _parse_version(tag: str) -> tuple:
@@ -1623,6 +1652,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
         self._auto_check_update = tk.BooleanVar(value=self._settings.get("auto_check_update", True))
+        self._notify_on_complete = tk.BooleanVar(value=self._settings.get("notify_on_complete", True))
 
         self._build()
         self.update_idletasks()
@@ -1701,9 +1731,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         # ── Output ─────────────────────────────────────────────────
         f = self._section("OUTPUT")
-        self._chk(f, "Auto-clear output before each run", self._auto_clear)
-        self._chk(f, "Auto-scroll to bottom",             self._auto_scroll)
-        self._chk(f, "Check for updates on startup",      self._auto_check_update)
+        self._chk(f, "Auto-clear output before each run",        self._auto_clear)
+        self._chk(f, "Auto-scroll to bottom",                     self._auto_scroll)
+        self._chk(f, "Notify when script / pipeline completes",   self._notify_on_complete)
+        self._chk(f, "Check for updates on startup",              self._auto_check_update)
 
         row = tk.Frame(f, bg=C["bg"])
         row.pack(fill="x", pady=4)
@@ -1746,6 +1777,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "max_output_lines":         max_lines,
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
+            "notify_on_complete":       self._notify_on_complete.get(),
             "auto_check_update":        self._auto_check_update.get(),
         })
         try:
@@ -2598,6 +2630,7 @@ class RYOSApp(_BaseWindow):
         self._pipeline_step_idx = 0
         self._pipeline_total = len(steps)
         self._running_pipeline_id = pipeline_id
+        self._running_pipeline_name = pipeline_name
         self._running_script_id = None
         for _pc in self._pipeline_cards:
             _pc.set_running(_pc.pipeline_id == pipeline_id,
@@ -2769,6 +2802,7 @@ class RYOSApp(_BaseWindow):
         self.status_var.set(f"Running: {name}")
         self.db.mark_run(script_id)
         self._running_script_id = script_id
+        self._running_script_name = name
         self._running_pipeline_id = None
         for _c in self._cards:
             _c.set_running(_c.script_id == script_id,
@@ -2917,6 +2951,7 @@ class RYOSApp(_BaseWindow):
             _pc.set_running(False)
 
     def _handle_step_done(self, status: str):
+        notify = self._settings.get("notify_on_complete", True)
         if self._pipeline_total > 0:
             if status == "ok" and self._pipeline_queue:
                 self._run_next_pipeline_step()
@@ -2928,21 +2963,35 @@ class RYOSApp(_BaseWindow):
                     tag="ok",
                 )
                 self.status_var.set("Pipeline complete.")
+                name = getattr(self, "_running_pipeline_name", "Pipeline")
                 self._pipeline_total = 0
                 self._running_pipeline_id = None
                 self._running_script_id = None
                 self._clear_running_state()
+                if notify:
+                    _show_notification("RYOS — Pipeline complete", f"✓  {name}")
             else:
                 self._pipeline_queue.clear()
                 self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr")
                 self.status_var.set("Pipeline stopped (step failed).")
+                name = getattr(self, "_running_pipeline_name", "Pipeline")
                 self._pipeline_total = 0
                 self._running_pipeline_id = None
                 self._running_script_id = None
                 self._clear_running_state()
+                if notify:
+                    _show_notification("RYOS — Pipeline failed", f"✗  {name}")
         else:
+            name = getattr(self, "_running_script_name", "Script")
             self._running_script_id = None
-            self.status_var.set("Done.")
+            if status == "ok":
+                self.status_var.set("Done.")
+                if notify:
+                    _show_notification("RYOS", f"✓  {name}  —  passed")
+            else:
+                self.status_var.set("Failed.")
+                if notify:
+                    _show_notification("RYOS", f"✗  {name}  —  failed")
             self._clear_running_state()
 
     def _check_for_update(self):
