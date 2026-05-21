@@ -1350,6 +1350,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
         self._always_on_top     = tk.BooleanVar(value=self._settings["always_on_top"])
         self._snap_corner       = tk.StringVar(value=self._settings.get("snap_corner") or "none")
+        self._snap_corner.trace_add("write", self._on_corner_change)
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
@@ -1362,6 +1363,11 @@ class AdvancedOptionsDialog(tk.Toplevel):
         pw, ph = parent.winfo_rootx(), parent.winfo_rooty()
         w, h = self.winfo_width(), self.winfo_height()
         self.geometry(f"+{pw + 60}+{ph + 60}")
+
+    def _on_corner_change(self, *_):
+        corner = self._snap_corner.get()
+        if corner and corner != "none":
+            _apply_snap_corner(self.master, corner)
 
     # ── helpers ────────────────────────────────────────────────────
     def _section(self, text: str) -> tk.Frame:
