@@ -36,7 +36,34 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # When frozen by PyInstaller, store DB next to the .exe; otherwise next to this file.
 _BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
-DB_PATH = _BASE / "scripts.db"
+DB_PATH       = _BASE / "scripts.db"
+_SETTINGS_PATH = _BASE / "settings.json"
+
+_SETTINGS_DEFAULTS: dict = {
+    "remember_last_group":    True,
+    "last_group":             None,
+    "start_minimized":        False,
+    "remember_window_geometry": True,
+    "window_geometry":        None,
+    "max_output_lines":       2000,
+    "auto_clear_output":      False,
+    "auto_scroll_output":     True,
+}
+
+
+def _load_settings() -> dict:
+    try:
+        stored = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        stored = {}
+    return {**_SETTINGS_DEFAULTS, **stored}
+
+
+def _save_settings(settings: dict) -> None:
+    try:
+        _SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    except Exception:
+        pass
 
 
 class ScriptDB:
@@ -1250,6 +1277,106 @@ class ScriptCard(tk.Frame):
 
 
 # ---------------------------------------------------------------------------
+# Advanced Options dialog
+# ---------------------------------------------------------------------------
+class AdvancedOptionsDialog(tk.Toplevel):
+    def __init__(self, parent, settings: dict, on_save):
+        super().__init__(parent)
+        self._settings = dict(settings)
+        self._on_save  = on_save
+        self.title("Advanced Options")
+        self.configure(bg=C["bg"])
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        # ── variables ──────────────────────────────────────────────
+        self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
+        self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
+        self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
+        self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
+        self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
+        self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
+
+        self._build()
+        self.update_idletasks()
+        pw, ph = parent.winfo_rootx(), parent.winfo_rooty()
+        w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{pw + 60}+{ph + 60}")
+
+    # ── helpers ────────────────────────────────────────────────────
+    def _section(self, text: str) -> tk.Frame:
+        tk.Label(self._body, text=text, bg=C["bg"], fg=C["accent"],
+                 font=("Segoe UI", 9, "bold"), anchor="w").pack(
+            fill="x", padx=16, pady=(14, 2))
+        sep = tk.Frame(self._body, bg=C["accent"], height=1)
+        sep.pack(fill="x", padx=16, pady=(0, 6))
+        frame = tk.Frame(self._body, bg=C["bg"])
+        frame.pack(fill="x", padx=24, pady=2)
+        return frame
+
+    def _chk(self, parent, text: str, var: tk.BooleanVar) -> tk.Checkbutton:
+        cb = tk.Checkbutton(parent, text=text, variable=var,
+                            bg=C["bg"], fg=C["fg"],
+                            selectcolor=C["card_bg"],
+                            activebackground=C["bg"], activeforeground=C["fg"],
+                            font=("Segoe UI", 9), anchor="w")
+        cb.pack(fill="x", pady=2)
+        return cb
+
+    def _build(self):
+        self._body = tk.Frame(self, bg=C["bg"])
+        self._body.pack(fill="both", expand=True)
+
+        # ── Startup ────────────────────────────────────────────────
+        f = self._section("STARTUP")
+        self._chk(f, "Remember last active group",        self._remember_group)
+        self._chk(f, "Start minimized",                  self._start_minimized)
+        self._chk(f, "Remember window size and position", self._remember_geometry)
+
+        # ── Output ─────────────────────────────────────────────────
+        f = self._section("OUTPUT")
+        self._chk(f, "Auto-clear output before each run", self._auto_clear)
+        self._chk(f, "Auto-scroll to bottom",             self._auto_scroll)
+
+        row = tk.Frame(f, bg=C["bg"])
+        row.pack(fill="x", pady=4)
+        tk.Label(row, text="Max output lines:", bg=C["bg"], fg=C["fg"],
+                 font=("Segoe UI", 9)).pack(side="left")
+        vcmd = (self.register(lambda s: s.isdigit() or s == ""), "%P")
+        tk.Spinbox(row, from_=100, to=50000, increment=100,
+                   textvariable=self._max_lines, width=7,
+                   validate="key", validatecommand=vcmd,
+                   bg=C["card_bg"], fg=C["fg"],
+                   buttonbackground=C["card_bg"],
+                   font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
+        # ── Buttons ────────────────────────────────────────────────
+        btn_row = tk.Frame(self, bg=C["bg"])
+        btn_row.pack(fill="x", padx=16, pady=12)
+        _flat_button(btn_row, "Cancel", "#3a3a3a", "#555",
+                     self.destroy, width=10).pack(side="right", padx=(6, 0))
+        _flat_button(btn_row, "Save", C["accent"], C["accent2"],
+                     self._save, width=10).pack(side="right")
+
+    def _save(self):
+        try:
+            max_lines = max(100, int(self._max_lines.get() or 100))
+        except ValueError:
+            max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
+        self._settings.update({
+            "remember_last_group":      self._remember_group.get(),
+            "start_minimized":          self._start_minimized.get(),
+            "remember_window_geometry": self._remember_geometry.get(),
+            "max_output_lines":         max_lines,
+            "auto_clear_output":        self._auto_clear.get(),
+            "auto_scroll_output":       self._auto_scroll.get(),
+        })
+        self._on_save(self._settings)
+        self.destroy()
+
+
+# ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
@@ -1274,6 +1401,7 @@ class RYOSApp(_BaseWindow):
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
 
         self.db = ScriptDB()
+        self._settings: dict = _load_settings()
         self.current_process = None
         self.output_queue: queue.Queue = queue.Queue()
         self._cards: list[ScriptCard] = []
@@ -1293,14 +1421,23 @@ class RYOSApp(_BaseWindow):
         self._drag_target_group: str | None = None
         self._drag_tab_highlight: tuple | None = None
         self._section_collapsed: dict[str, dict[str, bool]] = {}
+
         groups = self.db.list_groups()
-        self._active_group: str | None = groups[0] if groups else None
+        if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
+            self._active_group: str | None = self._settings["last_group"]
+        else:
+            self._active_group = groups[0] if groups else None
+
+        if self._settings["remember_window_geometry"] and self._settings.get("window_geometry"):
+            self.geometry(self._settings["window_geometry"])
 
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
         self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self._settings["start_minimized"]:
+            self.after(0, self.iconify)
 
     # ---------- file drag-and-drop ----------
     def _setup_file_drop(self):
@@ -1364,12 +1501,14 @@ class RYOSApp(_BaseWindow):
         self._options_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
                                      activebackground=C["accent"], activeforeground="#ffffff",
                                      borderwidth=0, relief="flat")
-        self._options_menu.add_command(label="☑  Select scripts",  command=self._toggle_select_mode)
+        self._options_menu.add_command(label="☑  Select scripts",     command=self._toggle_select_mode)
         self._options_menu.add_separator()
-        self._options_menu.add_command(label="📤  Export all groups", command=self._export_config)
-        self._options_menu.add_command(label="📥  Import config",     command=self._import_config)
+        self._options_menu.add_command(label="📤  Export all groups",  command=self._export_config)
+        self._options_menu.add_command(label="📥  Import config",      command=self._import_config)
         self._options_menu.add_separator()
-        self._options_menu.add_command(label="🗑  Delete All",      command=self._delete_all)
+        self._options_menu.add_command(label="⚙  Advanced options…",  command=self._open_advanced_options)
+        self._options_menu.add_separator()
+        self._options_menu.add_command(label="🗑  Delete All",         command=self._delete_all)
 
         options_btn = _flat_button(header, "⚙", "#3a3a3a", "#555",
                                    self._show_options_menu, width=4)
@@ -2070,6 +2209,8 @@ class RYOSApp(_BaseWindow):
         self._show_output(f"Pipeline: {pipeline_name}")
         if not self._out_expanded:
             self._toggle_output()
+        if self._settings["auto_clear_output"]:
+            self._clear_log()
         self._append_output(
             f"\n{'━' * 60}\n"
             f"⚡  {pipeline_name}  ·  {self._pipeline_total} step"
@@ -2216,6 +2357,8 @@ class RYOSApp(_BaseWindow):
             return
 
         self._show_output(name)
+        if self._settings["auto_clear_output"]:
+            self._clear_log()
         self._append_output(
             f"\n{'━'*60}\n"
             f"  ▶  {name}\n"
@@ -2294,7 +2437,13 @@ class RYOSApp(_BaseWindow):
             self.out_text.insert(tk.END, text, tag)
         else:
             self.out_text.insert(tk.END, text)
-        self.out_text.see(tk.END)
+        # Trim oldest lines when buffer exceeds the max
+        max_lines = self._settings.get("max_output_lines", 2000)
+        line_count = int(self.out_text.index(tk.END).split(".")[0]) - 1
+        if line_count > max_lines:
+            self.out_text.delete("1.0", f"{line_count - max_lines + 1}.0")
+        if self._settings.get("auto_scroll_output", True):
+            self.out_text.see(tk.END)
 
     def _clear_log(self):
         self.out_text.configure(state="normal")
@@ -2386,6 +2535,12 @@ class RYOSApp(_BaseWindow):
             self.status_var.set("Done.")
             self._refresh()
 
+    def _open_advanced_options(self):
+        def _apply(new_settings: dict):
+            self._settings = new_settings
+            _save_settings(self._settings)
+        AdvancedOptionsDialog(self, self._settings, _apply)
+
     def _on_close(self):
         if self.current_process and self.current_process.poll() is None:
             if not messagebox.askyesno("Still Running", "A script is still running. Exit anyway?"):
@@ -2394,6 +2549,11 @@ class RYOSApp(_BaseWindow):
                 self.current_process.terminate()
             except Exception:
                 pass
+        if self._settings["remember_window_geometry"]:
+            self._settings["window_geometry"] = self.geometry()
+        if self._settings["remember_last_group"]:
+            self._settings["last_group"] = self._active_group
+        _save_settings(self._settings)
         self.destroy()
 
 
