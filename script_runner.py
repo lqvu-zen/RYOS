@@ -1219,7 +1219,7 @@ class PipelineCard(tk.Frame):
         # Name (scrolling if long)
         ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
 
-        # Steps summary row (clickable to expand/collapse when steps exist)
+        # Steps summary row (click to open step review popup)
         n = len(steps)
         if n == 0:
             summary_text = "No steps — click ⚙ to add scripts"
@@ -1229,37 +1229,20 @@ class PipelineCard(tk.Frame):
             if n > 4:
                 summary_text += f"  →  +{n - 4} more"
 
-        summary_row = tk.Frame(content, bg=C["card_bg"])
+        summary_row = tk.Frame(content, bg=C["card_bg"],
+                               cursor="hand2" if n > 0 else "")
         summary_row.pack(fill="x")
         self._summary_row = summary_row
-        self._expand_arrow = tk.Label(
-            summary_row, text="▸ ", bg=C["card_bg"], fg=C["path_fg"],
-            font=("Segoe UI", 8), cursor="hand2")
         if n > 0:
-            self._expand_arrow.pack(side="left")
+            tk.Label(summary_row, text="▸ ", bg=C["card_bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 8), cursor="hand2").pack(side="left")
         tk.Label(summary_row, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary_text}",
-                 bg=C["card_bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8), anchor="w",
+                 bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8), anchor="w",
                  cursor="hand2" if n > 0 else "").pack(side="left", fill="x", expand=True)
-
-        # Expandable step detail (hidden by default)
-        self._expanded = False
-        self._detail_frame = tk.Frame(content, bg=C["card_bg"])
-        sep = tk.Frame(self._detail_frame, bg=C["border"], height=1)
-        sep.pack(fill="x", pady=(4, 4))
-        for i, step in enumerate(steps, 1):
-            row = tk.Frame(self._detail_frame, bg=C["card_bg"])
-            row.pack(fill="x", pady=1)
-            tk.Label(row, text=f"{i}.", bg=C["card_bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 8), width=3, anchor="e").pack(side="left")
-            tk.Label(row, text=step[2], bg=C["card_bg"], fg=C["name_fg"],
-                     font=("Segoe UI", 8, "bold"), anchor="w").pack(side="left", padx=(6, 0))
-            tk.Label(row, text=step[3], bg=C["card_bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(6, 0))
 
         if n > 0:
             for w in (summary_row, *summary_row.winfo_children()):
-                w.bind("<Button-1>", self._toggle_expand)
+                w.bind("<Button-1>", self._show_steps_popup)
 
         for widget in (self, content):
             widget.bind("<Enter>", self._on_enter)
@@ -1293,14 +1276,57 @@ class PipelineCard(tk.Frame):
                 self._running_lbl.destroy()
                 self._running_lbl = None
 
-    def _toggle_expand(self, _e=None):
-        self._expanded = not self._expanded
-        if self._expanded:
-            self._expand_arrow.config(text="▾ ")
-            self._detail_frame.pack(fill="x")
+    def _show_steps_popup(self, event=None):
+        # Close any existing popup first
+        existing = getattr(self, "_steps_popup", None)
+        if existing:
+            try:
+                existing.destroy()
+            except tk.TclError:
+                pass
+            self._steps_popup = None
+            return
+
+        steps = self.db.list_pipeline_steps(self.pipeline_id)
+
+        popup = tk.Toplevel(self)
+        popup.overrideredirect(True)
+        popup.configure(bg=C["border"])
+        self._steps_popup = popup
+
+        inner = tk.Frame(popup, bg=C["card_bg"], padx=14, pady=10)
+        inner.pack(padx=1, pady=1)
+
+        # Title
+        tk.Label(inner, text=self._name, bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(0, 6))
+        tk.Frame(inner, bg=C["border"], height=1).pack(fill="x", pady=(0, 6))
+
+        if not steps:
+            tk.Label(inner, text="No steps yet.", bg=C["card_bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 8)).pack(anchor="w")
         else:
-            self._expand_arrow.config(text="▸ ")
-            self._detail_frame.pack_forget()
+            for i, step in enumerate(steps, 1):
+                row = tk.Frame(inner, bg=C["card_bg"])
+                row.pack(fill="x", pady=2)
+                tk.Label(row, text=f"{i}.", bg=C["card_bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 8), width=3, anchor="e").pack(side="left")
+                tk.Label(row, text=step[2], bg=C["card_bg"], fg=C["name_fg"],
+                         font=("Segoe UI", 8, "bold"), anchor="w").pack(side="left", padx=(6, 0))
+                tk.Label(row, text=step[3], bg=C["card_bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(6, 0))
+
+        # Position near click, nudge inside screen bounds
+        popup.update_idletasks()
+        pw, ph = popup.winfo_reqwidth(), popup.winfo_reqheight()
+        sw, sh = popup.winfo_screenwidth(), popup.winfo_screenheight()
+        x = min((event.x_root + 12) if event else self.winfo_rootx(), sw - pw - 8)
+        y = min((event.y_root + 12) if event else self.winfo_rooty(), sh - ph - 8)
+        popup.geometry(f"+{x}+{y}")
+
+        popup.bind("<Escape>", lambda e: popup.destroy())
+        popup.bind("<FocusOut>", lambda e: popup.destroy())
+        popup.focus_set()
 
     def _bind_right_click_all(self, widget):
         widget.bind("<Button-3>", self._context_menu)
