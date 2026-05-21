@@ -1909,19 +1909,20 @@ class RYOSApp(_BaseWindow):
         header.pack(fill="x")
         wm = tk.Frame(header, bg=C["header_bg"])
         wm.pack(side="left")
+        header_btn_size = 6
         tk.Label(wm, text="⚡", bg=C["header_bg"], fg="#FFD23F",
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg="#ffffff",
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         add_btn = _flat_button(header, "+ Script", C["accent"], C["accent2"],
-                               self._add_script, width=10)
+                               self._add_script, width=header_btn_size)
         add_btn.config(bg=C["accent"])
         add_btn.pack(side="right")
         add_group_btn = _flat_button(header, "+ Group", "#2e7d32", "#388e3c",
-                                     self._create_group, width=10)
+                                     self._create_group, width=header_btn_size)
         add_group_btn.pack(side="right", padx=(0, 6))
         self._pipeline_btn = _flat_button(header, "+ Pipeline", "#5c4bbd", "#7060d0",
-                                           self._add_pipeline, width=10)
+                                           self._add_pipeline, width=header_btn_size)
         self._pipeline_btn.pack(side="right", padx=(0, 6))
 
         # Options dropdown
