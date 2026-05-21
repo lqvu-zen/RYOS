@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
@@ -813,7 +813,7 @@ class ScriptDialog(tk.Toplevel):
                 self.e_name.insert(0, name)
                 self.e_path.insert(0, path)
                 self.e_params.insert(0, params)
-                self.e_interp.insert(0, interp)
+                self.e_interp.set(interp)
                 self.e_group.set(grp or "")
         else:
             self.e_group.set(self.default_group)
@@ -859,9 +859,11 @@ class ScriptDialog(tk.Toplevel):
         self.e_params.grid(row=2, column=1, columnspan=2, sticky="ew", **pad)
 
         ttk.Label(frame, text="Interpreter:").grid(row=3, column=0, sticky="w", **pad)
-        self.e_interp = ttk.Entry(frame, width=40)
+        self.e_interp = ttk.Combobox(frame, width=38, values=[
+            "cmd /c", "powershell -File", "pwsh -File", "python", "node", "bash",
+        ])
         self.e_interp.grid(row=3, column=1, columnspan=2, sticky="ew", **pad)
-        ttk.Label(frame, text="Leave blank for auto-detection", foreground="#888").grid(
+        ttk.Label(frame, text="Leave blank for auto-detection, or pick a preset", foreground="#888").grid(
             row=4, column=1, columnspan=2, sticky="w", padx=8
         )
 
