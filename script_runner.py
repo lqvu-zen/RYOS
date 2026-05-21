@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.1.4"
+__version__ = "1.2.0"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
