@@ -2058,8 +2058,8 @@ class RYOSApp(_BaseWindow):
                   command=self._clear_log).pack(side="right", padx=4)
 
         # tab bar and body — not packed on init (starts collapsed)
-        self._tab_bar = tk.Frame(self.out_panel, bg="#252525")
-        self._tab_body = tk.Frame(self.out_panel, bg="#1e1e1e")
+        self._out_tab_bar = tk.Frame(self.out_panel, bg="#252525")
+        self._out_tab_body = tk.Frame(self.out_panel, bg="#1e1e1e")
 
         self._paned.add(self.out_panel, weight=0)
 
@@ -2864,14 +2864,14 @@ class RYOSApp(_BaseWindow):
             self._activate_tab(key)
         else:
             text = scrolledtext.ScrolledText(
-                self._tab_body, wrap="word", height=10, font=("Consolas", 10),
+                self._out_tab_body, wrap="word", height=10, font=("Consolas", 10),
                 bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
             )
             text.tag_config("stderr", foreground="#ff8080")
             text.tag_config("info",   foreground="#7ec0ee")
             text.tag_config("ok",     foreground="#90ee90")
 
-            btn = tk.Frame(self._tab_bar, bg="#2d2d2d", cursor="hand2")
+            btn = tk.Frame(self._out_tab_bar, bg="#2d2d2d", cursor="hand2")
             btn.pack(side="left", padx=(1, 0), pady=(2, 0))
             name_lbl = tk.Label(btn, text=name, bg="#2d2d2d", fg="#aaa",
                                 font=("Segoe UI", 9), cursor="hand2", padx=8, pady=3)
@@ -2921,16 +2921,16 @@ class RYOSApp(_BaseWindow):
     def _toggle_output(self):
         if self._out_expanded:
             self._saved_sash_pos = self._paned.sashpos(0)
-            self._tab_bar.pack_forget()
-            self._tab_body.pack_forget()
+            self._out_tab_bar.pack_forget()
+            self._out_tab_body.pack_forget()
             self._toggle_btn.config(text="▲  Show Output")
             self._out_expanded = False
             self.update_idletasks()
             h = self._paned.winfo_height()
             self._paned.sashpos(0, h - self.out_panel.winfo_reqheight())
         else:
-            self._tab_bar.pack(fill="x")
-            self._tab_body.pack(fill="both", expand=True)
+            self._out_tab_bar.pack(fill="x")
+            self._out_tab_body.pack(fill="both", expand=True)
             self._toggle_btn.config(text="▼  Hide Output")
             self._out_expanded = True
             self.update_idletasks()
