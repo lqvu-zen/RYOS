@@ -1163,26 +1163,41 @@ class PipelineCard(tk.Frame):
         tk.Frame(self, bg=self._PIPE_ACCENT, width=5).pack(side="left", fill="y")
 
         # Buttons (right, packed first so they always claim space)
-        btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
+        btn_area = tk.Frame(self, bg=C["border"])
         btn_area.pack(side="right", fill="y")
-        _flat_button(btn_area, "⚙", C["btn_mod_bg"], C["btn_mod_hover"],
-                     lambda: on_edit(pipeline_id, name)).pack(side="left", padx=3)
-        _flat_button(btn_area, "▶", self._PIPE_ACCENT, self._PIPE_ACCENT2,
-                     lambda: on_run(pipeline_id, name)).pack(side="left", padx=3)
-        _stop_btn = tk.Button(
-            btn_area, text="⏹",
-            bg=C["card_bg"], fg="#ff8080" if is_running else "#666666",
-            activebackground="#5a1a1a", activeforeground="#ff8080",
-            disabledforeground="#444444",
-            relief="flat", bd=0, font=("Segoe UI", 10),
-            state="normal" if is_running else "disabled",
-            cursor="hand2" if is_running else "arrow",
-            command=on_stop or (lambda: None),
-        )
-        _stop_btn.pack(side="left", padx=3)
-        if is_running:
-            _stop_btn.bind("<Enter>", lambda e: _stop_btn.config(bg="#5a1a1a"))
-            _stop_btn.bind("<Leave>", lambda e: _stop_btn.config(bg=C["card_bg"]))
+
+        def _sep():
+            tk.Frame(btn_area, bg=C["border"], width=1).pack(side="left", fill="y")
+
+        def _rbtn(text, bg, hover_bg, cmd, **kw):
+            b = tk.Button(btn_area, text=text, bg=bg,
+                          fg=kw.get("fg", C["name_fg"]),
+                          activebackground=hover_bg,
+                          activeforeground=kw.get("active_fg", kw.get("fg", C["name_fg"])),
+                          disabledforeground=kw.get("disabled_fg", "#444444"),
+                          relief="flat", bd=0, font=("Segoe UI", 10),
+                          width=3, state=kw.get("state", "normal"),
+                          cursor="hand2" if kw.get("state", "normal") == "normal" else "arrow",
+                          command=cmd)
+            b.pack(side="left", fill="y")
+            if kw.get("state", "normal") == "normal":
+                _bg, _hbg = bg, hover_bg
+                b.bind("<Enter>", lambda e, _b=b: _b.config(bg=_hbg))
+                b.bind("<Leave>", lambda e, _b=b: _b.config(bg=_bg))
+            return b
+
+        _sep()
+        _rbtn("⚙", C["btn_mod_bg"], C["btn_mod_hover"],
+              lambda: on_edit(pipeline_id, name))
+        _sep()
+        _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
+              lambda: on_run(pipeline_id, name))
+        _sep()
+        self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
+              "#5a1a1a" if is_running else "#4a4a4a",
+              on_stop or (lambda: None),
+              fg="#ffffff" if is_running else "#666666",
+              active_fg="#ffffff" if is_running else "#888888")
 
         # Content
         content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
@@ -1192,11 +1207,14 @@ class PipelineCard(tk.Frame):
         # Badge row
         badge_row = tk.Frame(content, bg=C["card_bg"])
         badge_row.pack(fill="x")
+        self._badge_row = badge_row
         tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg="#ffffff",
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+        self._running_lbl = None
         if is_running:
-            tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
-                     font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(4, 0))
+            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
+            self._running_lbl.pack(side="left", padx=(4, 0))
 
         # Name (scrolling if long)
         ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
@@ -1219,6 +1237,32 @@ class PipelineCard(tk.Frame):
             widget.bind("<Leave>", self._on_leave)
 
         self._bind_right_click_all(self)
+
+    def set_running(self, is_running: bool, on_stop=None):
+        if is_running:
+            self._stop_btn.config(
+                bg="#8b0000", activebackground="#5a1a1a",
+                fg="#ffffff", activeforeground="#ffffff",
+                command=on_stop or (lambda: None),
+            )
+            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#5a1a1a"))
+            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#8b0000"))
+            if not self._running_lbl:
+                self._running_lbl = tk.Label(
+                    self._badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                    font=("Segoe UI", 7, "bold"), padx=5, pady=1)
+                self._running_lbl.pack(side="left", padx=(4, 0))
+        else:
+            self._stop_btn.config(
+                bg="#3a3a3a", activebackground="#4a4a4a",
+                fg="#666666", activeforeground="#888888",
+                command=lambda: None,
+            )
+            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#4a4a4a"))
+            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#3a3a3a"))
+            if self._running_lbl:
+                self._running_lbl.destroy()
+                self._running_lbl = None
 
     def _bind_right_click_all(self, widget):
         widget.bind("<Button-3>", self._context_menu)
@@ -1296,8 +1340,28 @@ class ScriptCard(tk.Frame):
         self._on_move_down = on_move_down
 
         # Buttons — packed before text_area so they always claim space on the right
-        btn_area = tk.Frame(self, bg=C["card_bg"], padx=10, pady=10)
+        btn_area = tk.Frame(self, bg=C["border"])
         btn_area.pack(side="right", fill="y")
+
+        def _sep():
+            tk.Frame(btn_area, bg=C["border"], width=1).pack(side="left", fill="y")
+
+        def _rbtn(text, bg, hover_bg, cmd, **kw):
+            b = tk.Button(btn_area, text=text, bg=bg,
+                          fg=kw.get("fg", C["name_fg"]),
+                          activebackground=hover_bg,
+                          activeforeground=kw.get("active_fg", kw.get("fg", C["name_fg"])),
+                          disabledforeground=kw.get("disabled_fg", "#444444"),
+                          relief="flat", bd=0, font=("Segoe UI", 10),
+                          width=3, state=kw.get("state", "normal"),
+                          cursor="hand2" if kw.get("state", "normal") == "normal" else "arrow",
+                          command=cmd)
+            b.pack(side="left", fill="y")
+            if kw.get("state", "normal") == "normal":
+                _bg, _hbg = bg, hover_bg
+                b.bind("<Enter>", lambda e, _b=b: _b.config(bg=_hbg))
+                b.bind("<Leave>", lambda e, _b=b: _b.config(bg=_bg))
+            return b
 
         # Text area
         self._text_area = text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
@@ -1306,11 +1370,14 @@ class ScriptCard(tk.Frame):
         tag_text, tag_bg = _script_tag(path)
         badge_row = tk.Frame(text_area, bg=C["card_bg"])
         badge_row.pack(anchor="w", fill="x", pady=(0, 2))
+        self._badge_row = badge_row
         tk.Label(badge_row, text=tag_text, bg=tag_bg, fg="#ffffff",
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+        self._running_lbl = None
         if is_running:
-            tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
-                     font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(4, 0))
+            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
+            self._running_lbl.pack(side="left", padx=(4, 0))
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
         tk.Label(text_area, text=path, bg=C["card_bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), anchor="w").pack(fill="x")
@@ -1327,24 +1394,16 @@ class ScriptCard(tk.Frame):
                 tk.Label(meta_row, text="✓ OK", bg="#2ecc71", fg="#ffffff",
                          font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
-        _flat_button(btn_area, "⚙", C["btn_mod_bg"], C["btn_mod_hover"],
-                     self._modify).pack(side="left", padx=3)
-        _flat_button(btn_area, "▶", C["btn_run_bg"], C["btn_run_hover"],
-                     self._run).pack(side="left", padx=3)
-        _stop_btn = tk.Button(
-            btn_area, text="⏹",
-            bg=C["card_bg"], fg="#ff8080" if is_running else "#666666",
-            activebackground="#5a1a1a", activeforeground="#ff8080",
-            disabledforeground="#444444",
-            relief="flat", bd=0, font=("Segoe UI", 10),
-            state="normal" if is_running else "disabled",
-            cursor="hand2" if is_running else "arrow",
-            command=on_stop or (lambda: None),
-        )
-        _stop_btn.pack(side="left", padx=3)
-        if is_running:
-            _stop_btn.bind("<Enter>", lambda e: _stop_btn.config(bg="#5a1a1a"))
-            _stop_btn.bind("<Leave>", lambda e: _stop_btn.config(bg=C["card_bg"]))
+        _sep()
+        _rbtn("⚙", C["btn_mod_bg"], C["btn_mod_hover"], self._modify)
+        _sep()
+        _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run)
+        _sep()
+        self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
+              "#5a1a1a" if is_running else "#4a4a4a",
+              on_stop or (lambda: None),
+              fg="#ffffff" if is_running else "#666666",
+              active_fg="#ffffff" if is_running else "#888888")
 
         # Hover highlight on whole card
         for widget in (self, text_area):
@@ -1352,6 +1411,32 @@ class ScriptCard(tk.Frame):
             widget.bind("<Leave>", self._on_leave)
 
         self._bind_right_click(self)
+
+    def set_running(self, is_running: bool, on_stop=None):
+        if is_running:
+            self._stop_btn.config(
+                bg="#8b0000", activebackground="#5a1a1a",
+                fg="#ffffff", activeforeground="#ffffff",
+                command=on_stop or (lambda: None),
+            )
+            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#5a1a1a"))
+            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#8b0000"))
+            if not self._running_lbl:
+                self._running_lbl = tk.Label(
+                    self._badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                    font=("Segoe UI", 7, "bold"), padx=5, pady=1)
+                self._running_lbl.pack(side="left", padx=(4, 0))
+        else:
+            self._stop_btn.config(
+                bg="#3a3a3a", activebackground="#4a4a4a",
+                fg="#666666", activeforeground="#888888",
+                command=lambda: None,
+            )
+            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#4a4a4a"))
+            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#3a3a3a"))
+            if self._running_lbl:
+                self._running_lbl.destroy()
+                self._running_lbl = None
 
     def show_checkbox(self, command=None):
         self._chk.config(command=command)
@@ -2416,7 +2501,11 @@ class RYOSApp(_BaseWindow):
         self._pipeline_total = len(steps)
         self._running_pipeline_id = pipeline_id
         self._running_script_id = None
-        self._refresh_cards()
+        for _pc in self._pipeline_cards:
+            _pc.set_running(_pc.pipeline_id == pipeline_id,
+                            self._stop_running if _pc.pipeline_id == pipeline_id else None)
+        for _c in self._cards:
+            _c.set_running(False)
         self._show_output(f"Pipeline: {pipeline_name}")
         if not self._out_expanded:
             self._toggle_output()
@@ -2455,7 +2544,9 @@ class RYOSApp(_BaseWindow):
             return
         self.db.mark_run(sid)
         self._running_script_id = sid
-        self._refresh_cards()
+        for _c in self._cards:
+            _c.set_running(_c.script_id == sid,
+                           self._stop_running if _c.script_id == sid else None)
         threading.Thread(
             target=self._run_subprocess, args=(cmd, name, sid), daemon=True,
         ).start()
@@ -2581,7 +2672,11 @@ class RYOSApp(_BaseWindow):
         self.db.mark_run(script_id)
         self._running_script_id = script_id
         self._running_pipeline_id = None
-        self._refresh()
+        for _c in self._cards:
+            _c.set_running(_c.script_id == script_id,
+                           self._stop_running if _c.script_id == script_id else None)
+        for _pc in self._pipeline_cards:
+            _pc.set_running(False)
 
         thread = threading.Thread(
             target=self._run_subprocess, args=(cmd, name, script_id), daemon=True
@@ -2693,7 +2788,7 @@ class RYOSApp(_BaseWindow):
             self.status_var.set("Stopped.")
         else:
             self.status_var.set("No script is currently running.")
-        self._refresh_cards()
+        self._clear_running_state()
 
     def _drain_output_queue(self):
         try:
@@ -2717,6 +2812,12 @@ class RYOSApp(_BaseWindow):
             pass
         self.after(80, self._drain_output_queue)
 
+    def _clear_running_state(self):
+        for _c in self._cards:
+            _c.set_running(False)
+        for _pc in self._pipeline_cards:
+            _pc.set_running(False)
+
     def _handle_step_done(self, status: str):
         if self._pipeline_total > 0:
             if status == "ok" and self._pipeline_queue:
@@ -2732,7 +2833,7 @@ class RYOSApp(_BaseWindow):
                 self._pipeline_total = 0
                 self._running_pipeline_id = None
                 self._running_script_id = None
-                self._refresh()
+                self._clear_running_state()
             else:
                 self._pipeline_queue.clear()
                 self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr")
@@ -2740,11 +2841,11 @@ class RYOSApp(_BaseWindow):
                 self._pipeline_total = 0
                 self._running_pipeline_id = None
                 self._running_script_id = None
-                self._refresh()
+                self._clear_running_state()
         else:
             self._running_script_id = None
             self.status_var.set("Done.")
-            self._refresh()
+            self._clear_running_state()
 
     def _open_advanced_options(self):
         def _apply(new_settings: dict):
