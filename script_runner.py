@@ -1219,18 +1219,46 @@ class PipelineCard(tk.Frame):
         # Name (scrolling if long)
         ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
 
-        # Steps summary
+        # Steps summary row (clickable to expand/collapse when steps exist)
         n = len(steps)
         if n == 0:
-            summary = "No steps — click ⚙ to add scripts"
+            summary_text = "No steps — click ⚙ to add scripts"
         else:
             parts = [s[2] for s in steps[:4]]
-            summary = "  →  ".join(parts)
+            summary_text = "  →  ".join(parts)
             if n > 4:
-                summary += f"  →  +{n - 4} more"
-        tk.Label(content, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary}",
+                summary_text += f"  →  +{n - 4} more"
+
+        summary_row = tk.Frame(content, bg=C["card_bg"])
+        summary_row.pack(fill="x")
+        self._expand_arrow = tk.Label(
+            summary_row, text="▸ ", bg=C["card_bg"], fg=C["path_fg"],
+            font=("Segoe UI", 8), cursor="hand2")
+        if n > 0:
+            self._expand_arrow.pack(side="left")
+        tk.Label(summary_row, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary_text}",
                  bg=C["card_bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8), anchor="w").pack(fill="x")
+                 font=("Segoe UI", 8), anchor="w",
+                 cursor="hand2" if n > 0 else "").pack(side="left", fill="x", expand=True)
+
+        # Expandable step detail (hidden by default)
+        self._expanded = False
+        self._detail_frame = tk.Frame(content, bg=C["card_bg"])
+        sep = tk.Frame(self._detail_frame, bg=C["border"], height=1)
+        sep.pack(fill="x", pady=(4, 4))
+        for i, step in enumerate(steps, 1):
+            row = tk.Frame(self._detail_frame, bg=C["card_bg"])
+            row.pack(fill="x", pady=1)
+            tk.Label(row, text=f"{i}.", bg=C["card_bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 8), width=3, anchor="e").pack(side="left")
+            tk.Label(row, text=step[2], bg=C["card_bg"], fg=C["name_fg"],
+                     font=("Segoe UI", 8, "bold"), anchor="w").pack(side="left", padx=(6, 0))
+            tk.Label(row, text=step[3], bg=C["card_bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(6, 0))
+
+        if n > 0:
+            for w in (summary_row, *summary_row.winfo_children()):
+                w.bind("<Button-1>", self._toggle_expand)
 
         for widget in (self, content):
             widget.bind("<Enter>", self._on_enter)
@@ -1263,6 +1291,15 @@ class PipelineCard(tk.Frame):
             if self._running_lbl:
                 self._running_lbl.destroy()
                 self._running_lbl = None
+
+    def _toggle_expand(self, _e=None):
+        self._expanded = not self._expanded
+        if self._expanded:
+            self._expand_arrow.config(text="▾ ")
+            self._detail_frame.pack(fill="x")
+        else:
+            self._expand_arrow.config(text="▸ ")
+            self._detail_frame.pack_forget()
 
     def _bind_right_click_all(self, widget):
         widget.bind("<Button-3>", self._context_menu)
