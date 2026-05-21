@@ -70,6 +70,7 @@ _SETTINGS_DEFAULTS: dict = {
     "max_output_lines":       2000,
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
+    "auto_check_update":      True,
 }
 
 
@@ -1621,6 +1622,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
         self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
+        self._auto_check_update = tk.BooleanVar(value=self._settings.get("auto_check_update", True))
 
         self._build()
         self.update_idletasks()
@@ -1701,6 +1703,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         f = self._section("OUTPUT")
         self._chk(f, "Auto-clear output before each run", self._auto_clear)
         self._chk(f, "Auto-scroll to bottom",             self._auto_scroll)
+        self._chk(f, "Check for updates on startup",      self._auto_check_update)
 
         row = tk.Frame(f, bg=C["bg"])
         row.pack(fill="x", pady=4)
@@ -1743,6 +1746,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "max_output_lines":         max_lines,
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
+            "auto_check_update":        self._auto_check_update.get(),
         })
         try:
             _set_startup(self._start_with_windows.get())
@@ -1819,7 +1823,8 @@ class RYOSApp(_BaseWindow):
         self.after(80, self._drain_output_queue)
         self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        threading.Thread(target=self._check_for_update, daemon=True).start()
+        if self._settings.get("auto_check_update", True):
+            threading.Thread(target=self._check_for_update, daemon=True).start()
         self.attributes("-topmost", self._settings["always_on_top"])
         if corner and corner != "none":
             self.after(0, lambda c=corner: _apply_snap_corner(self, c))
