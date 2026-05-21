@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.2.2"
+__version__ = "1.2.3"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
@@ -776,7 +776,8 @@ def build_command(path: str, params: str, interpreter: str):
     cmd = []
     if interpreter.strip():
         cmd.extend(shlex.split(interpreter, posix=(os.name != "nt")))
-    cmd.append(path)
+    if path.strip():
+        cmd.append(path)
     if params.strip():
         cmd.extend(shlex.split(params, posix=(os.name != "nt")))
     return cmd
@@ -901,8 +902,8 @@ class ScriptDialog(tk.Toplevel):
         interp = self.e_interp.get().strip()
         group_name = self.e_group.get().strip()
 
-        if not name or not path:
-            messagebox.showwarning("Missing Info", "Name and path are required.", parent=self)
+        if not name or (not path and not interp):
+            messagebox.showwarning("Missing Info", "Name is required. Path is required when no interpreter is set.", parent=self)
             return
         if not interp and not Path(path).exists():
             if not messagebox.askyesno("Warning", f"File not found:\n{path}\n\nSave anyway?", parent=self):
