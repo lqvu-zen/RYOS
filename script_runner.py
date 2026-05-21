@@ -1317,9 +1317,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
     def _chk(self, parent, text: str, var: tk.BooleanVar) -> tk.Checkbutton:
         cb = tk.Checkbutton(parent, text=text, variable=var,
-                            bg=C["bg"], fg=C["fg"],
+                            bg=C["bg"], fg=C["name_fg"],
                             selectcolor=C["card_bg"],
-                            activebackground=C["bg"], activeforeground=C["fg"],
+                            activebackground=C["bg"], activeforeground=C["name_fg"],
                             font=("Segoe UI", 9), anchor="w")
         cb.pack(fill="x", pady=2)
         return cb
@@ -1341,13 +1341,13 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         row = tk.Frame(f, bg=C["bg"])
         row.pack(fill="x", pady=4)
-        tk.Label(row, text="Max output lines:", bg=C["bg"], fg=C["fg"],
+        tk.Label(row, text="Max output lines:", bg=C["bg"], fg=C["name_fg"],
                  font=("Segoe UI", 9)).pack(side="left")
         vcmd = (self.register(lambda s: s.isdigit() or s == ""), "%P")
         tk.Spinbox(row, from_=100, to=50000, increment=100,
                    textvariable=self._max_lines, width=7,
                    validate="key", validatecommand=vcmd,
-                   bg=C["card_bg"], fg=C["fg"],
+                   bg=C["card_bg"], fg=C["name_fg"],
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
