@@ -231,12 +231,26 @@ class ScriptDB:
         pipelines = data.get("pipelines", [])
         now = datetime.now().isoformat(timespec="seconds")
         added = skipped = 0
+        # Groups covered by this import file (used to scope a replace)
+        imported_group_names: set[str] = {g["name"] for g in groups}
+        for s in scripts:
+            imported_group_names.add(s.get("group_name") or "")
+        for p in pipelines:
+            imported_group_names.add(p.get("group_name") or "")
+
         with self._connect() as conn:
             if replace:
-                conn.execute("DELETE FROM pipeline_steps")
-                conn.execute("DELETE FROM pipelines")
-                conn.execute("DELETE FROM scripts")
-                conn.execute("DELETE FROM groups")
+                # Only clear data belonging to the imported groups, leave others untouched
+                for gname in imported_group_names:
+                    pipe_ids = [r[0] for r in conn.execute(
+                        "SELECT id FROM pipelines WHERE COALESCE(group_name,'')=?", (gname,)
+                    )]
+                    for pid in pipe_ids:
+                        conn.execute("DELETE FROM pipeline_steps WHERE pipeline_id=?", (pid,))
+                    conn.execute("DELETE FROM pipelines WHERE COALESCE(group_name,'')=?", (gname,))
+                    conn.execute("DELETE FROM scripts   WHERE COALESCE(group_name,'')=?", (gname,))
+                    if gname:
+                        conn.execute("DELETE FROM groups WHERE name=?", (gname,))
 
             # Ensure every referenced group exists
             existing_groups: set[str] = {r[0] for r in conn.execute("SELECT name FROM groups")}
@@ -2173,8 +2187,9 @@ class RYOSApp(_BaseWindow):
         try:
             replace = messagebox.askyesno(
                 "Import Mode",
-                "Replace all existing data with the imported config?\n\n"
-                "Yes = Replace all\nNo = Merge (skip duplicates by path / name)",
+                "How should existing data in the imported groups be handled?\n\n"
+                "Yes = Replace (overwrite scripts/pipelines in the imported groups)\n"
+                "No  = Merge (skip duplicates by path / name)",
             )
             added, skipped = self.db.import_from_file(path, replace=replace)
             self._refresh()
