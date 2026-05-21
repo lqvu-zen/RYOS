@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
@@ -904,7 +904,7 @@ class ScriptDialog(tk.Toplevel):
         if not name or not path:
             messagebox.showwarning("Missing Info", "Name and path are required.", parent=self)
             return
-        if not Path(path).exists():
+        if not interp and not Path(path).exists():
             if not messagebox.askyesno("Warning", f"File not found:\n{path}\n\nSave anyway?", parent=self):
                 return
 
