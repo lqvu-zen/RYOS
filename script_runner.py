@@ -186,7 +186,7 @@ $t2.AppendChild($xml.CreateTextNode("{b}")) | Out-Null
 
 def _parse_version(tag: str) -> tuple:
     try:
-        return tuple(int(x) for x in tag.lstrip("v").split("."))
+        return tuple(int(x.split("-")[0]) for x in tag.lstrip("v").split("."))
     except Exception:
         return (0,)
 
@@ -1117,6 +1117,7 @@ class PipelineEditorDialog(tk.Toplevel):
         self._listbox = tk.Listbox(
             list_frame, yscrollcommand=sb.set,
             selectmode="single", font=("Segoe UI", 10),
+            exportselection=False,
             bg="#f8f9fc", fg=C["name_fg"],
             selectbackground=C["accent"], selectforeground="#ffffff",
             relief="flat", highlightthickness=1,
@@ -1144,11 +1145,12 @@ class PipelineEditorDialog(tk.Toplevel):
         self._step_preset_var = tk.StringVar()
         self._step_preset_combo = ttk.Combobox(
             pf, textvariable=self._step_preset_var,
-            state="readonly", font=("Segoe UI", 9), width=30,
+            state="disabled", font=("Segoe UI", 9), width=30,
         )
         self._step_preset_combo.pack(side="left", padx=(6, 0), fill="x", expand=True)
         self._step_preset_combo.bind("<<ComboboxSelected>>", self._on_step_preset_change)
-        self._listbox.bind("<<ListboxSelect>>", self._on_step_select)
+        self._listbox.bind("<ButtonRelease-1>", self._on_step_select)
+        self._listbox.bind("<KeyRelease>", self._on_step_select)
 
         tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
 
@@ -1195,33 +1197,52 @@ class PipelineEditorDialog(tk.Toplevel):
                   padx=16, pady=6, cursor="hand2",
                   font=("Segoe UI", 9)).pack(side="right", padx=(0, 8))
 
+        self._reloading = False
+        self._preset_changing = False
         self._reload_steps()
 
     def _on_step_select(self, _event=None):
+        if self._reloading or self._preset_changing:
+            return
         idx = self._selected_index()
         if idx is None:
-            self._step_preset_combo.config(state="disabled", values=[])
+            self._step_preset_combo.configure(state="disabled", values=[])
             self._step_preset_var.set("")
             return
         step_id, sid, name, path, params, interp, params_override = self._steps[idx]
         presets = self.db.list_param_presets(sid)
         values = ["(Script default)"] + [p[2] for p in presets]
-        self._step_preset_combo.config(state="readonly" if presets else "disabled", values=values)
-        self._step_preset_var.set(params_override if params_override in values else "(Script default)")
+        self._step_preset_combo.configure(
+            state="readonly" if presets else "disabled", values=values)
+        self._step_preset_var.set(
+            params_override if params_override in values else "(Script default)")
 
     def _on_step_preset_change(self, _event=None):
-        idx = self._selected_index()
-        if idx is None:
-            return
-        step_id = self._steps[idx][0]
-        chosen = self._step_preset_var.get()
-        override = None if chosen == "(Script default)" else chosen
-        self.db.update_pipeline_step_params(step_id, override)
-        self._reload_steps()
-        self._listbox.selection_set(idx)
-        self._on_step_select()
+        self._preset_changing = True
+        try:
+            idx = self._selected_index()
+            if idx is None:
+                return
+            step_id, sid, name = self._steps[idx][0], self._steps[idx][1], self._steps[idx][2]
+            chosen = self._step_preset_var.get()
+            override = None if chosen == "(Script default)" else chosen
+            self.db.update_pipeline_step_params(step_id, override)
+            # Update in-memory state before touching listbox
+            step = list(self._steps[idx])
+            step[6] = override
+            self._steps[idx] = tuple(step)
+            # Update listbox label in-place
+            label = f"  {idx + 1}.  {name}"
+            if override is not None:
+                label += f"  [{override}]"
+            self._listbox.delete(idx)
+            self._listbox.insert(idx, label)
+            self._listbox.selection_set(idx)
+        finally:
+            self._preset_changing = False
 
     def _reload_steps(self):
+        self._reloading = True
         self._steps = list(self.db.list_pipeline_steps(self.pipeline_id))
         self._listbox.delete(0, tk.END)
         for i, (step_id, sid, name, path, params, interp, params_override) in enumerate(self._steps):
@@ -1229,6 +1250,7 @@ class PipelineEditorDialog(tk.Toplevel):
             if params_override is not None:
                 label += f"  [{params_override}]"
             self._listbox.insert(tk.END, label)
+        self._reloading = False
 
     def _selected_index(self) -> int | None:
         sel = self._listbox.curselection()
