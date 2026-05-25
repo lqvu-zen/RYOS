@@ -11,6 +11,7 @@ import os
 import sys
 import json
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import threading
@@ -42,10 +43,19 @@ __version__ = "1.4.1-dev"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
-# When frozen by PyInstaller, store DB next to the .exe; otherwise next to this file.
-_BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
-DB_PATH       = _BASE / "scripts.db"
-_SETTINGS_PATH = _BASE / "settings.json"
+# Store user data in %APPDATA%\RYOS (Windows) or ~/.local/share/RYOS (other).
+_APPDATA = Path(os.environ.get("APPDATA") or Path.home() / ".local" / "share") / "RYOS"
+_APPDATA.mkdir(parents=True, exist_ok=True)
+DB_PATH        = _APPDATA / "scripts.db"
+_SETTINGS_PATH = _APPDATA / "settings.json"
+
+# Migrate files from old location (next to exe / script) if not yet moved.
+_OLD_BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+for _fname in ("scripts.db", "settings.json"):
+    _old = _OLD_BASE / _fname
+    _new = _APPDATA / _fname
+    if _old.exists() and not _new.exists():
+        shutil.move(str(_old), _new)
 
 _CORNER_CHOICES = [
     ("↘  Bottom right", "bottom_right"),
