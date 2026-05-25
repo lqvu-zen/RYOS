@@ -38,7 +38,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 # ---------------------------------------------------------------------------
 # Database layer
 # ---------------------------------------------------------------------------
-__version__ = "1.3.2-dev"
+__version__ = "1.4.0-dev"
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
@@ -282,6 +282,15 @@ class ScriptDB:
                     pipeline_id INTEGER NOT NULL,
                     script_id   INTEGER NOT NULL,
                     step_order  INTEGER DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS script_param_presets (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    script_id  INTEGER NOT NULL,
+                    label      TEXT NOT NULL,
+                    params     TEXT DEFAULT '',
+                    sort_order INTEGER DEFAULT 0
                 )
             """)
             conn.commit()
@@ -549,6 +558,26 @@ class ScriptDB:
             conn.execute("UPDATE pipelines SET group_name='' WHERE group_name=?", (name,))
             conn.commit()
 
+    def list_param_presets(self, script_id: int) -> list:
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT id, label, params FROM script_param_presets "
+                "WHERE script_id=? ORDER BY sort_order ASC, id ASC",
+                (script_id,),
+            ).fetchall()
+
+    def replace_param_presets(self, script_id: int, presets: list):
+        """Replace all presets for script_id. presets = [(label, params), ...]"""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM script_param_presets WHERE script_id=?", (script_id,))
+            for i, (label, params) in enumerate(presets):
+                conn.execute(
+                    "INSERT INTO script_param_presets (script_id, label, params, sort_order) "
+                    "VALUES (?, ?, ?, ?)",
+                    (script_id, label, params, i),
+                )
+            conn.commit()
+
     def create_pipeline(self, name: str, group_name: str) -> int:
         with self._connect() as conn:
             max_order = conn.execute(
@@ -805,6 +834,8 @@ class ScriptDialog(tk.Toplevel):
         self.grab_set()
         self.configure(bg=C["card_bg"])
 
+        self._presets = []  # list of [label, params]
+
         self._build()
 
         if script_id:
@@ -816,6 +847,9 @@ class ScriptDialog(tk.Toplevel):
                 self.e_params.insert(0, params)
                 self.e_interp.set(interp)
                 self.e_group.set(grp or "")
+            for _, label, pparams in db.list_param_presets(script_id):
+                self._presets.append([label, pparams])
+                self._preset_listbox.insert(tk.END, label)
         else:
             self.e_group.set(self.default_group)
 
@@ -860,29 +894,80 @@ class ScriptDialog(tk.Toplevel):
         self.e_params.grid(row=2, column=1, columnspan=2, sticky="ew", **pad)
         self.e_params.bind("<FocusOut>", self._auto_name_from_params)
 
-        ttk.Label(frame, text="Interpreter:").grid(row=3, column=0, sticky="w", **pad)
+        # Presets section
+        ttk.Label(frame, text="Presets:").grid(row=3, column=0, sticky="nw", **pad)
+        preset_frame = ttk.Frame(frame)
+        preset_frame.grid(row=3, column=1, columnspan=2, sticky="ew", **pad)
+        preset_frame.columnconfigure(0, weight=1)
+
+        self._preset_listbox = tk.Listbox(
+            preset_frame, height=3, selectmode=tk.SINGLE,
+            bg="#1e1e1e", fg="#cccccc", selectbackground=C["accent"],
+            selectforeground="#ffffff", relief="flat", highlightthickness=1,
+            highlightbackground=C["border"], font=("Segoe UI", 9),
+        )
+        self._preset_listbox.grid(row=0, column=0, sticky="ew")
+
+        preset_btn_row = ttk.Frame(preset_frame)
+        preset_btn_row.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Button(preset_btn_row, text="+ Add",   width=7, command=self._preset_add).pack(side="left", padx=(0, 2))
+        ttk.Button(preset_btn_row, text="Edit",    width=6, command=self._preset_edit).pack(side="left", padx=2)
+        ttk.Button(preset_btn_row, text="− Remove", width=8, command=self._preset_remove).pack(side="left", padx=2)
+
+        ttk.Label(frame, text="Interpreter:").grid(row=4, column=0, sticky="w", **pad)
         self.e_interp = ttk.Combobox(frame, width=38, values=[
             "cmd /c", "powershell -File", "pwsh -File", "python", "node", "bash",
         ])
-        self.e_interp.grid(row=3, column=1, columnspan=2, sticky="ew", **pad)
+        self.e_interp.grid(row=4, column=1, columnspan=2, sticky="ew", **pad)
         ttk.Label(frame, text="Leave blank for auto-detection, or pick a preset", foreground="#888").grid(
-            row=4, column=1, columnspan=2, sticky="w", padx=8
+            row=5, column=1, columnspan=2, sticky="w", padx=8
         )
 
-        ttk.Label(frame, text="Group:").grid(row=5, column=0, sticky="w", **pad)
+        ttk.Label(frame, text="Group:").grid(row=6, column=0, sticky="w", **pad)
         self.e_group = ttk.Combobox(frame, values=self.existing_groups, width=38)
-        self.e_group.grid(row=5, column=1, columnspan=2, sticky="ew", **pad)
+        self.e_group.grid(row=6, column=1, columnspan=2, sticky="ew", **pad)
 
         sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=6, column=0, columnspan=3, sticky="ew", pady=8)
+        sep.grid(row=7, column=0, columnspan=3, sticky="ew", pady=8)
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=7, column=0, columnspan=3, sticky="ew")
+        btn_row.grid(row=8, column=0, columnspan=3, sticky="ew")
         ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
         ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
 
         if self.script_id:
             ttk.Button(btn_row, text="Delete", command=self._delete).pack(side="left", padx=4)
+
+    def _preset_add(self):
+        dlg = _PresetEntryDialog(self, "", "")
+        self.wait_window(dlg)
+        if dlg.result:
+            label, params = dlg.result
+            self._presets.append([label, params])
+            self._preset_listbox.insert(tk.END, label)
+
+    def _preset_edit(self):
+        sel = self._preset_listbox.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        label, params = self._presets[idx]
+        dlg = _PresetEntryDialog(self, label, params)
+        self.wait_window(dlg)
+        if dlg.result:
+            new_label, new_params = dlg.result
+            self._presets[idx] = [new_label, new_params]
+            self._preset_listbox.delete(idx)
+            self._preset_listbox.insert(idx, new_label)
+            self._preset_listbox.selection_set(idx)
+
+    def _preset_remove(self):
+        sel = self._preset_listbox.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        self._presets.pop(idx)
+        self._preset_listbox.delete(idx)
 
     def _auto_name_from_params(self, _event=None):
         if not self.e_name.get().strip():
@@ -921,6 +1006,8 @@ class ScriptDialog(tk.Toplevel):
             self.db.update(self.script_id, name, path, params, interp, group_name)
         else:
             self.script_id = self.db.add(name, path, params, interp, group_name)
+
+        self.db.replace_param_presets(self.script_id, [(l, p) for l, p in self._presets])
 
         if self.on_save:
             self.on_save()
@@ -1440,6 +1527,127 @@ class PipelineCard(tk.Frame):
 
 
 # ---------------------------------------------------------------------------
+# Preset entry dialog (used inside ScriptDialog)
+# ---------------------------------------------------------------------------
+class _PresetEntryDialog(tk.Toplevel):
+    """Small dialog for entering/editing a param preset label + value."""
+
+    def __init__(self, parent, label: str, params: str):
+        super().__init__(parent)
+        self.result = None
+        self.title("Preset")
+        self.resizable(False, False)
+        self.grab_set()
+        self.configure(bg=C["card_bg"])
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+
+        pad = {"padx": 6, "pady": 4}
+        ttk.Label(frame, text="Label:").grid(row=0, column=0, sticky="w", **pad)
+        self._e_label = ttk.Entry(frame, width=32)
+        self._e_label.grid(row=0, column=1, sticky="ew", **pad)
+        self._e_label.insert(0, label)
+
+        ttk.Label(frame, text="Parameters:").grid(row=1, column=0, sticky="w", **pad)
+        self._e_params = ttk.Entry(frame, width=32)
+        self._e_params.grid(row=1, column=1, sticky="ew", **pad)
+        self._e_params.insert(0, params)
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=2, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        ttk.Button(btn_row, text="OK",     command=self._ok).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right")
+
+        self.bind("<Return>", lambda _: self._ok())
+        self.bind("<Escape>", lambda _: self.destroy())
+        self.transient(parent)
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        self._e_label.focus_set()
+
+    def _ok(self):
+        label = self._e_label.get().strip()
+        if not label:
+            messagebox.showwarning("Label required", "Please enter a preset label.", parent=self)
+            return
+        self.result = (label, self._e_params.get().strip())
+        self.destroy()
+
+
+# ---------------------------------------------------------------------------
+# Param picker dialog (shown before running when presets exist)
+# ---------------------------------------------------------------------------
+class ParamPickerDialog(tk.Toplevel):
+    """Let the user pick which param preset to use before running a script."""
+
+    def __init__(self, parent, script_name: str, default_params: str, presets: list):
+        """presets: list of (id, label, params)"""
+        super().__init__(parent)
+        self.result = None  # set to chosen params string; None means cancelled
+        self.title(f"Run — {script_name}")
+        self.resizable(False, False)
+        self.grab_set()
+        self.configure(bg=C["card_bg"])
+
+        title_strip = tk.Frame(self, bg=C["card_bg"])
+        title_strip.pack(fill="x")
+        tk.Label(title_strip, text="Select parameters",
+                 bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"),
+                 anchor="w", padx=16, pady=12).pack(fill="x")
+        tk.Frame(title_strip, bg=C["border"], height=1).pack(fill="x")
+
+        body = ttk.Frame(self, padding=16)
+        body.pack(fill="both", expand=True)
+
+        self._choice = tk.StringVar(value="__default__")
+
+        options = [("__default__", "Default", default_params)] + \
+                  [(str(pid), lbl, prm) for pid, lbl, prm in presets]
+
+        for val, lbl, prm in options:
+            row = tk.Frame(body, bg=C["card_bg"], pady=3)
+            row.pack(fill="x")
+            tk.Radiobutton(
+                row, variable=self._choice, value=val,
+                text=lbl,
+                bg=C["card_bg"], fg=C["name_fg"],
+                selectcolor=C["card_bg"],
+                activebackground=C["card_bg"],
+                font=("Segoe UI", 10, "bold"),
+                anchor="w", cursor="hand2",
+            ).pack(side="left")
+            if prm:
+                tk.Label(row, text=f"  {prm}", bg=C["card_bg"],
+                         fg=C["path_fg"], font=("Segoe UI", 9),
+                         anchor="w").pack(side="left")
+
+        self._params_map = {val: prm for val, _, prm in options}
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
+        btn_row = ttk.Frame(self, padding=(16, 8))
+        btn_row.pack(fill="x")
+        ttk.Button(btn_row, text="▶ Run",   command=self._run).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_row, text="Cancel",  command=self.destroy).pack(side="right")
+
+        self.bind("<Return>", lambda _: self._run())
+        self.bind("<Escape>", lambda _: self.destroy())
+        self.transient(parent)
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+
+    def _run(self):
+        self.result = self._params_map[self._choice.get()]
+        self.destroy()
+
+
+# ---------------------------------------------------------------------------
 # Script card
 # ---------------------------------------------------------------------------
 class ScriptCard(tk.Frame):
@@ -1633,6 +1841,13 @@ class ScriptCard(tk.Frame):
         rec = self.db.get(self.script_id)
         if rec:
             _, name, path, params, interp, _grp = rec
+            presets = self.db.list_param_presets(self.script_id)
+            if presets:
+                dlg = ParamPickerDialog(self.winfo_toplevel(), name, params, presets)
+                self.wait_window(dlg)
+                if dlg.result is None:
+                    return
+                params = dlg.result
             self.runner(self.script_id, name, path, params, interp)
 
 
