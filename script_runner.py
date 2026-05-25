@@ -49,10 +49,12 @@ _APPDATA.mkdir(parents=True, exist_ok=True)
 DB_PATH        = _APPDATA / "scripts.db"
 _SETTINGS_PATH = _APPDATA / "settings.json"
 
+# Directory of the exe / script (used for icon and migration).
+_BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+
 # Migrate files from old location (next to exe / script) if not yet moved.
-_OLD_BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 for _fname in ("scripts.db", "settings.json"):
-    _old = _OLD_BASE / _fname
+    _old = _BASE / _fname
     _new = _APPDATA / _fname
     if _old.exists() and not _new.exists():
         shutil.move(str(_old), _new)
