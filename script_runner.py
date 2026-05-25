@@ -2823,8 +2823,7 @@ class RYOSApp(_BaseWindow):
                 stderr=subprocess.STDOUT,
                 bufsize=1,
                 text=True,
-                cwd=str(Path(cmd[-1] if len(cmd) == 1 else cmd[1]).parent)
-                    if Path(cmd[-1] if len(cmd) == 1 else cmd[1]).exists() else None,
+                cwd=str(Path(next((c for c in cmd if Path(c).is_file()), cmd[0])).parent),
             )
         except FileNotFoundError as e:
             self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
