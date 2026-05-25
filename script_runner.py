@@ -293,6 +293,9 @@ class ScriptDB:
                     sort_order INTEGER DEFAULT 0
                 )
             """)
+            pscols = [r[1] for r in conn.execute("PRAGMA table_info(pipeline_steps)")]
+            if "params_override" not in pscols:
+                conn.execute("ALTER TABLE pipeline_steps ADD COLUMN params_override TEXT DEFAULT NULL")
             conn.commit()
 
     def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "") -> int:
@@ -640,14 +643,20 @@ class ScriptDB:
             ).fetchall()
 
     def list_pipeline_steps(self, pipeline_id: int) -> list:
-        """Returns list of (step_id, script_id, name, path, params, interpreter)."""
+        """Returns list of (step_id, script_id, name, path, params, interpreter, params_override)."""
         with self._connect() as conn:
             return conn.execute(
-                "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter "
+                "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter, ps.params_override "
                 "FROM pipeline_steps ps JOIN scripts s ON s.id = ps.script_id "
                 "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
                 (pipeline_id,),
             ).fetchall()
+
+    def update_pipeline_step_params(self, step_id: int, params_override):
+        with self._connect() as conn:
+            conn.execute("UPDATE pipeline_steps SET params_override=? WHERE id=?",
+                         (params_override, step_id))
+            conn.commit()
 
     def add_pipeline_step(self, pipeline_id: int, script_id: int) -> int:
         with self._connect() as conn:
@@ -947,11 +956,16 @@ class ScriptDialog(tk.Toplevel):
         if params and not any(p[1] == params for p in self._presets):
             self._presets.append([params, params])
             self._preset_listbox.insert(tk.END, params)
-            self._autosave_presets()
+            self._autosave_presets(new_params=params)
 
-    def _autosave_presets(self):
+    def _autosave_presets(self, new_params=None):
         if self.script_id:
             self.db.replace_param_presets(self.script_id, [(l, p) for l, p in self._presets])
+            if new_params is not None:
+                rec = self.db.get(self.script_id)
+                if rec:
+                    _, name, path, _, interp, grp = rec
+                    self.db.update(self.script_id, name, path, new_params, interp, grp)
             if self.on_save:
                 self.on_save()
 
@@ -1122,6 +1136,20 @@ class PipelineEditorDialog(tk.Toplevel):
                       bd=0, padx=10, pady=4, cursor="hand2",
                       font=("Segoe UI", 9)).pack(side="left", padx=2)
 
+        # Per-step preset picker
+        pf = tk.Frame(self, bg=C["card_bg"], padx=12, pady=6)
+        pf.pack(fill="x")
+        tk.Label(pf, text="Step preset:", bg=C["card_bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8)).pack(side="left")
+        self._step_preset_var = tk.StringVar()
+        self._step_preset_combo = ttk.Combobox(
+            pf, textvariable=self._step_preset_var,
+            state="readonly", font=("Segoe UI", 9), width=30,
+        )
+        self._step_preset_combo.pack(side="left", padx=(6, 0), fill="x", expand=True)
+        self._step_preset_combo.bind("<<ComboboxSelected>>", self._on_step_preset_change)
+        self._listbox.bind("<<ListboxSelect>>", self._on_step_select)
+
         tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
 
         # Add step section
@@ -1169,11 +1197,38 @@ class PipelineEditorDialog(tk.Toplevel):
 
         self._reload_steps()
 
+    def _on_step_select(self, _event=None):
+        idx = self._selected_index()
+        if idx is None:
+            self._step_preset_combo.config(state="disabled", values=[])
+            self._step_preset_var.set("")
+            return
+        step_id, sid, name, path, params, interp, params_override = self._steps[idx]
+        presets = self.db.list_param_presets(sid)
+        values = ["(Script default)"] + [p[2] for p in presets]
+        self._step_preset_combo.config(state="readonly" if presets else "disabled", values=values)
+        self._step_preset_var.set(params_override if params_override in values else "(Script default)")
+
+    def _on_step_preset_change(self, _event=None):
+        idx = self._selected_index()
+        if idx is None:
+            return
+        step_id = self._steps[idx][0]
+        chosen = self._step_preset_var.get()
+        override = None if chosen == "(Script default)" else chosen
+        self.db.update_pipeline_step_params(step_id, override)
+        self._reload_steps()
+        self._listbox.selection_set(idx)
+        self._on_step_select()
+
     def _reload_steps(self):
         self._steps = list(self.db.list_pipeline_steps(self.pipeline_id))
         self._listbox.delete(0, tk.END)
-        for i, (step_id, sid, name, path, params, interp) in enumerate(self._steps):
-            self._listbox.insert(tk.END, f"  {i + 1}.  {name}")
+        for i, (step_id, sid, name, path, params, interp, params_override) in enumerate(self._steps):
+            label = f"  {i + 1}.  {name}"
+            if params_override is not None:
+                label += f"  [{params_override}]"
+            self._listbox.insert(tk.END, label)
 
     def _selected_index(self) -> int | None:
         sel = self._listbox.curselection()
@@ -1503,6 +1558,9 @@ class PipelineCard(tk.Frame):
                          font=("Segoe UI", 8, "bold"), anchor="w").pack(side="left", padx=(6, 0))
                 tk.Label(row, text=step[3], bg=C["card_bg"], fg=C["path_fg"],
                          font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(6, 0))
+                if len(step) > 6 and step[6] is not None:
+                    tk.Label(row, text=f"[{step[6]}]", bg=C["card_bg"], fg=C["accent"],
+                             font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(4, 0))
 
         # Position near click, nudge inside screen bounds
         popup.update_idletasks()
@@ -1775,9 +1833,9 @@ class ScriptCard(tk.Frame):
         _sep()
         _rbtn("⚙", C["btn_mod_bg"], C["btn_mod_hover"], self._modify)
         _sep()
-        _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run)
+        _rbtn("▶+", "#1a6b9a", "#1a5a80", self._run_with_param)
         _sep()
-        _rbtn("▶+", C["btn_run_bg"], C["btn_run_hover"], self._run_with_param)
+        _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run)
         _sep()
         self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
               "#5a1a1a" if is_running else "#4a4a4a",
@@ -1906,7 +1964,8 @@ class ScriptCard(tk.Frame):
         existing = db.list_param_presets(script_id)
         if not any(p[2] == chosen for p in existing):
             db.replace_param_presets(script_id, [(p[1], p[2]) for p in existing] + [(chosen, chosen)])
-            on_refresh()
+        db.update(script_id, name, path, chosen, interp, _grp)
+        on_refresh()
 
         runner(script_id, name, path, chosen, interp)
 
@@ -2930,7 +2989,9 @@ class RYOSApp(_BaseWindow):
     def _run_next_pipeline_step(self):
         if not self._pipeline_queue:
             return
-        step_id, sid, name, path, params, interp = self._pipeline_queue.pop(0)
+        step_id, sid, name, path, params, interp, params_override = self._pipeline_queue.pop(0)
+        if params_override is not None:
+            params = params_override
         self._pipeline_step_idx += 1
         n, total = self._pipeline_step_idx, self._pipeline_total
         self._append_output(
