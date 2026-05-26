@@ -390,11 +390,11 @@ class ScriptDB:
             conn.commit()
             return remapped, untouched
 
-    def create_group(self, name: str):
+    def create_group(self, name: str, base_dir: str = ""):
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM groups").fetchone()[0]
-            conn.execute("INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
-                         (name, max_order + 1))
+            conn.execute("INSERT OR IGNORE INTO groups (name, sort_order, base_dir) VALUES (?, ?, ?)",
+                         (name, max_order + 1, base_dir))
             conn.commit()
 
     def reorder_groups(self, names: list[str]):

@@ -422,7 +422,11 @@ class RYOSApp(_BaseWindow):
         name = simpledialog.askstring("New Group", "Group name:", parent=self)
         if name and name.strip():
             name = name.strip()
-            self.db.create_group(name)
+            base_dir = filedialog.askdirectory(
+                title=f"Base directory for '{name}' (optional — cancel to skip)",
+                parent=self,
+            )
+            self.db.create_group(name, base_dir or "")
             self._active_group = name
             self._refresh()
 
