@@ -1,4 +1,5 @@
 """Card widgets for scripts and pipelines."""
+import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -13,7 +14,8 @@ class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
-                 on_move_up, on_move_down, on_move_top, on_stop=None, *, is_running: bool = False):
+                 on_move_up, on_move_down, on_move_top, on_stop=None, *,
+                 is_running: bool = False, group_base_dir: str = ""):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
@@ -73,7 +75,15 @@ class ScriptCard(tk.Frame):
                      font=("Segoe UI", 7, "bold"), padx=5, pady=1)
             self._running_lbl.pack(side="left", padx=(4, 0))
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
-        tk.Label(text_area, text=path, bg=C["card_bg"], fg=C["path_fg"],
+        display_path = path
+        if group_base_dir and path:
+            try:
+                rel = os.path.relpath(path, group_base_dir)
+                if not rel.startswith(".."):
+                    display_path = rel
+            except ValueError:
+                pass
+        tk.Label(text_area, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), anchor="w").pack(fill="x")
 
         if last_run and last_run != "-":

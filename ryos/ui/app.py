@@ -333,10 +333,12 @@ class RYOSApp(_BaseWindow):
         self._group_tab_btns: list[tuple[str, tk.Button]] = []
         self._drag_state: dict | None = None
 
-        for g in self.db.list_groups():
-            btn, wrapper, inner, indicator = self._add_tab_btn(g, g, self._active_group == g)
+        for g, base_dir in self.db.list_groups_with_meta():
+            btn, wrapper, inner, indicator, dir_lbl = self._add_tab_btn(
+                g, g, self._active_group == g, base_dir=base_dir
+            )
             idx = len(self._group_tab_btns)
-            self._group_tab_btns.append((g, btn, wrapper, inner, indicator))
+            self._group_tab_btns.append((g, btn, wrapper, inner, indicator, dir_lbl))
             btn.bind("<ButtonPress-1>",   lambda e, i=idx: self._drag_start(e, i))
             btn.bind("<B1-Motion>",       self._drag_motion)
             btn.bind("<ButtonRelease-1>", self._drag_end)
@@ -355,7 +357,7 @@ class RYOSApp(_BaseWindow):
 
         self._all_tab_refs = self._add_tab_btn(None, "All", self._active_group is None, side="right")
 
-    def _add_tab_btn(self, group, label, is_active, side="left"):
+    def _add_tab_btn(self, group, label, is_active, side="left", base_dir=""):
         if is_active:
             btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
             bar_bg   = C["accent"]
@@ -381,6 +383,18 @@ class RYOSApp(_BaseWindow):
             command=lambda g=group: self._switch_group(g),
         )
         btn.pack(fill="x")
+
+        dir_lbl = None
+        if base_dir:
+            dir_lbl = tk.Label(
+                inner, text=f"📁 {Path(base_dir).name}",
+                bg=btn_bg, fg="#888888",
+                font=("Segoe UI", 7), anchor="center", pady=1,
+            )
+            dir_lbl.pack(fill="x")
+            dir_lbl.bind("<Button-1>", lambda e, g=group: self._switch_group(g))
+            dir_lbl.bind("<Button-3>", lambda e, g=group: self._tab_context_menu(e, g))
+
         indicator = tk.Frame(inner, bg=bar_bg, height=3)
         indicator.pack(fill="x")
 
@@ -389,9 +403,9 @@ class RYOSApp(_BaseWindow):
         if group is not None:
             btn.bind("<Button-3>", lambda e, g=group: self._tab_context_menu(e, g))
         wrapper.pack(side=side, padx=3, pady=(3, 0))
-        return btn, wrapper, inner, indicator
+        return btn, wrapper, inner, indicator, dir_lbl
 
-    def _apply_tab_style(self, is_active, btn, wrapper, inner, indicator):
+    def _apply_tab_style(self, is_active, btn, wrapper, inner, indicator, dir_lbl=None):
         if is_active:
             btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
             bar_bg, hover_bg, border = C["accent"], "#eef2ff", C["card_bg"]
@@ -402,13 +416,15 @@ class RYOSApp(_BaseWindow):
         inner.config(bg=btn_bg)
         btn.config(bg=btn_bg, fg=fg, font=("Segoe UI", 10, fw),
                    activebackground=hover_bg, activeforeground=fg)
+        if dir_lbl is not None:
+            dir_lbl.config(bg=btn_bg)
         indicator.config(bg=bar_bg)
         btn.bind("<Enter>", lambda e, b=btn, h=hover_bg: b.config(bg=h))
         btn.bind("<Leave>", lambda e, b=btn, ob=btn_bg: b.config(bg=ob))
 
     def _update_tab_styles(self):
-        for name, btn, wrapper, inner, indicator in self._group_tab_btns:
-            self._apply_tab_style(self._active_group == name, btn, wrapper, inner, indicator)
+        for name, btn, wrapper, inner, indicator, dir_lbl in self._group_tab_btns:
+            self._apply_tab_style(self._active_group == name, btn, wrapper, inner, indicator, dir_lbl)
         if hasattr(self, "_all_tab_refs"):
             self._apply_tab_style(self._active_group is None, *self._all_tab_refs)
 
@@ -602,6 +618,7 @@ class RYOSApp(_BaseWindow):
             return _top
 
         def render_group_sections(gname: str, scripts: list):
+            group_base_dir = self.db.get_group_base_dir(gname)
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
             )
@@ -636,11 +653,12 @@ class RYOSApp(_BaseWindow):
                     down_id = gids[gi + 1] if gi < len(gids) - 1 else None
                     card = ScriptCard(
                         scr_content, rec, self.db, self._run_script, self._refresh,
-                        on_move_up   = make_move(sid, up_id)   if up_id   else lambda: None,
-                        on_move_down = make_move(sid, down_id) if down_id else lambda: None,
-                        on_move_top  = make_top(sid)           if up_id   else lambda: None,
-                        on_stop      = self._stop_running,
-                        is_running   = (sid == self._running_script_id),
+                        on_move_up      = make_move(sid, up_id)   if up_id   else lambda: None,
+                        on_move_down    = make_move(sid, down_id) if down_id else lambda: None,
+                        on_move_top     = make_top(sid)           if up_id   else lambda: None,
+                        on_stop         = self._stop_running,
+                        is_running      = (sid == self._running_script_id),
+                        group_base_dir  = group_base_dir,
                     )
                     card.pack(fill="x", pady=5, ipady=2)
                     self._bind_card_drag(card)
