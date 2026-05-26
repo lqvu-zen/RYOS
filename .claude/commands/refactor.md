@@ -43,58 +43,83 @@ cd D:/Projects/RYOS && grep -n "^class \|^def \|^# ---" script_runner.py | head 
 
 Build a mental map before touching anything.
 
-### 2. Confirm the plan with the user
+### 2. Design the package with Opus 4.7
 
-Present the proposed module layout (adjusted if needed after step 1) and ask for a go-ahead before writing any files.
+The package design is owned by Opus 4.7. The orchestrator running this skill is already Opus 4.7 (see frontmatter), so it can produce the design inline — but for a refactor of this size, prefer spawning a fresh Opus 4.7 agent to do an independent design pass free of context bias from the file-mapping step.
 
-### 3. Scaffold the package
-
-Create empty files with only `# placeholder` so Python can resolve imports immediately:
-```bash
-mkdir -p D:/Projects/RYOS/ryos/ui
 ```
-Create `ryos/__init__.py`, `ryos/ui/__init__.py`, and all module stubs.
-
-### 4. Migrate in dependency order
-
-Move code module by module, bottom-up. After each module, run a quick import check:
-```bash
-cd D:/Projects/RYOS && uv run python -c "from ryos.<module> import <KeyClass>"
+Agent({
+  description: "Design ryos/ package layout",
+  subagent_type: "general-purpose",
+  model: "opus",
+  prompt: <self-contained brief — see below>
+})
 ```
 
-**Order:**
-1. `ryos/settings.py` — paths, defaults, load/save (no internal deps)
-2. `ryos/db.py` — ScriptDB (depends on settings for paths)
-3. `ryos/interpreter.py` — detect_interpreter, build_command (no internal deps)
-4. `ryos/notifications.py` — update check, system tray notifications
-5. `ryos/ui/theme.py` — C dict, snap helpers (no internal deps)
-6. `ryos/ui/output_tabs.py` — OutputTabBar widget
-7. `ryos/ui/cards.py` — ScriptCard, GroupHeaderCard
-8. `ryos/ui/dialogs.py` — ScriptDialog, _PresetEntryDialog, AdvancedOptionsDialog
-9. `ryos/ui/pipeline.py` — PipelineEditorDialog, PipelineListDialog
-10. `ryos/ui/app.py` — RYOSApp (depends on all of the above)
-11. `ryos/__main__.py` — `def main(): app = RYOSApp(); app.mainloop()`
+The prompt must include, verbatim:
 
-### 5. Update script_runner.py to a shim
+- The current state of `script_runner.py` (paste the section map from Step 1).
+- The target layout sketch from the "Target package layout" section above (as a starting point — the agent may adjust it).
+- The constraint that no behaviour may change: `tests/test_ryos.py` must stay green, `uv run script_runner.py` and `RYOS.exe` must keep working.
+- This instruction: *"Produce a final module layout, the dependency order modules must be migrated in, and the rationale for any deviation from the starting sketch. Do NOT write code or move anything yet. Flag any ambiguity as a question for the user instead of guessing."*
 
-Replace the entire body of `script_runner.py` with:
-```python
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["tkinterdnd2"]
-# ///
-from ryos.__main__ import main
-if __name__ == "__main__":
-    main()
+The deliverable from this step is:
+
+- **Final directory tree** (one-line purpose per file).
+- **Dependency order** for migration (bottom-up — no module may depend on one migrated later).
+- **Shim contract** — what `script_runner.py` will look like after the refactor.
+- **`RYOS.spec` changes** — entrypoint and `hiddenimports`.
+- **Open questions** for the user, if any.
+
+Present the design to the user and wait for confirmation or adjustments before moving on.
+
+### 3. Delegate the migration to a Sonnet agent
+
+You (the orchestrator, Opus) do NOT write the migration code yourself. Spawn a Sonnet agent via the `Agent` tool to do the mechanical splitting. This is a long, repetitive task where Sonnet is well-suited and Opus context is better preserved for the verification and smoke-test steps that follow.
+
+Invocation:
+
+```
+Agent({
+  description: "Migrate script_runner.py into ryos/ package",
+  subagent_type: "general-purpose",
+  model: "sonnet",
+  prompt: <self-contained brief — see below>
+})
 ```
 
-The PEP 723 metadata block must stay here so `uv run script_runner.py` still provisions deps.
+The prompt must include, verbatim:
 
-### 6. Update RYOS.spec
+- The approved module layout from Step 2 (the full directory tree).
+- The dependency order below — the agent MUST migrate in this order and run an import-check after each module:
+  1. `ryos/settings.py` — paths, defaults, load/save (no internal deps)
+  2. `ryos/db.py` — ScriptDB (depends on settings for paths)
+  3. `ryos/interpreter.py` — detect_interpreter, build_command (no internal deps)
+  4. `ryos/notifications.py` — update check, system tray notifications
+  5. `ryos/ui/theme.py` — C dict, snap helpers (no internal deps)
+  6. `ryos/ui/output_tabs.py` — OutputTabBar widget
+  7. `ryos/ui/cards.py` — ScriptCard, GroupHeaderCard
+  8. `ryos/ui/dialogs.py` — ScriptDialog, _PresetEntryDialog, AdvancedOptionsDialog
+  9. `ryos/ui/pipeline.py` — PipelineEditorDialog, PipelineListDialog
+  10. `ryos/ui/app.py` — RYOSApp (depends on all of the above)
+  11. `ryos/__main__.py` — `def main(): app = RYOSApp(); app.mainloop()`
+- Import check after each module: `uv run python -c "from ryos.<module> import <KeyClass>"`.
+- The shim contents for `script_runner.py` (must keep the PEP 723 metadata block):
+  ```python
+  # /// script
+  # requires-python = ">=3.10"
+  # dependencies = ["tkinterdnd2"]
+  # ///
+  from ryos.__main__ import main
+  if __name__ == "__main__":
+      main()
+  ```
+- Update `RYOS.spec` so the `Analysis` entrypoint stays at `script_runner.py` and add the `ryos.*` submodules to `hiddenimports`.
+- This instruction: *"Do not commit or push. Do not run the test suite or launch the app — the orchestrator will do that. Report back the final list of files you created or modified, plus any deviations from the planned layout."*
 
-The PyInstaller spec's `Analysis` entrypoint should still point to `script_runner.py` (the shim). Verify `hiddenimports` includes any dynamically imported modules.
+When the agent returns, **verify the structure yourself** with `Glob "ryos/**/*.py"` and a `git status` before moving on.
 
-### 7. Run the test suite
+### 4. Run the test suite
 
 ```bash
 cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v 2>&1
@@ -102,7 +127,7 @@ cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v 2>&1
 
 Fix import paths in `tests/test_ryos.py` (e.g. `from ryos.db import ScriptDB`). Do not change test logic.
 
-### 8. Launch and smoke-test
+### 5. Launch and smoke-test
 
 ```bash
 cd D:/Projects/RYOS && uv run script_runner.py 2>&1
@@ -115,7 +140,31 @@ Verify:
 - Open Pipeline editor, set a per-step preset
 - Drag-and-drop a script file onto the window
 
-### 9. Commit
+### 6. Review with Opus 4.7 (before commit)
+
+Spawn an independent Opus 4.7 agent to review the refactor. The orchestrator is also Opus 4.7, but a fresh agent has no context bias from planning or delegation — it sees only the code and the brief.
+
+```
+Agent({
+  description: "Review ryos/ refactor",
+  subagent_type: "general-purpose",
+  model: "opus",
+  prompt: <self-contained brief — see below>
+})
+```
+
+The prompt must include, verbatim:
+
+- The original goal: "Split the monolithic `script_runner.py` into a `ryos/` package without changing behaviour."
+- The approved module layout (the directory tree from Step 2).
+- A list of every file the Sonnet agent created or modified (paste the `git status` output).
+- The output of `git diff --stat` and selected `git diff` excerpts for the most behaviour-sensitive files (`ryos/db.py`, `ryos/ui/app.py`, `script_runner.py`, `RYOS.spec`).
+- The rules the refactor must respect: no behaviour change, `script_runner.py` must remain a PEP 723 shim, dependency direction `ui/*` → top-level (never the reverse), `RYOS.spec` entrypoint stays at `script_runner.py` with `ryos.*` in `hiddenimports`.
+- This instruction: *"Review the diff for behaviour-changing edits, circular imports, missing `ryos.*` entries in `hiddenimports`, and any module landing in the wrong file. Do NOT edit any files. Report findings in three buckets: BLOCKERS, SUGGESTIONS, OK. End with the line 'READY TO COMMIT' if there are no blockers."*
+
+If the reviewer reports BLOCKERS, fix them (or send a follow-up to the Sonnet agent via `SendMessage`) and re-review. Only proceed once the reviewer prints `READY TO COMMIT`.
+
+### 7. Commit
 
 ```bash
 cd D:/Projects/RYOS && git add -A && git commit -m "$(cat <<'EOF'
@@ -131,7 +180,7 @@ EOF
 )" && git push 2>&1
 ```
 
-### 10. Report
+### 8. Report
 
 Tell the user:
 - The new module layout with one-line purpose for each file
