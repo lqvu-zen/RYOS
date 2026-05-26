@@ -326,6 +326,71 @@ class ScriptDialog(tk.Toplevel):
             self.destroy()
 
 
+class NewGroupDialog(tk.Toplevel):
+    """Popup to enter a group name and optional base directory when creating a group."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.result = None  # None = cancelled; (name, base_dir) on OK
+        self._name_var = tk.StringVar()
+        self._dir_var  = tk.StringVar()
+
+        self.title("New Group")
+        self.resizable(False, False)
+        self.grab_set()
+        self.configure(bg=C["card_bg"])
+
+        title_strip = tk.Frame(self, bg=C["card_bg"])
+        title_strip.pack(fill="x")
+        tk.Label(title_strip, text="New Group",
+                 bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"),
+                 anchor="w", padx=16, pady=12).pack(fill="x")
+        tk.Frame(title_strip, bg=C["border"], height=1).pack(fill="x")
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+
+        pad = {"padx": 6, "pady": 4}
+        ttk.Label(frame, text="Name:").grid(row=0, column=0, sticky="w", **pad)
+        self._e_name = ttk.Entry(frame, textvariable=self._name_var, width=40)
+        self._e_name.grid(row=0, column=1, columnspan=2, sticky="ew", **pad)
+
+        ttk.Label(frame, text="Base directory:").grid(row=1, column=0, sticky="w", **pad)
+        self._e_dir = ttk.Entry(frame, textvariable=self._dir_var, width=34)
+        self._e_dir.grid(row=1, column=1, sticky="ew", **pad)
+        ttk.Button(frame, text="Browse…", command=self._browse).grid(row=1, column=2, **pad)
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=2, column=0, columnspan=3, sticky="e", pady=(8, 0))
+        ttk.Button(btn_row, text="OK",     command=self._ok).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right")
+
+        self.bind("<Return>", lambda _: self._ok())
+        self.bind("<Escape>", lambda _: self.destroy())
+        self.transient(parent)
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        self._e_name.focus_set()
+
+    def _browse(self):
+        current = self._dir_var.get().strip()
+        d = filedialog.askdirectory(initialdir=current or str(Path.home()), parent=self)
+        if d:
+            self._dir_var.set(d)
+
+    def _ok(self):
+        name = self._name_var.get().strip()
+        if not name:
+            messagebox.showwarning("Required", "Please enter a group name.", parent=self)
+            return
+        self.result = (name, self._dir_var.get().strip())
+        self.destroy()
+
+
 class GroupBaseDirDialog(tk.Toplevel):
     """Popup to view, change, or clear a group's base directory."""
 

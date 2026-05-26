@@ -23,7 +23,7 @@ from ..interpreter import build_command, detect_interpreter
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import _BASE, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
-from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, ScriptDialog, _is_inside
+from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
 from .theme import C, _apply_snap_corner, _flat_button
 
@@ -419,14 +419,11 @@ class RYOSApp(_BaseWindow):
         self._canvas.yview_moveto(0)
 
     def _create_group(self):
-        name = simpledialog.askstring("New Group", "Group name:", parent=self)
-        if name and name.strip():
-            name = name.strip()
-            base_dir = filedialog.askdirectory(
-                title=f"Base directory for '{name}' (optional — cancel to skip)",
-                parent=self,
-            )
-            self.db.create_group(name, base_dir or "")
+        dlg = NewGroupDialog(self)
+        self.wait_window(dlg)
+        if dlg.result:
+            name, base_dir = dlg.result
+            self.db.create_group(name, base_dir)
             self._active_group = name
             self._refresh()
 
