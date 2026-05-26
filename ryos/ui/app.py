@@ -604,12 +604,13 @@ class RYOSApp(_BaseWindow):
         def render_group_sections(gname: str, scripts: list):
             group_base_dir = self.db.get_group_base_dir(gname)
             if group_base_dir:
-                banner = tk.Frame(self.cards_frame, bg=C["bg"])
-                banner.pack(fill="x", padx=8, pady=(8, 0))
-                tk.Label(banner, text="📁", bg=C["bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 8)).pack(side="left")
-                tk.Label(banner, text=group_base_dir, bg=C["bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 8), anchor="w").pack(side="left", padx=(4, 0))
+                banner = tk.Frame(self.cards_frame, bg=C["card_bg"],
+                                  highlightbackground=C["border"], highlightthickness=1)
+                banner.pack(fill="x", padx=8, pady=(10, 0))
+                tk.Label(banner, text="📁", bg=C["card_bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 11), padx=10, pady=8).pack(side="left")
+                tk.Label(banner, text=group_base_dir, bg=C["card_bg"], fg=C["name_fg"],
+                         font=("Segoe UI", 10), anchor="w", pady=8).pack(side="left")
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
             )
