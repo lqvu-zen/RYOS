@@ -409,16 +409,16 @@ class ScriptDB:
                 )
                 new_pipe_id = cur.lastrowid
                 steps = conn.execute(
-                    "SELECT script_id, step_order FROM pipeline_steps "
+                    "SELECT script_id, step_order, params_override FROM pipeline_steps "
                     "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
                     (old_pipe_id,),
                 ).fetchall()
-                for script_id, step_order in steps:
+                for script_id, step_order, params_override in steps:
                     new_script_id = id_map.get(script_id, script_id)
                     conn.execute(
-                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) "
-                        "VALUES (?, ?, ?)",
-                        (new_pipe_id, new_script_id, step_order),
+                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, params_override) "
+                        "VALUES (?, ?, ?, ?)",
+                        (new_pipe_id, new_script_id, step_order, params_override),
                     )
             conn.commit()
             return len(source_scripts), len(source_pipelines)
