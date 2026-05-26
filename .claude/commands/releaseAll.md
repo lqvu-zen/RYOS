@@ -1,3 +1,7 @@
+---
+model: claude-sonnet-4-6
+---
+
 Create a new GitHub release for RYOS with two assets: the standalone exe and a portable zip for running from source.
 
 ## Steps

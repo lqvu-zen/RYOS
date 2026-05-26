@@ -1,10 +1,10 @@
 ---
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 ---
 
 Add a new feature to RYOS. Follow these steps every time.
 
-The orchestrator running this skill is Opus 4.7. It owns the design, the user conversation, the verification of every delegated step, and the commit decision. It does NOT write the implementation code, run the tests, or launch the app itself — those go to a Sonnet 4.6 agent.
+The orchestrator running this skill is Sonnet 4.6. It owns the user conversation, the delegation of design and review to Opus 4.7, the verification of every delegated step, and the commit decision. It does NOT design the feature, write the implementation code, run the tests, launch the app, or review the diff itself — design and review go to fresh Opus 4.7 agents; implement/test/fix goes to a Sonnet 4.6 agent (separate from the orchestrator).
 
 ## Architecture reminder
 
@@ -49,9 +49,7 @@ Read the relevant sections with the Read tool before planning.
 
 ### 3. Design and plan with Opus 4.7 (ALWAYS — before any code edits)
 
-The design is owned by Opus 4.7. For non-trivial features, spawn a fresh Opus 4.7 agent to do a deep design pass; for small features the orchestrator (also Opus 4.7) can produce the plan inline. Either way, the deliverable is the same plan format below.
-
-When in doubt, delegate. Spawning a fresh agent gives an independent design free of context bias from the feature request conversation.
+The design is owned by Opus 4.7. Always spawn a fresh Opus 4.7 agent to produce the plan — even for small features. The orchestrator (Sonnet 4.6) does not design inline; spawning a fresh Opus agent also gives an independent design free of context bias from the feature-request conversation.
 
 ```
 Agent({

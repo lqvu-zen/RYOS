@@ -1,3 +1,7 @@
+---
+model: claude-sonnet-4-6
+---
+
 Commit and push the latest changes to GitHub.
 
 ## Steps

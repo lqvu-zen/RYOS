@@ -1,8 +1,10 @@
 ---
-model: claude-opus-4-7
+model: claude-sonnet-4-6
 ---
 
 Refactor the RYOS repository from a single monolithic file into a scalable, modular package. The goal is to make each concern (UI components, data layer, business logic, theme) independently editable without touching unrelated code.
+
+The orchestrator running this skill is Sonnet 4.6. Design (Step 2) and review (Step 4) are delegated to fresh Opus 4.7 agents; the migration + tests + smoke-test (Step 3) is delegated to a Sonnet 4.6 agent. The orchestrator handles user conversation, delegation, verification of each step, and the commit decision — it does NOT design, implement, or review inline.
 
 ## Context
 
@@ -45,7 +47,7 @@ Build a mental map before touching anything.
 
 ### 2. Design the package with Opus 4.7
 
-The package design is owned by Opus 4.7. The orchestrator running this skill is already Opus 4.7 (see frontmatter), so it can produce the design inline — but for a refactor of this size, prefer spawning a fresh Opus 4.7 agent to do an independent design pass free of context bias from the file-mapping step.
+The package design is owned by Opus 4.7. Always spawn a fresh Opus 4.7 agent to do the design pass; the orchestrator (Sonnet 4.6) does not design inline.
 
 ```
 Agent({
