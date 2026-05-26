@@ -14,7 +14,7 @@ cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v 2>&1
 2. **If all tests pass** — report "All tests passed" with the count and stop.
 
 3. **If there are failures or errors** — for each failing test:
-   a. Read the relevant section of `tests/test_ryos.py` and the appropriate module under `ryos/` to understand what broke.
+   a. Read ONLY the failing test and the specific module/function under test. Use targeted Grep to find the symbol; do not scan the whole repo with `Glob "**"` or open unrelated files.
    b. Determine whether the bug is in the source code (`ryos/`) or in the test itself:
       - If the source code has a real bug: fix the relevant file under `ryos/`.
       - If the test expectation is wrong (e.g. platform-specific behavior, wrong assumption): fix `tests/test_ryos.py`.

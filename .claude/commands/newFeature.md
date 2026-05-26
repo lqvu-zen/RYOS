@@ -104,7 +104,7 @@ The prompt must include, verbatim:
 - The verification commands and acceptance criteria:
   - `uv run python -m unittest discover -s tests -v` — all unit tests must pass.
   - `uv run ryos` — the app must launch; the new feature must work end-to-end; existing features (run/stop, groups, output panel, drag-drop, pipeline editor) must not regress.
-- This instruction: *"Edit only inside `ryos/`. Do not touch `pyproject.toml`, `build.bat`, or any test file. Implement the plan, bump `__version__`, then run the unit tests and the smoke checks. If anything fails, read the traceback, fix the code, and re-run — loop until tests and the app are both clean. Do not commit or push. Report back: the list of files you changed, the final test result, and a one-line note on the manual smoke-test outcome."*
+- This instruction: *"Read only the files listed in the plan plus any direct callers or callees you need to make the edit correctly. Use targeted Grep to locate symbols and Read narrow line ranges; do NOT scan the whole repo with `Glob "**"`, recursive directory listings, or open files you don't need. Edit only inside `ryos/`. Do not touch `pyproject.toml`, `build.bat`, or any test file. Implement the plan, bump `__version__`, then run the unit tests and the smoke checks. If anything fails, read the traceback, fix the code, and re-run — loop until tests and the app are both clean. Do not commit or push. Report back: the list of files you changed, the final test result, and a one-line note on the manual smoke-test outcome."*
 
 When the agent returns, **verify before moving on**:
 - Run `git diff` and confirm the actual changes match the plan; confirm `__version__` was bumped.
