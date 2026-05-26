@@ -373,10 +373,13 @@ class ScriptDB:
                 scripts = conn.execute(
                     "SELECT id, path FROM scripts WHERE COALESCE(group_name,'')=?", (name,)
                 ).fetchall()
+                norm_new = os.path.normcase(os.path.normpath(new_dir)) if new_dir else ""
                 for sid, spath in scripts:
                     norm_path = os.path.normcase(os.path.normpath(spath))
                     if norm_path == norm_old or norm_path.startswith(norm_old + os.sep):
                         if new_dir:
+                            if norm_path == norm_new or norm_path.startswith(norm_new + os.sep):
+                                continue  # already inside new_dir, no remap needed
                             rel = os.path.relpath(spath, old_dir)
                             new_path = os.path.join(new_dir, rel)
                         else:
