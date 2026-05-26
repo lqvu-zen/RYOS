@@ -12,7 +12,7 @@ Edit the line so it reads `__version__ = "<new_version>"` (e.g. `"1.2.0"`).
 
 3. Rebuild the exe with the latest changes:
 ```bash
-cd D:/Projects/RYOS && uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm 2>&1
+cd D:/Projects/RYOS && uv run --with nuitka --with tkinterdnd2 python -m nuitka --onefile --python-flag=-m --assume-yes-for-downloads --msvc=latest --windows-console-mode=disable --windows-icon-from-ico=icon.ico --enable-plugin=tk-inter --include-package=tkinterdnd2 --include-package-data=tkinterdnd2 --include-data-files=icon.ico=icon.ico --output-filename=RYOS.exe --output-dir=dist --remove-output ryos 2>&1
 ```
 
 4. Verify the build succeeded:

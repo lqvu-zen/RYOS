@@ -1,10 +1,20 @@
 @echo off
 cd /d "%~dp0"
-uv run --with pyinstaller --with tkinterdnd2 pyinstaller RYOS.spec --noconfirm
+uv run --with nuitka --with tkinterdnd2 python -m nuitka ^
+  --onefile ^
+  --python-flag=-m ^
+  --assume-yes-for-downloads ^
+  --msvc=latest ^
+  --windows-console-mode=disable ^
+  --windows-icon-from-ico=icon.ico ^
+  --enable-plugin=tk-inter ^
+  --include-package=tkinterdnd2 ^
+  --include-package-data=tkinterdnd2 ^
+  --include-data-files=icon.ico=icon.ico ^
+  --output-filename=RYOS.exe ^
+  --output-dir=dist ^
+  --remove-output ^
+  ryos
 echo.
-if exist dist\RYOS.exe (
-    echo Build successful: dist\RYOS.exe
-) else (
-    echo Build failed.
-)
+if exist dist\RYOS.exe (echo Build successful: dist\RYOS.exe) else (echo Build failed.)
 pause

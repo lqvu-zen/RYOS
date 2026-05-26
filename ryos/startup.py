@@ -3,6 +3,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from .settings import _PACKAGED
+
 if sys.platform == "win32":
     import winreg
 
@@ -11,7 +13,7 @@ _RUN_NAME = "RYOS"
 
 
 def _startup_command() -> str:
-    if getattr(sys, "frozen", False):
+    if _PACKAGED:
         return f'"{sys.executable}"'
     repo_root = Path(__file__).resolve().parents[1]
     uv = shutil.which("uv")

@@ -2,6 +2,11 @@
 build/
 dist/
 
+# Nuitka
+*.build/
+*.dist/
+*.onefile-build/
+
 # Test scripts
 tests/
 

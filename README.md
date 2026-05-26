@@ -100,7 +100,7 @@ Leave **Interpreter** blank for auto-detection, or type any custom command.
 ```bash
 build.bat
 # or:
-uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
+uv run --with nuitka --with tkinterdnd2 python -m nuitka --onefile --python-flag=-m --assume-yes-for-downloads --msvc=latest --windows-console-mode=disable --windows-icon-from-ico=icon.ico --enable-plugin=tk-inter --include-package=tkinterdnd2 --include-package-data=tkinterdnd2 --include-data-files=icon.ico=icon.ico --output-filename=RYOS.exe --output-dir=dist --remove-output ryos
 ```
 
-Output: `dist/RYOS.exe` — single file, no dependencies on the target machine. The database (`scripts.db`) is created next to the exe on first run.
+Output: `dist/RYOS.exe` — single file, no dependencies on the target machine. The database (`scripts.db`) is created next to the exe on first run. Requires MSVC (Visual Studio Build Tools 2022); the first build is slower than PyInstaller, subsequent builds are faster thanks to Nuitka's cache.

@@ -17,11 +17,11 @@ All dependencies are from the standard library (tkinter, sqlite3, subprocess, th
 ## Building the Executable
 
 ```bash
-uv run --with pyinstaller pyinstaller RYOS.spec --noconfirm
+uv run --with nuitka --with tkinterdnd2 python -m nuitka --onefile --python-flag=-m --assume-yes-for-downloads --msvc=latest --windows-console-mode=disable --windows-icon-from-ico=icon.ico --enable-plugin=tk-inter --include-package=tkinterdnd2 --include-package-data=tkinterdnd2 --include-data-files=icon.ico=icon.ico --output-filename=RYOS.exe --output-dir=dist --remove-output ryos
 # or double-click build.bat
 ```
 
-Output: `dist/RYOS.exe`
+Output: `dist/RYOS.exe`. Requires MSVC (Visual Studio Build Tools 2022); the first build is slower than PyInstaller, subsequent builds are faster thanks to Nuitka's cache.
 
 ## Architecture
 

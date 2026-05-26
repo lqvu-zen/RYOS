@@ -12,7 +12,8 @@ DB_PATH        = _APPDATA / "scripts.db"
 _SETTINGS_PATH = _APPDATA / "settings.json"
 
 # Directory of the exe / script (used for icon and migration).
-_BASE = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
+_PACKAGED = getattr(sys, "frozen", False) or "__compiled__" in dir()
+_BASE = Path(sys.executable).parent if _PACKAGED else Path(__file__).resolve().parents[1]
 
 # Migrate files from old location (next to exe / script) if not yet moved.
 for _fname in ("scripts.db", "settings.json"):
