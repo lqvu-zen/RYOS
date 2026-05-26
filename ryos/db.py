@@ -385,7 +385,19 @@ class ScriptDB:
                     "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
                     (s_name, path, params, interpreter, now, order_index, new_name),
                 )
-                id_map[old_id] = cur.lastrowid
+                new_id = cur.lastrowid
+                id_map[old_id] = new_id
+                presets = conn.execute(
+                    "SELECT label, params, sort_order FROM script_param_presets "
+                    "WHERE script_id=? ORDER BY sort_order ASC, id ASC",
+                    (old_id,),
+                ).fetchall()
+                for label, preset_params, sort_order in presets:
+                    conn.execute(
+                        "INSERT INTO script_param_presets (script_id, label, params, sort_order) "
+                        "VALUES (?, ?, ?, ?)",
+                        (new_id, label, preset_params, sort_order),
+                    )
             source_pipelines = conn.execute(
                 "SELECT id, name, sort_order FROM pipelines WHERE group_name=?",
                 (source,),
