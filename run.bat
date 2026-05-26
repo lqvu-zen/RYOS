@@ -1,2 +1,3 @@
 @echo off
-uv run --project "%~dp0" ryos
+cd /d "%~dp0"
+uv run ryos
