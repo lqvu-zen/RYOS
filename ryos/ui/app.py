@@ -333,12 +333,10 @@ class RYOSApp(_BaseWindow):
         self._group_tab_btns: list[tuple[str, tk.Button]] = []
         self._drag_state: dict | None = None
 
-        for g, base_dir in self.db.list_groups_with_meta():
-            btn, wrapper, inner, indicator, dir_lbl = self._add_tab_btn(
-                g, g, self._active_group == g, base_dir=base_dir
-            )
+        for g in self.db.list_groups():
+            btn, wrapper, inner, indicator = self._add_tab_btn(g, g, self._active_group == g)
             idx = len(self._group_tab_btns)
-            self._group_tab_btns.append((g, btn, wrapper, inner, indicator, dir_lbl))
+            self._group_tab_btns.append((g, btn, wrapper, inner, indicator))
             btn.bind("<ButtonPress-1>",   lambda e, i=idx: self._drag_start(e, i))
             btn.bind("<B1-Motion>",       self._drag_motion)
             btn.bind("<ButtonRelease-1>", self._drag_end)
@@ -357,7 +355,7 @@ class RYOSApp(_BaseWindow):
 
         self._all_tab_refs = self._add_tab_btn(None, "All", self._active_group is None, side="right")
 
-    def _add_tab_btn(self, group, label, is_active, side="left", base_dir=""):
+    def _add_tab_btn(self, group, label, is_active, side="left"):
         if is_active:
             btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
             bar_bg   = C["accent"]
@@ -383,18 +381,6 @@ class RYOSApp(_BaseWindow):
             command=lambda g=group: self._switch_group(g),
         )
         btn.pack(fill="x")
-
-        dir_lbl = None
-        if base_dir:
-            dir_lbl = tk.Label(
-                inner, text=f"📁 {Path(base_dir).name}",
-                bg=btn_bg, fg="#888888",
-                font=("Segoe UI", 7), anchor="center", pady=1,
-            )
-            dir_lbl.pack(fill="x")
-            dir_lbl.bind("<Button-1>", lambda e, g=group: self._switch_group(g))
-            dir_lbl.bind("<Button-3>", lambda e, g=group: self._tab_context_menu(e, g))
-
         indicator = tk.Frame(inner, bg=bar_bg, height=3)
         indicator.pack(fill="x")
 
@@ -403,9 +389,9 @@ class RYOSApp(_BaseWindow):
         if group is not None:
             btn.bind("<Button-3>", lambda e, g=group: self._tab_context_menu(e, g))
         wrapper.pack(side=side, padx=3, pady=(3, 0))
-        return btn, wrapper, inner, indicator, dir_lbl
+        return btn, wrapper, inner, indicator
 
-    def _apply_tab_style(self, is_active, btn, wrapper, inner, indicator, dir_lbl=None):
+    def _apply_tab_style(self, is_active, btn, wrapper, inner, indicator):
         if is_active:
             btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
             bar_bg, hover_bg, border = C["accent"], "#eef2ff", C["card_bg"]
@@ -416,15 +402,13 @@ class RYOSApp(_BaseWindow):
         inner.config(bg=btn_bg)
         btn.config(bg=btn_bg, fg=fg, font=("Segoe UI", 10, fw),
                    activebackground=hover_bg, activeforeground=fg)
-        if dir_lbl is not None:
-            dir_lbl.config(bg=btn_bg)
         indicator.config(bg=bar_bg)
         btn.bind("<Enter>", lambda e, b=btn, h=hover_bg: b.config(bg=h))
         btn.bind("<Leave>", lambda e, b=btn, ob=btn_bg: b.config(bg=ob))
 
     def _update_tab_styles(self):
-        for name, btn, wrapper, inner, indicator, dir_lbl in self._group_tab_btns:
-            self._apply_tab_style(self._active_group == name, btn, wrapper, inner, indicator, dir_lbl)
+        for name, btn, wrapper, inner, indicator in self._group_tab_btns:
+            self._apply_tab_style(self._active_group == name, btn, wrapper, inner, indicator)
         if hasattr(self, "_all_tab_refs"):
             self._apply_tab_style(self._active_group is None, *self._all_tab_refs)
 
@@ -619,6 +603,13 @@ class RYOSApp(_BaseWindow):
 
         def render_group_sections(gname: str, scripts: list):
             group_base_dir = self.db.get_group_base_dir(gname)
+            if group_base_dir:
+                banner = tk.Frame(self.cards_frame, bg=C["bg"])
+                banner.pack(fill="x", padx=8, pady=(8, 0))
+                tk.Label(banner, text="📁", bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 8)).pack(side="left")
+                tk.Label(banner, text=group_base_dir, bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 8), anchor="w").pack(side="left", padx=(4, 0))
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
             )
