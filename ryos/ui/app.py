@@ -605,12 +605,18 @@ class RYOSApp(_BaseWindow):
             group_base_dir = self.db.get_group_base_dir(gname)
             if group_base_dir:
                 banner = tk.Frame(self.cards_frame, bg=C["card_bg"],
-                                  highlightbackground=C["border"], highlightthickness=1)
+                                  highlightbackground=C["border"], highlightthickness=1,
+                                  cursor="hand2")
                 banner.pack(fill="x", padx=8, pady=(10, 0))
-                tk.Label(banner, text="📁", bg=C["card_bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 11), padx=10, pady=8).pack(side="left")
-                tk.Label(banner, text=group_base_dir, bg=C["card_bg"], fg=C["name_fg"],
-                         font=("Segoe UI", 10), anchor="w", pady=8).pack(side="left")
+                icon_lbl = tk.Label(banner, text="📁", bg=C["card_bg"], fg=C["path_fg"],
+                                    font=("Segoe UI", 11), padx=10, pady=8, cursor="hand2")
+                icon_lbl.pack(side="left")
+                path_lbl = tk.Label(banner, text=group_base_dir, bg=C["card_bg"], fg=C["name_fg"],
+                                    font=("Segoe UI", 10), anchor="w", pady=8, cursor="hand2")
+                path_lbl.pack(side="left")
+                _open = lambda e, g=gname: self._manage_group_base_dir(g)
+                for w in (banner, icon_lbl, path_lbl):
+                    w.bind("<Button-1>", _open)
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
             )
