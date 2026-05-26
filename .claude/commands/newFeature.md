@@ -132,7 +132,7 @@ The prompt must include, verbatim:
 - The full approved plan from Step 3.
 - The output of `git diff` for all modified files (paste it in).
 - The architecture rules the implementation must respect (thread safety via `self.after`/`output_queue`, `set_running` instead of `_refresh_cards`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, dependency direction `ui/*` → top-level, no comments unless WHY is non-obvious).
-- This instruction: *"Review the diff for correctness bugs, deviations from the plan, and architecture-rule violations. Do NOT edit any files. Report findings in three buckets: BLOCKERS (must fix before commit), SUGGESTIONS (nice-to-have), and OK (looks correct). If there are no blockers, end with the line 'READY TO COMMIT'."*
+- This instruction: *"Review ONLY the diff and the files it modifies. Do not scan other files in the repo. If a change in the diff references an external symbol (e.g. a new import), you may open that referenced file to confirm the API exists — but do not go looking for unrelated issues outside the diff. Look for correctness bugs, deviations from the plan, and architecture-rule violations within the changed code. Do NOT edit any files. Report findings in three buckets: BLOCKERS (must fix before commit), SUGGESTIONS (nice-to-have), and OK (looks correct). If there are no blockers, end with the line 'READY TO COMMIT'."*
 
 If the reviewer reports BLOCKERS, fix them yourself (or delegate back to the Sonnet 4.6 agent via `SendMessage`) and re-review. Only proceed once the reviewer prints `READY TO COMMIT`.
 

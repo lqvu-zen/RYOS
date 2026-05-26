@@ -145,7 +145,7 @@ The prompt must include, verbatim:
 - A list of every file the Sonnet agent created or modified (paste the `git status` output).
 - The output of `git diff --stat` and selected `git diff` excerpts for the most behaviour-sensitive files (`ryos/db.py`, `ryos/ui/app.py`, `script_runner.py`, `RYOS.spec`).
 - The rules the refactor must respect: no behaviour change, `script_runner.py` must remain a PEP 723 shim, dependency direction `ui/*` → top-level (never the reverse), `RYOS.spec` entrypoint stays at `script_runner.py` with `ryos.*` in `hiddenimports`.
-- This instruction: *"Review the diff for behaviour-changing edits, circular imports, missing `ryos.*` entries in `hiddenimports`, and any module landing in the wrong file. Do NOT edit any files. Report findings in three buckets: BLOCKERS, SUGGESTIONS, OK. End with the line 'READY TO COMMIT' if there are no blockers."*
+- This instruction: *"Review ONLY the diff and the files it modifies. Do not scan other files in the repo. If a change in the diff references an external symbol (e.g. an import), you may open that referenced file to confirm the API exists — but do not go looking for unrelated issues outside the diff. Look for behaviour-changing edits, circular imports, missing `ryos.*` entries in `hiddenimports`, and any module landing in the wrong file. Do NOT edit any files. Report findings in three buckets: BLOCKERS, SUGGESTIONS, OK. End with the line 'READY TO COMMIT' if there are no blockers."*
 
 If the reviewer reports BLOCKERS, fix them (or send a follow-up to the Sonnet agent via `SendMessage`) and re-review. Only proceed once the reviewer prints `READY TO COMMIT`.
 
