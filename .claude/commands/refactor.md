@@ -73,9 +73,9 @@ The deliverable from this step is:
 
 Present the design to the user and wait for confirmation or adjustments before moving on.
 
-### 3. Delegate the migration to a Sonnet agent
+### 3. Delegate the migration, tests, and smoke-test to a Sonnet 4.6 agent
 
-You (the orchestrator, Opus) do NOT write the migration code yourself. Spawn a Sonnet agent via the `Agent` tool to do the mechanical splitting. This is a long, repetitive task where Sonnet is well-suited and Opus context is better preserved for the verification and smoke-test steps that follow.
+You (the orchestrator, Opus) do NOT write the migration code, run the tests, or launch the app yourself. Spawn a Sonnet 4.6 agent (the `"sonnet"` model alias resolves to Claude Sonnet 4.6) to do the mechanical splitting AND run the unit tests AND smoke-test the app — fixing any failures end-to-end. Opus context is preserved for the independent review step that follows.
 
 Invocation:
 
@@ -115,32 +115,17 @@ The prompt must include, verbatim:
       main()
   ```
 - Update `RYOS.spec` so the `Analysis` entrypoint stays at `script_runner.py` and add the `ryos.*` submodules to `hiddenimports`.
-- This instruction: *"Do not commit or push. Do not run the test suite or launch the app — the orchestrator will do that. Report back the final list of files you created or modified, plus any deviations from the planned layout."*
+- The verification commands and acceptance criteria:
+  - `uv run python -m unittest discover -s tests -v` — all tests must pass. Fix any broken import paths in `tests/test_ryos.py` (e.g. `from ryos.db import ScriptDB`); do not change test logic.
+  - `uv run ryos` — launch the app and verify: app opens with all script cards loaded; Run / Stop a script and see output appear; open Edit Script dialog and add a preset; open Pipeline editor and set a per-step preset; drag-and-drop a script file onto the window.
+- This instruction: *"Run the unit tests and the smoke checks after the migration. If anything fails, read the traceback, fix the code (or fix broken test imports), and re-run — loop until tests and the app are both clean. Do not commit or push. Report back the final list of files you created or modified, plus any deviations from the planned layout, and the final test/smoke result."*
 
-When the agent returns, **verify the structure yourself** with `Glob "ryos/**/*.py"` and a `git status` before moving on.
+When the agent returns, **verify before moving on**:
+- Run `Glob "ryos/**/*.py"` and `git status` to confirm the structure matches the planned layout.
+- Re-run `uv run python -m unittest discover -s tests -v` yourself — cheap defense against an agent claiming a green run that wasn't.
+- If anything looks off, either fix it inline or send a follow-up via `SendMessage` to the same agent.
 
-### 4. Run the test suite
-
-```bash
-cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v 2>&1
-```
-
-Fix import paths in `tests/test_ryos.py` (e.g. `from ryos.db import ScriptDB`). Do not change test logic.
-
-### 5. Launch and smoke-test
-
-```bash
-cd D:/Projects/RYOS && uv run ryos 2>&1
-```
-
-Verify:
-- App opens, all script cards load
-- Run / Stop a script, output appears
-- Open Edit Script dialog, add a preset
-- Open Pipeline editor, set a per-step preset
-- Drag-and-drop a script file onto the window
-
-### 6. Review with Opus 4.7 (before commit)
+### 4. Review with Opus 4.7 (before commit)
 
 Spawn an independent Opus 4.7 agent to review the refactor. The orchestrator is also Opus 4.7, but a fresh agent has no context bias from planning or delegation — it sees only the code and the brief.
 
@@ -164,7 +149,7 @@ The prompt must include, verbatim:
 
 If the reviewer reports BLOCKERS, fix them (or send a follow-up to the Sonnet agent via `SendMessage`) and re-review. Only proceed once the reviewer prints `READY TO COMMIT`.
 
-### 7. Commit
+### 5. Commit
 
 ```bash
 cd D:/Projects/RYOS && git add -A && git commit -m "$(cat <<'EOF'
@@ -180,7 +165,7 @@ EOF
 )" && git push 2>&1
 ```
 
-### 8. Report
+### 6. Report
 
 Tell the user:
 - The new module layout with one-line purpose for each file

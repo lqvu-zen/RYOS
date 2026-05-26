@@ -1,3 +1,7 @@
+---
+model: claude-sonnet-4-6
+---
+
 Run the RYOS unit test suite and automatically fix any failures.
 
 ## Steps

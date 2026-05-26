@@ -4,7 +4,7 @@ model: claude-opus-4-7
 
 Add a new feature to RYOS. Follow these steps every time.
 
-The orchestrator running this skill is Opus 4.7. It owns the design, the user conversation, the verification of every delegated step, and the commit decision. It does NOT write the implementation code itself.
+The orchestrator running this skill is Opus 4.7. It owns the design, the user conversation, the verification of every delegated step, and the commit decision. It does NOT write the implementation code, run the tests, or launch the app itself — those go to a Sonnet 4.6 agent.
 
 ## Architecture reminder
 
@@ -81,9 +81,9 @@ The plan must answer:
 
 Present the plan to the user and wait for confirmation or adjustments. Use `TaskCreate` to record one task per concrete change so progress is visible during the implementation step. If the user says "go ahead" without comment, treat that as approval and proceed.
 
-### 4. Implement (delegate to a Sonnet agent)
+### 4. Implement, test, and fix (delegate to a Sonnet 4.6 agent)
 
-You (the orchestrator) do NOT write the implementation code yourself. Spawn a Sonnet agent via the `Agent` tool and hand it the approved plan to execute. This keeps the main context free for planning, review, and follow-ups.
+You (the orchestrator) do NOT write the implementation code, run the tests, or launch the app yourself. Spawn a Sonnet 4.6 agent (the `"sonnet"` model alias resolves to Claude Sonnet 4.6) to execute the plan, run the test suite, smoke-test the feature, and fix any failures end-to-end. Offloading the entire implement–test–fix loop keeps the Opus context free for verification and the final review.
 
 Invocation:
 
@@ -100,31 +100,20 @@ The prompt must include, verbatim:
 
 - The full approved plan from Step 3 (files, functions, schema/settings changes, UI placement).
 - The architecture rules from the table above that apply (thread safety, `set_running`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, dependency direction, no comments unless WHY is non-obvious).
-- The exact `__version__` bump expected (so the agent can do it in the same pass).
-- This instruction: *"Edit only inside `ryos/`. Do not touch `pyproject.toml`, `build.bat`, or any test file. Do not commit or push. Report back the list of files you changed."*
+- The exact `__version__` bump expected — the agent bumps it as part of the same pass.
+- The verification commands and acceptance criteria:
+  - `uv run python -m unittest discover -s tests -v` — all unit tests must pass.
+  - `uv run ryos` — the app must launch; the new feature must work end-to-end; existing features (run/stop, groups, output panel, drag-drop, pipeline editor) must not regress.
+- This instruction: *"Edit only inside `ryos/`. Do not touch `pyproject.toml`, `build.bat`, or any test file. Implement the plan, bump `__version__`, then run the unit tests and the smoke checks. If anything fails, read the traceback, fix the code, and re-run — loop until tests and the app are both clean. Do not commit or push. Report back: the list of files you changed, the final test result, and a one-line note on the manual smoke-test outcome."*
 
-When the agent returns, **verify the changes yourself** before moving on: read each modified file's diff with `git diff` and confirm the agent did what the plan said. If it deviated, either accept the deviation or send a follow-up message via `SendMessage` to correct it. Mark each `TaskUpdate` as `completed` once verified.
+When the agent returns, **verify before moving on**:
+- Run `git diff` and confirm the actual changes match the plan; confirm `__version__` was bumped.
+- Re-run `uv run python -m unittest discover -s tests -v` yourself — cheap defense against an agent claiming a green run that wasn't.
+- If anything looks off, either fix it inline or send a follow-up via `SendMessage` to the same agent.
 
-### 5. Test and fix
+Mark each `TaskUpdate` as `completed` once verified.
 
-Run the unit tests first:
-```
-uv run python -m unittest discover -s tests -v
-```
-
-Then launch the app and exercise the new feature end-to-end:
-```
-uv run ryos
-```
-- Walk through the happy path: does the feature work as requested?
-- Check for regressions: do existing features (run/stop, groups, output panel, drag-drop, pipeline editor) still work?
-- If the app crashes or prints tracebacks, read the error, fix the code, and re-test.
-- Repeat until tests and the app both run clean.
-
-### 6. Bump the version
-Edit `ryos/__init__.py` and bump `__version__` to the next appropriate value (patch = `x.y.Z+1`, minor = `x.Y+1.0`).
-
-### 7. Review with Opus 4.7 (before commit)
+### 5. Review with Opus 4.7 (before commit)
 
 Spawn an independent Opus 4.7 agent to review the staged diff. The orchestrator is also Opus 4.7, but a fresh agent has no context bias from the planning step — it sees only the code and the brief.
 
@@ -145,9 +134,9 @@ The prompt must include, verbatim:
 - The architecture rules the implementation must respect (thread safety via `self.after`/`output_queue`, `set_running` instead of `_refresh_cards`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, dependency direction `ui/*` → top-level, no comments unless WHY is non-obvious).
 - This instruction: *"Review the diff for correctness bugs, deviations from the plan, and architecture-rule violations. Do NOT edit any files. Report findings in three buckets: BLOCKERS (must fix before commit), SUGGESTIONS (nice-to-have), and OK (looks correct). If there are no blockers, end with the line 'READY TO COMMIT'."*
 
-If the reviewer reports BLOCKERS, fix them yourself (or delegate back to the Sonnet agent via `SendMessage`) and re-review. Only proceed once the reviewer prints `READY TO COMMIT`.
+If the reviewer reports BLOCKERS, fix them yourself (or delegate back to the Sonnet 4.6 agent via `SendMessage`) and re-review. Only proceed once the reviewer prints `READY TO COMMIT`.
 
-### 8. Commit and push
+### 6. Commit and push
 ```
 git add ryos/ <any other touched files> && git commit -m "$(cat <<'EOF'
 <short description of the feature>
@@ -159,7 +148,7 @@ EOF
 )" && git push
 ```
 
-### 9. Report
+### 7. Report
 Tell the user:
 - What was added and where it lives in the UI
 - Which files changed (paths inside `ryos/`)
