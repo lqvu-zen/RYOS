@@ -367,6 +367,50 @@ class ScriptDB:
             conn.execute("UPDATE pipelines SET group_name='' WHERE group_name=?", (name,))
             conn.commit()
 
+    def clone_group(self, source: str, new_name: str) -> tuple[int, int]:
+        with self._connect() as conn:
+            max_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM groups").fetchone()[0]
+            conn.execute("INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
+                         (new_name, max_order + 1))
+            now = datetime.now().isoformat(timespec="seconds")
+            source_scripts = conn.execute(
+                "SELECT id, name, path, params, interpreter, order_index FROM scripts WHERE group_name=?",
+                (source,),
+            ).fetchall()
+            id_map: dict[int, int] = {}
+            for old_id, s_name, path, params, interpreter, order_index in source_scripts:
+                cur = conn.execute(
+                    "INSERT INTO scripts (name, path, params, interpreter, created_at, "
+                    "last_run_at, last_run_status, order_index, group_name) "
+                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+                    (s_name, path, params, interpreter, now, order_index, new_name),
+                )
+                id_map[old_id] = cur.lastrowid
+            source_pipelines = conn.execute(
+                "SELECT id, name, sort_order FROM pipelines WHERE group_name=?",
+                (source,),
+            ).fetchall()
+            for old_pipe_id, p_name, sort_order in source_pipelines:
+                cur = conn.execute(
+                    "INSERT INTO pipelines (name, group_name, sort_order) VALUES (?, ?, ?)",
+                    (p_name, new_name, sort_order),
+                )
+                new_pipe_id = cur.lastrowid
+                steps = conn.execute(
+                    "SELECT script_id, step_order FROM pipeline_steps "
+                    "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
+                    (old_pipe_id,),
+                ).fetchall()
+                for script_id, step_order in steps:
+                    new_script_id = id_map.get(script_id, script_id)
+                    conn.execute(
+                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) "
+                        "VALUES (?, ?, ?)",
+                        (new_pipe_id, new_script_id, step_order),
+                    )
+            conn.commit()
+            return len(source_scripts), len(source_pipelines)
+
     def list_param_presets(self, script_id: int) -> list:
         with self._connect() as conn:
             return conn.execute(

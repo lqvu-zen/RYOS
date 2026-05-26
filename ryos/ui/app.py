@@ -486,11 +486,33 @@ class RYOSApp(_BaseWindow):
                 self._active_group = remaining[0] if remaining else None
             self._refresh()
 
+    def _clone_group(self, source: str):
+        existing = self.db.list_groups()
+        default = f"{source} (copy)"
+        if default in existing:
+            n = 2
+            while f"{source} (copy {n})" in existing:
+                n += 1
+            default = f"{source} (copy {n})"
+        name = simpledialog.askstring("Clone Group", f"Name for clone of '{source}':",
+                                      initialvalue=default, parent=self)
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        if name in self.db.list_groups():
+            messagebox.showerror("Clone Group", f"A group named '{name}' already exists.", parent=self)
+            return
+        scripts_n, pipes_n = self.db.clone_group(source, name)
+        self._active_group = name
+        self._refresh()
+        self.status_var.set(f"Cloned '{source}' → '{name}' ({scripts_n} scripts, {pipes_n} pipelines).")
+
     def _tab_context_menu(self, event, group: str):
         menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
                        activebackground=C["accent"], activeforeground="#ffffff",
                        font=("Segoe UI", 10))
         menu.add_command(label="✏  Rename", command=lambda: self._rename_group(group))
+        menu.add_command(label="📋  Clone Group", command=lambda: self._clone_group(group))
         menu.add_command(label="📤  Export group", command=lambda: self._export_config(group_name=group))
         menu.add_separator()
         menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
