@@ -11,7 +11,7 @@ except ImportError:
     _dnd_imports = []
 
 a = Analysis(
-    ['script_runner.py'],
+    ['ryos/__main__.py'],
     pathex=[],
     binaries=[],
     datas=[('icon.ico', '.')] + _dnd_datas,

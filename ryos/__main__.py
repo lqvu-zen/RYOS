@@ -1,4 +1,4 @@
-"""Entry point — `python -m ryos` or imported by script_runner.py shim."""
+"""Entry point — `uv run ryos` or `python -m ryos`."""
 from .ui.app import RYOSApp
 
 

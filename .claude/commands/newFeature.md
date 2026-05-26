@@ -8,7 +8,7 @@ The orchestrator running this skill is Opus 4.7. It owns the design, the user co
 
 ## Architecture reminder
 
-Code now lives in the `ryos/` package, not the old `script_runner.py` monolith. `script_runner.py` is just a PEP 723 shim that calls `ryos.__main__.main`.
+Code lives in the `ryos/` package; entry point is `ryos.__main__:main` exposed via `pyproject.toml`. There is no shim file anymore.
 
 | Concern                                  | Module                                       |
 | ---------------------------------------- | -------------------------------------------- |
@@ -101,7 +101,7 @@ The prompt must include, verbatim:
 - The full approved plan from Step 3 (files, functions, schema/settings changes, UI placement).
 - The architecture rules from the table above that apply (thread safety, `set_running`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS`, dependency direction, no comments unless WHY is non-obvious).
 - The exact `__version__` bump expected (so the agent can do it in the same pass).
-- This instruction: *"Edit only inside `ryos/` and `ryos/__init__.py`. Do not touch `script_runner.py`, `RYOS.spec`, or any test file. Do not commit or push. Report back the list of files you changed."*
+- This instruction: *"Edit only inside `ryos/`. Do not touch `pyproject.toml`, `RYOS.spec`, or any test file. Do not commit or push. Report back the list of files you changed."*
 
 When the agent returns, **verify the changes yourself** before moving on: read each modified file's diff with `git diff` and confirm the agent did what the plan said. If it deviated, either accept the deviation or send a follow-up message via `SendMessage` to correct it. Mark each `TaskUpdate` as `completed` once verified.
 
@@ -114,7 +114,7 @@ uv run python -m unittest discover -s tests -v
 
 Then launch the app and exercise the new feature end-to-end:
 ```
-uv run script_runner.py
+uv run ryos
 ```
 - Walk through the happy path: does the feature work as requested?
 - Check for regressions: do existing features (run/stop, groups, output panel, drag-drop, pipeline editor) still work?

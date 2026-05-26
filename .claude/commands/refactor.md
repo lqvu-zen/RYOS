@@ -7,7 +7,7 @@ Refactor the RYOS repository from a single monolithic file into a scalable, modu
 ## Context
 
 - **Current state**: all ~3600 lines live in `script_runner.py`
-- **Entry points to preserve**: `uv run script_runner.py`, `run.bat`, `RYOS.exe` (PyInstaller)
+- **Entry points to preserve**: `uv run ryos`, `run.bat`, `RYOS.exe` (PyInstaller)
 - **Test suite**: `tests/test_ryos.py` — must stay green throughout
 - **Build**: `RYOS.spec` + `uv run --with pyinstaller pyinstaller RYOS.spec`
 
@@ -130,7 +130,7 @@ Fix import paths in `tests/test_ryos.py` (e.g. `from ryos.db import ScriptDB`). 
 ### 5. Launch and smoke-test
 
 ```bash
-cd D:/Projects/RYOS && uv run script_runner.py 2>&1
+cd D:/Projects/RYOS && uv run ryos 2>&1
 ```
 
 Verify:

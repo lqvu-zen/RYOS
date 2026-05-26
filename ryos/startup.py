@@ -1,4 +1,5 @@
 """Windows startup-on-login registry helpers."""
+import shutil
 import sys
 from pathlib import Path
 
@@ -12,12 +13,14 @@ _RUN_NAME = "RYOS"
 def _startup_command() -> str:
     if getattr(sys, "frozen", False):
         return f'"{sys.executable}"'
+    repo_root = Path(__file__).resolve().parents[1]
+    uv = shutil.which("uv")
+    if uv:
+        return f'"{uv}" run --project "{repo_root}" ryos'
     pythonw = Path(sys.executable).with_name("pythonw.exe")
     if not pythonw.exists():
         pythonw = Path(sys.executable)
-    # Launch via the script_runner.py shim so PEP 723 deps are provisioned.
-    shim = Path(__file__).resolve().parents[1] / "script_runner.py"
-    return f'"{pythonw}" "{shim}"'
+    return f'cmd /c cd /d "{repo_root}" && "{pythonw}" -m ryos'
 
 
 def _startup_enabled() -> bool:

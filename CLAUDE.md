@@ -5,10 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running the App
 
 ```bash
-uv run script_runner.py
+uv run ryos
 ```
 
-`uv` reads the PEP 723 inline metadata at the top of `script_runner.py` and automatically provisions the correct Python version (≥3.10) in an isolated environment. No manual `pip install` or virtualenv setup needed.
+`uv` reads `pyproject.toml`, provisions Python ≥3.10 in an isolated environment, installs `tkinterdnd2`, and invokes the `ryos` console-script entry (`ryos.__main__:main`). No manual `pip install` or virtualenv setup needed.
 
 If `uv` is not installed: `pip install uv` or see https://docs.astral.sh/uv/getting-started/installation/
 
@@ -25,13 +25,19 @@ Output: `dist/RYOS.exe`
 
 ## Architecture
 
-Single-file desktop app (`script_runner.py`) with three layers:
+Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script via `pyproject.toml`.
 
-1. **`ScriptDB` class** — SQLite wrapper using context managers. Database file `scripts.db` is created on first run in the working directory (or next to `RYOS.exe` when frozen).
+| Concern                                  | Module                  |
+| ---------------------------------------- | ----------------------- |
+| Paths, settings load/save                | `ryos/settings.py`      |
+| Windows "run at login" registry          | `ryos/startup.py`       |
+| Toast + GitHub update check              | `ryos/notifications.py` |
+| `ScriptDB` (all SQLite logic)            | `ryos/db.py`            |
+| `detect_interpreter`, `build_command`    | `ryos/interpreter.py`   |
+| Theme, widgets, dialogs, cards, app      | `ryos/ui/*`             |
+| `__version__`                            | `ryos/__init__.py`      |
 
-2. **Helper functions** — `detect_interpreter()` maps file extensions to executables; `build_command()` assembles the subprocess command list.
-
-3. **`RYOSApp` class** — Tkinter (`tk.Tk`) UI. Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained by a recurring `after(80, ...)` timer to keep the UI responsive. Subprocess stdout/stderr are merged via `STDOUT`.
+Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained by a recurring `after(80, ...)` timer on the main UI thread.
 
 ## Key Design Choices
 

@@ -12,6 +12,7 @@ scripts.db
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 
 # uv
 .venv/

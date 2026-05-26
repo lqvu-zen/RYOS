@@ -19,7 +19,7 @@ cd D:/Projects/RYOS && git log --oneline -5 2>&1
 
 4. Stage and commit:
 ```bash
-cd D:/Projects/RYOS && git add -p -- script_runner.py tests/ .claude/ README.md CLAUDE.md *.spec *.bat 2>&1
+cd D:/Projects/RYOS && git add -p -- ryos/ pyproject.toml tests/ .claude/ README.md CLAUDE.md *.spec *.bat 2>&1
 ```
 > Stage only tracked/relevant files — never stage `.env`, `scripts.db`, `dist/`, `build/`, or `__pycache__`.
 

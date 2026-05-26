@@ -1,0 +1,19 @@
+[project]
+name = "ryos"
+dynamic = ["version"]
+description = "RYOS - Run Your Own Scripts"
+requires-python = ">=3.10"
+dependencies = ["tkinterdnd2"]
+
+[project.scripts]
+ryos = "ryos.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "ryos/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ryos"]
