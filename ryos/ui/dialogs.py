@@ -326,6 +326,69 @@ class ScriptDialog(tk.Toplevel):
             self.destroy()
 
 
+class GroupBaseDirDialog(tk.Toplevel):
+    """Popup to view, change, or clear a group's base directory."""
+
+    def __init__(self, parent, group_name: str, current_dir: str = ""):
+        super().__init__(parent)
+        self.result = None  # None = cancelled; "" = cleared; str = new path
+        self._dir_var = tk.StringVar(value=current_dir)
+
+        self.title(f"Base Directory — {group_name}")
+        self.resizable(False, False)
+        self.grab_set()
+        self.configure(bg=C["card_bg"])
+
+        title_strip = tk.Frame(self, bg=C["card_bg"])
+        title_strip.pack(fill="x")
+        tk.Label(title_strip, text=f"Base directory for '{group_name}'",
+                 bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"),
+                 anchor="w", padx=16, pady=12).pack(fill="x")
+        tk.Frame(title_strip, bg=C["border"], height=1).pack(fill="x")
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+
+        ttk.Label(frame, text="Directory:").grid(row=0, column=0, sticky="w", pady=(0, 4))
+
+        path_row = ttk.Frame(frame)
+        path_row.grid(row=1, column=0, sticky="ew")
+        path_row.columnconfigure(0, weight=1)
+        self._e_dir = ttk.Entry(path_row, textvariable=self._dir_var, width=44)
+        self._e_dir.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        ttk.Button(path_row, text="Browse…", command=self._browse).grid(row=0, column=1)
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=2, column=0, sticky="ew", pady=(16, 0))
+        ttk.Button(btn_row, text="OK",     command=self._ok).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(btn_row, text="Clear",  command=self._clear).pack(side="left")
+
+        self.bind("<Return>", lambda _: self._ok())
+        self.bind("<Escape>", lambda _: self.destroy())
+        self.transient(parent)
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        self._e_dir.focus_set()
+
+    def _browse(self):
+        current = self._dir_var.get().strip()
+        d = filedialog.askdirectory(initialdir=current or str(Path.home()), parent=self)
+        if d:
+            self._dir_var.set(d)
+
+    def _clear(self):
+        self._dir_var.set("")
+
+    def _ok(self):
+        self.result = self._dir_var.get().strip()
+        self.destroy()
+
+
 class ParamPickerDialog(tk.Toplevel):
     """Let the user pick which param preset to use before running a script."""
 
