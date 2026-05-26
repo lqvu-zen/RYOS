@@ -1,5 +1,6 @@
 """SQLite wrapper - manages saved scripts, groups, pipelines, and param presets."""
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -74,6 +75,8 @@ class ScriptDB:
             if "sort_order" not in gcols:
                 conn.execute("ALTER TABLE groups ADD COLUMN sort_order INTEGER DEFAULT 0")
                 conn.execute("UPDATE groups SET sort_order = id")
+            if "base_dir" not in gcols:
+                conn.execute("ALTER TABLE groups ADD COLUMN base_dir TEXT DEFAULT ''")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS pipelines (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,7 +157,7 @@ class ScriptDB:
                     (group_name,),
                 ).fetchall()
                 groups = conn.execute(
-                    "SELECT name, sort_order FROM groups WHERE name=?",
+                    "SELECT name, sort_order, COALESCE(base_dir, '') FROM groups WHERE name=?",
                     (group_name,),
                 ).fetchall()
             else:
@@ -169,7 +172,8 @@ class ScriptDB:
                     "ORDER BY sort_order ASC, id ASC"
                 ).fetchall()
                 groups = conn.execute(
-                    "SELECT name, sort_order FROM groups ORDER BY sort_order ASC, id ASC"
+                    "SELECT name, sort_order, COALESCE(base_dir, '') FROM groups "
+                    "ORDER BY sort_order ASC, id ASC"
                 ).fetchall()
 
             pipeline_data = []
@@ -190,7 +194,7 @@ class ScriptDB:
         data = {
             "version": 2,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
-            "groups": [{"name": g[0], "sort_order": g[1]} for g in groups],
+            "groups": [{"name": g[0], "sort_order": g[1], "base_dir": g[2]} for g in groups],
             "scripts": [
                 {
                     "name": s[0], "path": s[1], "params": s[2],
@@ -251,8 +255,8 @@ class ScriptDB:
                 gname = g["name"]
                 if gname not in existing_groups:
                     conn.execute(
-                        "INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
-                        (gname, g.get("sort_order", 0)),
+                        "INSERT OR IGNORE INTO groups (name, sort_order, base_dir) VALUES (?, ?, ?)",
+                        (gname, g.get("sort_order", 0), g.get("base_dir", "")),
                     )
                     existing_groups.add(gname)
 
@@ -340,6 +344,52 @@ class ScriptDB:
             cur = conn.execute("SELECT name FROM groups ORDER BY sort_order ASC, id ASC")
             return [r[0] for r in cur.fetchall()]
 
+    def list_groups_with_meta(self) -> list[tuple[str, str]]:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT name, COALESCE(base_dir, '') FROM groups ORDER BY sort_order ASC, id ASC"
+            )
+            return [(r[0], r[1]) for r in cur.fetchall()]
+
+    def get_group_base_dir(self, name: str) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(base_dir, '') FROM groups WHERE name=?", (name,)
+            ).fetchone()
+            return row[0] if row else ""
+
+    def set_group_base_dir(self, name: str, new_dir: str) -> tuple[int, list[str]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(base_dir, '') FROM groups WHERE name=?", (name,)
+            ).fetchone()
+            old_dir = row[0] if row else ""
+
+            remapped = 0
+            untouched = []
+
+            if old_dir:
+                norm_old = os.path.normcase(os.path.normpath(old_dir))
+                scripts = conn.execute(
+                    "SELECT id, path FROM scripts WHERE COALESCE(group_name,'')=?", (name,)
+                ).fetchall()
+                for sid, spath in scripts:
+                    norm_path = os.path.normcase(os.path.normpath(spath))
+                    if norm_path == norm_old or norm_path.startswith(norm_old + os.sep):
+                        if new_dir:
+                            rel = os.path.relpath(spath, old_dir)
+                            new_path = os.path.join(new_dir, rel)
+                        else:
+                            new_path = spath
+                        conn.execute("UPDATE scripts SET path=? WHERE id=?", (new_path, sid))
+                        remapped += 1
+                    else:
+                        untouched.append(spath)
+
+            conn.execute("UPDATE groups SET base_dir=? WHERE name=?", (new_dir, name))
+            conn.commit()
+            return remapped, untouched
+
     def create_group(self, name: str):
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM groups").fetchone()[0]
@@ -370,8 +420,14 @@ class ScriptDB:
     def clone_group(self, source: str, new_name: str) -> tuple[int, int]:
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM groups").fetchone()[0]
-            conn.execute("INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)",
-                         (new_name, max_order + 1))
+            src_base = conn.execute(
+                "SELECT COALESCE(base_dir, '') FROM groups WHERE name=?", (source,)
+            ).fetchone()
+            src_base_dir = src_base[0] if src_base else ""
+            conn.execute(
+                "INSERT OR IGNORE INTO groups (name, sort_order, base_dir) VALUES (?, ?, ?)",
+                (new_name, max_order + 1, src_base_dir),
+            )
             now = datetime.now().isoformat(timespec="seconds")
             source_scripts = conn.execute(
                 "SELECT id, name, path, params, interpreter, order_index FROM scripts WHERE group_name=?",

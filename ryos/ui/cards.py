@@ -193,7 +193,8 @@ class ScriptCard(tk.Frame):
     def _modify(self):
         ScriptDialog(self.winfo_toplevel(), self.db,
                      script_id=self.script_id, on_save=self.on_refresh,
-                     existing_groups=self.db.list_groups())
+                     existing_groups=self.db.list_groups(),
+                     group_base_dirs={name: bd for name, bd in self.db.list_groups_with_meta()})
 
     def _clone(self):
         rec = self.db.get(self.script_id)

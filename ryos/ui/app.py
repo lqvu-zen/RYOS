@@ -23,7 +23,7 @@ from ..interpreter import build_command, detect_interpreter
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import _BASE, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
-from .dialogs import AdvancedOptionsDialog, ScriptDialog
+from .dialogs import AdvancedOptionsDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
 from .theme import C, _apply_snap_corner, _flat_button
 
@@ -129,12 +129,24 @@ class RYOSApp(_BaseWindow):
             groups = self.db.list_groups()
 
         group = self._active_group or ""
+        base_dir = self.db.get_group_base_dir(group)
         added = 0
+        skipped = []
         for path in paths:
             p = Path(path)
             if p.is_file():
+                if base_dir and not _is_inside(str(p), base_dir):
+                    skipped.append(p)
+                    continue
                 self.db.add(p.stem, str(p), "", detect_interpreter(str(p)), group)
                 added += 1
+        if skipped:
+            messagebox.showwarning(
+                "Files outside base directory",
+                f"{len(skipped)} file(s) were skipped because their paths are outside the base directory for group '{group}':\n"
+                + "\n".join([str(p) for p in skipped[:10]]),
+                parent=self,
+            )
         if added:
             self._refresh_cards()
 
@@ -507,12 +519,55 @@ class RYOSApp(_BaseWindow):
         self._refresh()
         self.status_var.set(f"Cloned '{source}' → '{name}' ({scripts_n} scripts, {pipes_n} pipelines).")
 
+    def _set_group_base_dir(self, group: str):
+        current = self.db.get_group_base_dir(group)
+        new_dir = filedialog.askdirectory(
+            initialdir=current or str(Path.home()),
+            title=f"Base directory for '{group}'",
+            parent=self,
+        )
+        if not new_dir or new_dir == current:
+            return
+        if current:
+            if not messagebox.askyesno(
+                "Re-map paths",
+                f"Re-map script paths from\n{current}\nto\n{new_dir}?\n\n"
+                "Paths already outside the old base will be left unchanged.",
+                parent=self,
+            ):
+                return
+        remapped, untouched = self.db.set_group_base_dir(group, new_dir)
+        if untouched:
+            messagebox.showwarning(
+                "Some paths not remapped",
+                f"{len(untouched)} script(s) have paths outside the old base directory and were not remapped:\n"
+                + "\n".join(untouched[:10]),
+                parent=self,
+            )
+        self.status_var.set(f"Base directory set for '{group}'. {remapped} path(s) remapped.")
+        self._refresh()
+
+    def _clear_group_base_dir(self, group: str):
+        if not messagebox.askyesno(
+            "Clear base directory",
+            f"Remove base directory restriction for '{group}'?\n\nExisting script paths will not be changed.",
+            parent=self,
+        ):
+            return
+        self.db.set_group_base_dir(group, "")
+        self.status_var.set(f"Base directory cleared for '{group}'.")
+        self._refresh()
+
     def _tab_context_menu(self, event, group: str):
         menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
                        activebackground=C["accent"], activeforeground="#ffffff",
                        font=("Segoe UI", 10))
         menu.add_command(label="✏  Rename", command=lambda: self._rename_group(group))
         menu.add_command(label="📋  Clone Group", command=lambda: self._clone_group(group))
+        menu.add_command(label="📁  Set base directory…", command=lambda: self._set_group_base_dir(group))
+        current_base = self.db.get_group_base_dir(group)
+        if current_base:
+            menu.add_command(label="📁  Clear base directory", command=lambda: self._clear_group_base_dir(group))
         menu.add_command(label="📤  Export group", command=lambda: self._export_config(group_name=group))
         menu.add_separator()
         menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
@@ -638,9 +693,11 @@ class RYOSApp(_BaseWindow):
             self._active_group = name.strip()
             self._refresh_tabs()
             groups = self.db.list_groups()
+        group_base_dirs = {name: bd for name, bd in self.db.list_groups_with_meta()}
         ScriptDialog(self, self.db, on_save=self._refresh,
                      existing_groups=groups,
-                     default_group=self._active_group or "")
+                     default_group=self._active_group or "",
+                     group_base_dirs=group_base_dirs)
 
     _DRAG_THRESHOLD = 6
 
@@ -781,6 +838,13 @@ class RYOSApp(_BaseWindow):
                         self.db.move_pipeline_to_group(card.pipeline_id, self._drag_target_group)
                     else:
                         self.db.move_to_group(card.script_id, self._drag_target_group)
+                        if not is_pipeline:
+                            target_base = self.db.get_group_base_dir(self._drag_target_group)
+                            rec = self.db.get(card.script_id)
+                            if target_base and rec and not _is_inside(rec[2], target_base):
+                                self.status_var.set(
+                                    f"Warning: script moved to '{self._drag_target_group}' but its path is outside the group's base directory."
+                                )
                     self._refresh()
             elif self._active_group is not None:
                 if is_pipeline:

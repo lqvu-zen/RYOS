@@ -1,4 +1,5 @@
 """Modal dialogs: Add/Edit script, preset entry, param picker, advanced options."""
+import os
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -13,6 +14,14 @@ from ..settings import (
 )
 from ..startup import _set_startup, _startup_enabled
 from .theme import C, _apply_snap_corner, _flat_button
+
+
+def _is_inside(path: str, base: str) -> bool:
+    if not path or not base:
+        return False
+    norm_path = os.path.normcase(os.path.normpath(path))
+    norm_base = os.path.normcase(os.path.normpath(base))
+    return norm_path == norm_base or norm_path.startswith(norm_base + os.sep)
 
 
 class _PresetEntryDialog(tk.Toplevel):
@@ -64,7 +73,7 @@ class ScriptDialog(tk.Toplevel):
 
     def __init__(self, parent, db: ScriptDB, script_id: int | None = None,
                  on_save=None, existing_groups: list[str] | None = None,
-                 default_group: str = ""):
+                 default_group: str = "", group_base_dirs: dict | None = None):
         super().__init__(parent)
         self.db = db
         self.script_id = script_id
@@ -72,6 +81,7 @@ class ScriptDialog(tk.Toplevel):
         self.result = None
         self.existing_groups = existing_groups or []
         self.default_group = default_group
+        self.group_base_dirs = group_base_dirs or {}
 
         self.title("Edit Script" if script_id else "Add Script")
         self.resizable(False, False)
@@ -258,10 +268,15 @@ class ScriptDialog(tk.Toplevel):
                 self.e_name.insert(0, params)
 
     def _browse(self):
+        base_dir = self.group_base_dirs.get(self.e_group.get().strip(), "")
+        kwargs = {}
+        if base_dir:
+            kwargs["initialdir"] = base_dir
         path = filedialog.askopenfilename(
             title="Select Script",
             filetypes=[("All Files", "*.*"), ("Python", "*.py"), ("Shell", "*.sh"),
                        ("Batch", "*.bat;*.cmd"), ("Executable", "*.exe")],
+            **kwargs,
         )
         if path:
             self.e_path.delete(0, tk.END)
@@ -279,6 +294,15 @@ class ScriptDialog(tk.Toplevel):
         if not name or (not path and not interp):
             messagebox.showwarning("Missing Info", "Name is required. Path is required when no interpreter is set.", parent=self)
             return
+        if path:
+            base_dir = self.group_base_dirs.get(group_name, "")
+            if base_dir and not _is_inside(path, base_dir):
+                messagebox.showerror(
+                    "Path outside group directory",
+                    f"The path\n{path}\nis outside the base directory for group '{group_name}':\n{base_dir}",
+                    parent=self,
+                )
+                return
         if not interp and not Path(path).exists():
             if not messagebox.askyesno("Warning", f"File not found:\n{path}\n\nSave anyway?", parent=self):
                 return
