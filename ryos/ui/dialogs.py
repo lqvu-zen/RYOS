@@ -24,6 +24,21 @@ def _is_inside(path: str, base: str) -> bool:
     return norm_path == norm_base or norm_path.startswith(norm_base + os.sep)
 
 
+def _split_under_base(path: str, base: str) -> tuple[str, str] | None:
+    """Return (subfolder, filename) if path is inside base, else None."""
+    if not path or not base:
+        return None
+    norm_path = os.path.normcase(os.path.normpath(path))
+    norm_base = os.path.normcase(os.path.normpath(base))
+    if norm_path == norm_base or not norm_path.startswith(norm_base + os.sep):
+        return None
+    rel = os.path.normpath(path)[len(os.path.normpath(base)):].lstrip(os.sep)
+    parts = rel.rsplit(os.sep, 1)
+    if len(parts) == 1:
+        return ("", parts[0])
+    return (parts[0], parts[1])
+
+
 class _PresetEntryDialog(tk.Toplevel):
     """Small dialog for entering/editing a param preset value."""
 
@@ -82,6 +97,7 @@ class ScriptDialog(tk.Toplevel):
         self.existing_groups = existing_groups or []
         self.default_group = default_group
         self.group_base_dirs = group_base_dirs or {}
+        self._current_base_dir = ""
 
         self.title("Edit Script" if script_id else "Add Script")
         self.resizable(False, False)
@@ -104,8 +120,10 @@ class ScriptDialog(tk.Toplevel):
             for _, label, pparams in db.list_param_presets(script_id):
                 self._presets.append([label, pparams])
                 self._preset_listbox.insert(tk.END, label)
+            self._refresh_path_inputs()
         else:
             self.e_group.set(self.default_group)
+            self._refresh_path_inputs()
 
         self.transient(parent)
         self.update_idletasks()
@@ -137,10 +155,28 @@ class ScriptDialog(tk.Toplevel):
         self.e_name = ttk.Entry(frame, width=40)
         self.e_name.grid(row=0, column=1, columnspan=2, sticky="ew", **pad)
 
-        ttk.Label(frame, text="Path:").grid(row=1, column=0, sticky="w", **pad)
-        self.e_path = ttk.Entry(frame, width=40)
-        self.e_path.grid(row=1, column=1, sticky="ew", **pad)
-        ttk.Button(frame, text="Browse…", command=self._browse).grid(row=1, column=2, **pad)
+        self._path_frame = ttk.Frame(frame)
+        self._path_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
+        self._path_frame.columnconfigure(1, weight=1)
+
+        self._lbl_path = ttk.Label(self._path_frame, text="Path:")
+        self.e_path = ttk.Entry(self._path_frame, width=40)
+        self._btn_browse_full = ttk.Button(self._path_frame, text="Browse…", command=self._browse)
+
+        self._lbl_basedir_label = ttk.Label(self._path_frame, text="Base dir:")
+        self._lbl_basedir_val = ttk.Label(self._path_frame, text="", foreground="#888",
+                                          wraplength=300, anchor="w")
+        self._lbl_subfolder = ttk.Label(self._path_frame, text="Subfolder:")
+        self.e_subfolder = ttk.Entry(self._path_frame, width=40)
+        self._lbl_scriptname = ttk.Label(self._path_frame, text="Script name:")
+        self.e_script_name = ttk.Entry(self._path_frame, width=40)
+        self._btn_browse_basedir = ttk.Button(self._path_frame, text="Browse…", command=self._browse)
+
+        for w in (self._lbl_path, self.e_path, self._btn_browse_full,
+                  self._lbl_basedir_label, self._lbl_basedir_val,
+                  self._lbl_subfolder, self.e_subfolder,
+                  self._lbl_scriptname, self.e_script_name, self._btn_browse_basedir):
+            w.grid_remove()
 
         ttk.Label(frame, text="Parameters:").grid(row=2, column=0, sticky="w", **pad)
         self.e_params = ttk.Entry(frame, width=40)
@@ -155,7 +191,6 @@ class ScriptDialog(tk.Toplevel):
         preset_frame.grid(row=3, column=1, columnspan=2, sticky="ew", **pad)
         preset_frame.columnconfigure(0, weight=1)
 
-        preset_frame.columnconfigure(0, weight=1)
         self._preset_listbox = tk.Listbox(
             preset_frame, height=4, selectmode=tk.SINGLE,
             bg="#1e1e1e", fg="#cccccc", selectbackground=C["accent"],
@@ -182,6 +217,8 @@ class ScriptDialog(tk.Toplevel):
         ttk.Label(frame, text="Group:").grid(row=6, column=0, sticky="w", **pad)
         self.e_group = ttk.Combobox(frame, values=self.existing_groups, width=38)
         self.e_group.grid(row=6, column=1, columnspan=2, sticky="ew", **pad)
+        self.e_group.bind("<<ComboboxSelected>>", lambda _: self._refresh_path_inputs())
+        self.e_group.bind("<FocusOut>", lambda _: self._refresh_path_inputs())
 
         sep = ttk.Separator(frame, orient="horizontal")
         sep.grid(row=7, column=0, columnspan=3, sticky="ew", pady=8)
@@ -193,6 +230,79 @@ class ScriptDialog(tk.Toplevel):
 
         if self.script_id:
             ttk.Button(btn_row, text="Delete", command=self._delete).pack(side="left", padx=4)
+
+        self._refresh_path_inputs()
+
+    def _refresh_path_inputs(self):
+        pad = {"padx": 8, "pady": 4}
+        base_dir = self.group_base_dirs.get(self.e_group.get().strip(), "")
+
+        if base_dir:
+            if self.e_script_name.winfo_ismapped() and self._current_base_dir:
+                subfolder = self.e_subfolder.get().strip()
+                script_name = self.e_script_name.get().strip()
+                if script_name:
+                    candidate = os.path.normpath(
+                        os.path.join(self._current_base_dir, subfolder, script_name)
+                    )
+                else:
+                    candidate = self.e_path.get().strip()
+            else:
+                candidate = self.e_path.get().strip()
+
+            split = _split_under_base(candidate, base_dir)
+            if split is not None:
+                subfolder_val, filename_val = split
+                self.e_subfolder.delete(0, tk.END)
+                self.e_subfolder.insert(0, subfolder_val)
+                self.e_script_name.delete(0, tk.END)
+                self.e_script_name.insert(0, filename_val)
+                self.e_path.delete(0, tk.END)
+            else:
+                filename_only = os.path.basename(candidate) if candidate else ""
+                self.e_script_name.delete(0, tk.END)
+                self.e_script_name.insert(0, filename_only)
+                self.e_subfolder.delete(0, tk.END)
+                self.e_path.delete(0, tk.END)
+
+            self._lbl_basedir_val.configure(text=base_dir)
+            self._current_base_dir = base_dir
+
+            self._lbl_path.grid_remove()
+            self.e_path.grid_remove()
+            self._btn_browse_full.grid_remove()
+
+            self._lbl_basedir_label.grid(row=0, column=0, sticky="w", **pad)
+            self._lbl_basedir_val.grid(row=0, column=1, columnspan=2, sticky="ew", **pad)
+            self._lbl_subfolder.grid(row=1, column=0, sticky="w", **pad)
+            self.e_subfolder.grid(row=1, column=1, sticky="ew", **pad)
+            self._lbl_scriptname.grid(row=2, column=0, sticky="w", **pad)
+            self.e_script_name.grid(row=2, column=1, sticky="ew", **pad)
+            self._btn_browse_basedir.grid(row=2, column=2, **pad)
+        else:
+            if self.e_script_name.winfo_ismapped() and self._current_base_dir:
+                subfolder = self.e_subfolder.get().strip()
+                script_name = self.e_script_name.get().strip()
+                if script_name and not self.e_path.get().strip():
+                    reconstructed = os.path.normpath(
+                        os.path.join(self._current_base_dir, subfolder, script_name)
+                    )
+                    self.e_path.delete(0, tk.END)
+                    self.e_path.insert(0, reconstructed)
+
+            self._current_base_dir = ""
+
+            self._lbl_basedir_label.grid_remove()
+            self._lbl_basedir_val.grid_remove()
+            self._lbl_subfolder.grid_remove()
+            self.e_subfolder.grid_remove()
+            self._lbl_scriptname.grid_remove()
+            self.e_script_name.grid_remove()
+            self._btn_browse_basedir.grid_remove()
+
+            self._lbl_path.grid(row=0, column=0, sticky="w", **pad)
+            self.e_path.grid(row=0, column=1, sticky="ew", **pad)
+            self._btn_browse_full.grid(row=0, column=2, **pad)
 
     def _preset_add_from_params(self):
         params = self.e_params.get().strip()
@@ -272,13 +382,32 @@ class ScriptDialog(tk.Toplevel):
         kwargs = {}
         if base_dir:
             kwargs["initialdir"] = base_dir
+
         path = filedialog.askopenfilename(
             title="Select Script",
             filetypes=[("All Files", "*.*"), ("Python", "*.py"), ("Shell", "*.sh"),
                        ("Batch", "*.bat;*.cmd"), ("Executable", "*.exe")],
             **kwargs,
         )
-        if path:
+        if not path:
+            return
+
+        if base_dir and self.e_script_name.winfo_ismapped():
+            if not _is_inside(path, base_dir):
+                messagebox.showerror(
+                    "Path outside group directory",
+                    f"The selected file\n{path}\nis outside the base directory:\n{base_dir}",
+                    parent=self,
+                )
+                return
+            subfolder, filename = _split_under_base(path, base_dir)
+            self.e_subfolder.delete(0, tk.END)
+            self.e_subfolder.insert(0, subfolder)
+            self.e_script_name.delete(0, tk.END)
+            self.e_script_name.insert(0, filename)
+            if not self.e_name.get().strip():
+                self.e_name.insert(0, Path(filename).stem)
+        else:
             self.e_path.delete(0, tk.END)
             self.e_path.insert(0, path)
             if not self.e_name.get().strip():
@@ -286,16 +415,22 @@ class ScriptDialog(tk.Toplevel):
 
     def _save(self):
         name = self.e_name.get().strip()
-        path = self.e_path.get().strip()
         params = self.e_params.get().strip()
         interp = self.e_interp.get().strip()
         group_name = self.e_group.get().strip()
+        base_dir = self.group_base_dirs.get(group_name, "")
+
+        if base_dir and self.e_script_name.winfo_ismapped():
+            subfolder = self.e_subfolder.get().strip()
+            script_name = self.e_script_name.get().strip()
+            path = os.path.normpath(os.path.join(base_dir, subfolder, script_name)) if script_name else ""
+        else:
+            path = self.e_path.get().strip()
 
         if not name or (not path and not interp):
             messagebox.showwarning("Missing Info", "Name is required. Path is required when no interpreter is set.", parent=self)
             return
         if path:
-            base_dir = self.group_base_dirs.get(group_name, "")
             if base_dir and not _is_inside(path, base_dir):
                 messagebox.showerror(
                     "Path outside group directory",
