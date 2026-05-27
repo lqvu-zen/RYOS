@@ -21,7 +21,7 @@ from .. import __version__
 from ..db import ScriptDB
 from ..interpreter import build_command, detect_interpreter
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
-from ..settings import _BASE, _PACKAGED, _load_settings, _save_settings
+from ..settings import _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
@@ -40,11 +40,11 @@ class RYOSApp(_BaseWindow):
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
         if hasattr(sys, "_MEIPASS"):
-            _icon_base = Path(sys._MEIPASS)
-        elif _PACKAGED:
-            _icon_base = Path(__file__).resolve().parents[2]
+            _icon_base = Path(sys._MEIPASS)          # PyInstaller: temp extraction dir
+        elif _NUITKA:
+            _icon_base = Path(__file__).resolve().parents[2]  # Nuitka onefile: temp extraction dir
         else:
-            _icon_base = _BASE
+            _icon_base = _BASE                        # cx_Freeze or dev: next to exe / project root
         _icon = _icon_base / "icon.ico"
         if _icon.exists():
             self.iconbitmap(str(_icon))

@@ -17,11 +17,11 @@ All dependencies are from the standard library (tkinter, sqlite3, subprocess, th
 ## Building the Executable
 
 ```bash
-uv run --with nuitka --with tkinterdnd2 python -m nuitka --onefile --python-flag=-m --assume-yes-for-downloads --msvc=latest --windows-console-mode=disable --windows-icon-from-ico=icon.ico --enable-plugin=tk-inter --include-package=tkinterdnd2 --include-package-data=tkinterdnd2 --include-data-files=icon.ico=icon.ico --output-filename=RYOS.exe --output-dir=dist --remove-output ryos
-# or double-click build.bat
+uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
+# or double-click build.bat / build_cxfreeze.bat
 ```
 
-Output: `dist/RYOS.exe`. Requires MSVC (Visual Studio Build Tools 2022); the first build is slower than PyInstaller, subsequent builds are faster thanks to Nuitka's cache.
+Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs. Distribute the whole folder (or zip it). Alternative packagers available: `build_nuitka.bat` (single-file, more AV flags), `build_pyinstaller.bat` (single-file).
 
 ## Architecture
 

@@ -16,17 +16,18 @@ Edit the line so it reads `__version__ = "<new_version>"` (e.g. `"1.2.0"`).
 
 3. Rebuild the exe with the latest changes:
 ```bash
-cd D:/Projects/RYOS && uv run --with nuitka --with tkinterdnd2 python -m nuitka --onefile --python-flag=-m --assume-yes-for-downloads --msvc=latest --windows-console-mode=disable --windows-icon-from-ico=icon.ico --enable-plugin=tk-inter --include-package=tkinterdnd2 --include-package-data=tkinterdnd2 --include-data-files=icon.ico=icon.ico --output-filename=RYOS.exe --output-dir=dist --remove-output ryos 2>&1
+cd D:/Projects/RYOS && uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe 2>&1
 ```
+This produces `dist/cxfreeze/` containing `RYOS.exe` and required DLLs.
 
 4. Verify the build succeeded:
 ```bash
-ls -lh D:/Projects/RYOS/dist/RYOS.exe
+ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe
 ```
 
 5. Smoke-test the exe — launch it, wait 4 seconds, confirm it hasn't crashed, then kill it:
 ```powershell
-$proc = Start-Process -FilePath "D:\Projects\RYOS\dist\RYOS.exe" -PassThru
+$proc = Start-Process -FilePath "D:\Projects\RYOS\dist\cxfreeze\RYOS.exe" -PassThru
 Start-Sleep -Seconds 4
 if ($proc.HasExited) {
     Write-Error "RYOS.exe exited immediately (exit code $($proc.ExitCode)) — aborting release"
@@ -36,6 +37,15 @@ $proc.Kill()
 Write-Output "RYOS.exe smoke test passed"
 ```
 **Stop and report failure if the exe exits before the 4-second mark.** Do not proceed with the release.
+
+5b. Package the cx_Freeze output folder as `dist/RYOS-windows.zip`:
+```powershell
+Compress-Archive -Force -Path D:\Projects\RYOS\dist\cxfreeze\* -DestinationPath D:\Projects\RYOS\dist\RYOS-windows.zip
+```
+Verify it was created:
+```bash
+ls -lh D:/Projects/RYOS/dist/RYOS-windows.zip
+```
 
 6. Create the portable source zip (`RYOS-portable.zip`) containing everything needed to run from Python/batch:
 ```bash
@@ -67,7 +77,7 @@ Stage `ryos/__init__.py` (plus any other modified files) and commit with message
 
 8. Create the GitHub release with both assets attached:
 ```bash
-cd D:/Projects/RYOS && gh release create <version> dist/RYOS.exe dist/RYOS-portable.zip \
+cd D:/Projects/RYOS && gh release create <version> dist/RYOS-windows.zip dist/RYOS-portable.zip \
   --title "<version>" \
   --notes "<release notes>" 2>&1
 ```
@@ -78,7 +88,7 @@ The release notes should briefly describe both download options, for example:
 <user-provided notes>
 
 ## Downloads
-- **RYOS.exe** — standalone executable, no installation needed
+- **RYOS-windows.zip** — Windows build; extract the zip and run `RYOS.exe` inside
 - **RYOS-portable.zip** — run from source with Python; extract and double-click `run.bat` (requires [uv](https://docs.astral.sh/uv/), run `install_uv.bat` first if needed)
 ```
 
