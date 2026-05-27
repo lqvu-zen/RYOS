@@ -646,6 +646,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
         self._auto_check_update = tk.BooleanVar(value=self._settings.get("auto_check_update", True))
         self._notify_on_complete = tk.BooleanVar(value=self._settings.get("notify_on_complete", True))
+        self._quick_run_enabled = tk.BooleanVar(value=self._settings.get("quick_run_enabled", True))
 
         self._build()
         self.update_idletasks()
@@ -721,6 +722,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Auto-clear output before each run",        self._auto_clear)
         self._chk(f, "Auto-scroll to bottom",                     self._auto_scroll)
         self._chk(f, "Notify when script / pipeline completes",   self._notify_on_complete)
+        self._chk(f, "Show Quick Run bar (requires group base directory)", self._quick_run_enabled)
         self._chk(f, "Check for updates on startup",              self._auto_check_update)
 
         row = tk.Frame(f, bg=C["bg"])
@@ -764,6 +766,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
             "notify_on_complete":       self._notify_on_complete.get(),
+            "quick_run_enabled":        self._quick_run_enabled.get(),
             "auto_check_update":        self._auto_check_update.get(),
         })
         try:

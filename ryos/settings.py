@@ -49,6 +49,7 @@ _SETTINGS_DEFAULTS: dict = {
     "auto_scroll_output":     True,
     "auto_check_update":      True,
     "notify_on_complete":     True,
+    "quick_run_enabled":      True,
 }
 
 
