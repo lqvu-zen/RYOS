@@ -658,6 +658,32 @@ class RYOSApp(_BaseWindow):
                 entry.bind("<KeyPress>", _ph_key)
                 entry.bind("<FocusOut>", _ph_focus_out)
 
+                _PH_P = "params (optional)"
+                params_var = tk.StringVar()
+                is_ph_params = [True]
+                params_entry = tk.Entry(bar_frame, textvariable=params_var, bg=C["card_bg"], fg=C["path_fg"],
+                                        insertbackground=C["name_fg"], relief="flat", bd=4,
+                                        font=("Segoe UI", 10), width=22)
+                params_var.set(_PH_P)
+                params_entry.pack(side="left", padx=(0, 4), pady=6)
+
+                def _ph_key_p(e, _ev=params_var, _en=params_entry, _f=is_ph_params):
+                    if _f[0]:
+                        _ev.set("")
+                        _en.config(fg=C["name_fg"])
+                        _f[0] = False
+
+                def _ph_focus_out_p(e, _ev=params_var, _en=params_entry, _f=is_ph_params):
+                    if not _ev.get().strip():
+                        _ev.set(_PH_P)
+                        _en.config(fg=C["path_fg"])
+                        _f[0] = True
+
+                params_entry.bind("<KeyPress>", _ph_key_p)
+                params_entry.bind("<FocusOut>", _ph_focus_out_p)
+                params_entry.bind("<Return>", lambda e, g=_gn: self._quick_run_submit(g))
+                params_entry.bind("<Escape>", lambda e, g=_gn: self._hide_quick_run_bar(g))
+
                 _flat_button(bar_frame, "Run", C["accent"], C["accent2"],
                              lambda g=_gn: self._quick_run_submit(g), width=6).pack(side="left", pady=6)
                 _flat_button(bar_frame, "✕", "#3a3a3a", "#555",
@@ -746,6 +772,9 @@ class RYOSApp(_BaseWindow):
                     "entry": entry,
                     "var": entry_var,
                     "is_placeholder": is_ph,
+                    "params_entry": params_entry,
+                    "params_var": params_var,
+                    "params_is_placeholder": is_ph_params,
                     "base_dir": group_base_dir,
                     "banner": banner,
                     "suggest_win": None,
@@ -1451,7 +1480,7 @@ class RYOSApp(_BaseWindow):
         except tk.TclError:
             return
         lb = bar.get("suggest_lb")
-        if focused is not lb and focused is not bar["entry"]:
+        if focused is not lb and focused is not bar["entry"] and focused is not bar.get("params_entry"):
             self._quick_run_hide_suggestions(group_name)
 
     def _quick_run_accept_suggestion(self, group_name: str, rel: str, submit: bool) -> None:
@@ -1465,6 +1494,19 @@ class RYOSApp(_BaseWindow):
         self._quick_run_hide_suggestions(group_name)
         if submit:
             self._quick_run_submit(group_name)
+        else:
+            base_dir = bar["base_dir"]
+            abs_path = str((Path(base_dir) / rel).resolve())
+            for rec in self.db.list_all():
+                if rec[2] == abs_path and (rec[8] or "") == (group_name or ""):
+                    saved_params = rec[3] or ""
+                    if saved_params:
+                        bar["params_var"].set(saved_params)
+                        bar["params_entry"].config(fg=C["name_fg"])
+                        bar["params_is_placeholder"][0] = False
+                    break
+            bar["params_entry"].focus_set()
+            bar["params_entry"].icursor("end")
 
     def _quick_run_on_lb_click(self, group_name: str) -> None:
         bar = self._quick_run_bars.get(group_name)
@@ -1542,6 +1584,9 @@ class RYOSApp(_BaseWindow):
         bar["var"].set("script name or relative path")
         bar["entry"].config(fg=C["path_fg"])
         bar["is_placeholder"][0] = True
+        bar["params_var"].set("params (optional)")
+        bar["params_entry"].config(fg=C["path_fg"])
+        bar["params_is_placeholder"][0] = True
         bar["frame"].pack(fill="x", padx=8, pady=(2, 0), after=bar["banner"])
         bar["entry"].focus_set()
         self._quick_run_open_group = group_name
@@ -1567,6 +1612,7 @@ class RYOSApp(_BaseWindow):
             except tk.TclError:
                 pass
             bar["var"].set("")
+            bar["params_var"].set("")
         if self._quick_run_open_group == group_name:
             self._quick_run_open_group = None
         btn = self._quick_run_buttons.get(group_name)
@@ -1586,6 +1632,8 @@ class RYOSApp(_BaseWindow):
         if not bar:
             return
         query = "" if bar["is_placeholder"][0] else bar["var"].get().strip()
+        params_explicitly_set = not bar["params_is_placeholder"][0]
+        typed_params = bar["params_var"].get().strip() if params_explicitly_set else ""
         if not query:
             return
         base_dir = self.db.get_group_base_dir(group_name) or bar["base_dir"]
@@ -1618,18 +1666,23 @@ class RYOSApp(_BaseWindow):
 
         if existing_id is not None:
             script_id = existing_id
-            params = existing_params
             interpreter = existing_interp
+            params = typed_params if params_explicitly_set else existing_params
+            if params_explicitly_set and typed_params != existing_params:
+                for rec in self.db.list_all():
+                    if rec[0] == existing_id:
+                        self.db.update(existing_id, rec[1], rec[2], typed_params, existing_interp, group_name or "")
+                        break
         else:
             interpreter = detect_interpreter(abs_path)
             script_id = self.db.add(
                 name=Path(abs_path).stem,
                 path=abs_path,
-                params="",
+                params=typed_params,
                 interpreter=interpreter,
                 group_name=group_name or "",
             )
-            params = ""
+            params = typed_params
             self._refresh_cards()
 
         self._run_script(script_id, display, abs_path, params, interpreter)
