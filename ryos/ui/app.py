@@ -1629,8 +1629,9 @@ class RYOSApp(_BaseWindow):
         existing_name = ""
         existing_params = ""
         existing_interp = ""
+        abs_path_p = Path(abs_path)
         for rec in self.db.list_all():
-            if rec[2] == abs_path and (rec[8] or "") == (group_name or ""):
+            if Path(rec[2]) == abs_path_p and (rec[8] or "") == (group_name or ""):
                 existing_id = rec[0]
                 existing_name = rec[1]
                 existing_params = rec[3] or ""
