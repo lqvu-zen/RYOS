@@ -30,8 +30,6 @@ from .theme import C, _apply_snap_corner, _flat_button
 
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
-_QUICK_RUN_ID = -1  # sentinel script_id for ephemeral Quick Run (not in DB)
-
 
 class RYOSApp(_BaseWindow):
     def __init__(self):
@@ -81,7 +79,7 @@ class RYOSApp(_BaseWindow):
         self._section_collapsed: dict[str, dict[str, bool]] = {}
         self._output_tabs: dict = {}
         self._active_tab_key: str | None = None
-        self._quick_run_widgets: list[tuple[tk.Entry, tk.Button]] = []
+        self._quick_run_widgets: list[tk.Button] = []
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -617,38 +615,21 @@ class RYOSApp(_BaseWindow):
             path_lbl = tk.Label(banner, text=path_text, bg=C["card_bg"], fg=path_fg,
                                 font=("Segoe UI", 10), anchor="w", pady=8, cursor="hand2")
             path_lbl.pack(side="left")
+
+            if group_base_dir and self._settings.get("quick_run_enabled", True):
+                _bd = group_base_dir
+                _gn = gname
+                qr_btn = _flat_button(banner, "⚡", C["accent"], C["accent2"],
+                                      lambda bd=_bd, g=_gn: self._quick_run_invoke(bd, g),
+                                      width=4)
+                qr_btn.pack(side="right", padx=(0, 6))
+                if self._running_script_id is not None or self._running_pipeline_id is not None:
+                    qr_btn.config(state="disabled")
+                self._quick_run_widgets.append(qr_btn)
+
             _open = lambda e, g=gname: self._manage_group_base_dir(g)
             for w in (banner, icon_lbl, path_lbl):
                 w.bind("<Button-1>", _open)
-
-            if group_base_dir and self._settings.get("quick_run_enabled", True):
-                qr_frame = tk.Frame(self.cards_frame, bg=C["card_bg"],
-                                    highlightbackground=C["border"], highlightthickness=1)
-                qr_frame.pack(fill="x", padx=8, pady=(2, 0))
-
-                tk.Label(qr_frame, text="⚡", bg=C["card_bg"], fg="#FFD23F",
-                         font=("Segoe UI", 11), padx=10, pady=6).pack(side="left")
-
-                qr_entry = tk.Entry(qr_frame, bg=C["card_bg"], fg=C["name_fg"],
-                                    insertbackground=C["name_fg"],
-                                    relief="flat", bd=0, font=("Segoe UI", 10))
-                qr_entry.pack(side="left", fill="x", expand=True)
-
-                _bd = group_base_dir
-                _entry_ref = qr_entry
-
-                qr_btn = _flat_button(qr_frame, "Run", C["accent"], C["accent2"],
-                                      lambda bd=_bd, e=_entry_ref: self._quick_run_invoke(bd, e),
-                                      width=6)
-                qr_btn.pack(side="right", padx=(0, 6), pady=4)
-
-                qr_entry.bind("<Return>", lambda ev, bd=_bd, e=_entry_ref: self._quick_run_invoke(bd, e))
-
-                if self._running_script_id is not None or self._running_pipeline_id is not None:
-                    qr_entry.config(state="disabled")
-                    qr_btn.config(state="disabled")
-
-                self._quick_run_widgets.append((qr_entry, qr_btn))
 
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
@@ -1127,9 +1108,7 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Parameter Error", f"Could not parse parameters:\n{e}")
             return
 
-        is_quick = script_id == _QUICK_RUN_ID
-        tab_key = "quick_run" if is_quick else f"script:{script_id}"
-        self._get_or_create_tab(tab_key, f"⚡ {name}" if is_quick else name)
+        self._get_or_create_tab(f"script:{script_id}", name)
         self._append_output(
             f"\n{'━'*60}\n"
             f"  ▶  {name}\n"
@@ -1138,24 +1117,60 @@ class RYOSApp(_BaseWindow):
             tag="info",
         )
         self.status_var.set(f"Running: {name}")
-        if not is_quick:
-            self.db.mark_run(script_id)
+        self.db.mark_run(script_id)
         self._running_script_id = script_id
         self._running_script_name = name
         self._running_pipeline_id = None
         self._run_start_time = datetime.now()
-        if not is_quick:
-            for _c in self._cards:
-                _c.set_running(_c.script_id == script_id,
-                               self._stop_running if _c.script_id == script_id else None)
-            for _pc in self._pipeline_cards:
-                _pc.set_running(False)
+        for _c in self._cards:
+            _c.set_running(_c.script_id == script_id,
+                           self._stop_running if _c.script_id == script_id else None)
+        for _pc in self._pipeline_cards:
+            _pc.set_running(False)
         self._set_quick_run_enabled(False)
 
         thread = threading.Thread(
             target=self._run_subprocess, args=(cmd, name, script_id), daemon=True
         )
         thread.start()
+
+    def _quick_run_prompt(self) -> str | None:
+        """Show a modal dialog to enter a script name. Returns the query string or None if cancelled."""
+        dlg = tk.Toplevel(self)
+        dlg.title("Quick Run")
+        dlg.configure(bg=C["bg"])
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        tk.Label(dlg, text="Script name or relative path:", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9), padx=14, pady=(12, 4)).pack(anchor="w")
+
+        entry_var = tk.StringVar()
+        entry = tk.Entry(dlg, textvariable=entry_var, bg=C["card_bg"], fg=C["name_fg"],
+                         insertbackground=C["name_fg"], relief="flat", bd=4,
+                         font=("Segoe UI", 10), width=40)
+        entry.pack(fill="x", padx=14, pady=(0, 8))
+        entry.focus_set()
+
+        result: list[str | None] = [None]
+
+        def _submit():
+            val = entry_var.get().strip()
+            if val:
+                result[0] = val
+            dlg.destroy()
+
+        entry.bind("<Return>", lambda e: _submit())
+        entry.bind("<Escape>", lambda e: dlg.destroy())
+
+        btn_row = tk.Frame(dlg, bg=C["bg"])
+        btn_row.pack(fill="x", padx=14, pady=(0, 12))
+        _flat_button(btn_row, "Cancel", "#3a3a3a", "#555", dlg.destroy, width=8).pack(side="right", padx=(4, 0))
+        _flat_button(btn_row, "Run", C["accent"], C["accent2"], _submit, width=8).pack(side="right")
+
+        dlg.wait_window()
+        return result[0]
 
     def _quick_run_resolve(self, base_dir: str, query: str) -> tuple[str | None, list[str], str]:
         """Search base_dir for a script matching query (exact stem, case-insensitive).
@@ -1200,11 +1215,19 @@ class RYOSApp(_BaseWindow):
         rels = [str(m.relative_to(base_resolved)) for m in matches]
         return None, rels, ""
 
-    def _quick_run_invoke(self, base_dir: str, entry: tk.Entry):
-        """Called when the user presses Enter or clicks Run in the Quick Run bar."""
-        query = entry.get().strip()
-        abs_path, candidates, err = self._quick_run_resolve(base_dir, query)
+    def _quick_run_invoke(self, base_dir: str, group_name: str):
+        """Open the Quick Run popup, resolve the script, save it (if new), and run it."""
+        if self.current_process and self.current_process.poll() is None:
+            messagebox.showinfo("Already Running",
+                                "A script is already running. Wait for it to finish.",
+                                parent=self)
+            return
 
+        query = self._quick_run_prompt()
+        if not query:
+            return
+
+        abs_path, candidates, err = self._quick_run_resolve(base_dir, query)
         if err:
             messagebox.showerror("Quick Run", err, parent=self)
             return
@@ -1219,7 +1242,34 @@ class RYOSApp(_BaseWindow):
             display = str(Path(abs_path).relative_to(Path(base_dir).resolve()))
         except ValueError:
             display = Path(abs_path).name
-        self._run_script(_QUICK_RUN_ID, display, abs_path, "", "")
+
+        existing_id = None
+        existing_params = ""
+        existing_interp = ""
+        for rec in self.db.list_all():
+            if rec[2] == abs_path and (rec[8] or "") == (group_name or ""):
+                existing_id = rec[0]
+                existing_params = rec[3] or ""
+                existing_interp = rec[4] or ""
+                break
+
+        if existing_id is not None:
+            script_id = existing_id
+            params = existing_params
+            interpreter = existing_interp
+        else:
+            interpreter = detect_interpreter(abs_path)
+            script_id = self.db.add(
+                name=Path(abs_path).stem,
+                path=abs_path,
+                params="",
+                interpreter=interpreter,
+                group_name=group_name,
+            )
+            params = ""
+            self._refresh_cards()
+
+        self._run_script(script_id, display, abs_path, params, interpreter)
 
     def _quick_run_pick(self, base_dir: str, candidates: list[str]) -> str | None:
         """Show a modal listbox for the user to pick among multiple matches. Returns relative path or None."""
@@ -1260,11 +1310,10 @@ class RYOSApp(_BaseWindow):
         return chosen[0]
 
     def _set_quick_run_enabled(self, enabled: bool):
-        """Enable or disable all Quick Run bars (called on run start / run end)."""
+        """Enable or disable all Quick Run buttons (called on run start / run end)."""
         state = "normal" if enabled else "disabled"
-        for entry, btn in self._quick_run_widgets:
+        for btn in self._quick_run_widgets:
             try:
-                entry.config(state=state)
                 btn.config(state=state)
             except tk.TclError:
                 pass
@@ -1499,14 +1548,12 @@ class RYOSApp(_BaseWindow):
                 if item[0] == "done":
                     _, sid, status, text = item
                     self._append_output(text, tag="info")
-                    if sid != _QUICK_RUN_ID:
-                        self.db.mark_run_status(sid, status)
+                    self.db.mark_run_status(sid, status)
                     self._handle_step_done(status)
                 elif item[0] == "done_tag":
                     _, sid, status, tag, text = item
                     self._append_output(text, tag=tag)
-                    if sid != _QUICK_RUN_ID:
-                        self.db.mark_run_status(sid, status)
+                    self.db.mark_run_status(sid, status)
                     self._handle_step_done(status)
                 elif item[0] == "stderr":
                     self._append_output(item[1], tag="stderr")
