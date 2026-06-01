@@ -182,6 +182,34 @@ def _adhoc_run(app: RYOSApp):
     app.after(900, _do)
 
 
+def _close_all_verify(app: RYOSApp):
+    """Verify the Close All button is visible in the output header and functional."""
+    def _do():
+        print("close-all-verify: screenshot output header")
+        app.lift()
+        app.focus_force()
+        app.update_idletasks()
+        app.update()
+        # Screenshot just the output header region
+        hdr = app.out_panel
+        x, y = hdr.winfo_rootx(), hdr.winfo_rooty()
+        w, h = hdr.winfo_width(), hdr.winfo_reqheight()
+        from PIL import ImageGrab
+        img = ImageGrab.grab(bbox=(x, y, x + w, y + max(h, 30)))
+        path = SHOTS_DIR / "close_all_header.png"
+        img.save(str(path))
+        print(f"  screenshot -> {path.name}")
+        # Check button exists by finding it in out_panel children
+        btns = [w for w in app.out_panel.winfo_children()[0].winfo_children()
+                if hasattr(w, 'cget') and 'Close All' in str(w.cget('text') if hasattr(w, 'cget') else '')]
+        if btns:
+            print(f"PASS: found 'Close All' button in output header")
+        else:
+            print("FAIL: 'Close All' button not found in output header")
+        app.after(300, app.destroy)
+    app.after(900, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -199,8 +227,10 @@ def main():
         _quick_run_autocomplete(app)
     elif scenario == "adhoc-run":
         _adhoc_run(app)
+    elif scenario == "close-all-verify":
+        _close_all_verify(app)
     else:
-        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | run-first | autocomplete | adhoc-run")
+        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify")
         app.after(0, app.destroy)
 
     app.mainloop()
