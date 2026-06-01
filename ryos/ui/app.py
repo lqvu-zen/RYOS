@@ -1626,11 +1626,13 @@ class RYOSApp(_BaseWindow):
             display = Path(abs_path).name
 
         existing_id = None
+        existing_name = ""
         existing_params = ""
         existing_interp = ""
         for rec in self.db.list_all():
             if rec[2] == abs_path and (rec[8] or "") == (group_name or ""):
                 existing_id = rec[0]
+                existing_name = rec[1]
                 existing_params = rec[3] or ""
                 existing_interp = rec[4] or ""
                 break
@@ -1639,11 +1641,17 @@ class RYOSApp(_BaseWindow):
             script_id = existing_id
             interpreter = existing_interp
             params = typed_params if params_explicitly_set else existing_params
-            if params_explicitly_set and typed_params != existing_params:
-                for rec in self.db.list_all():
-                    if rec[0] == existing_id:
-                        self.db.update(existing_id, rec[1], rec[2], typed_params, existing_interp, group_name or "")
-                        break
+            if params_explicitly_set:
+                presets = self.db.list_param_presets(existing_id)
+                preset_values = {p[2] for p in presets}
+                if typed_params not in preset_values:
+                    self.db.replace_param_presets(
+                        existing_id,
+                        [(p[1], p[2]) for p in presets] + [(typed_params, typed_params)],
+                    )
+                if typed_params != existing_params:
+                    self.db.update(existing_id, existing_name, abs_path, typed_params, existing_interp, group_name or "")
+                self._refresh_cards()
         else:
             interpreter = detect_interpreter(abs_path)
             script_id = self.db.add(
@@ -1654,6 +1662,8 @@ class RYOSApp(_BaseWindow):
                 group_name=group_name or "",
             )
             params = typed_params
+            if typed_params:
+                self.db.replace_param_presets(script_id, [(typed_params, typed_params)])
             self._refresh_cards()
 
         self._run_script(script_id, display, abs_path, params, interpreter)
