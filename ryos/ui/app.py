@@ -1144,7 +1144,7 @@ class RYOSApp(_BaseWindow):
         dlg.grab_set()
 
         tk.Label(dlg, text="Script name or relative path:", bg=C["bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 9), padx=14, pady=(12, 4)).pack(anchor="w")
+                 font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(12, 4))
 
         entry_var = tk.StringVar()
         entry = tk.Entry(dlg, textvariable=entry_var, bg=C["card_bg"], fg=C["name_fg"],
