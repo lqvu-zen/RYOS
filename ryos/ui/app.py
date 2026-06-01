@@ -1630,6 +1630,7 @@ class RYOSApp(_BaseWindow):
                 group_name=group_name or "",
             )
             params = ""
+            self._refresh_cards()
 
         self._run_script(script_id, display, abs_path, params, interpreter)
 
