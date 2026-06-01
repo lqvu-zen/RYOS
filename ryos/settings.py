@@ -50,6 +50,8 @@ _SETTINGS_DEFAULTS: dict = {
     "auto_check_update":      True,
     "notify_on_complete":     True,
     "quick_run_enabled":      True,
+    "quick_run_autocomplete":    True,
+    "quick_run_max_suggestions": 10,
 }
 
 

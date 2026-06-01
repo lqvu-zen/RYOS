@@ -82,6 +82,7 @@ class RYOSApp(_BaseWindow):
         self._quick_run_buttons: dict[str, tk.Button] = {}
         self._quick_run_bars: dict[str, dict] = {}
         self._quick_run_open_group: str | None = None
+        self._quick_run_index_cache: dict[str, tuple[float, list]] = {}
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -585,6 +586,8 @@ class RYOSApp(_BaseWindow):
         self._refresh_cards()
 
     def _refresh_cards(self):
+        for gn in list(self._quick_run_bars):
+            self._quick_run_hide_suggestions(gn)
         self._quick_run_buttons.clear()
         self._quick_run_bars.clear()
         for w in self.cards_frame.winfo_children():
@@ -660,8 +663,83 @@ class RYOSApp(_BaseWindow):
                 _flat_button(bar_frame, "✕", "#3a3a3a", "#555",
                              lambda g=_gn: self._hide_quick_run_bar(g), width=3).pack(side="left", padx=(4, 8), pady=6)
 
-                entry.bind("<Return>", lambda e, g=_gn: self._quick_run_submit(g))
-                entry.bind("<Escape>", lambda e, g=_gn: self._hide_quick_run_bar(g))
+                def _on_key_release(e, _g=_gn):
+                    if e.keysym in ("Up", "Down", "Return", "Escape", "Tab", "Shift_L", "Shift_R",
+                                    "Control_L", "Control_R", "Alt_L", "Alt_R"):
+                        return
+                    bar = self._quick_run_bars.get(_g)
+                    if bar is None:
+                        return
+                    after_id = bar.get("suggest_after_id")
+                    if after_id:
+                        self.after_cancel(after_id)
+                    bar["suggest_after_id"] = self.after(120, lambda g=_g: self._quick_run_refresh_suggestions(g))
+                entry.bind("<KeyRelease>", _on_key_release)
+
+                def _on_down(e, _g=_gn):
+                    bar = self._quick_run_bars.get(_g)
+                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                        lb = bar["suggest_lb"]
+                        sel = lb.curselection()
+                        nxt = (sel[0] + 1) if sel else 0
+                        if nxt < lb.size():
+                            lb.selection_clear(0, "end")
+                            lb.selection_set(nxt)
+                            lb.see(nxt)
+                        return "break"
+                entry.bind("<Down>", _on_down)
+
+                def _on_up(e, _g=_gn):
+                    bar = self._quick_run_bars.get(_g)
+                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                        lb = bar["suggest_lb"]
+                        sel = lb.curselection()
+                        prev = (sel[0] - 1) if sel else lb.size() - 1
+                        if prev >= 0:
+                            lb.selection_clear(0, "end")
+                            lb.selection_set(prev)
+                            lb.see(prev)
+                        return "break"
+                entry.bind("<Up>", _on_up)
+
+                def _on_tab(e, _g=_gn):
+                    bar = self._quick_run_bars.get(_g)
+                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                        lb = bar["suggest_lb"]
+                        sel = lb.curselection()
+                        if sel:
+                            rel = lb.get(sel[0])
+                            if rel != "Indexing files…":
+                                self._quick_run_accept_suggestion(_g, rel, submit=False)
+                        return "break"
+                entry.bind("<Tab>", _on_tab)
+
+                def _on_return(e, _g=_gn):
+                    bar = self._quick_run_bars.get(_g)
+                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                        lb = bar["suggest_lb"]
+                        sel = lb.curselection()
+                        if sel:
+                            rel = lb.get(sel[0])
+                            if rel != "Indexing files…":
+                                self._quick_run_accept_suggestion(_g, rel, submit=True)
+                                return "break"
+                    self._quick_run_submit(_g)
+                    return "break"
+                entry.bind("<Return>", _on_return)
+
+                def _on_escape(e, _g=_gn):
+                    bar = self._quick_run_bars.get(_g)
+                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                        self._quick_run_hide_suggestions(_g)
+                        return "break"
+                    self._hide_quick_run_bar(_g)
+                    return "break"
+                entry.bind("<Escape>", _on_escape)
+
+                def _on_focus_out_ext(e, _g=_gn):
+                    self.after(150, lambda g=_g: self._quick_run_maybe_hide_suggestions(g))
+                entry.bind("<FocusOut>", _on_focus_out_ext, add=True)
 
                 self._quick_run_bars[gname] = {
                     "frame": bar_frame,
@@ -670,6 +748,9 @@ class RYOSApp(_BaseWindow):
                     "is_placeholder": is_ph,
                     "base_dir": group_base_dir,
                     "banner": banner,
+                    "suggest_win": None,
+                    "suggest_lb": None,
+                    "suggest_after_id": None,
                 }
 
                 if self._quick_run_open_group == gname:
@@ -1226,6 +1307,178 @@ class RYOSApp(_BaseWindow):
         rels = [str(m.relative_to(base_resolved)) for m in matches]
         return None, rels, ""
 
+    def _quick_run_get_index(self, base_dir: str) -> list | None:
+        cached = self._quick_run_index_cache.get(base_dir)
+        if cached is not None:
+            return cached[1]
+        self._quick_run_build_index_async(base_dir)
+        return None
+
+    def _quick_run_build_index_async(self, base_dir: str) -> None:
+        import time
+        _SKIP = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache"}
+        def _worker():
+            base = Path(base_dir)
+            paths: list = []
+            try:
+                for p in base.rglob("*"):
+                    if any(part in _SKIP for part in p.parts):
+                        continue
+                    if p.is_file():
+                        paths.append(p)
+            except PermissionError:
+                pass
+            ts = time.monotonic()
+            self.after(0, lambda: self._quick_run_on_index_ready(base_dir, ts, paths))
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _quick_run_on_index_ready(self, base_dir: str, ts: float, paths: list) -> None:
+        self._quick_run_index_cache[base_dir] = (ts, paths)
+        for gn, bar in self._quick_run_bars.items():
+            if bar.get("base_dir") == base_dir:
+                if self._quick_run_open_group == gn:
+                    self._quick_run_refresh_suggestions(gn)
+
+    def _quick_run_compute_suggestions(self, base_dir: str, query: str) -> list:
+        max_n = self._settings.get("quick_run_max_suggestions", 10)
+        paths = self._quick_run_get_index(base_dir)
+        if paths is None:
+            return []
+        q = query.lower()
+        base = Path(base_dir).resolve()
+        results = []
+        for p in paths:
+            name = p.name.lower()
+            stem = p.stem.lower()
+            try:
+                rel = str(p.relative_to(base))
+            except ValueError:
+                rel = p.name
+            rel_lower = rel.lower()
+            if stem == q:
+                tier = 0
+            elif stem.startswith(q):
+                tier = 1
+            elif name.startswith(q):
+                tier = 2
+            elif name.find(q) != -1:
+                tier = 3
+            elif rel_lower.find(q) != -1:
+                tier = 4
+            else:
+                continue
+            results.append((tier, len(stem), rel, p))
+        results.sort(key=lambda x: (x[0], x[1], x[2]))
+        return [r[2] for r in results[:max_n]]
+
+    def _quick_run_refresh_suggestions(self, group_name: str) -> None:
+        if not self._settings.get("quick_run_autocomplete", True):
+            return
+        bar = self._quick_run_bars.get(group_name)
+        if bar is None or self._quick_run_open_group != group_name:
+            return
+        if bar["is_placeholder"][0]:
+            self._quick_run_hide_suggestions(group_name)
+            return
+        query = bar["var"].get().strip()
+        if not query:
+            self._quick_run_hide_suggestions(group_name)
+            return
+        base_dir = bar["base_dir"]
+        cached = self._quick_run_index_cache.get(base_dir)
+        if cached is None:
+            self._quick_run_show_suggestions(group_name, ["Indexing files…"])
+            return
+        items = self._quick_run_compute_suggestions(base_dir, query)
+        if not items:
+            self._quick_run_hide_suggestions(group_name)
+        else:
+            self._quick_run_show_suggestions(group_name, items)
+
+    def _quick_run_show_suggestions(self, group_name: str, items: list) -> None:
+        bar = self._quick_run_bars.get(group_name)
+        if bar is None:
+            return
+        entry = bar["entry"]
+        win = bar.get("suggest_win")
+        if win is None or not win.winfo_exists():
+            win = tk.Toplevel(self)
+            win.overrideredirect(True)
+            win.transient(self)
+            win.configure(bg=C["border"])
+            lb = tk.Listbox(win, bg=C["card_bg"], fg=C["name_fg"],
+                            selectbackground=C["accent"], selectforeground="#fff",
+                            relief="flat", bd=0, font=("Consolas", 9),
+                            highlightthickness=0, activestyle="none")
+            lb.pack(fill="both", expand=True, padx=1, pady=1)
+            lb.bind("<ButtonRelease-1>", lambda e, g=group_name: self._quick_run_on_lb_click(g))
+            bar["suggest_win"] = win
+            bar["suggest_lb"] = lb
+        lb = bar["suggest_lb"]
+        lb.delete(0, "end")
+        for item in items:
+            lb.insert("end", item)
+        visible = min(len(items), self._settings.get("quick_run_max_suggestions", 10))
+        lb.config(height=visible)
+        x = entry.winfo_rootx()
+        y = entry.winfo_rooty() + entry.winfo_height()
+        w = entry.winfo_width()
+        win.geometry(f"{w}x{visible * 18 + 2}+{x}+{y}")
+        win.deiconify()
+        win.lift()
+        if items and items[0] != "Indexing files…":
+            lb.selection_set(0)
+
+    def _quick_run_hide_suggestions(self, group_name: str) -> None:
+        bar = self._quick_run_bars.get(group_name)
+        if bar is None:
+            return
+        win = bar.get("suggest_win")
+        if win is not None:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+            bar["suggest_win"] = None
+            bar["suggest_lb"] = None
+
+    def _quick_run_maybe_hide_suggestions(self, group_name: str) -> None:
+        bar = self._quick_run_bars.get(group_name)
+        if bar is None:
+            return
+        try:
+            focused = self.focus_get()
+        except tk.TclError:
+            return
+        lb = bar.get("suggest_lb")
+        if focused is not lb and focused is not bar["entry"]:
+            self._quick_run_hide_suggestions(group_name)
+
+    def _quick_run_accept_suggestion(self, group_name: str, rel: str, submit: bool) -> None:
+        bar = self._quick_run_bars.get(group_name)
+        if bar is None:
+            return
+        bar["var"].set(rel)
+        bar["entry"].config(fg=C["name_fg"])
+        bar["is_placeholder"][0] = False
+        bar["entry"].icursor("end")
+        self._quick_run_hide_suggestions(group_name)
+        if submit:
+            self._quick_run_submit(group_name)
+
+    def _quick_run_on_lb_click(self, group_name: str) -> None:
+        bar = self._quick_run_bars.get(group_name)
+        if bar is None:
+            return
+        lb = bar.get("suggest_lb")
+        if lb is None:
+            return
+        sel = lb.curselection()
+        if sel:
+            rel = lb.get(sel[0])
+            if rel != "Indexing files…":
+                self._quick_run_accept_suggestion(group_name, rel, submit=True)
+
     def _quick_run_pick(self, base_dir: str, candidates: list[str]) -> str | None:
         """Show a modal listbox for the user to pick among multiple matches. Returns relative path or None."""
         dlg = tk.Toplevel(self)
@@ -1292,6 +1545,8 @@ class RYOSApp(_BaseWindow):
         bar["frame"].pack(fill="x", padx=8, pady=(2, 0), after=bar["banner"])
         bar["entry"].focus_set()
         self._quick_run_open_group = group_name
+        if self._settings.get("quick_run_autocomplete", True):
+            self._quick_run_get_index(bar["base_dir"])
         btn = self._quick_run_buttons.get(group_name)
         if btn:
             try:
@@ -1300,8 +1555,13 @@ class RYOSApp(_BaseWindow):
                 pass
 
     def _hide_quick_run_bar(self, group_name: str):
+        self._quick_run_hide_suggestions(group_name)
         bar = self._quick_run_bars.get(group_name)
         if bar:
+            after_id = bar.get("suggest_after_id")
+            if after_id:
+                self.after_cancel(after_id)
+                bar["suggest_after_id"] = None
             try:
                 bar["frame"].pack_forget()
             except tk.TclError:
