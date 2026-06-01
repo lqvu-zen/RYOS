@@ -1643,6 +1643,7 @@ class RYOSApp(_BaseWindow):
                 bufsize=1,
                 text=True,
                 cwd=str(Path(next((c for c in cmd if Path(c).is_file()), cmd[0])).parent),
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
         except FileNotFoundError as e:
             self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
