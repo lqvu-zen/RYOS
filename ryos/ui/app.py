@@ -68,7 +68,6 @@ class RYOSApp(_BaseWindow):
         self._pipeline_total = 0
         self._running_script_id: int | None = None
         self._running_pipeline_id: int | None = None
-        self._adhoc_run_seq = 0
         self._run_start_time: datetime | None = None
         self._drag_card: ScriptCard | None = None
         self._drag_start_x = self._drag_start_y = 0
@@ -1248,8 +1247,7 @@ class RYOSApp(_BaseWindow):
             tag="info",
         )
         self.status_var.set(f"Running: {name}")
-        if script_id > 0:
-            self.db.mark_run(script_id)
+        self.db.mark_run(script_id)
         self._running_script_id = script_id
         self._running_script_name = name
         self._running_pipeline_id = None
@@ -1624,8 +1622,13 @@ class RYOSApp(_BaseWindow):
             interpreter = existing_interp
         else:
             interpreter = detect_interpreter(abs_path)
-            self._adhoc_run_seq -= 1
-            script_id = self._adhoc_run_seq
+            script_id = self.db.add(
+                name=Path(abs_path).stem,
+                path=abs_path,
+                params="",
+                interpreter=interpreter,
+                group_name=group_name or "",
+            )
             params = ""
 
         self._run_script(script_id, display, abs_path, params, interpreter)
@@ -1860,14 +1863,12 @@ class RYOSApp(_BaseWindow):
                 if item[0] == "done":
                     _, sid, status, text = item
                     self._append_output(text, tag="info")
-                    if sid > 0:
-                        self.db.mark_run_status(sid, status)
+                    self.db.mark_run_status(sid, status)
                     self._handle_step_done(status)
                 elif item[0] == "done_tag":
                     _, sid, status, tag, text = item
                     self._append_output(text, tag=tag)
-                    if sid > 0:
-                        self.db.mark_run_status(sid, status)
+                    self.db.mark_run_status(sid, status)
                     self._handle_step_done(status)
                 elif item[0] == "stderr":
                     self._append_output(item[1], tag="stderr")
