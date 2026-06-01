@@ -631,11 +631,30 @@ class RYOSApp(_BaseWindow):
 
                 bar_frame = tk.Frame(self.cards_frame, bg=C["bg"],
                                      highlightbackground=C["border"], highlightthickness=1)
+                _PH = "script name or relative path"
                 entry_var = tk.StringVar()
-                entry = tk.Entry(bar_frame, textvariable=entry_var, bg=C["card_bg"], fg=C["name_fg"],
+                is_ph = [True]
+                entry = tk.Entry(bar_frame, textvariable=entry_var, bg=C["card_bg"], fg=C["path_fg"],
                                  insertbackground=C["name_fg"], relief="flat", bd=4,
                                  font=("Segoe UI", 10))
+                entry_var.set(_PH)
                 entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=6)
+
+                def _ph_key(e, _ev=entry_var, _en=entry, _f=is_ph):
+                    if _f[0]:
+                        _ev.set("")
+                        _en.config(fg=C["name_fg"])
+                        _f[0] = False
+
+                def _ph_focus_out(e, _ev=entry_var, _en=entry, _f=is_ph):
+                    if not _ev.get().strip():
+                        _ev.set(_PH)
+                        _en.config(fg=C["path_fg"])
+                        _f[0] = True
+
+                entry.bind("<KeyPress>", _ph_key)
+                entry.bind("<FocusOut>", _ph_focus_out)
+
                 _flat_button(bar_frame, "Run", C["accent"], C["accent2"],
                              lambda g=_gn: self._quick_run_submit(g), width=6).pack(side="left", pady=6)
                 _flat_button(bar_frame, "✕", "#3a3a3a", "#555",
@@ -648,6 +667,7 @@ class RYOSApp(_BaseWindow):
                     "frame": bar_frame,
                     "entry": entry,
                     "var": entry_var,
+                    "is_placeholder": is_ph,
                     "base_dir": group_base_dir,
                     "banner": banner,
                 }
@@ -1266,7 +1286,9 @@ class RYOSApp(_BaseWindow):
         bar = self._quick_run_bars.get(group_name)
         if not bar:
             return
-        bar["var"].set("")
+        bar["var"].set("script name or relative path")
+        bar["entry"].config(fg=C["path_fg"])
+        bar["is_placeholder"][0] = True
         bar["frame"].pack(fill="x", padx=8, pady=(2, 0), after=bar["banner"])
         bar["entry"].focus_set()
         self._quick_run_open_group = group_name
@@ -1303,7 +1325,7 @@ class RYOSApp(_BaseWindow):
         bar = self._quick_run_bars.get(group_name)
         if not bar:
             return
-        query = bar["var"].get().strip()
+        query = "" if bar["is_placeholder"][0] else bar["var"].get().strip()
         if not query:
             return
         base_dir = self.db.get_group_base_dir(group_name) or bar["base_dir"]
