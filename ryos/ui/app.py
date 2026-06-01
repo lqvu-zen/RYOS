@@ -79,7 +79,9 @@ class RYOSApp(_BaseWindow):
         self._section_collapsed: dict[str, dict[str, bool]] = {}
         self._output_tabs: dict = {}
         self._active_tab_key: str | None = None
-        self._quick_run_widgets: list[tk.Button] = []
+        self._quick_run_buttons: dict[str, tk.Button] = {}
+        self._quick_run_bars: dict[str, dict] = {}
+        self._quick_run_open_group: str | None = None
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -583,7 +585,8 @@ class RYOSApp(_BaseWindow):
         self._refresh_cards()
 
     def _refresh_cards(self):
-        self._quick_run_widgets.clear()
+        self._quick_run_buttons.clear()
+        self._quick_run_bars.clear()
         for w in self.cards_frame.winfo_children():
             w.destroy()
         self._cards = []
@@ -617,15 +620,41 @@ class RYOSApp(_BaseWindow):
             path_lbl.pack(side="left")
 
             if group_base_dir and self._settings.get("quick_run_enabled", True):
-                _bd = group_base_dir
                 _gn = gname
                 qr_btn = _flat_button(banner, "⚡", C["accent"], C["accent2"],
-                                      lambda bd=_bd, g=_gn: self._quick_run_invoke(bd, g),
+                                      lambda g=_gn: self._toggle_quick_run_bar(g),
                                       width=4)
                 qr_btn.pack(side="right", padx=(0, 6))
                 if self._running_script_id is not None or self._running_pipeline_id is not None:
                     qr_btn.config(state="disabled")
-                self._quick_run_widgets.append(qr_btn)
+                self._quick_run_buttons[gname] = qr_btn
+
+                bar_frame = tk.Frame(self.cards_frame, bg=C["bg"],
+                                     highlightbackground=C["border"], highlightthickness=1)
+                entry_var = tk.StringVar()
+                entry = tk.Entry(bar_frame, textvariable=entry_var, bg=C["card_bg"], fg=C["name_fg"],
+                                 insertbackground=C["name_fg"], relief="flat", bd=4,
+                                 font=("Segoe UI", 10))
+                entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=6)
+                _flat_button(bar_frame, "Run", C["accent"], C["accent2"],
+                             lambda g=_gn: self._quick_run_submit(g), width=6).pack(side="left", pady=6)
+                _flat_button(bar_frame, "✕", "#3a3a3a", "#555",
+                             lambda g=_gn: self._hide_quick_run_bar(g), width=3).pack(side="left", padx=(4, 8), pady=6)
+
+                entry.bind("<Return>", lambda e, g=_gn: self._quick_run_submit(g))
+                entry.bind("<Escape>", lambda e, g=_gn: self._hide_quick_run_bar(g))
+
+                self._quick_run_bars[gname] = {
+                    "frame": bar_frame,
+                    "entry": entry,
+                    "var": entry_var,
+                    "base_dir": group_base_dir,
+                    "banner": banner,
+                }
+
+                if self._quick_run_open_group == gname:
+                    bar_frame.pack(fill="x", padx=8, pady=(2, 0), after=banner)
+                    entry.focus_set()
 
             _open = lambda e, g=gname: self._manage_group_base_dir(g)
             for w in (banner, icon_lbl, path_lbl):
@@ -1134,44 +1163,6 @@ class RYOSApp(_BaseWindow):
         )
         thread.start()
 
-    def _quick_run_prompt(self) -> str | None:
-        """Show a modal dialog to enter a script name. Returns the query string or None if cancelled."""
-        dlg = tk.Toplevel(self)
-        dlg.title("Quick Run")
-        dlg.configure(bg=C["bg"])
-        dlg.resizable(False, False)
-        dlg.transient(self)
-        dlg.grab_set()
-
-        tk.Label(dlg, text="Script name or relative path:", bg=C["bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(12, 4))
-
-        entry_var = tk.StringVar()
-        entry = tk.Entry(dlg, textvariable=entry_var, bg=C["card_bg"], fg=C["name_fg"],
-                         insertbackground=C["name_fg"], relief="flat", bd=4,
-                         font=("Segoe UI", 10), width=40)
-        entry.pack(fill="x", padx=14, pady=(0, 8))
-        entry.focus_set()
-
-        result: list[str | None] = [None]
-
-        def _submit():
-            val = entry_var.get().strip()
-            if val:
-                result[0] = val
-            dlg.destroy()
-
-        entry.bind("<Return>", lambda e: _submit())
-        entry.bind("<Escape>", lambda e: dlg.destroy())
-
-        btn_row = tk.Frame(dlg, bg=C["bg"])
-        btn_row.pack(fill="x", padx=14, pady=(0, 12))
-        _flat_button(btn_row, "Cancel", "#3a3a3a", "#555", dlg.destroy, width=8).pack(side="right", padx=(4, 0))
-        _flat_button(btn_row, "Run", C["accent"], C["accent2"], _submit, width=8).pack(side="right")
-
-        dlg.wait_window()
-        return result[0]
-
     def _quick_run_resolve(self, base_dir: str, query: str) -> tuple[str | None, list[str], str]:
         """Search base_dir for a script matching query (exact stem, case-insensitive).
 
@@ -1215,62 +1206,6 @@ class RYOSApp(_BaseWindow):
         rels = [str(m.relative_to(base_resolved)) for m in matches]
         return None, rels, ""
 
-    def _quick_run_invoke(self, base_dir: str, group_name: str):
-        """Open the Quick Run popup, resolve the script, save it (if new), and run it."""
-        if self.current_process and self.current_process.poll() is None:
-            messagebox.showinfo("Already Running",
-                                "A script is already running. Wait for it to finish.",
-                                parent=self)
-            return
-
-        query = self._quick_run_prompt()
-        if not query:
-            return
-
-        abs_path, candidates, err = self._quick_run_resolve(base_dir, query)
-        if err:
-            messagebox.showerror("Quick Run", err, parent=self)
-            return
-
-        if candidates:
-            chosen = self._quick_run_pick(base_dir, candidates)
-            if not chosen:
-                return
-            abs_path = str(Path(base_dir) / chosen)
-
-        try:
-            display = str(Path(abs_path).relative_to(Path(base_dir).resolve()))
-        except ValueError:
-            display = Path(abs_path).name
-
-        existing_id = None
-        existing_params = ""
-        existing_interp = ""
-        for rec in self.db.list_all():
-            if rec[2] == abs_path and (rec[8] or "") == (group_name or ""):
-                existing_id = rec[0]
-                existing_params = rec[3] or ""
-                existing_interp = rec[4] or ""
-                break
-
-        if existing_id is not None:
-            script_id = existing_id
-            params = existing_params
-            interpreter = existing_interp
-        else:
-            interpreter = detect_interpreter(abs_path)
-            script_id = self.db.add(
-                name=Path(abs_path).stem,
-                path=abs_path,
-                params="",
-                interpreter=interpreter,
-                group_name=group_name,
-            )
-            params = ""
-            self._refresh_cards()
-
-        self._run_script(script_id, display, abs_path, params, interpreter)
-
     def _quick_run_pick(self, base_dir: str, candidates: list[str]) -> str | None:
         """Show a modal listbox for the user to pick among multiple matches. Returns relative path or None."""
         dlg = tk.Toplevel(self)
@@ -1310,13 +1245,112 @@ class RYOSApp(_BaseWindow):
         return chosen[0]
 
     def _set_quick_run_enabled(self, enabled: bool):
-        """Enable or disable all Quick Run buttons (called on run start / run end)."""
         state = "normal" if enabled else "disabled"
-        for btn in self._quick_run_widgets:
+        for btn in self._quick_run_buttons.values():
             try:
                 btn.config(state=state)
             except tk.TclError:
                 pass
+        if not enabled and self._quick_run_open_group is not None:
+            self._hide_quick_run_bar(self._quick_run_open_group)
+
+    def _toggle_quick_run_bar(self, group_name: str):
+        if self._quick_run_open_group == group_name:
+            self._hide_quick_run_bar(group_name)
+            return
+        if self._quick_run_open_group is not None:
+            self._hide_quick_run_bar(self._quick_run_open_group)
+        self._show_quick_run_bar(group_name)
+
+    def _show_quick_run_bar(self, group_name: str):
+        bar = self._quick_run_bars.get(group_name)
+        if not bar:
+            return
+        bar["var"].set("")
+        bar["frame"].pack(fill="x", padx=8, pady=(2, 0), after=bar["banner"])
+        bar["entry"].focus_set()
+        self._quick_run_open_group = group_name
+        btn = self._quick_run_buttons.get(group_name)
+        if btn:
+            try:
+                btn.config(bg=C["accent2"])
+            except tk.TclError:
+                pass
+
+    def _hide_quick_run_bar(self, group_name: str):
+        bar = self._quick_run_bars.get(group_name)
+        if bar:
+            try:
+                bar["frame"].pack_forget()
+            except tk.TclError:
+                pass
+            bar["var"].set("")
+        if self._quick_run_open_group == group_name:
+            self._quick_run_open_group = None
+        btn = self._quick_run_buttons.get(group_name)
+        if btn:
+            try:
+                btn.config(bg=C["accent"])
+            except tk.TclError:
+                pass
+
+    def _quick_run_submit(self, group_name: str):
+        if self.current_process and self.current_process.poll() is None:
+            messagebox.showinfo("Already Running",
+                                "A script is already running. Wait for it to finish.",
+                                parent=self)
+            return
+        bar = self._quick_run_bars.get(group_name)
+        if not bar:
+            return
+        query = bar["var"].get().strip()
+        if not query:
+            return
+        base_dir = self.db.get_group_base_dir(group_name) or bar["base_dir"]
+        self._hide_quick_run_bar(group_name)
+
+        abs_path, candidates, err = self._quick_run_resolve(base_dir, query)
+        if err:
+            messagebox.showerror("Quick Run", err, parent=self)
+            return
+        if candidates:
+            chosen = self._quick_run_pick(base_dir, candidates)
+            if not chosen:
+                return
+            abs_path = str(Path(base_dir) / chosen)
+
+        try:
+            display = str(Path(abs_path).relative_to(Path(base_dir).resolve()))
+        except ValueError:
+            display = Path(abs_path).name
+
+        existing_id = None
+        existing_params = ""
+        existing_interp = ""
+        for rec in self.db.list_all():
+            if rec[2] == abs_path and (rec[8] or "") == (group_name or ""):
+                existing_id = rec[0]
+                existing_params = rec[3] or ""
+                existing_interp = rec[4] or ""
+                break
+
+        if existing_id is not None:
+            script_id = existing_id
+            params = existing_params
+            interpreter = existing_interp
+        else:
+            interpreter = detect_interpreter(abs_path)
+            script_id = self.db.add(
+                name=Path(abs_path).stem,
+                path=abs_path,
+                params="",
+                interpreter=interpreter,
+                group_name=group_name,
+            )
+            params = ""
+            self._refresh_cards()
+
+        self._run_script(script_id, display, abs_path, params, interpreter)
 
     def _run_subprocess(self, cmd, name, script_id):
         try:
