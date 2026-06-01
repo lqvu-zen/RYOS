@@ -4,7 +4,7 @@ model: claude-sonnet-4-6
 
 Maintain or improve an existing RYOS feature. Follow these steps every time.
 
-The orchestrator running this skill is Sonnet 4.6. It owns the user conversation, the delegation of analysis and review to Opus 4.7, the verification of every delegated step, and the commit decision. It does NOT analyse the code, write the implementation, run the tests, or review the diff itself — analysis and review go to fresh Opus 4.7 agents; implement/test/fix goes to a separate Sonnet 4.6 agent.
+The orchestrator running this skill is Sonnet 4.6. It owns the user conversation, the delegation of analysis and review to Opus 4.8, the verification of every delegated step, and the commit decision. It does NOT analyse the code, write the implementation, run the tests, or review the diff itself — analysis and review go to fresh Opus 4.8 agents; implement/test/fix goes to a separate Sonnet 4.6 agent.
 
 ## Architecture reminder
 
@@ -61,9 +61,9 @@ Read the relevant sections with the Read tool (narrow line ranges, not whole fil
 
 Do NOT open files unrelated to the feature being improved.
 
-### 3. Analyse and plan with Opus 4.7 (ALWAYS — before any code edits)
+### 3. Analyse and plan with Opus 4.8 (ALWAYS — before any code edits)
 
-The improvement plan is owned by Opus 4.7. Always spawn a fresh Opus 4.7 agent — even for small tweaks. A fresh agent sees only the code and the brief, which eliminates context bias from the conversation.
+The improvement plan is owned by Opus 4.8. Always spawn a fresh Opus 4.8 agent — even for small tweaks. A fresh agent sees only the code and the brief, which eliminates context bias from the conversation.
 
 ```
 Agent({
@@ -125,9 +125,9 @@ When the agent returns, **verify before moving on**:
 
 Mark each `TaskUpdate` as `completed` once verified.
 
-### 5. Review with Opus 4.7 (before commit)
+### 5. Review with Opus 4.8 (before commit)
 
-Spawn an independent Opus 4.7 agent to review the staged diff. A fresh agent has no context bias from the planning step — it sees only the code and the brief.
+Spawn an independent Opus 4.8 agent to review the staged diff. A fresh agent has no context bias from the planning step — it sees only the code and the brief.
 
 ```
 Agent({

@@ -4,7 +4,7 @@ model: claude-sonnet-4-6
 
 Add a new feature to RYOS. Follow these steps every time.
 
-The orchestrator running this skill is Sonnet 4.6. It owns the user conversation, the delegation of design and review to Opus 4.7, the verification of every delegated step, and the commit decision. It does NOT design the feature, write the implementation code, run the tests, launch the app, or review the diff itself — design and review go to fresh Opus 4.7 agents; implement/test/fix goes to a Sonnet 4.6 agent (separate from the orchestrator).
+The orchestrator running this skill is Sonnet 4.6. It owns the user conversation, the delegation of design and review to Opus 4.8, the verification of every delegated step, and the commit decision. It does NOT design the feature, write the implementation code, run the tests, launch the app, or review the diff itself — design and review go to fresh Opus 4.8 agents; implement/test/fix goes to a Sonnet 4.6 agent (separate from the orchestrator).
 
 ## Architecture reminder
 
@@ -47,9 +47,9 @@ Grep pattern="<relevant keyword>" path="ryos" output_mode="content" -n=true
 ```
 Read the relevant sections with the Read tool before planning.
 
-### 3. Design and plan with Opus 4.7 (ALWAYS — before any code edits)
+### 3. Design and plan with Opus 4.8 (ALWAYS — before any code edits)
 
-The design is owned by Opus 4.7. Always spawn a fresh Opus 4.7 agent to produce the plan — even for small features. The orchestrator (Sonnet 4.6) does not design inline; spawning a fresh Opus agent also gives an independent design free of context bias from the feature-request conversation.
+The design is owned by Opus 4.8. Always spawn a fresh Opus 4.8 agent to produce the plan — even for small features. The orchestrator (Sonnet 4.6) does not design inline; spawning a fresh Opus agent also gives an independent design free of context bias from the feature-request conversation.
 
 ```
 Agent({
@@ -111,9 +111,9 @@ When the agent returns, **verify before moving on**:
 
 Mark each `TaskUpdate` as `completed` once verified.
 
-### 5. Review with Opus 4.7 (before commit)
+### 5. Review with Opus 4.8 (before commit)
 
-Spawn an independent Opus 4.7 agent to review the staged diff. The orchestrator is also Opus 4.7, but a fresh agent has no context bias from the planning step — it sees only the code and the brief.
+Spawn an independent Opus 4.8 agent to review the staged diff. The orchestrator is also Opus 4.8, but a fresh agent has no context bias from the planning step — it sees only the code and the brief.
 
 ```
 Agent({

@@ -4,7 +4,7 @@ model: claude-sonnet-4-6
 
 Refactor the RYOS repository from a single monolithic file into a scalable, modular package. The goal is to make each concern (UI components, data layer, business logic, theme) independently editable without touching unrelated code.
 
-The orchestrator running this skill is Sonnet 4.6. Design (Step 2) and review (Step 4) are delegated to fresh Opus 4.7 agents; the migration + tests + smoke-test (Step 3) is delegated to a Sonnet 4.6 agent. The orchestrator handles user conversation, delegation, verification of each step, and the commit decision — it does NOT design, implement, or review inline.
+The orchestrator running this skill is Sonnet 4.6. Design (Step 2) and review (Step 4) are delegated to fresh Opus 4.8 agents; the migration + tests + smoke-test (Step 3) is delegated to a Sonnet 4.6 agent. The orchestrator handles user conversation, delegation, verification of each step, and the commit decision — it does NOT design, implement, or review inline.
 
 ## Context
 
@@ -45,9 +45,9 @@ cd D:/Projects/RYOS && grep -n "^class \|^def \|^# ---" script_runner.py | head 
 
 Build a mental map before touching anything.
 
-### 2. Design the package with Opus 4.7
+### 2. Design the package with Opus 4.8
 
-The package design is owned by Opus 4.7. Always spawn a fresh Opus 4.7 agent to do the design pass; the orchestrator (Sonnet 4.6) does not design inline.
+The package design is owned by Opus 4.8. Always spawn a fresh Opus 4.8 agent to do the design pass; the orchestrator (Sonnet 4.6) does not design inline.
 
 ```
 Agent({
@@ -127,9 +127,9 @@ When the agent returns, **verify before moving on**:
 - Re-run `uv run python -m unittest discover -s tests -v` yourself — cheap defense against an agent claiming a green run that wasn't.
 - If anything looks off, either fix it inline or send a follow-up via `SendMessage` to the same agent.
 
-### 4. Review with Opus 4.7 (before commit)
+### 4. Review with Opus 4.8 (before commit)
 
-Spawn an independent Opus 4.7 agent to review the refactor. The orchestrator is also Opus 4.7, but a fresh agent has no context bias from planning or delegation — it sees only the code and the brief.
+Spawn an independent Opus 4.8 agent to review the refactor. The orchestrator is also Opus 4.8, but a fresh agent has no context bias from planning or delegation — it sees only the code and the brief.
 
 ```
 Agent({
@@ -162,7 +162,7 @@ script_runner.py is now a thin uv shim. All logic lives under ryos/:
   ui/theme.py, ui/cards.py, ui/dialogs.py, ui/pipeline.py,
   ui/output_tabs.py, ui/app.py
 
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 EOF
 )" && git push 2>&1
 ```
