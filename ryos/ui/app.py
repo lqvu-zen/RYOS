@@ -279,6 +279,10 @@ class RYOSApp(_BaseWindow):
                   activebackground="#3d3d3d", activeforeground="#fff",
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._clear_log).pack(side="right", padx=4)
+        tk.Button(out_header, text="✕ Close All", bg="#2d2d2d", fg="#aaa",
+                  activebackground="#3d3d3d", activeforeground="#fff",
+                  relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
+                  command=self._close_all_tabs).pack(side="right", padx=4)
 
         self._out_tab_bar = tk.Frame(self.out_panel, bg="#252525")
         self._out_tab_body = tk.Frame(self.out_panel, bg="#1e1e1e")
@@ -1453,7 +1457,7 @@ class RYOSApp(_BaseWindow):
             return
         try:
             focused = self.focus_get()
-        except tk.TclError:
+        except (tk.TclError, KeyError):
             return
         lb = bar.get("suggest_lb")
         if focused is not lb and focused is not bar["entry"]:
@@ -1803,6 +1807,27 @@ class RYOSApp(_BaseWindow):
         if key == self._active_tab_key:
             self._active_tab_key = None
             self._activate_tab("all")
+
+    def _is_tab_running(self, key: str) -> bool:
+        if key.startswith("script:"):
+            return self._running_script_id == int(key.split(":")[1])
+        if key.startswith("pipeline:"):
+            return self._running_pipeline_id == int(key.split(":")[1])
+        return False
+
+    def _close_all_tabs(self):
+        keys_to_close = [k for k in list(self._output_tabs) if k != "all" and not self._is_tab_running(k)]
+        for key in keys_to_close:
+            tab = self._output_tabs.pop(key)
+            tab["text"].pack_forget()
+            tab["text"].destroy()
+            tab["btn"].destroy()
+        if self._active_tab_key not in self._output_tabs:
+            self._active_tab_key = None
+            self._activate_tab("all")
+        all_text = self._output_tabs["all"]["text"]
+        all_text.configure(state="normal")
+        all_text.delete("1.0", tk.END)
 
     def _toggle_output(self):
         if self._out_expanded:
