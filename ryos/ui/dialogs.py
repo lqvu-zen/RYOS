@@ -648,6 +648,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._notify_on_complete = tk.BooleanVar(value=self._settings.get("notify_on_complete", True))
         self._quick_run_enabled = tk.BooleanVar(value=self._settings.get("quick_run_enabled", True))
         self._quick_run_autocomplete = tk.BooleanVar(value=self._settings.get("quick_run_autocomplete", True))
+        self._logging_enabled = tk.BooleanVar(value=self._settings.get("logging_enabled", True))
+        self._log_level = tk.StringVar(value=self._settings.get("log_level", "INFO"))
+        self._log_runs_output = tk.BooleanVar(value=self._settings.get("log_runs_output", False))
 
         self._build()
         self.update_idletasks()
@@ -739,6 +742,18 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+        f = self._section("LOGGING")
+        self._chk(f, "Enable logging to file",           self._logging_enabled)
+        self._chk(f, "Include script output in logs",    self._log_runs_output)
+        level_row = tk.Frame(f, bg=C["bg"])
+        level_row.pack(fill="x", pady=4)
+        tk.Label(level_row, text="Log level:", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(side="left")
+        ttk.Combobox(level_row, textvariable=self._log_level,
+                     values=["DEBUG", "INFO", "WARNING", "ERROR"],
+                     state="readonly", width=12,
+                     font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
         btn_row = tk.Frame(self, bg=C["bg"])
         btn_row.pack(fill="x", padx=16, pady=12)
         _flat_button(btn_row, "Cancel", "#3a3a3a", "#555",
@@ -771,6 +786,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "quick_run_enabled":        self._quick_run_enabled.get(),
             "quick_run_autocomplete":   self._quick_run_autocomplete.get(),
             "auto_check_update":        self._auto_check_update.get(),
+            "logging_enabled":          self._logging_enabled.get(),
+            "log_level":                self._log_level.get(),
+            "log_runs_output":          self._log_runs_output.get(),
         })
         try:
             _set_startup(self._start_with_windows.get())

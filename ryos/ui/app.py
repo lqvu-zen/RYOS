@@ -22,6 +22,7 @@ except ImportError:
 from .. import __version__
 from ..db import ScriptDB
 from ..interpreter import build_command, detect_interpreter
+from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
@@ -29,12 +30,15 @@ from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, 
 from .pipeline import PipelineEditorDialog
 from .theme import C, _apply_snap_corner, _flat_button
 
+_log = get_logger("app")
+
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
 
 class RYOSApp(_BaseWindow):
     def __init__(self):
         super().__init__()
+        self.report_callback_exception = self._log_tk_exception
         if sys.platform == "win32":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RYOS.RunYourOwnScripts")
 
@@ -108,6 +112,10 @@ class RYOSApp(_BaseWindow):
             self.after(0, lambda c=corner: _apply_snap_corner(self, c))
         if self._settings["start_minimized"]:
             self.after(0, self.iconify)
+
+    def _log_tk_exception(self, exc, val, tb):
+        _log.error("Unhandled Tk callback exception", exc_info=(exc, val, tb))
+        tk.Tk.report_callback_exception(self, exc, val, tb)
 
     def _setup_file_drop(self):
         if not _DND_AVAILABLE:
@@ -188,6 +196,9 @@ class RYOSApp(_BaseWindow):
         self._options_menu.add_command(label="⚙  Advanced options…",  command=self._open_advanced_options)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🔔  Check for updates",  command=self._manual_update_check)
+        self._options_menu.add_separator()
+        self._options_menu.add_command(label="📁  Open log folder",    command=self._open_log_folder)
+        self._options_menu.add_command(label="📄  View logs",          command=self._view_logs)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",         command=self._delete_all)
 
@@ -434,6 +445,7 @@ class RYOSApp(_BaseWindow):
         if dlg.result:
             name, base_dir = dlg.result
             self.db.create_group(name, base_dir)
+            _log.info("Group created: %s", name)
             self._active_group = name
             self._refresh()
 
@@ -493,6 +505,7 @@ class RYOSApp(_BaseWindow):
                                      initialvalue=old, parent=self)
         if new and new.strip() and new.strip() != old:
             self.db.rename_group(old, new.strip())
+            _log.info("Group renamed: %s -> %s", old, new.strip())
             if self._active_group == old:
                 self._active_group = new.strip()
             self._refresh()
@@ -504,6 +517,7 @@ class RYOSApp(_BaseWindow):
             parent=self,
         ):
             self.db.delete_group(name)
+            _log.info("Group deleted: %s", name)
             if self._active_group == name:
                 remaining = self.db.list_groups()
                 self._active_group = remaining[0] if remaining else None
@@ -526,6 +540,7 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Clone Group", f"A group named '{name}' already exists.", parent=self)
             return
         scripts_n, pipes_n = self.db.clone_group(source, name)
+        _log.info("Group cloned: %s -> %s (%d scripts, %d pipelines)", source, name, scripts_n, pipes_n)
         self._active_group = name
         self._refresh()
         self.status_var.set(f"Cloned '{source}' → '{name}' ({scripts_n} scripts, {pipes_n} pipelines).")
@@ -1200,10 +1215,12 @@ class RYOSApp(_BaseWindow):
             return
         try:
             n_scripts, n_pipelines = self.db.export_to_file(path, group_name=group_name)
+            _log.info("Export: %d scripts, %d pipelines -> %s", n_scripts, n_pipelines, path)
             self.status_var.set(
                 f"Exported {n_scripts} script(s), {n_pipelines} pipeline(s) → {Path(path).name}"
             )
         except Exception as e:
+            _log.error("Export failed: %s", e)
             messagebox.showerror("Export Failed", str(e))
 
     def _import_config(self):
@@ -1221,9 +1238,11 @@ class RYOSApp(_BaseWindow):
                 "No  = Merge (skip duplicates by path / name)",
             )
             added, skipped = self.db.import_from_file(path, replace=replace)
+            _log.info("Import: %d added, %d skipped from %s", added, skipped, path)
             self._refresh()
             self.status_var.set(f"Import done — {added} script(s) added, {skipped} skipped.")
         except Exception as e:
+            _log.error("Import failed: %s", e)
             messagebox.showerror("Import Failed", str(e))
 
     def _run_script(self, script_id, name, path, params, interpreter):
@@ -1243,6 +1262,7 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Parameter Error", f"Could not parse parameters:\n{e}")
             return
 
+        _log.info("Run: %s | cmd: %s", name, " ".join(cmd))
         self._get_or_create_tab(f"script:{script_id}", name)
         self._append_output(
             f"\n{'━'*60}\n"
@@ -1683,22 +1703,31 @@ class RYOSApp(_BaseWindow):
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
         except FileNotFoundError as e:
+            _log.error("Interpreter/file not found for %s: %s", name, e)
             self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
             self.output_queue.put(("done", script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
             return
         except Exception as e:
+            _log.error("Failed to launch %s: %s", name, e)
             self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
             self.output_queue.put(("done", script_id, "error", f"❌ Error: {name}\n"))
             return
 
         assert self.current_process.stdout is not None
+        log_output = self._settings.get("log_runs_output", False)
         for line in self.current_process.stdout:
             self.output_queue.put(("stdout", line))
+            if log_output:
+                _log.debug("[%s] %s", name, line.rstrip())
 
         self.current_process.wait()
         rc = self.current_process.returncode
         tag = "ok" if rc == 0 else "stderr"
         status = "ok" if rc == 0 else "error"
+        if rc == 0:
+            _log.info("Done: %s | exit=%s", name, rc)
+        else:
+            _log.error("Done: %s | exit=%s", name, rc)
         self.output_queue.put((
             "done_tag", script_id, status, tag,
             f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
@@ -2062,12 +2091,37 @@ class RYOSApp(_BaseWindow):
         def _apply(new_settings: dict):
             self._settings = new_settings
             _save_settings(self._settings)
+            setup_logging(self._settings.get("logging_enabled", True),
+                          self._settings.get("log_level", "INFO"))
             self.attributes("-topmost", self._settings["always_on_top"])
             self.geometry(f"{self._settings['window_width']}x{self._settings['window_height']}")
             corner = self._settings.get("snap_corner") or ""
             if corner and corner != "none":
                 _apply_snap_corner(self, corner)
         AdvancedOptionsDialog(self, self._settings, _apply)
+
+    def _open_log_folder(self):
+        import subprocess
+        from ..settings import LOG_DIR
+        if sys.platform == "win32":
+            os.startfile(str(LOG_DIR))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(LOG_DIR)])
+        else:
+            subprocess.Popen(["xdg-open", str(LOG_DIR)])
+
+    def _view_logs(self):
+        import subprocess
+        from ..settings import LOG_PATH
+        if not LOG_PATH.exists():
+            messagebox.showinfo("View Logs", "No log file found yet.")
+            return
+        if sys.platform == "win32":
+            os.startfile(str(LOG_PATH))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(LOG_PATH)])
+        else:
+            subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
     def _on_close(self):
         if self.current_process and self.current_process.poll() is None:

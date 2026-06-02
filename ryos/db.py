@@ -6,7 +6,10 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+from .logger import get_logger
 from .settings import DB_PATH
+
+_log = get_logger("db")
 
 
 class ScriptDB:
@@ -24,6 +27,7 @@ class ScriptDB:
             conn.commit()
         except Exception:
             conn.rollback()
+            _log.exception("DB error")
             raise
         finally:
             conn.close()

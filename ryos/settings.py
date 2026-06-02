@@ -10,6 +10,9 @@ _APPDATA = Path(os.environ.get("APPDATA") or Path.home() / ".local" / "share") /
 _APPDATA.mkdir(parents=True, exist_ok=True)
 DB_PATH        = _APPDATA / "scripts.db"
 _SETTINGS_PATH = _APPDATA / "settings.json"
+LOG_DIR = _APPDATA / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_PATH = LOG_DIR / "ryos.log"
 
 # Directory of the exe / script (used for icon and migration).
 _NUITKA   = "__compiled__" in dir()          # True only in Nuitka-compiled builds
@@ -52,6 +55,9 @@ _SETTINGS_DEFAULTS: dict = {
     "quick_run_enabled":      True,
     "quick_run_autocomplete":    True,
     "quick_run_max_suggestions": 10,
+    "logging_enabled":        True,
+    "log_level":              "INFO",
+    "log_runs_output":        False,
 }
 
 
