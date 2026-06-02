@@ -11,7 +11,7 @@ C = {
     "accent2":    "#3d5d8a",
     "header_bg":  "#1e2a3a",
     "name_fg":    "#1a1a2e",
-    "path_fg":    "#8892a0",
+    "path_fg":    "#626975",
     "btn_run_bg": "#2ecc71",
     "btn_run_hover": "#27ae60",
     "btn_mod_bg": "#4a6fa5",

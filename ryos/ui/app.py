@@ -390,7 +390,7 @@ class RYOSApp(_BaseWindow):
             btn_bg, fg, fw = "#e4e9f0", "#2d3748", "normal"
             bar_bg   = "#e4e9f0"
             hover_bg = "#d8dfe8"
-            border   = "#b8c4d0"
+            border   = C["border"]
 
         wrapper = tk.Frame(self._tab_bar, bg=border,
                            highlightthickness=0, padx=1, pady=1)
@@ -422,7 +422,7 @@ class RYOSApp(_BaseWindow):
             bar_bg, hover_bg, border = C["accent"], "#eef2ff", C["card_bg"]
         else:
             btn_bg, fg, fw = "#e4e9f0", "#2d3748", "normal"
-            bar_bg, hover_bg, border = "#e4e9f0", "#d8dfe8", "#b8c4d0"
+            bar_bg, hover_bg, border = "#e4e9f0", "#d8dfe8", C["border"]
         wrapper.config(bg=border)
         inner.config(bg=btn_bg)
         btn.config(bg=btn_bg, fg=fg, font=("Segoe UI", 10, fw),
