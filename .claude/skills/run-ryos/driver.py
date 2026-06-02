@@ -23,8 +23,12 @@ SHOTS_DIR.mkdir(exist_ok=True)
 
 def _shot(app: RYOSApp, name: str) -> Path:
     from PIL import ImageGrab
+    app.lift()
+    app.attributes("-topmost", True)
+    app.focus_force()
     app.update_idletasks()
     app.update()
+    app.attributes("-topmost", False)
     x, y = app.winfo_rootx(), app.winfo_rooty()
     w, h = app.winfo_width(), app.winfo_height()
     img = ImageGrab.grab(bbox=(x, y, x + w, y + h))
