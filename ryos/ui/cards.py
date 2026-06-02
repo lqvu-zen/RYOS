@@ -7,7 +7,7 @@ from ..db import ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import ScriptDialog, _PresetEntryDialog
 from .theme import C
-from .widgets import ScrollingLabel
+from .widgets import ScrollingLabel, Tooltip
 
 
 class ScriptCard(tk.Frame):
@@ -43,7 +43,7 @@ class ScriptCard(tk.Frame):
         def _sep():
             tk.Frame(btn_area, bg=C["border"], width=1).pack(side="left", fill="y")
 
-        def _rbtn(text, bg, hover_bg, cmd, **kw):
+        def _rbtn(text, bg, hover_bg, cmd, tip=None, **kw):
             b = tk.Button(btn_area, text=text, bg=bg,
                           fg=kw.get("fg", C["name_fg"]),
                           activebackground=hover_bg,
@@ -53,11 +53,14 @@ class ScriptCard(tk.Frame):
                           width=3, state=kw.get("state", "normal"),
                           cursor="hand2" if kw.get("state", "normal") == "normal" else "arrow",
                           command=cmd)
+            b._bg  = bg
+            b._hbg = hover_bg
             b.pack(side="left", fill="y")
             if kw.get("state", "normal") == "normal":
-                _bg, _hbg = bg, hover_bg
-                b.bind("<Enter>", lambda e, _b=b: _b.config(bg=_hbg))
-                b.bind("<Leave>", lambda e, _b=b: _b.config(bg=_bg))
+                b.bind("<Enter>", lambda e, _b=b: _b.config(bg=_b._hbg), add="+")
+                b.bind("<Leave>", lambda e, _b=b: _b.config(bg=_b._bg),  add="+")
+            if tip:
+                Tooltip(b, tip)
             return b
 
         self._text_area = text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
@@ -113,17 +116,20 @@ class ScriptCard(tk.Frame):
                 self._params_combo.current(0)
 
         _sep()
-        _rbtn("⚙", C["btn_mod_bg"], C["btn_mod_hover"], self._modify)
+        _rbtn("⚙", C["btn_neutral_bg"], C["btn_neutral_hover"], self._modify,
+              fg=C["btn_neutral_fg"], tip="Edit")
         _sep()
-        _rbtn("▶+", "#1a6b9a", "#1a5a80", self._run_with_param)
+        _rbtn("▶+", C["btn_neutral_bg"], C["btn_neutral_hover"], self._run_with_param,
+              fg=C["btn_neutral_fg"], tip="Run with parameter")
         _sep()
-        _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run)
+        _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run, tip="Run")
         _sep()
         self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
               "#5a1a1a" if is_running else "#4a4a4a",
               on_stop or (lambda: None),
               fg="#ffffff" if is_running else "#666666",
-              active_fg="#ffffff" if is_running else "#888888")
+              active_fg="#ffffff" if is_running else "#888888",
+              tip="Stop")
 
         for widget in (self, text_area):
             widget.bind("<Enter>", self._on_enter)
@@ -133,26 +139,26 @@ class ScriptCard(tk.Frame):
 
     def set_running(self, is_running: bool, on_stop=None):
         if is_running:
+            self._stop_btn._bg  = "#8b0000"
+            self._stop_btn._hbg = "#5a1a1a"
             self._stop_btn.config(
                 bg="#8b0000", activebackground="#5a1a1a",
                 fg="#ffffff", activeforeground="#ffffff",
                 command=on_stop or (lambda: None),
             )
-            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#5a1a1a"))
-            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#8b0000"))
             if not self._running_lbl:
                 self._running_lbl = tk.Label(
                     self._badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
                 self._running_lbl.pack(side="left", padx=(4, 0))
         else:
+            self._stop_btn._bg  = "#3a3a3a"
+            self._stop_btn._hbg = "#4a4a4a"
             self._stop_btn.config(
                 bg="#3a3a3a", activebackground="#4a4a4a",
                 fg="#666666", activeforeground="#888888",
                 command=lambda: None,
             )
-            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#4a4a4a"))
-            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#3a3a3a"))
             if self._running_lbl:
                 self._running_lbl.destroy()
                 self._running_lbl = None
@@ -279,7 +285,7 @@ class PipelineCard(tk.Frame):
         def _sep():
             tk.Frame(btn_area, bg=C["border"], width=1).pack(side="left", fill="y")
 
-        def _rbtn(text, bg, hover_bg, cmd, **kw):
+        def _rbtn(text, bg, hover_bg, cmd, tip=None, **kw):
             b = tk.Button(btn_area, text=text, bg=bg,
                           fg=kw.get("fg", C["name_fg"]),
                           activebackground=hover_bg,
@@ -289,25 +295,30 @@ class PipelineCard(tk.Frame):
                           width=3, state=kw.get("state", "normal"),
                           cursor="hand2" if kw.get("state", "normal") == "normal" else "arrow",
                           command=cmd)
+            b._bg  = bg
+            b._hbg = hover_bg
             b.pack(side="left", fill="y")
             if kw.get("state", "normal") == "normal":
-                _bg, _hbg = bg, hover_bg
-                b.bind("<Enter>", lambda e, _b=b: _b.config(bg=_hbg))
-                b.bind("<Leave>", lambda e, _b=b: _b.config(bg=_bg))
+                b.bind("<Enter>", lambda e, _b=b: _b.config(bg=_b._hbg), add="+")
+                b.bind("<Leave>", lambda e, _b=b: _b.config(bg=_b._bg),  add="+")
+            if tip:
+                Tooltip(b, tip)
             return b
 
         _sep()
-        _rbtn("⚙", C["btn_mod_bg"], C["btn_mod_hover"],
-              lambda: on_edit(pipeline_id, name))
+        _rbtn("⚙", C["btn_neutral_bg"], C["btn_neutral_hover"],
+              lambda: on_edit(pipeline_id, name), tip="Edit",
+              fg=C["btn_neutral_fg"])
         _sep()
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
-              lambda: on_run(pipeline_id, name))
+              lambda: on_run(pipeline_id, name), tip="Run")
         _sep()
         self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
               "#5a1a1a" if is_running else "#4a4a4a",
               on_stop or (lambda: None),
               fg="#ffffff" if is_running else "#666666",
-              active_fg="#ffffff" if is_running else "#888888")
+              active_fg="#ffffff" if is_running else "#888888",
+              tip="Stop")
 
         content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
         content.pack(side="left", fill="both", expand=True)
@@ -358,26 +369,26 @@ class PipelineCard(tk.Frame):
 
     def set_running(self, is_running: bool, on_stop=None):
         if is_running:
+            self._stop_btn._bg  = "#8b0000"
+            self._stop_btn._hbg = "#5a1a1a"
             self._stop_btn.config(
                 bg="#8b0000", activebackground="#5a1a1a",
                 fg="#ffffff", activeforeground="#ffffff",
                 command=on_stop or (lambda: None),
             )
-            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#5a1a1a"))
-            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#8b0000"))
             if not self._running_lbl:
                 self._running_lbl = tk.Label(
                     self._badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
                 self._running_lbl.pack(side="left", padx=(4, 0))
         else:
+            self._stop_btn._bg  = "#3a3a3a"
+            self._stop_btn._hbg = "#4a4a4a"
             self._stop_btn.config(
                 bg="#3a3a3a", activebackground="#4a4a4a",
                 fg="#666666", activeforeground="#888888",
                 command=lambda: None,
             )
-            self._stop_btn.bind("<Enter>", lambda e: self._stop_btn.config(bg="#4a4a4a"))
-            self._stop_btn.bind("<Leave>", lambda e: self._stop_btn.config(bg="#3a3a3a"))
             if self._running_lbl:
                 self._running_lbl.destroy()
                 self._running_lbl = None

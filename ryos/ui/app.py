@@ -29,6 +29,7 @@ from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
 from .theme import C, _apply_snap_corner, _flat_button
+from .widgets import Tooltip
 
 _log = get_logger("app")
 
@@ -174,16 +175,19 @@ class RYOSApp(_BaseWindow):
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg="#ffffff",
                  font=("Segoe UI", 14, "bold")).pack(side="left")
-        add_btn = _flat_button(header, "+ Script", C["accent"], C["accent2"],
+        add_btn = _flat_button(header, "+ Script", C["btn_create_bg"], C["btn_create_hover"],
                                self._add_script, width=header_btn_size)
-        add_btn.config(bg=C["accent"])
+        add_btn.config(bg=C["btn_create_bg"])
         add_btn.pack(side="right")
-        add_group_btn = _flat_button(header, "+ Group", "#2e7d32", "#388e3c",
+        Tooltip(add_btn, "Create a script")
+        add_group_btn = _flat_button(header, "+ Group", C["btn_create_bg"], C["btn_create_hover"],
                                      self._create_group, width=header_btn_size)
         add_group_btn.pack(side="right", padx=(0, 6))
-        self._pipeline_btn = _flat_button(header, "+ Pipeline", "#5c4bbd", "#7060d0",
+        Tooltip(add_group_btn, "Create a group")
+        self._pipeline_btn = _flat_button(header, "+ Pipeline", C["btn_create_bg"], C["btn_create_hover"],
                                            self._add_pipeline, width=header_btn_size)
         self._pipeline_btn.pack(side="right", padx=(0, 6))
+        Tooltip(self._pipeline_btn, "Create a pipeline")
 
         self._options_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
                                      activebackground=C["accent"], activeforeground="#ffffff",
@@ -648,6 +652,7 @@ class RYOSApp(_BaseWindow):
                                       lambda g=_gn: self._toggle_quick_run_bar(g),
                                       width=4)
                 qr_btn.pack(side="right", padx=(0, 6))
+                Tooltip(qr_btn, "Toggle quick-run bar")
                 if self._running_script_id is not None or self._running_pipeline_id is not None:
                     qr_btn.config(state="disabled")
                 self._quick_run_buttons[gname] = qr_btn

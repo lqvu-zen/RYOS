@@ -19,6 +19,11 @@ C = {
     "btn_fg":     "#ffffff",
     "border":     "#dde2ea",
     "status_bg":  "#e8ebf0",
+    "btn_neutral_bg":    "#eef1f6",
+    "btn_neutral_hover": "#dde3ee",
+    "btn_neutral_fg":    "#5a6573",
+    "btn_create_bg":     "#4a6fa5",
+    "btn_create_hover":  "#3d5d8a",
 }
 
 

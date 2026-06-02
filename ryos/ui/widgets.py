@@ -3,6 +3,69 @@ import tkinter as tk
 import tkinter.font as tkfont
 
 
+class Tooltip:
+    """Delayed tooltip that appears near the pointer on hover."""
+
+    def __init__(self, widget, text, delay=500):
+        self._widget = widget
+        self._text = text
+        self._delay = delay
+        self._job = None
+        self._tip = None
+        widget.bind("<Enter>",       self._on_enter,   add="+")
+        widget.bind("<Leave>",       self._on_leave,   add="+")
+        widget.bind("<ButtonPress>", self._on_leave,   add="+")
+        widget.bind("<Destroy>",     self._on_destroy, add="+")
+
+    def _on_enter(self, _e=None):
+        self._cancel_job()
+        self._job = self._widget.after(self._delay, self._show)
+
+    def _on_leave(self, _e=None):
+        self._cancel_job()
+        self._hide()
+
+    def _on_destroy(self, _e=None):
+        self._cancel_job()
+        self._hide()
+
+    def _cancel_job(self):
+        if self._job:
+            try:
+                self._widget.after_cancel(self._job)
+            except Exception:
+                pass
+            self._job = None
+
+    def _show(self):
+        if self._tip:
+            return
+        try:
+            x, y = self._widget.winfo_pointerxy()
+            self._tip = tk.Toplevel(self._widget)
+            self._tip.wm_overrideredirect(True)
+            self._tip.wm_geometry(f"+{x + 12}+{y + 18}")
+            lbl = tk.Label(
+                self._tip, text=self._text,
+                bg="#2d2d2d", fg="#ffffff",
+                font=("Segoe UI", 8),
+                padx=6, pady=3,
+                relief="flat", bd=1,
+                highlightbackground="#555555", highlightthickness=1,
+            )
+            lbl.pack()
+        except tk.TclError:
+            self._tip = None
+
+    def _hide(self):
+        if self._tip:
+            try:
+                self._tip.destroy()
+            except Exception:
+                pass
+            self._tip = None
+
+
 class ScrollingLabel(tk.Canvas):
     """Clips and horizontally scrolls text that is wider than the widget."""
     _IDLE_MS = 1500
