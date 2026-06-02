@@ -1324,13 +1324,18 @@ class RYOSApp(_BaseWindow):
         _SKIP = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache"}
         def _worker():
             base = Path(base_dir)
+            base_resolved = base.resolve()
             paths: list = []
             try:
                 for p in base.rglob("*"):
                     if any(part in _SKIP for part in p.parts):
                         continue
                     if p.is_file():
-                        paths.append(p)
+                        try:
+                            rel_str = str(p.relative_to(base_resolved))
+                        except ValueError:
+                            rel_str = p.name
+                        paths.append((rel_str, p.name.lower(), p.stem.lower(), rel_str.lower()))
             except PermissionError:
                 pass
             ts = time.monotonic()
@@ -1346,33 +1351,26 @@ class RYOSApp(_BaseWindow):
 
     def _quick_run_compute_suggestions(self, base_dir: str, query: str) -> list:
         max_n = self._settings.get("quick_run_max_suggestions", 10)
-        paths = self._quick_run_get_index(base_dir)
-        if paths is None:
+        index = self._quick_run_get_index(base_dir)
+        if index is None:
             return []
         q = query.lower()
-        base = Path(base_dir).resolve()
         results = []
-        for p in paths:
-            name = p.name.lower()
-            stem = p.stem.lower()
-            try:
-                rel = str(p.relative_to(base))
-            except ValueError:
-                rel = p.name
-            rel_lower = rel.lower()
-            if stem == q:
+        for entry in index:
+            rel, name_lower, stem_lower, rel_lower = entry
+            if stem_lower == q:
                 tier = 0
-            elif stem.startswith(q):
+            elif stem_lower.startswith(q):
                 tier = 1
-            elif name.startswith(q):
+            elif name_lower.startswith(q):
                 tier = 2
-            elif name.find(q) != -1:
+            elif name_lower.find(q) != -1:
                 tier = 3
             elif rel_lower.find(q) != -1:
                 tier = 4
             else:
                 continue
-            results.append((tier, len(stem), rel, p))
+            results.append((tier, len(stem_lower), rel))
         results.sort(key=lambda x: (x[0], x[1], x[2]))
         return [r[2] for r in results[:max_n]]
 
