@@ -171,9 +171,9 @@ class RYOSApp(_BaseWindow):
         wm = tk.Frame(header, bg=C["header_bg"])
         wm.pack(side="left")
         header_btn_size = 6
-        tk.Label(wm, text="⚡", bg=C["header_bg"], fg="#FFD23F",
+        tk.Label(wm, text="⚡", bg=C["header_bg"], fg=C["bolt"],
                  font=("Segoe UI", 14, "bold")).pack(side="left")
-        tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg="#ffffff",
+        tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg=C["fg_on_dark"],
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         add_btn = _flat_button(header, "+ Script", C["btn_create_bg"], C["btn_create_hover"],
                                self._add_script, width=header_btn_size)
@@ -189,8 +189,8 @@ class RYOSApp(_BaseWindow):
         self._pipeline_btn.pack(side="right", padx=(0, 6))
         Tooltip(self._pipeline_btn, "Create a pipeline")
 
-        self._options_menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
-                                     activebackground=C["accent"], activeforeground="#ffffff",
+        self._options_menu = tk.Menu(self, tearoff=0, bg=C["menu_bg"], fg=C["fg_on_dark"],
+                                     activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                                      borderwidth=0, relief="flat")
         self._options_menu.add_command(label="☑  Select scripts",     command=self._toggle_select_mode)
         self._options_menu.add_separator()
@@ -206,37 +206,37 @@ class RYOSApp(_BaseWindow):
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",         command=self._delete_all)
 
-        options_btn = _flat_button(header, "⚙", "#3a3a3a", "#555",
+        options_btn = _flat_button(header, "⚙", C["btn_dark_bg"], C["btn_dark_hover"],
                                    self._show_options_menu, width=4)
         options_btn.pack(side="right", padx=8)
         self._options_btn = options_btn
 
         self._select_btn = None
 
-        self._select_bar = tk.Frame(self, bg="#fff7e6",
-                                    highlightbackground="#f3d99a", highlightthickness=1)
+        self._select_bar = tk.Frame(self, bg=C["warn_bg"],
+                                    highlightbackground=C["warn_border"], highlightthickness=1)
         self._select_bar_var = tk.StringVar(value="Tick the checkboxes next to scripts you want to delete.")
         tk.Label(self._select_bar, textvariable=self._select_bar_var,
-                 bg="#fff7e6", fg="#7a4a00", font=("Segoe UI", 9),
+                 bg=C["warn_bg"], fg=C["warn_fg"], font=("Segoe UI", 9),
                  padx=14, pady=5, anchor="w").pack(side="left", fill="x", expand=True)
         self._del_selected_btn = _flat_button(self._select_bar, "🗑 Delete Selected",
                                               "#5a2d2d", "#7a3d3d", self._delete_selected, width=15)
         self._del_selected_btn.pack(side="right", padx=10, pady=4)
         self._sel_all_btn = tk.Button(
             self._select_bar, text="Select All",
-            bg="#fff7e6", fg="#7a4a00",
-            activebackground="#f3d99a", activeforeground="#7a4a00",
+            bg=C["warn_bg"], fg=C["warn_fg"],
+            activebackground=C["warn_border"], activeforeground=C["warn_fg"],
             relief="flat", bd=0, padx=10, pady=5,
             font=("Segoe UI", 9, "bold"), cursor="hand2",
             command=self._toggle_select_all,
         )
-        self._sel_all_btn.bind("<Enter>", lambda e: self._sel_all_btn.config(bg="#f3d99a"))
-        self._sel_all_btn.bind("<Leave>", lambda e: self._sel_all_btn.config(bg="#fff7e6"))
+        self._sel_all_btn.bind("<Enter>", lambda e: self._sel_all_btn.config(bg=C["warn_border"]))
+        self._sel_all_btn.bind("<Leave>", lambda e: self._sel_all_btn.config(bg=C["warn_bg"]))
         self._sel_all_btn.pack(side="right", padx=4, pady=4)
 
         self.status_var = tk.StringVar(value="Ready.")
         self._status_bar = tk.Label(self, textvariable=self.status_var, anchor="w",
-                                    bg=C["status_bg"], fg="#555", font=("Segoe UI", 8),
+                                    bg=C["status_bg"], fg=C["btn_dark_hover"], font=("Segoe UI", 8),
                                     padx=10, pady=4)
         self._status_bar.pack(fill="x", side="bottom")
 
@@ -279,28 +279,28 @@ class RYOSApp(_BaseWindow):
         self._canvas = canvas
 
         self._out_expanded = False
-        self.out_panel = tk.Frame(self._paned, bg="#1e1e1e")
+        self.out_panel = tk.Frame(self._paned, bg=C["out_bg"])
 
-        out_header = tk.Frame(self.out_panel, bg="#2d2d2d", pady=4, padx=10)
+        out_header = tk.Frame(self.out_panel, bg=C["out_header"], pady=4, padx=10)
         out_header.pack(fill="x")
-        tk.Label(out_header, text="Output", bg="#2d2d2d", fg="#aaa",
+        tk.Label(out_header, text="Output", bg=C["out_header"], fg=C["fg_on_dark_2"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(side="left")
-        self._toggle_btn = tk.Button(out_header, text="▲  Show Output", bg="#2d2d2d", fg="#aaa",
-                                     activebackground="#3d3d3d", activeforeground="#fff",
+        self._toggle_btn = tk.Button(out_header, text="▲  Show Output", bg=C["out_header"], fg=C["fg_on_dark_2"],
+                                     activebackground="#3d3d3d", activeforeground=C["fg_on_dark"],
                                      relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                                      command=self._toggle_output)
         self._toggle_btn.pack(side="right")
-        tk.Button(out_header, text="🗑 Clear", bg="#2d2d2d", fg="#aaa",
-                  activebackground="#3d3d3d", activeforeground="#fff",
+        tk.Button(out_header, text="🗑 Clear", bg=C["out_header"], fg=C["fg_on_dark_2"],
+                  activebackground="#3d3d3d", activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._clear_log).pack(side="right", padx=4)
-        tk.Button(out_header, text="✕ Close All", bg="#2d2d2d", fg="#aaa",
-                  activebackground="#3d3d3d", activeforeground="#fff",
+        tk.Button(out_header, text="✕ Close All", bg=C["out_header"], fg=C["fg_on_dark_2"],
+                  activebackground="#3d3d3d", activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._close_all_tabs).pack(side="right", padx=4)
 
-        self._out_tab_bar = tk.Frame(self.out_panel, bg="#252525")
-        self._out_tab_body = tk.Frame(self.out_panel, bg="#1e1e1e")
+        self._out_tab_bar = tk.Frame(self.out_panel, bg=C["out_tabbar"])
+        self._out_tab_body = tk.Frame(self.out_panel, bg=C["out_bg"])
         self._init_all_tab()
 
         self._paned.add(self.out_panel, weight=0)
@@ -368,7 +368,7 @@ class RYOSApp(_BaseWindow):
 
         plus = tk.Button(
             self._tab_bar, text="+",
-            bg=C["bg"], fg="#2d3748",
+            bg=C["bg"], fg=C["tab_fg"],
             activebackground=C["card_hover"], activeforeground=C["accent"],
             relief="flat", bd=0, padx=10, pady=7,
             font=("Segoe UI", 10), cursor="hand2",
@@ -384,12 +384,12 @@ class RYOSApp(_BaseWindow):
         if is_active:
             btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
             bar_bg   = C["accent"]
-            hover_bg = "#eef2ff"
+            hover_bg = C["accent_wash"]
             border   = C["card_bg"]
         else:
-            btn_bg, fg, fw = "#e4e9f0", "#2d3748", "normal"
-            bar_bg   = "#e4e9f0"
-            hover_bg = "#d8dfe8"
+            btn_bg, fg, fw = C["tab_inactive_bg"], C["tab_fg"], "normal"
+            bar_bg   = C["tab_inactive_bg"]
+            hover_bg = C["tab_inactive_hover"]
             border   = C["border"]
 
         wrapper = tk.Frame(self._tab_bar, bg=border,
@@ -419,10 +419,10 @@ class RYOSApp(_BaseWindow):
     def _apply_tab_style(self, is_active, btn, wrapper, inner, indicator):
         if is_active:
             btn_bg, fg, fw = C["card_bg"], C["accent"], "bold"
-            bar_bg, hover_bg, border = C["accent"], "#eef2ff", C["card_bg"]
+            bar_bg, hover_bg, border = C["accent"], C["accent_wash"], C["card_bg"]
         else:
-            btn_bg, fg, fw = "#e4e9f0", "#2d3748", "normal"
-            bar_bg, hover_bg, border = "#e4e9f0", "#d8dfe8", C["border"]
+            btn_bg, fg, fw = C["tab_inactive_bg"], C["tab_fg"], "normal"
+            bar_bg, hover_bg, border = C["tab_inactive_bg"], C["tab_inactive_hover"], C["border"]
         wrapper.config(bg=border)
         inner.config(bg=btn_bg)
         btn.config(bg=btn_bg, fg=fg, font=("Segoe UI", 10, fw),
@@ -480,7 +480,7 @@ class RYOSApp(_BaseWindow):
         if prev != hover_idx:
             if prev is not None:
                 pname, pbtn = self._group_tab_btns[prev][0], self._group_tab_btns[prev][1]
-                pbtn.config(bg=C["card_bg"] if self._active_group == pname else "#e4e9f0")
+                pbtn.config(bg=C["card_bg"] if self._active_group == pname else C["tab_inactive_bg"])
             if hover_idx is not None and hover_idx != self._drag_state["src_idx"]:
                 self._group_tab_btns[hover_idx][1].config(bg="#4a4a6a")
             self._drag_state["hover_idx"] = hover_idx
@@ -588,8 +588,8 @@ class RYOSApp(_BaseWindow):
         self._refresh()
 
     def _tab_context_menu(self, event, group: str):
-        menu = tk.Menu(self, tearoff=0, bg="#2d2d2d", fg="#ffffff",
-                       activebackground=C["accent"], activeforeground="#ffffff",
+        menu = tk.Menu(self, tearoff=0, bg=C["menu_bg"], fg=C["fg_on_dark"],
+                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                        font=("Segoe UI", 10))
         menu.add_command(label="✏  Rename", command=lambda: self._rename_group(group))
         menu.add_command(label="📋  Clone Group", command=lambda: self._clone_group(group))
@@ -597,7 +597,7 @@ class RYOSApp(_BaseWindow):
         menu.add_command(label="📤  Export group", command=lambda: self._export_config(group_name=group))
         menu.add_separator()
         menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
-                         foreground="#ff8080", activeforeground="#ff8080")
+                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
         menu.tk_popup(event.x_root, event.y_root)
 
     def _refresh(self):
@@ -685,7 +685,7 @@ class RYOSApp(_BaseWindow):
 
                 _flat_button(bar_frame, "Run", C["accent"], C["accent2"],
                              lambda g=_gn: self._quick_run_submit(g), width=6).pack(side="left", pady=6)
-                _flat_button(bar_frame, "✕", "#3a3a3a", "#555",
+                _flat_button(bar_frame, "✕", C["btn_dark_bg"], C["btn_dark_hover"],
                              lambda g=_gn: self._hide_quick_run_bar(g), width=3).pack(side="left", padx=(4, 8), pady=6)
 
                 def _on_key_release(e, _g=_gn):
@@ -928,7 +928,7 @@ class RYOSApp(_BaseWindow):
         self._drag_ghost.attributes("-alpha", 0.85)
         self._drag_ghost.configure(bg=C["accent"])
         tk.Label(self._drag_ghost, text=f"  {card._name}  ",
-                 bg=C["accent"], fg="#ffffff",
+                 bg=C["accent"], fg=C["fg_on_dark"],
                  font=("Segoe UI", 10, "bold"), padx=6, pady=4).pack()
 
     def _update_drag_target(self, event):
@@ -1439,7 +1439,7 @@ class RYOSApp(_BaseWindow):
             win.transient(self)
             win.configure(bg=C["border"])
             lb = tk.Listbox(win, bg=C["card_bg"], fg=C["name_fg"],
-                            selectbackground=C["accent"], selectforeground="#fff",
+                            selectbackground=C["accent"], selectforeground=C["fg_on_dark"],
                             relief="flat", bd=0, font=("Consolas", 9),
                             highlightthickness=0, activestyle="none")
             lb.pack(fill="both", expand=True, padx=1, pady=1)
@@ -1527,7 +1527,7 @@ class RYOSApp(_BaseWindow):
                  font=("Segoe UI", 9), padx=14, pady=8).pack(anchor="w")
 
         lb = tk.Listbox(dlg, bg=C["card_bg"], fg=C["name_fg"], selectbackground=C["accent"],
-                        selectforeground="#fff", relief="flat", bd=0,
+                        selectforeground=C["fg_on_dark"], relief="flat", bd=0,
                         font=("Consolas", 9), width=60, height=min(len(candidates), 12))
         lb.pack(fill="both", expand=True, padx=14, pady=(0, 6))
         for rel in candidates:
@@ -1546,7 +1546,7 @@ class RYOSApp(_BaseWindow):
 
         btn_row = tk.Frame(dlg, bg=C["bg"])
         btn_row.pack(fill="x", padx=14, pady=(0, 12))
-        _flat_button(btn_row, "Cancel", "#3a3a3a", "#555", dlg.destroy, width=8).pack(side="right", padx=(4, 0))
+        _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"], dlg.destroy, width=8).pack(side="right", padx=(4, 0))
         _flat_button(btn_row, "Run", C["accent"], C["accent2"], _pick, width=8).pack(side="right")
 
         dlg.wait_window()
@@ -1741,14 +1741,14 @@ class RYOSApp(_BaseWindow):
     def _init_all_tab(self):
         text = scrolledtext.ScrolledText(
             self._out_tab_body, wrap="word", height=10, font=("Consolas", 10),
-            bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4",
+            bg=C["out_bg"], fg=C["out_stdout"], insertbackground=C["out_stdout"],
         )
-        text.tag_config("stderr", foreground="#ff6b6b")
-        text.tag_config("info",   foreground="#5aa9e6")
-        text.tag_config("ok",     foreground="#4ec97a")
-        btn = tk.Frame(self._out_tab_bar, bg="#2d2d2d", cursor="hand2")
+        text.tag_config("stderr", foreground=C["out_stderr"])
+        text.tag_config("info",   foreground=C["out_status"])
+        text.tag_config("ok",     foreground=C["out_success"])
+        btn = tk.Frame(self._out_tab_bar, bg=C["out_header"], cursor="hand2")
         btn.pack(side="left", padx=(1, 0), pady=(2, 0))
-        name_lbl = tk.Label(btn, text="All", bg="#2d2d2d", fg="#aaa",
+        name_lbl = tk.Label(btn, text="All", bg=C["out_header"], fg=C["fg_on_dark_2"],
                             font=("Segoe UI", 9, "bold"), cursor="hand2", padx=8, pady=3)
         name_lbl.pack(side="left")
         self._output_tabs["all"] = {"text": text, "btn": btn,
@@ -1770,18 +1770,18 @@ class RYOSApp(_BaseWindow):
         else:
             text = scrolledtext.ScrolledText(
                 self._out_tab_body, wrap="word", height=10, font=("Consolas", 10),
-                bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4",
+                bg=C["out_bg"], fg=C["out_stdout"], insertbackground=C["out_stdout"],
             )
-            text.tag_config("stderr", foreground="#ff6b6b")
-            text.tag_config("info",   foreground="#5aa9e6")
-            text.tag_config("ok",     foreground="#4ec97a")
+            text.tag_config("stderr", foreground=C["out_stderr"])
+            text.tag_config("info",   foreground=C["out_status"])
+            text.tag_config("ok",     foreground=C["out_success"])
 
-            btn = tk.Frame(self._out_tab_bar, bg="#2d2d2d", cursor="hand2")
+            btn = tk.Frame(self._out_tab_bar, bg=C["out_header"], cursor="hand2")
             btn.pack(side="left", padx=(1, 0), pady=(2, 0), before=all_btn)
-            name_lbl = tk.Label(btn, text=name, bg="#2d2d2d", fg="#aaa",
+            name_lbl = tk.Label(btn, text=name, bg=C["out_header"], fg=C["fg_on_dark_2"],
                                 font=("Segoe UI", 9), cursor="hand2", padx=8, pady=3)
             name_lbl.pack(side="left")
-            close_lbl = tk.Label(btn, text="×", bg="#2d2d2d", fg="#555",
+            close_lbl = tk.Label(btn, text="×", bg=C["out_header"], fg=C["btn_dark_hover"],
                                  font=("Segoe UI", 9), cursor="hand2", padx=4, pady=3)
             close_lbl.pack(side="left")
 
@@ -1815,16 +1815,16 @@ class RYOSApp(_BaseWindow):
         if self._active_tab_key and self._active_tab_key in self._output_tabs:
             old = self._output_tabs[self._active_tab_key]
             for w in [old["btn"], old["name_lbl"]] + ([old["close_lbl"]] if old["close_lbl"] else []):
-                w.config(bg="#2d2d2d")
-            old["name_lbl"].config(fg="#aaa")
+                w.config(bg=C["out_header"])
+            old["name_lbl"].config(fg=C["fg_on_dark_2"])
             if old["close_lbl"]:
-                old["close_lbl"].config(fg="#555")
+                old["close_lbl"].config(fg=C["btn_dark_hover"])
             old["text"].pack_forget()
         self._active_tab_key = key
         tab = self._output_tabs[key]
         for w in [tab["btn"], tab["name_lbl"]] + ([tab["close_lbl"]] if tab["close_lbl"] else []):
-            w.config(bg="#1e1e1e")
-        tab["name_lbl"].config(fg="#ffffff")
+            w.config(bg=C["out_bg"])
+        tab["name_lbl"].config(fg=C["fg_on_dark"])
         if tab["close_lbl"]:
             tab["close_lbl"].config(fg="#888")
         tab["text"].pack(fill="both", expand=True)
@@ -2062,13 +2062,13 @@ class RYOSApp(_BaseWindow):
         tk.Label(banner, text=f"🔔  Update available: {tag}  (you have v{__version__})",
                  bg="#1a3a5c", fg="#90cdf4",
                  font=("Segoe UI", 9)).pack(side="left")
-        tk.Button(banner, text="Download", bg="#2b6cb0", fg="#ffffff",
-                  activebackground="#2c5282", activeforeground="#ffffff",
+        tk.Button(banner, text="Download", bg="#2b6cb0", fg=C["fg_on_dark"],
+                  activebackground="#2c5282", activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, font=("Segoe UI", 9, "bold"),
                   padx=8, pady=1, cursor="hand2",
                   command=lambda: webbrowser.open(url)).pack(side="left", padx=(10, 0))
         tk.Button(banner, text="✕", bg="#1a3a5c", fg="#90cdf4",
-                  activebackground="#2a4a6c", activeforeground="#ffffff",
+                  activebackground="#2a4a6c", activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, font=("Segoe UI", 9),
                   cursor="hand2",
                   command=banner.destroy).pack(side="right")

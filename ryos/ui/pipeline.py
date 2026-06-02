@@ -51,7 +51,7 @@ class PipelineEditorDialog(tk.Toplevel):
             selectmode="single", font=("Segoe UI", 10),
             exportselection=False,
             bg="#f8f9fc", fg=C["name_fg"],
-            selectbackground=C["accent"], selectforeground="#ffffff",
+            selectbackground=C["accent"], selectforeground=C["fg_on_dark"],
             relief="flat", highlightthickness=1,
             highlightbackground=C["border"], activestyle="none",
         )
@@ -106,7 +106,7 @@ class PipelineEditorDialog(tk.Toplevel):
         )
         self._add_combo.pack(side="left", fill="x", expand=True)
         tk.Button(combo_row, text="Add", command=self._add_step,
-                  bg=C["accent"], fg="#ffffff", activebackground=C["accent2"],
+                  bg=C["accent"], fg=C["fg_on_dark"], activebackground=C["accent2"],
                   relief="flat", padx=10, pady=4, cursor="hand2",
                   font=("Segoe UI", 9, "bold")).pack(side="left", padx=(6, 0))
 
@@ -115,7 +115,7 @@ class PipelineEditorDialog(tk.Toplevel):
         br = tk.Frame(self, bg=C["card_bg"], padx=16, pady=12)
         br.pack(fill="x")
         tk.Button(br, text="Save", command=self._save,
-                  bg=C["accent"], fg="#ffffff", activebackground=C["accent2"],
+                  bg=C["accent"], fg=C["fg_on_dark"], activebackground=C["accent2"],
                   relief="flat", padx=16, pady=6, cursor="hand2",
                   font=("Segoe UI", 9, "bold")).pack(side="right")
         tk.Button(br, text="Cancel", command=self.destroy,

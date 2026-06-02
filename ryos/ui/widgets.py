@@ -2,6 +2,8 @@
 import tkinter as tk
 import tkinter.font as tkfont
 
+from .theme import C
+
 
 class Tooltip:
     """Delayed tooltip that appears near the pointer on hover."""
@@ -47,11 +49,11 @@ class Tooltip:
             self._tip.wm_geometry(f"+{x + 12}+{y + 18}")
             lbl = tk.Label(
                 self._tip, text=self._text,
-                bg="#2d2d2d", fg="#ffffff",
+                bg=C["tooltip_bg"], fg=C["fg_on_dark"],
                 font=("Segoe UI", 8),
                 padx=6, pady=3,
                 relief="flat", bd=1,
-                highlightbackground="#555555", highlightthickness=1,
+                highlightbackground=C["tooltip_border"], highlightthickness=1,
             )
             lbl.pack()
         except tk.TclError:

@@ -70,11 +70,11 @@ class ScriptCard(tk.Frame):
         badge_row = tk.Frame(text_area, bg=C["card_bg"])
         badge_row.pack(anchor="w", fill="x", pady=(0, 2))
         self._badge_row = badge_row
-        tk.Label(badge_row, text=tag_text, bg=tag_bg, fg="#ffffff",
+        tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
         self._running_lbl = None
         if is_running:
-            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
                      font=("Segoe UI", 7, "bold"), padx=5, pady=1)
             self._running_lbl.pack(side="left", padx=(4, 0))
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
@@ -95,10 +95,10 @@ class ScriptCard(tk.Frame):
             tk.Label(meta_row, text=f"Last run: {last_run}", bg=C["card_bg"],
                      fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(side="left")
             if last_run_status == "error":
-                tk.Label(meta_row, text="✕ Failed", bg="#c0392b", fg="#ffffff",
+                tk.Label(meta_row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
                          font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
             elif last_run_status == "ok":
-                tk.Label(meta_row, text="✓ OK", bg="#2ecc71", fg="#ffffff",
+                tk.Label(meta_row, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
                          font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
         self._params_combo = None
@@ -124,11 +124,11 @@ class ScriptCard(tk.Frame):
         _sep()
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run, tip="Run")
         _sep()
-        self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
-              "#5a1a1a" if is_running else "#4a4a4a",
+        self._stop_btn = _rbtn("⏹", C["btn_stop_active"] if is_running else C["btn_stop_idle"],
+              C["btn_stop_active_hover"] if is_running else C["btn_stop_idle_hover"],
               on_stop or (lambda: None),
-              fg="#ffffff" if is_running else "#666666",
-              active_fg="#ffffff" if is_running else "#888888",
+              fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_fg"],
+              active_fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_active_fg"],
               tip="Stop")
 
         for widget in (self, text_area):
@@ -139,24 +139,24 @@ class ScriptCard(tk.Frame):
 
     def set_running(self, is_running: bool, on_stop=None):
         if is_running:
-            self._stop_btn._bg  = "#8b0000"
-            self._stop_btn._hbg = "#5a1a1a"
+            self._stop_btn._bg  = C["btn_stop_active"]
+            self._stop_btn._hbg = C["btn_stop_active_hover"]
             self._stop_btn.config(
-                bg="#8b0000", activebackground="#5a1a1a",
-                fg="#ffffff", activeforeground="#ffffff",
+                bg=C["btn_stop_active"], activebackground=C["btn_stop_active_hover"],
+                fg=C["fg_on_dark"], activeforeground=C["fg_on_dark"],
                 command=on_stop or (lambda: None),
             )
             if not self._running_lbl:
                 self._running_lbl = tk.Label(
-                    self._badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                    self._badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
                 self._running_lbl.pack(side="left", padx=(4, 0))
         else:
-            self._stop_btn._bg  = "#3a3a3a"
-            self._stop_btn._hbg = "#4a4a4a"
+            self._stop_btn._bg  = C["btn_stop_idle"]
+            self._stop_btn._hbg = C["btn_stop_idle_hover"]
             self._stop_btn.config(
-                bg="#3a3a3a", activebackground="#4a4a4a",
-                fg="#666666", activeforeground="#888888",
+                bg=C["btn_stop_idle"], activebackground=C["btn_stop_idle_hover"],
+                fg=C["btn_stop_idle_fg"], activeforeground=C["btn_stop_idle_active_fg"],
                 command=lambda: None,
             )
             if self._running_lbl:
@@ -193,8 +193,8 @@ class ScriptCard(tk.Frame):
 
     def _card_context_menu(self, event):
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
-                       bg="#2d2d2d", fg="#ffffff",
-                       activebackground=C["accent"], activeforeground="#ffffff",
+                       bg=C["menu_bg"], fg=C["fg_on_dark"],
+                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                        font=("Segoe UI", 10))
         menu.add_command(label="⤒  Move to Top", command=self._on_move_top)
         menu.add_command(label="▲  Move Up",     command=self._on_move_up)
@@ -203,7 +203,7 @@ class ScriptCard(tk.Frame):
         menu.add_command(label="⧉  Clone",       command=self._clone)
         menu.add_separator()
         menu.add_command(label="🗑  Delete",      command=self._delete_card,
-                         foreground="#ff8080", activeforeground="#ff8080")
+                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
         menu.tk_popup(event.x_root, event.y_root)
 
     def _modify(self):
@@ -260,8 +260,8 @@ class ScriptCard(tk.Frame):
 
 class PipelineCard(tk.Frame):
     """Card displaying a pipeline and its steps summary."""
-    _PIPE_ACCENT  = "#5c4bbd"
-    _PIPE_ACCENT2 = "#7060d0"
+    _PIPE_ACCENT  = C["pipe_accent"]
+    _PIPE_ACCENT2 = C["pipe_accent2"]
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
                  group_name: str, on_run, on_edit, on_refresh, on_stop=None, *, is_running: bool = False):
@@ -313,11 +313,11 @@ class PipelineCard(tk.Frame):
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
               lambda: on_run(pipeline_id, name), tip="Run")
         _sep()
-        self._stop_btn = _rbtn("⏹", "#8b0000" if is_running else "#3a3a3a",
-              "#5a1a1a" if is_running else "#4a4a4a",
+        self._stop_btn = _rbtn("⏹", C["btn_stop_active"] if is_running else C["btn_stop_idle"],
+              C["btn_stop_active_hover"] if is_running else C["btn_stop_idle_hover"],
               on_stop or (lambda: None),
-              fg="#ffffff" if is_running else "#666666",
-              active_fg="#ffffff" if is_running else "#888888",
+              fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_fg"],
+              active_fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_active_fg"],
               tip="Stop")
 
         content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
@@ -327,11 +327,11 @@ class PipelineCard(tk.Frame):
         badge_row = tk.Frame(content, bg=C["card_bg"])
         badge_row.pack(fill="x")
         self._badge_row = badge_row
-        tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg="#ffffff",
+        tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
         self._running_lbl = None
         if is_running:
-            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
                      font=("Segoe UI", 7, "bold"), padx=5, pady=1)
             self._running_lbl.pack(side="left", padx=(4, 0))
 
@@ -369,24 +369,24 @@ class PipelineCard(tk.Frame):
 
     def set_running(self, is_running: bool, on_stop=None):
         if is_running:
-            self._stop_btn._bg  = "#8b0000"
-            self._stop_btn._hbg = "#5a1a1a"
+            self._stop_btn._bg  = C["btn_stop_active"]
+            self._stop_btn._hbg = C["btn_stop_active_hover"]
             self._stop_btn.config(
-                bg="#8b0000", activebackground="#5a1a1a",
-                fg="#ffffff", activeforeground="#ffffff",
+                bg=C["btn_stop_active"], activebackground=C["btn_stop_active_hover"],
+                fg=C["fg_on_dark"], activeforeground=C["fg_on_dark"],
                 command=on_stop or (lambda: None),
             )
             if not self._running_lbl:
                 self._running_lbl = tk.Label(
-                    self._badge_row, text="▶ RUNNING", bg="#27ae60", fg="#ffffff",
+                    self._badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
                 self._running_lbl.pack(side="left", padx=(4, 0))
         else:
-            self._stop_btn._bg  = "#3a3a3a"
-            self._stop_btn._hbg = "#4a4a4a"
+            self._stop_btn._bg  = C["btn_stop_idle"]
+            self._stop_btn._hbg = C["btn_stop_idle_hover"]
             self._stop_btn.config(
-                bg="#3a3a3a", activebackground="#4a4a4a",
-                fg="#666666", activeforeground="#888888",
+                bg=C["btn_stop_idle"], activebackground=C["btn_stop_idle_hover"],
+                fg=C["btn_stop_idle_fg"], activeforeground=C["btn_stop_idle_active_fg"],
                 command=lambda: None,
             )
             if self._running_lbl:
@@ -467,15 +467,15 @@ class PipelineCard(tk.Frame):
 
     def _context_menu(self, event):
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
-                       bg="#2d2d2d", fg="#ffffff",
-                       activebackground=C["accent"], activeforeground="#ffffff",
+                       bg=C["menu_bg"], fg=C["fg_on_dark"],
+                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                        font=("Segoe UI", 10))
         menu.add_command(label="⚙  Edit",
                          command=lambda: self.on_edit(self.pipeline_id, self._name))
         menu.add_command(label="⧉  Clone", command=self._clone)
         menu.add_separator()
         menu.add_command(label="🗑  Delete", command=self._delete,
-                         foreground="#ff8080", activeforeground="#ff8080")
+                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
         menu.tk_popup(event.x_root, event.y_root)
 
     def _clone(self):

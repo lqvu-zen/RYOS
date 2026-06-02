@@ -186,8 +186,8 @@ class ScriptDialog(tk.Toplevel):
 
         self._preset_listbox = tk.Listbox(
             preset_frame, height=4, selectmode=tk.SINGLE,
-            bg="#1e1e1e", fg="#cccccc", selectbackground=C["accent"],
-            selectforeground="#ffffff", relief="flat", highlightthickness=1,
+            bg=C["out_bg"], fg="#cccccc", selectbackground=C["accent"],
+            selectforeground=C["fg_on_dark"], relief="flat", highlightthickness=1,
             highlightbackground=C["border"], font=("Segoe UI", 9),
         )
         _preset_scroll = ttk.Scrollbar(preset_frame, orient="vertical",
@@ -301,14 +301,14 @@ class ScriptDialog(tk.Toplevel):
             return
         self._preset_listbox.selection_set(idx)
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
-                       bg="#2d2d2d", fg="#ffffff",
-                       activebackground=C["accent"], activeforeground="#ffffff",
+                       bg=C["menu_bg"], fg=C["fg_on_dark"],
+                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                        font=("Segoe UI", 10))
         menu.add_command(label="← Use",  command=self._preset_use)
         menu.add_command(label="Edit",   command=self._preset_edit)
         menu.add_separator()
         menu.add_command(label="Remove", command=self._preset_remove,
-                         foreground="#ff8080", activeforeground="#ff8080")
+                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
         menu.tk_popup(event.x_root, event.y_root)
 
     def _preset_edit(self):
@@ -756,7 +756,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         btn_row = tk.Frame(self, bg=C["bg"])
         btn_row.pack(fill="x", padx=16, pady=12)
-        _flat_button(btn_row, "Cancel", "#3a3a3a", "#555",
+        _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"],
                      self.destroy, width=10).pack(side="right", padx=(6, 0))
         _flat_button(btn_row, "Save", C["accent"], C["accent2"],
                      self._save, width=10).pack(side="right")
