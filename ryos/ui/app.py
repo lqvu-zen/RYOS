@@ -1741,11 +1741,11 @@ class RYOSApp(_BaseWindow):
     def _init_all_tab(self):
         text = scrolledtext.ScrolledText(
             self._out_tab_body, wrap="word", height=10, font=("Consolas", 10),
-            bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
+            bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4",
         )
-        text.tag_config("stderr", foreground="#ff8080")
-        text.tag_config("info",   foreground="#7ec0ee")
-        text.tag_config("ok",     foreground="#90ee90")
+        text.tag_config("stderr", foreground="#ff6b6b")
+        text.tag_config("info",   foreground="#5aa9e6")
+        text.tag_config("ok",     foreground="#4ec97a")
         btn = tk.Frame(self._out_tab_bar, bg="#2d2d2d", cursor="hand2")
         btn.pack(side="left", padx=(1, 0), pady=(2, 0))
         name_lbl = tk.Label(btn, text="All", bg="#2d2d2d", fg="#aaa",
@@ -1770,11 +1770,11 @@ class RYOSApp(_BaseWindow):
         else:
             text = scrolledtext.ScrolledText(
                 self._out_tab_body, wrap="word", height=10, font=("Consolas", 10),
-                bg="#1e1e1e", fg="#dcdcdc", insertbackground="#dcdcdc",
+                bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4",
             )
-            text.tag_config("stderr", foreground="#ff8080")
-            text.tag_config("info",   foreground="#7ec0ee")
-            text.tag_config("ok",     foreground="#90ee90")
+            text.tag_config("stderr", foreground="#ff6b6b")
+            text.tag_config("info",   foreground="#5aa9e6")
+            text.tag_config("ok",     foreground="#4ec97a")
 
             btn = tk.Frame(self._out_tab_bar, bg="#2d2d2d", cursor="hand2")
             btn.pack(side="left", padx=(1, 0), pady=(2, 0), before=all_btn)
