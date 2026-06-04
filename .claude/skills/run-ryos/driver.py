@@ -214,6 +214,52 @@ def _close_all_verify(app: RYOSApp):
     app.after(900, _do)
 
 
+def _debug_run_py(app: RYOSApp):
+    """Find a .py card, print the command that would be built, run it, screenshot."""
+    import sys as _sys
+    from ryos.interpreter import detect_interpreter, build_command, _find_python, resolve_interpreter
+
+    def _do():
+        print(f"debug-run-py: sys.executable = {_sys.executable}")
+        print(f"debug-run-py: frozen         = {getattr(_sys, 'frozen', False)}")
+        print(f"debug-run-py: _find_python() = {_find_python()}")
+        _shot(app, "01_launch")
+
+        py_cards = [c for c in app._cards if c._name.lower().endswith(".py")
+                    or any(str(app.db.get(c.script_id)[2]).endswith(".py") for _ in [1])]
+        # simpler: find any card whose stored path ends in .py
+        py_cards = []
+        for c in app._cards:
+            rec = app.db.get(c.script_id)
+            if rec and str(rec[2]).endswith(".py"):
+                py_cards.append((c, rec))
+
+        if not py_cards:
+            print("  no .py cards found")
+            app.after(300, app.destroy)
+            return
+
+        card, rec = py_cards[0]
+        _, name, path, params, interp, _grp = rec
+        final_interp = resolve_interpreter(path, interp)
+        cmd = build_command(path, params, final_interp)
+        print(f"  card name : {name}")
+        print(f"  path      : {path}")
+        print(f"  stored interp : {interp!r}")
+        print(f"  resolved interp: {final_interp!r}")
+        print(f"  full cmd  : {cmd}")
+        print(f"  running...")
+        card._run()
+        app.after(3000, _after_run)
+
+    def _after_run():
+        print("debug-run-py: post-run screenshot")
+        _shot(app, "02_after_run")
+        app.after(500, app.destroy)
+
+    app.after(1000, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -233,8 +279,10 @@ def main():
         _adhoc_run(app)
     elif scenario == "close-all-verify":
         _close_all_verify(app)
+    elif scenario == "debug-run-py":
+        _debug_run_py(app)
     else:
-        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify")
+        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py")
         app.after(0, app.destroy)
 
     app.mainloop()

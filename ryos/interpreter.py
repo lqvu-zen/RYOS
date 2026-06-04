@@ -1,14 +1,30 @@
 """Map script file extensions to interpreters and build subprocess command lists."""
 import os
 import shlex
+import shutil
 import sys
 from pathlib import Path
+
+
+def _find_python() -> str:
+    """Return a usable Python executable path.
+
+    When frozen (cx_Freeze), sys.executable is RYOS.exe — using it to run
+    .py scripts would relaunch the app.  Fall back to PATH lookup instead.
+    """
+    if getattr(sys, "frozen", False):
+        for candidate in ("python", "python3", "py"):
+            found = shutil.which(candidate)
+            if found:
+                return found
+        return "python"
+    return sys.executable
 
 
 def detect_interpreter(path: str) -> str:
     ext = Path(path).suffix.lower()
     mapping = {
-        ".py":  sys.executable,
+        ".py":  _find_python(),
         ".js":  "node",
         ".ts":  "ts-node",
         ".rb":  "ruby",
@@ -41,6 +57,20 @@ def _script_tag(path: str) -> tuple[str, str]:
     }
     label = ext.lstrip(".").upper() if ext else "Script"
     return tags.get(ext, (label, "#555555"))
+
+
+def resolve_interpreter(path: str, stored: str) -> str:
+    """Return the effective interpreter for a script.
+
+    Uses *stored* when non-empty, falls back to auto-detection otherwise.
+    Also falls back to auto-detection when *stored* resolves to RYOS.exe
+    itself (a database entry left over from running under a compiled build
+    where sys.executable was RYOS.exe).
+    """
+    interp = stored.strip() if stored.strip() else detect_interpreter(path)
+    if interp and Path(interp).stem.lower() == "ryos":
+        interp = detect_interpreter(path)
+    return interp
 
 
 def build_command(path: str, params: str, interpreter: str):

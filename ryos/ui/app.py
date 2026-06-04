@@ -21,7 +21,7 @@ except ImportError:
 
 from .. import __version__
 from ..db import ScriptDB
-from ..interpreter import build_command, detect_interpreter
+from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
@@ -1310,7 +1310,7 @@ class RYOSApp(_BaseWindow):
             self.output_queue.put(("stderr", job.job_id, f"[ERROR] File not found: {path}\n"))
             self.output_queue.put(("done", job.job_id, sid, "error", ""))
             return
-        final_interp = interp if interp.strip() else detect_interpreter(path)
+        final_interp = resolve_interpreter(path, interp)
         try:
             cmd = build_command(path, params, final_interp)
         except ValueError as e:
@@ -1437,7 +1437,7 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("File Not Found", f"File does not exist:\n{path}")
             return
 
-        final_interp = interpreter if interpreter.strip() else detect_interpreter(path)
+        final_interp = resolve_interpreter(path, interpreter)
         try:
             cmd = build_command(path, params, final_interp)
         except ValueError as e:
