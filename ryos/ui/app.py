@@ -35,6 +35,33 @@ _log = get_logger("app")
 
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
+MAX_PARALLEL_JOBS = 10
+
+
+class _Job:
+    """One running job (script or pipeline)."""
+
+    def __init__(self, job_id: int, kind: str, script_id, pipeline_id, name: str,
+                 tab_key: str, group: str, pipeline_name: str = "",
+                 pipeline_queue=None, pipeline_total: int = 0):
+        self.job_id = job_id
+        self.kind = kind
+        self.script_id = script_id
+        self.pipeline_id = pipeline_id
+        self.name = name
+        self.tab_key = tab_key
+        self.group = group
+        self.start_time: datetime = datetime.now()
+        self.current_process = None
+        self.stopped: bool = False
+        self.pipeline_name = pipeline_name
+        self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
+        self.pipeline_step_idx: int = 0
+        self.pipeline_total: int = pipeline_total
+        self.current_sid: int | None = None
+        self.name_var: tk.StringVar | None = None
+        self.running_row: tk.Frame | None = None
+
 
 class RYOSApp(_BaseWindow):
     def __init__(self):
@@ -64,17 +91,12 @@ class RYOSApp(_BaseWindow):
         sw = self.winfo_screenwidth()
         sh = self.winfo_screenheight()
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-        self.current_process = None
         self.output_queue: queue.Queue = queue.Queue()
+        self._jobs: dict[int, _Job] = {}
+        self._next_job_id: int = 0
         self._cards: list[ScriptCard] = []
         self._pipeline_cards: list[PipelineCard] = []
         self._select_mode = False
-        self._pipeline_queue: list = []
-        self._pipeline_step_idx = 0
-        self._pipeline_total = 0
-        self._running_script_id: int | None = None
-        self._running_pipeline_id: int | None = None
-        self._run_start_time: datetime | None = None
         self._drag_card: ScriptCard | None = None
         self._drag_start_x = self._drag_start_y = 0
         self._drag_ghost: tk.Toplevel | None = None
@@ -101,11 +123,7 @@ class RYOSApp(_BaseWindow):
             if self._settings["remember_window_geometry"] and self._settings.get("window_geometry"):
                 self.geometry(self._settings["window_geometry"])
 
-        self._running_section_frame: tk.Frame | None = None
-        self._running_name_var: tk.StringVar | None = None
-        self._running_stop_btn: tk.Button | None = None
         self._running_slots: dict = {}
-        self._running_label_text: str = ""
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
@@ -311,65 +329,102 @@ class RYOSApp(_BaseWindow):
 
         self._paned.add(self.out_panel, weight=0)
 
-    def _populate_running_card(self, content: tk.Frame, label_text: str):
-        card = tk.Frame(content, bg=C["card_bg"],
-                        highlightbackground=C["border"], highlightthickness=1)
-        card.pack(fill="x", pady=5, ipady=2)
-        tk.Frame(card, bg=C["running"], width=5).pack(side="left", fill="y")
-        self._running_name_var = tk.StringVar(value=label_text)
-        tk.Label(card, textvariable=self._running_name_var,
+    def _new_job(self, kind: str, script_id, pipeline_id, name: str, group: str,
+                 pipeline_name: str = "", pipeline_queue=None, pipeline_total: int = 0) -> "_Job":
+        """Allocate a new job, register it, create its output tab, return it."""
+        self._next_job_id += 1
+        job_id = self._next_job_id
+        tab_key = f"job:{job_id}"
+        tab_name = pipeline_name if pipeline_name else name
+        job = _Job(job_id, kind, script_id, pipeline_id, name, tab_key, group,
+                   pipeline_name=pipeline_name,
+                   pipeline_queue=pipeline_queue if pipeline_queue is not None else [],
+                   pipeline_total=pipeline_total)
+        self._jobs[job_id] = job
+        self._get_or_create_tab(tab_key, tab_name)
+        return job
+
+    def _finish_job(self, job: "_Job"):
+        """Remove job from registry, tear down its running row, update card states."""
+        self._jobs.pop(job.job_id, None)
+        if job.running_row is not None:
+            try:
+                if job.running_row.winfo_exists():
+                    job.running_row.destroy()
+            except tk.TclError:
+                pass
+        # If no more jobs in this group, show placeholder
+        group_jobs = self._running_jobs_in_group(job.group)
+        content = self._running_slots.get(job.group)
+        if not group_jobs and content is not None:
+            try:
+                if content.winfo_exists() and not content.winfo_children():
+                    tk.Label(content, text="No script is currently running.",
+                             bg=C["bg"], fg=C["path_fg"],
+                             font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            except tk.TclError:
+                pass
+        # Update card running state for just-finished job
+        running_sids = {j.script_id for j in self._jobs.values() if j.script_id is not None}
+        running_pids = {j.pipeline_id for j in self._jobs.values() if j.pipeline_id is not None}
+        if job.kind == "script":
+            for c in self._cards:
+                if c.script_id == job.script_id:
+                    c.set_running(job.script_id in running_sids)
+        elif job.kind == "pipeline":
+            if job.current_sid is not None:
+                for c in self._cards:
+                    if c.script_id == job.current_sid:
+                        c.set_running(job.current_sid in running_sids)
+            for pc in self._pipeline_cards:
+                if pc.pipeline_id == job.pipeline_id:
+                    pc.set_running(job.pipeline_id in running_pids)
+
+    def _add_running_row(self, content: tk.Frame, job: "_Job"):
+        """Create a running-job row inside the Running section and store refs on job."""
+        # Remove placeholder label if present
+        for w in content.winfo_children():
+            if isinstance(w, tk.Label):
+                try:
+                    w.destroy()
+                except tk.TclError:
+                    pass
+        row = tk.Frame(content, bg=C["card_bg"],
+                       highlightbackground=C["border"], highlightthickness=1)
+        row.pack(fill="x", pady=5, ipady=2)
+        tk.Frame(row, bg=C["running"], width=5).pack(side="left", fill="y")
+        name_var = tk.StringVar(value=job.name)
+        tk.Label(row, textvariable=name_var,
                  bg=C["card_bg"], fg=C["name_fg"],
                  font=("Segoe UI", 9), anchor="w",
                  padx=8, pady=6).pack(side="left", fill="x", expand=True)
-        self._running_stop_btn = tk.Button(
-            card, text="⏹ Stop",
+        stop_btn = tk.Button(
+            row, text="⏹ Stop",
             bg=C["btn_stop_active"], fg=C["fg_on_dark"],
             activebackground=C["btn_stop_active_hover"], activeforeground=C["fg_on_dark"],
             relief="flat", bd=0, padx=10, pady=5,
             font=("Segoe UI", 9, "bold"), cursor="hand2",
-            command=self._stop_running,
+            command=lambda j=job: self._stop_job(j),
         )
-        self._running_stop_btn.pack(side="right", padx=6, pady=4)
+        stop_btn.pack(side="right", padx=6, pady=4)
+        job.running_row = row
+        job.name_var = name_var
 
-    def _find_running_group(self) -> str:
-        if self._running_script_id is not None:
-            rec = self.db.get(self._running_script_id)
-            if rec:
-                return rec[5] or ""
-        elif self._running_pipeline_id is not None:
-            for gname in self._running_slots:
-                if any(p_id == self._running_pipeline_id
-                       for p_id, _ in self.db.list_pipelines(gname)):
-                    return gname
-        return self._active_group or ""
+    def _stop_job(self, job: "_Job"):
+        """Stop one specific job."""
+        job.stopped = True
+        job.pipeline_queue.clear()
+        if job.current_process is not None and job.current_process.poll() is None:
+            try:
+                job.current_process.terminate()
+            except Exception:
+                pass
+            self._append_output("\n[STOPPED by user]\n", tag="stderr", tab_key=job.tab_key)
+        self.status_var.set("Stopped.")
+        self._finish_job(job)
 
-    def _show_running_section(self, label_text: str):
-        self._running_label_text = label_text
-        group = self._find_running_group()
-        content = self._running_slots.get(group)
-        if content is None or not content.winfo_exists():
-            return
-        for w in content.winfo_children():
-            w.destroy()
-        self._running_section_frame = content
-        self._populate_running_card(content, label_text)
-
-    def _hide_running_section(self):
-        content = self._running_section_frame
-        if content and content.winfo_exists():
-            for w in content.winfo_children():
-                w.destroy()
-            tk.Label(content, text="No script is currently running.",
-                     bg=C["bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
-        self._running_section_frame = None
-        self._running_name_var = None
-        self._running_stop_btn = None
-
-    def _refresh_running_display(self):
-        if (self._running_script_id is not None or self._running_pipeline_id is not None) \
-                and self._running_label_text:
-            self._show_running_section(self._running_label_text)
+    def _running_jobs_in_group(self, group: str) -> list:
+        return [j for j in self._jobs.values() if j.group == group]
 
     def _make_group_header(self, name: str):
         hdr = tk.Frame(self.cards_frame, bg=C["bg"])
@@ -681,7 +736,6 @@ class RYOSApp(_BaseWindow):
         self._quick_run_buttons.clear()
         self._quick_run_bars.clear()
         self._running_slots = {}
-        self._running_section_frame = None
         for w in self.cards_frame.winfo_children():
             w.destroy()
         self._cards = []
@@ -721,8 +775,6 @@ class RYOSApp(_BaseWindow):
                                       width=4)
                 qr_btn.pack(side="right", padx=(0, 6))
                 Tooltip(qr_btn, "Toggle quick-run bar")
-                if self._running_script_id is not None or self._running_pipeline_id is not None:
-                    qr_btn.config(state="disabled")
                 self._quick_run_buttons[gname] = qr_btn
 
                 bar_frame = tk.Frame(self.cards_frame, bg=C["bg"],
@@ -858,15 +910,10 @@ class RYOSApp(_BaseWindow):
                 self.cards_frame, gname, "running", "Running"
             )
             self._running_slots[gname] = run_content
-            running_here = (
-                (self._running_pipeline_id is not None and
-                 any(p_id == self._running_pipeline_id for p_id, _ in self.db.list_pipelines(gname))) or
-                (self._running_script_id is not None and
-                 any(rec[0] == self._running_script_id for rec in scripts))
-            )
-            if running_here:
-                self._running_section_frame = run_content
-                self._populate_running_card(run_content, self._running_label_text or "")
+            jobs_here = self._running_jobs_in_group(gname)
+            if jobs_here:
+                for job in jobs_here:
+                    self._add_running_row(run_content, job)
             else:
                 tk.Label(run_content, text="No script is currently running.",
                          bg=C["bg"], fg=C["path_fg"],
@@ -884,7 +931,7 @@ class RYOSApp(_BaseWindow):
                         on_run=self._run_pipeline,
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
-                        is_running=(p_id == self._running_pipeline_id),
+                        is_running=any(j.pipeline_id == p_id for j in self._jobs.values()),
                     )
                     pc.pack(fill="x", pady=5, ipady=2)
                     self._bind_pipeline_drag(pc)
@@ -908,7 +955,7 @@ class RYOSApp(_BaseWindow):
                         on_move_up      = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down    = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top     = make_top(sid)           if up_id   else lambda: None,
-                        is_running      = (sid == self._running_script_id),
+                        is_running      = any(j.script_id == sid for j in self._jobs.values()),
                         group_base_dir  = group_base_dir,
                     )
                     card.pack(fill="x", pady=5, ipady=2)
@@ -947,8 +994,6 @@ class RYOSApp(_BaseWindow):
             scripts = [s for s in self.db.list_all()
                        if (s[8] or "") == self._active_group]
             render_group_sections(self._active_group, scripts)
-
-        self._refresh_running_display()
 
     def _add_script(self):
         groups = self.db.list_groups()
@@ -1177,9 +1222,10 @@ class RYOSApp(_BaseWindow):
                              self._active_group or "", self._refresh_cards)
 
     def _run_pipeline(self, pipeline_id: int, pipeline_name: str):
-        if self.current_process and self.current_process.poll() is None:
-            messagebox.showinfo("Already Running",
-                                "A script is already running. Stop it first.",
+        if len(self._jobs) >= MAX_PARALLEL_JOBS:
+            messagebox.showinfo("Too many jobs",
+                                f"Maximum of {MAX_PARALLEL_JOBS} parallel jobs reached.\n"
+                                "Stop a running job before launching another.",
                                 parent=self)
             return
         steps = self.db.list_pipeline_steps(pipeline_id)
@@ -1188,65 +1234,78 @@ class RYOSApp(_BaseWindow):
                                 "This pipeline has no steps.\nClick ⚙ to add scripts.",
                                 parent=self)
             return
-        self._pipeline_queue = list(steps)
-        self._pipeline_step_idx = 0
-        self._pipeline_total = len(steps)
-        self._running_pipeline_id = pipeline_id
-        self._running_pipeline_name = pipeline_name
-        self._running_script_id = None
-        self._run_start_time = datetime.now()
+        # Resolve group for this pipeline
+        group = self._active_group or ""
+        for gname in self._running_slots:
+            if any(p_id == pipeline_id for p_id, _ in self.db.list_pipelines(gname)):
+                group = gname
+                break
+        job = self._new_job(
+            "pipeline", script_id=None, pipeline_id=pipeline_id,
+            name=f"⚡ {pipeline_name}", group=group,
+            pipeline_name=pipeline_name,
+            pipeline_queue=list(steps),
+            pipeline_total=len(steps),
+        )
+        job.start_time = datetime.now()
         for _pc in self._pipeline_cards:
-            _pc.set_running(_pc.pipeline_id == pipeline_id)
-        for _c in self._cards:
-            _c.set_running(False)
-        step_name = steps[0][2] if steps else ""
-        _lbl = f"⚡ {pipeline_name}  —  Step 1/{self._pipeline_total}: {step_name}"
-        self._running_label_text = _lbl
-        self._show_running_section(_lbl)
-        self._get_or_create_tab(f"pipeline:{pipeline_id}", f"⚡ {pipeline_name}")
+            if _pc.pipeline_id == pipeline_id:
+                _pc.set_running(True)
+        content = self._running_slots.get(group)
+        if content and content.winfo_exists():
+            self._add_running_row(content, job)
         self._append_output(
             f"\n{'━' * 60}\n"
-            f"⚡  {pipeline_name}  ·  {self._pipeline_total} step"
-            f"{'s' if self._pipeline_total != 1 else ''}\n"
+            f"⚡  {pipeline_name}  ·  {job.pipeline_total} step"
+            f"{'s' if job.pipeline_total != 1 else ''}\n"
             f"{'━' * 60}\n\n",
             tag="info",
+            tab_key=job.tab_key,
         )
-        self._run_next_pipeline_step()
+        self._run_next_pipeline_step(job)
 
-    def _run_next_pipeline_step(self):
-        if not self._pipeline_queue:
+    def _run_next_pipeline_step(self, job: "_Job"):
+        if job.stopped or not job.pipeline_queue:
             return
-        step_id, sid, name, path, params, interp, params_override = self._pipeline_queue.pop(0)
+        step_id, sid, name, path, params, interp, params_override = job.pipeline_queue.pop(0)
         if params_override is not None:
             params = params_override
-        self._pipeline_step_idx += 1
-        n, total = self._pipeline_step_idx, self._pipeline_total
+        job.pipeline_step_idx += 1
+        n, total = job.pipeline_step_idx, job.pipeline_total
         self._append_output(
             f"{'─' * 40}\nStep {n}/{total}:  {name}\n{'─' * 40}\n",
             tag="info",
+            tab_key=job.tab_key,
         )
         self.status_var.set(f"Pipeline step {n}/{total}: {name}")
-        _lbl = f"⚡ {getattr(self, '_running_pipeline_name', 'Pipeline')}  —  Step {n}/{total}: {name}"
-        self._running_label_text = _lbl
-        if self._running_name_var:
-            self._running_name_var.set(_lbl)
+        _lbl = f"⚡ {job.pipeline_name}  —  Step {n}/{total}: {name}"
+        job.name = _lbl
+        if job.name_var is not None:
+            job.name_var.set(_lbl)
         if not Path(path).exists():
-            self.output_queue.put(("stderr", f"[ERROR] File not found: {path}\n"))
-            self.output_queue.put(("done", sid, "error", ""))
+            self.output_queue.put(("stderr", job.job_id, f"[ERROR] File not found: {path}\n"))
+            self.output_queue.put(("done", job.job_id, sid, "error", ""))
             return
         final_interp = interp if interp.strip() else detect_interpreter(path)
         try:
             cmd = build_command(path, params, final_interp)
         except ValueError as e:
-            self.output_queue.put(("stderr", f"[ERROR] Parameter error: {e}\n"))
-            self.output_queue.put(("done", sid, "error", ""))
+            self.output_queue.put(("stderr", job.job_id, f"[ERROR] Parameter error: {e}\n"))
+            self.output_queue.put(("done", job.job_id, sid, "error", ""))
             return
         self.db.mark_run(sid)
-        self._running_script_id = sid
+        # Clear previous step's card; light the new one
+        running_sids = {j.script_id for j in self._jobs.values() if j.script_id is not None}
+        if job.current_sid is not None and job.current_sid != sid:
+            for _c in self._cards:
+                if _c.script_id == job.current_sid:
+                    _c.set_running(job.current_sid in running_sids)
+        job.current_sid = sid
         for _c in self._cards:
-            _c.set_running(_c.script_id == sid)
+            if _c.script_id == sid:
+                _c.set_running(True)
         threading.Thread(
-            target=self._run_subprocess, args=(cmd, name, sid), daemon=True,
+            target=self._run_subprocess, args=(job, cmd, name, sid), daemon=True,
         ).start()
 
     def _toggle_select_mode(self):
@@ -1343,9 +1402,10 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Import Failed", str(e))
 
     def _run_script(self, script_id, name, path, params, interpreter):
-        if self.current_process and self.current_process.poll() is None:
-            messagebox.showinfo("Already Running",
-                                "A script is already running. Wait for it to finish or close its output window.")
+        if len(self._jobs) >= MAX_PARALLEL_JOBS:
+            messagebox.showinfo("Too many jobs",
+                                f"Maximum of {MAX_PARALLEL_JOBS} parallel jobs reached.\n"
+                                "Stop a running job before launching another.")
             return
 
         if not Path(path).exists():
@@ -1359,33 +1419,32 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Parameter Error", f"Could not parse parameters:\n{e}")
             return
 
+        rec = self.db.get(script_id)
+        group = (rec[5] or "") if rec else (self._active_group or "")
+        job = self._new_job("script", script_id=script_id, pipeline_id=None,
+                            name=name, group=group)
+        job.start_time = datetime.now()
+
         _log.info("Run: %s | cmd: %s", name, " ".join(cmd))
-        self._get_or_create_tab(f"script:{script_id}", name)
         self._append_output(
             f"\n{'━'*60}\n"
             f"  ▶  {name}\n"
             f"  {datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}    {' '.join(cmd)}\n"
             f"{'━'*60}\n\n",
             tag="info",
+            tab_key=job.tab_key,
         )
         self.status_var.set(f"Running: {name}")
         self.db.mark_run(script_id)
-        self._running_script_id = script_id
-        self._running_script_name = name
-        self._running_pipeline_id = None
-        self._run_start_time = datetime.now()
         for _c in self._cards:
-            _c.set_running(_c.script_id == script_id)
-        for _pc in self._pipeline_cards:
-            _pc.set_running(False)
-        self._running_label_text = name
-        self._show_running_section(name)
-        self._set_quick_run_enabled(False)
-
-        thread = threading.Thread(
-            target=self._run_subprocess, args=(cmd, name, script_id), daemon=True
-        )
-        thread.start()
+            if _c.script_id == script_id:
+                _c.set_running(True)
+        content = self._running_slots.get(group)
+        if content and content.winfo_exists():
+            self._add_running_row(content, job)
+        threading.Thread(
+            target=self._run_subprocess, args=(job, cmd, name, script_id), daemon=True
+        ).start()
 
     def _quick_run_resolve(self, base_dir: str, query: str) -> tuple[str | None, list[str], str]:
         """Search base_dir for a script matching query (exact stem, case-insensitive).
@@ -1645,16 +1704,6 @@ class RYOSApp(_BaseWindow):
         dlg.wait_window()
         return chosen[0]
 
-    def _set_quick_run_enabled(self, enabled: bool):
-        state = "normal" if enabled else "disabled"
-        for btn in self._quick_run_buttons.values():
-            try:
-                btn.config(state=state)
-            except tk.TclError:
-                pass
-        if not enabled and self._quick_run_open_group is not None:
-            self._hide_quick_run_bar(self._quick_run_open_group)
-
     def _toggle_quick_run_bar(self, group_name: str):
         if self._quick_run_open_group == group_name:
             self._hide_quick_run_bar(group_name)
@@ -1705,11 +1754,6 @@ class RYOSApp(_BaseWindow):
                 pass
 
     def _quick_run_submit(self, group_name: str):
-        if self.current_process and self.current_process.poll() is None:
-            messagebox.showinfo("Already Running",
-                                "A script is already running. Wait for it to finish.",
-                                parent=self)
-            return
         bar = self._quick_run_bars.get(group_name)
         if not bar:
             return
@@ -1791,9 +1835,9 @@ class RYOSApp(_BaseWindow):
 
         self._run_script(script_id, display, abs_path, params, interpreter)
 
-    def _run_subprocess(self, cmd, name, script_id):
+    def _run_subprocess(self, job: "_Job", cmd, name, script_id):
         try:
-            self.current_process = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -1802,26 +1846,27 @@ class RYOSApp(_BaseWindow):
                 cwd=str(Path(next((c for c in cmd if Path(c).is_file()), cmd[0])).parent),
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
+            job.current_process = proc
         except FileNotFoundError as e:
             _log.error("Interpreter/file not found for %s: %s", name, e)
-            self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
-            self.output_queue.put(("done", script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
+            self.output_queue.put(("stderr", job.job_id, f"[ERROR] {e}\n"))
+            self.output_queue.put(("done", job.job_id, script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
             return
         except Exception as e:
             _log.error("Failed to launch %s: %s", name, e)
-            self.output_queue.put(("stderr", f"[ERROR] {e}\n"))
-            self.output_queue.put(("done", script_id, "error", f"❌ Error: {name}\n"))
+            self.output_queue.put(("stderr", job.job_id, f"[ERROR] {e}\n"))
+            self.output_queue.put(("done", job.job_id, script_id, "error", f"❌ Error: {name}\n"))
             return
 
-        assert self.current_process.stdout is not None
+        assert proc.stdout is not None
         log_output = self._settings.get("log_runs_output", False)
-        for line in self.current_process.stdout:
-            self.output_queue.put(("stdout", line))
+        for line in proc.stdout:
+            self.output_queue.put(("stdout", job.job_id, line))
             if log_output:
                 _log.debug("[%s] %s", name, line.rstrip())
 
-        self.current_process.wait()
-        rc = self.current_process.returncode
+        proc.wait()
+        rc = proc.returncode
         tag = "ok" if rc == 0 else "stderr"
         status = "ok" if rc == 0 else "error"
         if rc == 0:
@@ -1829,7 +1874,7 @@ class RYOSApp(_BaseWindow):
         else:
             _log.error("Done: %s | exit=%s", name, rc)
         self.output_queue.put((
-            "done_tag", script_id, status, tag,
+            "done_tag", job.job_id, script_id, status, tag,
             f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
         ))
 
@@ -1936,11 +1981,7 @@ class RYOSApp(_BaseWindow):
             self._activate_tab("all")
 
     def _is_tab_running(self, key: str) -> bool:
-        if key.startswith("script:"):
-            return self._running_script_id == int(key.split(":")[1])
-        if key.startswith("pipeline:"):
-            return self._running_pipeline_id == int(key.split(":")[1])
-        return False
+        return any(j.tab_key == key for j in self._jobs.values())
 
     def _close_all_tabs(self):
         keys_to_close = [k for k in list(self._output_tabs) if k != "all" and not self._is_tab_running(k)]
@@ -1976,14 +2017,20 @@ class RYOSApp(_BaseWindow):
             sash = getattr(self, "_saved_sash_pos", max(50, h - 200))
             self._paned.sashpos(0, min(sash, h - 50))
 
-    def _append_output(self, text: str, tag: str | None = None):
-        if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
-            return
-        keys = [self._active_tab_key]
-        if self._active_tab_key != "all" and "all" in self._output_tabs:
-            keys.append("all")
+    def _append_output(self, text: str, tag: str | None = None, tab_key: str | None = None):
         max_lines = self._settings.get("max_output_lines", 2000)
         scroll = self._settings.get("auto_scroll_output", True)
+        if tab_key is not None:
+            # Background job: always write to its own tab + "all"
+            keys = [tab_key] if tab_key in self._output_tabs else []
+            if "all" in self._output_tabs and tab_key != "all":
+                keys.append("all")
+        else:
+            if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
+                return
+            keys = [self._active_tab_key]
+            if self._active_tab_key != "all" and "all" in self._output_tabs:
+                keys.append("all")
         for k in keys:
             out_text = self._output_tabs[k]["text"]
             out_text.configure(state="normal")
@@ -2032,114 +2079,96 @@ class RYOSApp(_BaseWindow):
             self.clipboard_append(text)
             self.status_var.set("Log copied to clipboard.")
 
-    def _stop_running(self):
-        self._pipeline_queue.clear()
-        self._pipeline_total = 0
-        self._running_pipeline_id = None
-        self._running_script_id = None
-        if self.current_process and self.current_process.poll() is None:
-            self.current_process.terminate()
-            self._append_output("\n[STOPPED by user]\n", tag="stderr")
-            self.status_var.set("Stopped.")
-        else:
-            self.status_var.set("No script is currently running.")
-        self._clear_running_state()
+    def _stop_all_jobs(self):
+        """Stop every running job (used from on_close)."""
+        for job in list(self._jobs.values()):
+            self._stop_job(job)
 
     def _drain_output_queue(self):
         try:
             while True:
                 item = self.output_queue.get_nowait()
-                if item[0] == "done":
-                    _, sid, status, text = item
-                    self._append_output(text, tag="info")
+                kind = item[0]
+                job_id = item[1]
+                job = self._jobs.get(job_id)
+                if kind == "done":
+                    _, _jid, sid, status, text = item
+                    if job:
+                        self._append_output(text, tag="info", tab_key=job.tab_key)
                     self.db.mark_run_status(sid, status)
-                    self._handle_step_done(status)
-                elif item[0] == "done_tag":
-                    _, sid, status, tag, text = item
-                    self._append_output(text, tag=tag)
+                    if job:
+                        self._handle_step_done(job, sid, status)
+                elif kind == "done_tag":
+                    _, _jid, sid, status, tag, text = item
+                    if job:
+                        self._append_output(text, tag=tag, tab_key=job.tab_key)
                     self.db.mark_run_status(sid, status)
-                    self._handle_step_done(status)
-                elif item[0] == "stderr":
-                    self._append_output(item[1], tag="stderr")
-                else:
-                    self._append_output(item[1])
+                    if job:
+                        self._handle_step_done(job, sid, status)
+                elif kind == "stderr":
+                    if job:
+                        self._append_output(item[2], tag="stderr", tab_key=job.tab_key)
+                else:  # stdout
+                    if job:
+                        self._append_output(item[2], tab_key=job.tab_key)
         except queue.Empty:
             pass
         self.after(80, self._drain_output_queue)
 
-    def _clear_running_state(self):
-        self._running_label_text = ""
-        self._hide_running_section()
-        for _c in self._cards:
-            _c.set_running(False)
-        for _pc in self._pipeline_cards:
-            _pc.set_running(False)
-
-    def _handle_step_done(self, status: str):
+    def _handle_step_done(self, job: "_Job", sid: int, status: str):
         notify = self._settings.get("notify_on_complete", True)
-        elapsed = ""
-        if self._run_start_time:
-            secs = (datetime.now() - self._run_start_time).total_seconds()
-            elapsed = f"{int(secs // 60)} m {secs % 60:.0f} s" if secs >= 60 else f"{secs:.1f} s"
+        secs = (datetime.now() - job.start_time).total_seconds()
+        elapsed = f"{int(secs // 60)} m {secs % 60:.0f} s" if secs >= 60 else f"{secs:.1f} s"
 
-        if self._pipeline_total > 0:
-            if status == "ok" and self._pipeline_queue:
-                self._run_next_pipeline_step()
-                return  # pipeline continues; Quick Run bar stays disabled
+        if job.kind == "pipeline":
+            if status == "ok" and job.pipeline_queue:
+                self._run_next_pipeline_step(job)
+                return
             elif status == "ok":
                 self._append_output(
                     f"\n{'━' * 60}\n"
                     f"✓  Pipeline complete  ·  {datetime.now().strftime('%H:%M:%S')}\n"
                     f"{'━' * 60}\n",
                     tag="ok",
+                    tab_key=job.tab_key,
                 )
                 self.status_var.set("Pipeline complete.")
-                name = getattr(self, "_running_pipeline_name", "Pipeline")
-                total = self._pipeline_total
-                self._pipeline_total = 0
-                self._running_pipeline_id = None
-                self._running_script_id = None
-                self._clear_running_state()
+                total = job.pipeline_total
+                self._finish_job(job)
                 if notify:
                     _show_notification(
                         "RYOS — Pipeline passed",
-                        f"✓  {name}  ·  {total} step{'s' if total != 1 else ''}  ·  {elapsed}",
+                        f"✓  {job.pipeline_name}  ·  {total} step{'s' if total != 1 else ''}  ·  {elapsed}",
                     )
             else:
-                self._pipeline_queue.clear()
-                self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr")
+                job.pipeline_queue.clear()
+                self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr",
+                                    tab_key=job.tab_key)
                 self.status_var.set("Pipeline stopped (step failed).")
-                name = getattr(self, "_running_pipeline_name", "Pipeline")
-                failed_at = getattr(self, "_pipeline_step_idx", 1)
-                total = self._pipeline_total
-                self._pipeline_total = 0
-                self._running_pipeline_id = None
-                self._running_script_id = None
-                self._clear_running_state()
+                failed_at = job.pipeline_step_idx
+                total = job.pipeline_total
+                self._finish_job(job)
                 if notify:
                     _show_notification(
                         "RYOS — Pipeline failed",
-                        f"✗  {name}  ·  failed at step {failed_at}/{total}  ·  {elapsed}",
+                        f"✗  {job.pipeline_name}  ·  failed at step {failed_at}/{total}  ·  {elapsed}",
                     )
         else:
-            name = getattr(self, "_running_script_name", "Script")
-            self._running_script_id = None
             if status == "ok":
                 self.status_var.set("Done.")
                 if notify:
                     _show_notification(
                         "RYOS — Script passed",
-                        f"✓  {name}  ·  {elapsed}",
+                        f"✓  {job.name}  ·  {elapsed}",
                     )
             else:
                 self.status_var.set("Failed.")
                 if notify:
                     _show_notification(
                         "RYOS — Script failed",
-                        f"✗  {name}  ·  {elapsed}",
+                        f"✗  {job.name}  ·  {elapsed}",
                     )
-            self._clear_running_state()
-        self._set_quick_run_enabled(True)
+            self._finish_job(job)
 
     def _check_for_update(self):
         result = _fetch_latest_release()
@@ -2226,13 +2255,20 @@ class RYOSApp(_BaseWindow):
             subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
     def _on_close(self):
-        if self.current_process and self.current_process.poll() is None:
-            if not messagebox.askyesno("Still Running", "A script is still running. Exit anyway?"):
+        alive = [j for j in self._jobs.values()
+                 if j.current_process is not None and j.current_process.poll() is None]
+        if alive:
+            n = len(alive)
+            label = "jobs are" if n > 1 else "job is"
+            if not messagebox.askyesno("Still Running",
+                                       f"{n} script {label} still running. Exit anyway?"):
                 return
-            try:
-                self.current_process.terminate()
-            except Exception:
-                pass
+            for job in list(self._jobs.values()):
+                try:
+                    if job.current_process is not None:
+                        job.current_process.terminate()
+                except Exception:
+                    pass
         if self._settings["remember_window_geometry"]:
             self._settings["window_geometry"] = self.geometry()
         if self._settings["remember_last_group"]:
