@@ -104,7 +104,7 @@ class RYOSApp(_BaseWindow):
         self._running_section_frame: tk.Frame | None = None
         self._running_name_var: tk.StringVar | None = None
         self._running_stop_btn: tk.Button | None = None
-        self._running_slots: dict[str, tk.Frame] = {}
+        self._running_slots: dict = {}
         self._running_label_text: str = ""
         self._build_ui()
         self._refresh()
@@ -311,16 +311,10 @@ class RYOSApp(_BaseWindow):
 
         self._paned.add(self.out_panel, weight=0)
 
-    def _populate_running_slot(self, slot: tk.Frame, label_text: str):
-        hdr = tk.Frame(slot, bg=C["bg"])
-        hdr.pack(fill="x", pady=(6, 2))
-        tk.Label(hdr, text="RUNNING", bg=C["bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8, "bold")).pack(side="left")
-        tk.Frame(hdr, bg=C["border"], height=1).pack(
-            side="left", fill="x", expand=True, padx=(8, 0), pady=4)
-        card = tk.Frame(slot, bg=C["card_bg"],
+    def _populate_running_card(self, content: tk.Frame, label_text: str):
+        card = tk.Frame(content, bg=C["card_bg"],
                         highlightbackground=C["border"], highlightthickness=1)
-        card.pack(fill="x", pady=(0, 6))
+        card.pack(fill="x", pady=5, ipady=2)
         tk.Frame(card, bg=C["running"], width=5).pack(side="left", fill="y")
         self._running_name_var = tk.StringVar(value=label_text)
         tk.Label(card, textvariable=self._running_name_var,
@@ -352,23 +346,22 @@ class RYOSApp(_BaseWindow):
     def _show_running_section(self, label_text: str):
         self._running_label_text = label_text
         group = self._find_running_group()
-        slot_data = self._running_slots.get(group)
-        if slot_data is None:
+        content = self._running_slots.get(group)
+        if content is None or not content.winfo_exists():
             return
-        slot, banner = slot_data
-        if not slot.winfo_exists():
-            return
-        for w in slot.winfo_children():
+        for w in content.winfo_children():
             w.destroy()
-        self._running_section_frame = slot
-        slot.pack(fill="x", after=banner)
-        self._populate_running_slot(slot, label_text)
+        self._running_section_frame = content
+        self._populate_running_card(content, label_text)
 
     def _hide_running_section(self):
-        if self._running_section_frame and self._running_section_frame.winfo_exists():
-            for w in self._running_section_frame.winfo_children():
+        content = self._running_section_frame
+        if content and content.winfo_exists():
+            for w in content.winfo_children():
                 w.destroy()
-            self._running_section_frame.pack_forget()
+            tk.Label(content, text="No script is currently running.",
+                     bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
         self._running_section_frame = None
         self._running_name_var = None
         self._running_stop_btn = None
@@ -861,8 +854,23 @@ class RYOSApp(_BaseWindow):
             for w in (banner, icon_lbl, path_lbl):
                 w.bind("<Button-1>", _open)
 
-            rs_slot = tk.Frame(self.cards_frame, bg=C["bg"])
-            self._running_slots[gname] = (rs_slot, banner)
+            run_content = self._make_section_header(
+                self.cards_frame, gname, "running", "Running"
+            )
+            self._running_slots[gname] = run_content
+            running_here = (
+                (self._running_pipeline_id is not None and
+                 any(p_id == self._running_pipeline_id for p_id, _ in self.db.list_pipelines(gname))) or
+                (self._running_script_id is not None and
+                 any(rec[0] == self._running_script_id for rec in scripts))
+            )
+            if running_here:
+                self._running_section_frame = run_content
+                self._populate_running_card(run_content, self._running_label_text or "")
+            else:
+                tk.Label(run_content, text="No script is currently running.",
+                         bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
 
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
