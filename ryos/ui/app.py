@@ -884,7 +884,6 @@ class RYOSApp(_BaseWindow):
                         on_run=self._run_pipeline,
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
-                        on_stop=self._stop_running,
                         is_running=(p_id == self._running_pipeline_id),
                     )
                     pc.pack(fill="x", pady=5, ipady=2)
@@ -909,7 +908,6 @@ class RYOSApp(_BaseWindow):
                         on_move_up      = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down    = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top     = make_top(sid)           if up_id   else lambda: None,
-                        on_stop         = self._stop_running,
                         is_running      = (sid == self._running_script_id),
                         group_base_dir  = group_base_dir,
                     )
@@ -1198,8 +1196,7 @@ class RYOSApp(_BaseWindow):
         self._running_script_id = None
         self._run_start_time = datetime.now()
         for _pc in self._pipeline_cards:
-            _pc.set_running(_pc.pipeline_id == pipeline_id,
-                            self._stop_running if _pc.pipeline_id == pipeline_id else None)
+            _pc.set_running(_pc.pipeline_id == pipeline_id)
         for _c in self._cards:
             _c.set_running(False)
         step_name = steps[0][2] if steps else ""
@@ -1247,8 +1244,7 @@ class RYOSApp(_BaseWindow):
         self.db.mark_run(sid)
         self._running_script_id = sid
         for _c in self._cards:
-            _c.set_running(_c.script_id == sid,
-                           self._stop_running if _c.script_id == sid else None)
+            _c.set_running(_c.script_id == sid)
         threading.Thread(
             target=self._run_subprocess, args=(cmd, name, sid), daemon=True,
         ).start()
@@ -1379,8 +1375,7 @@ class RYOSApp(_BaseWindow):
         self._running_pipeline_id = None
         self._run_start_time = datetime.now()
         for _c in self._cards:
-            _c.set_running(_c.script_id == script_id,
-                           self._stop_running if _c.script_id == script_id else None)
+            _c.set_running(_c.script_id == script_id)
         for _pc in self._pipeline_cards:
             _pc.set_running(False)
         self._running_label_text = name

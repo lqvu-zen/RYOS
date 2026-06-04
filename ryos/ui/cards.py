@@ -14,7 +14,7 @@ class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
-                 on_move_up, on_move_down, on_move_top, on_stop=None, *,
+                 on_move_up, on_move_down, on_move_top, *,
                  is_running: bool = False, group_base_dir: str = ""):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
@@ -123,13 +123,6 @@ class ScriptCard(tk.Frame):
               fg=C["btn_neutral_fg"], tip="Run with parameter")
         _sep()
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"], self._run, tip="Run")
-        _sep()
-        self._stop_btn = _rbtn("⏹", C["btn_stop_active"] if is_running else C["btn_stop_idle"],
-              C["btn_stop_active_hover"] if is_running else C["btn_stop_idle_hover"],
-              on_stop or (lambda: None),
-              fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_fg"],
-              active_fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_active_fg"],
-              tip="Stop")
 
         for widget in (self, text_area):
             widget.bind("<Enter>", self._on_enter)
@@ -137,28 +130,14 @@ class ScriptCard(tk.Frame):
 
         self._bind_right_click(self)
 
-    def set_running(self, is_running: bool, on_stop=None):
+    def set_running(self, is_running: bool):
         if is_running:
-            self._stop_btn._bg  = C["btn_stop_active"]
-            self._stop_btn._hbg = C["btn_stop_active_hover"]
-            self._stop_btn.config(
-                bg=C["btn_stop_active"], activebackground=C["btn_stop_active_hover"],
-                fg=C["fg_on_dark"], activeforeground=C["fg_on_dark"],
-                command=on_stop or (lambda: None),
-            )
             if not self._running_lbl:
                 self._running_lbl = tk.Label(
                     self._badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
                 self._running_lbl.pack(side="left", padx=(4, 0))
         else:
-            self._stop_btn._bg  = C["btn_stop_idle"]
-            self._stop_btn._hbg = C["btn_stop_idle_hover"]
-            self._stop_btn.config(
-                bg=C["btn_stop_idle"], activebackground=C["btn_stop_idle_hover"],
-                fg=C["btn_stop_idle_fg"], activeforeground=C["btn_stop_idle_active_fg"],
-                command=lambda: None,
-            )
             if self._running_lbl:
                 self._running_lbl.destroy()
                 self._running_lbl = None
@@ -264,7 +243,7 @@ class PipelineCard(tk.Frame):
     _PIPE_ACCENT2 = C["pipe_accent2"]
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
-                 group_name: str, on_run, on_edit, on_refresh, on_stop=None, *, is_running: bool = False):
+                 group_name: str, on_run, on_edit, on_refresh, *, is_running: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -312,13 +291,6 @@ class PipelineCard(tk.Frame):
         _sep()
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
               lambda: on_run(pipeline_id, name), tip="Run")
-        _sep()
-        self._stop_btn = _rbtn("⏹", C["btn_stop_active"] if is_running else C["btn_stop_idle"],
-              C["btn_stop_active_hover"] if is_running else C["btn_stop_idle_hover"],
-              on_stop or (lambda: None),
-              fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_fg"],
-              active_fg=C["fg_on_dark"] if is_running else C["btn_stop_idle_active_fg"],
-              tip="Stop")
 
         content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
         content.pack(side="left", fill="both", expand=True)
@@ -367,28 +339,14 @@ class PipelineCard(tk.Frame):
 
         self._bind_right_click_all(self)
 
-    def set_running(self, is_running: bool, on_stop=None):
+    def set_running(self, is_running: bool):
         if is_running:
-            self._stop_btn._bg  = C["btn_stop_active"]
-            self._stop_btn._hbg = C["btn_stop_active_hover"]
-            self._stop_btn.config(
-                bg=C["btn_stop_active"], activebackground=C["btn_stop_active_hover"],
-                fg=C["fg_on_dark"], activeforeground=C["fg_on_dark"],
-                command=on_stop or (lambda: None),
-            )
             if not self._running_lbl:
                 self._running_lbl = tk.Label(
                     self._badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
                 self._running_lbl.pack(side="left", padx=(4, 0))
         else:
-            self._stop_btn._bg  = C["btn_stop_idle"]
-            self._stop_btn._hbg = C["btn_stop_idle_hover"]
-            self._stop_btn.config(
-                bg=C["btn_stop_idle"], activebackground=C["btn_stop_idle_hover"],
-                fg=C["btn_stop_idle_fg"], activeforeground=C["btn_stop_idle_active_fg"],
-                command=lambda: None,
-            )
             if self._running_lbl:
                 self._running_lbl.destroy()
                 self._running_lbl = None
