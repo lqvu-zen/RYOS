@@ -352,18 +352,23 @@ class RYOSApp(_BaseWindow):
     def _show_running_section(self, label_text: str):
         self._running_label_text = label_text
         group = self._find_running_group()
-        slot = self._running_slots.get(group)
-        if slot is None or not slot.winfo_exists():
+        slot_data = self._running_slots.get(group)
+        if slot_data is None:
+            return
+        slot, banner = slot_data
+        if not slot.winfo_exists():
             return
         for w in slot.winfo_children():
             w.destroy()
         self._running_section_frame = slot
+        slot.pack(fill="x", after=banner)
         self._populate_running_slot(slot, label_text)
 
     def _hide_running_section(self):
         if self._running_section_frame and self._running_section_frame.winfo_exists():
             for w in self._running_section_frame.winfo_children():
                 w.destroy()
+            self._running_section_frame.pack_forget()
         self._running_section_frame = None
         self._running_name_var = None
         self._running_stop_btn = None
@@ -857,8 +862,7 @@ class RYOSApp(_BaseWindow):
                 w.bind("<Button-1>", _open)
 
             rs_slot = tk.Frame(self.cards_frame, bg=C["bg"])
-            rs_slot.pack(fill="x")
-            self._running_slots[gname] = rs_slot
+            self._running_slots[gname] = (rs_slot, banner)
 
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
