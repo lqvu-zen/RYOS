@@ -101,6 +101,10 @@ class RYOSApp(_BaseWindow):
             if self._settings["remember_window_geometry"] and self._settings.get("window_geometry"):
                 self.geometry(self._settings["window_geometry"])
 
+        self._running_section_frame: tk.Frame | None = None
+        self._running_name_var: tk.StringVar | None = None
+        self._running_stop_btn: tk.Button | None = None
+        self._canvas_area: tk.Frame | None = None
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
@@ -252,9 +256,14 @@ class RYOSApp(_BaseWindow):
 
         container = tk.Frame(cards_pane, bg=C["bg"])
         container.pack(fill="both", expand=True, padx=12, pady=(8, 12))
+        self._cards_container = container
 
-        canvas = tk.Canvas(container, highlightthickness=0, bg=C["bg"])
-        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        canvas_area = tk.Frame(container, bg=C["bg"])
+        canvas_area.pack(side="top", fill="both", expand=True)
+        self._canvas_area = canvas_area
+
+        canvas = tk.Canvas(canvas_area, highlightthickness=0, bg=C["bg"])
+        scrollbar = ttk.Scrollbar(canvas_area, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
 
         scrollbar.pack(side="right", fill="y")
@@ -304,6 +313,48 @@ class RYOSApp(_BaseWindow):
         self._init_all_tab()
 
         self._paned.add(self.out_panel, weight=0)
+        self._build_running_section()
+
+    def _build_running_section(self):
+        frame = tk.Frame(self._cards_container, bg=C["bg"])
+        self._running_section_frame = frame
+
+        hdr = tk.Frame(frame, bg=C["bg"])
+        hdr.pack(fill="x", pady=(8, 2))
+        tk.Label(hdr, text="RUNNING", bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8, "bold")).pack(side="left")
+        tk.Frame(hdr, bg=C["border"], height=1).pack(
+            side="left", fill="x", expand=True, padx=(8, 0), pady=4)
+
+        card = tk.Frame(frame, bg=C["card_bg"],
+                        highlightbackground=C["border"], highlightthickness=1)
+        card.pack(fill="x", pady=(0, 6))
+
+        tk.Frame(card, bg=C["running"], width=5).pack(side="left", fill="y")
+        self._running_name_var = tk.StringVar()
+        tk.Label(card, textvariable=self._running_name_var,
+                 bg=C["card_bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 9), anchor="w",
+                 padx=8, pady=6).pack(side="left", fill="x", expand=True)
+        self._running_stop_btn = tk.Button(
+            card, text="⏹ Stop",
+            bg=C["btn_stop_active"], fg=C["fg_on_dark"],
+            activebackground=C["btn_stop_active_hover"], activeforeground=C["fg_on_dark"],
+            relief="flat", bd=0, padx=10, pady=5,
+            font=("Segoe UI", 9, "bold"), cursor="hand2",
+            command=lambda: None,
+        )
+        self._running_stop_btn.pack(side="right", padx=6, pady=4)
+
+        frame.pack_forget()
+
+    def _show_running_section(self, label_text: str):
+        self._running_name_var.set(label_text)
+        self._running_stop_btn.config(command=self._stop_running)
+        self._running_section_frame.pack(fill="x", before=self._canvas_area)
+
+    def _hide_running_section(self):
+        self._running_section_frame.pack_forget()
 
     def _make_group_header(self, name: str):
         hdr = tk.Frame(self.cards_frame, bg=C["bg"])
@@ -1114,6 +1165,8 @@ class RYOSApp(_BaseWindow):
                             self._stop_running if _pc.pipeline_id == pipeline_id else None)
         for _c in self._cards:
             _c.set_running(False)
+        step_name = steps[0][2] if steps else ""
+        self._show_running_section(f"⚡ {pipeline_name}  —  Step 1/{self._pipeline_total}: {step_name}")
         self._get_or_create_tab(f"pipeline:{pipeline_id}", f"⚡ {pipeline_name}")
         self._append_output(
             f"\n{'━' * 60}\n"
@@ -1137,6 +1190,7 @@ class RYOSApp(_BaseWindow):
             tag="info",
         )
         self.status_var.set(f"Pipeline step {n}/{total}: {name}")
+        self._running_name_var.set(f"⚡ {getattr(self, '_running_pipeline_name', 'Pipeline')}  —  Step {n}/{total}: {name}")
         if not Path(path).exists():
             self.output_queue.put(("stderr", f"[ERROR] File not found: {path}\n"))
             self.output_queue.put(("done", sid, "error", ""))
@@ -1287,6 +1341,7 @@ class RYOSApp(_BaseWindow):
                            self._stop_running if _c.script_id == script_id else None)
         for _pc in self._pipeline_cards:
             _pc.set_running(False)
+        self._show_running_section(name)
         self._set_quick_run_enabled(False)
 
         thread = threading.Thread(
@@ -1973,6 +2028,7 @@ class RYOSApp(_BaseWindow):
         self.after(80, self._drain_output_queue)
 
     def _clear_running_state(self):
+        self._hide_running_section()
         for _c in self._cards:
             _c.set_running(False)
         for _pc in self._pipeline_cards:
