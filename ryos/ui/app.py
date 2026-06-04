@@ -1735,6 +1735,8 @@ class RYOSApp(_BaseWindow):
                 if typed_params != existing_params:
                     self.db.update(existing_id, existing_name, abs_path, typed_params, existing_interp, group_name or "")
                 self._refresh_cards()
+            elif not any(c.script_id == existing_id for c in self._cards):
+                self._refresh_cards()
         else:
             interpreter = detect_interpreter(abs_path)
             script_id = self.db.add(
