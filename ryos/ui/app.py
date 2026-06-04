@@ -60,6 +60,7 @@ class _Job:
         self.pipeline_total: int = pipeline_total
         self.current_sid: int | None = None
         self.name_var: tk.StringVar | None = None
+        self.time_var: tk.StringVar | None = None
         self.running_row: tk.Frame | None = None
 
 
@@ -70,7 +71,7 @@ class RYOSApp(_BaseWindow):
         if sys.platform == "win32":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RYOS.RunYourOwnScripts")
 
-        self.title("RYOS — Run Your Own Scripts")
+        self.title(f"RYOS v{__version__} — Run Your Own Scripts")
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
         if hasattr(sys, "_MEIPASS"):
@@ -124,6 +125,7 @@ class RYOSApp(_BaseWindow):
                 self.geometry(self._settings["window_geometry"])
 
         self._running_slots: dict = {}
+        self._elapsed_timer_id: str | None = None
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
@@ -342,7 +344,21 @@ class RYOSApp(_BaseWindow):
                    pipeline_total=pipeline_total)
         self._jobs[job_id] = job
         self._get_or_create_tab(tab_key, tab_name)
+        if self._elapsed_timer_id is None:
+            self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
         return job
+
+    def _tick_elapsed_timers(self):
+        if not self._jobs:
+            self._elapsed_timer_id = None
+            return
+        now = datetime.now()
+        for job in self._jobs.values():
+            if job.time_var is not None:
+                secs = int((now - job.start_time).total_seconds())
+                elapsed = f"{secs // 60}m {secs % 60:02d}s" if secs >= 60 else f"{secs}s"
+                job.time_var.set(f"{job.start_time.strftime('%H:%M:%S')}  ·  {elapsed}")
+        self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
 
     def _finish_job(self, job: "_Job"):
         """Remove job from registry, tear down its running row, update card states."""
@@ -407,8 +423,15 @@ class RYOSApp(_BaseWindow):
             command=lambda j=job: self._stop_job(j),
         )
         stop_btn.pack(side="right", padx=6, pady=4)
+        secs = int((datetime.now() - job.start_time).total_seconds())
+        elapsed = f"{secs // 60}m {secs % 60:02d}s" if secs >= 60 else f"{secs}s"
+        time_var = tk.StringVar(value=f"{job.start_time.strftime('%H:%M:%S')}  ·  {elapsed}")
+        tk.Label(row, textvariable=time_var,
+                 bg=C["card_bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), padx=6).pack(side="right")
         job.running_row = row
         job.name_var = name_var
+        job.time_var = time_var
 
     def _stop_job(self, job: "_Job"):
         """Stop one specific job."""
@@ -1222,9 +1245,10 @@ class RYOSApp(_BaseWindow):
                              self._active_group or "", self._refresh_cards)
 
     def _run_pipeline(self, pipeline_id: int, pipeline_name: str):
-        if len(self._jobs) >= MAX_PARALLEL_JOBS:
+        max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
+        if max_jobs > 0 and len(self._jobs) >= max_jobs:
             messagebox.showinfo("Too many jobs",
-                                f"Maximum of {MAX_PARALLEL_JOBS} parallel jobs reached.\n"
+                                f"Maximum of {max_jobs} parallel jobs reached.\n"
                                 "Stop a running job before launching another.",
                                 parent=self)
             return
@@ -1402,9 +1426,10 @@ class RYOSApp(_BaseWindow):
             messagebox.showerror("Import Failed", str(e))
 
     def _run_script(self, script_id, name, path, params, interpreter):
-        if len(self._jobs) >= MAX_PARALLEL_JOBS:
+        max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
+        if max_jobs > 0 and len(self._jobs) >= max_jobs:
             messagebox.showinfo("Too many jobs",
-                                f"Maximum of {MAX_PARALLEL_JOBS} parallel jobs reached.\n"
+                                f"Maximum of {max_jobs} parallel jobs reached.\n"
                                 "Stop a running job before launching another.")
             return
 

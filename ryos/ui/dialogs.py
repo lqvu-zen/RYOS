@@ -642,6 +642,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._win_width         = tk.StringVar(value=str(self._settings.get("window_width",  540)))
         self._win_height        = tk.StringVar(value=str(self._settings.get("window_height", 640)))
         self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
+        self._max_parallel      = tk.StringVar(value=str(self._settings.get("max_parallel_jobs", 10)))
         self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
         self._auto_check_update = tk.BooleanVar(value=self._settings.get("auto_check_update", True))
@@ -742,6 +743,17 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+        row2 = tk.Frame(f, bg=C["bg"])
+        row2.pack(fill="x", pady=4)
+        tk.Label(row2, text="Max parallel jobs (0 = unlimited):", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(side="left")
+        tk.Spinbox(row2, from_=0, to=50, increment=1,
+                   textvariable=self._max_parallel, width=7,
+                   validate="key", validatecommand=vcmd,
+                   bg=C["card_bg"], fg=C["name_fg"],
+                   buttonbackground=C["card_bg"],
+                   font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
         f = self._section("LOGGING")
         self._chk(f, "Enable logging to file",           self._logging_enabled)
         self._chk(f, "Include script output in logs",    self._log_runs_output)
@@ -767,6 +779,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
         except ValueError:
             max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
         try:
+            max_parallel = max(0, int(self._max_parallel.get() or 0))
+        except ValueError:
+            max_parallel = _SETTINGS_DEFAULTS["max_parallel_jobs"]
+        try:
             win_w = max(400, int(self._win_width.get()  or 540))
             win_h = max(300, int(self._win_height.get() or 640))
         except ValueError:
@@ -780,6 +796,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
             "max_output_lines":         max_lines,
+            "max_parallel_jobs":        max_parallel,
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
             "notify_on_complete":       self._notify_on_complete.get(),

@@ -58,6 +58,7 @@ _SETTINGS_DEFAULTS: dict = {
     "logging_enabled":        True,
     "log_level":              "INFO",
     "log_runs_output":        False,
+    "max_parallel_jobs":      10,
 }
 
 
