@@ -15,7 +15,7 @@ class ScriptCard(tk.Frame):
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
                  on_move_up, on_move_down, on_move_top, *,
-                 is_running: bool = False, group_base_dir: str = ""):
+                 group_base_dir: str = ""):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
@@ -69,14 +69,8 @@ class ScriptCard(tk.Frame):
         tag_text, tag_bg = _script_tag(path)
         badge_row = tk.Frame(text_area, bg=C["card_bg"])
         badge_row.pack(anchor="w", fill="x", pady=(0, 2))
-        self._badge_row = badge_row
         tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
-        self._running_lbl = None
-        if is_running:
-            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
-                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
-            self._running_lbl.pack(side="left", padx=(4, 0))
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
         display_path = path
         if group_base_dir and path:
@@ -129,18 +123,6 @@ class ScriptCard(tk.Frame):
             widget.bind("<Leave>", self._on_leave)
 
         self._bind_right_click(self)
-
-    def set_running(self, is_running: bool):
-        if is_running:
-            if not self._running_lbl:
-                self._running_lbl = tk.Label(
-                    self._badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
-                    font=("Segoe UI", 7, "bold"), padx=5, pady=1)
-                self._running_lbl.pack(side="left", padx=(4, 0))
-        else:
-            if self._running_lbl:
-                self._running_lbl.destroy()
-                self._running_lbl = None
 
     def show_checkbox(self, command=None):
         self._chk.config(command=command)
@@ -243,7 +225,7 @@ class PipelineCard(tk.Frame):
     _PIPE_ACCENT2 = C["pipe_accent2"]
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
-                 group_name: str, on_run, on_edit, on_refresh, *, is_running: bool = False):
+                 group_name: str, on_run, on_edit, on_refresh):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -298,14 +280,8 @@ class PipelineCard(tk.Frame):
 
         badge_row = tk.Frame(content, bg=C["card_bg"])
         badge_row.pack(fill="x")
-        self._badge_row = badge_row
         tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
-        self._running_lbl = None
-        if is_running:
-            self._running_lbl = tk.Label(badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
-                     font=("Segoe UI", 7, "bold"), padx=5, pady=1)
-            self._running_lbl.pack(side="left", padx=(4, 0))
 
         ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
 
@@ -338,18 +314,6 @@ class PipelineCard(tk.Frame):
             widget.bind("<Leave>", self._on_leave)
 
         self._bind_right_click_all(self)
-
-    def set_running(self, is_running: bool):
-        if is_running:
-            if not self._running_lbl:
-                self._running_lbl = tk.Label(
-                    self._badge_row, text="▶ RUNNING", bg=C["running"], fg=C["fg_on_dark"],
-                    font=("Segoe UI", 7, "bold"), padx=5, pady=1)
-                self._running_lbl.pack(side="left", padx=(4, 0))
-        else:
-            if self._running_lbl:
-                self._running_lbl.destroy()
-                self._running_lbl = None
 
     def _show_steps_popup(self, event=None):
         existing = getattr(self, "_steps_popup", None)

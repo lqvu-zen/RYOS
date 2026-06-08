@@ -58,7 +58,6 @@ class _Job:
         self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
         self.pipeline_step_idx: int = 0
         self.pipeline_total: int = pipeline_total
-        self.current_sid: int | None = None
         self.name_var: tk.StringVar | None = None
         self.time_var: tk.StringVar | None = None
         self.running_row: tk.Frame | None = None
@@ -380,21 +379,6 @@ class RYOSApp(_BaseWindow):
                              font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
             except tk.TclError:
                 pass
-        # Update card running state for just-finished job
-        running_sids = {j.script_id for j in self._jobs.values() if j.script_id is not None}
-        running_pids = {j.pipeline_id for j in self._jobs.values() if j.pipeline_id is not None}
-        if job.kind == "script":
-            for c in self._cards:
-                if c.script_id == job.script_id:
-                    c.set_running(job.script_id in running_sids)
-        elif job.kind == "pipeline":
-            if job.current_sid is not None:
-                for c in self._cards:
-                    if c.script_id == job.current_sid:
-                        c.set_running(job.current_sid in running_sids)
-            for pc in self._pipeline_cards:
-                if pc.pipeline_id == job.pipeline_id:
-                    pc.set_running(job.pipeline_id in running_pids)
 
     def _add_running_row(self, content: tk.Frame, job: "_Job"):
         """Create a running-job row inside the Running section and store refs on job."""
@@ -954,7 +938,6 @@ class RYOSApp(_BaseWindow):
                         on_run=self._run_pipeline,
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
-                        is_running=any(j.pipeline_id == p_id for j in self._jobs.values()),
                     )
                     pc.pack(fill="x", pady=5, ipady=2)
                     self._bind_pipeline_drag(pc)
@@ -978,7 +961,6 @@ class RYOSApp(_BaseWindow):
                         on_move_up      = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down    = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top     = make_top(sid)           if up_id   else lambda: None,
-                        is_running      = any(j.script_id == sid for j in self._jobs.values()),
                         group_base_dir  = group_base_dir,
                     )
                     card.pack(fill="x", pady=5, ipady=2)
@@ -1272,9 +1254,6 @@ class RYOSApp(_BaseWindow):
             pipeline_total=len(steps),
         )
         job.start_time = datetime.now()
-        for _pc in self._pipeline_cards:
-            if _pc.pipeline_id == pipeline_id:
-                _pc.set_running(True)
         content = self._running_slots.get(group)
         if content and content.winfo_exists():
             self._add_running_row(content, job)
@@ -1318,16 +1297,6 @@ class RYOSApp(_BaseWindow):
             self.output_queue.put(("done", job.job_id, sid, "error", ""))
             return
         self.db.mark_run(sid)
-        # Clear previous step's card; light the new one
-        running_sids = {j.script_id for j in self._jobs.values() if j.script_id is not None}
-        if job.current_sid is not None and job.current_sid != sid:
-            for _c in self._cards:
-                if _c.script_id == job.current_sid:
-                    _c.set_running(job.current_sid in running_sids)
-        job.current_sid = sid
-        for _c in self._cards:
-            if _c.script_id == sid:
-                _c.set_running(True)
         threading.Thread(
             target=self._run_subprocess, args=(job, cmd, name, sid), daemon=True,
         ).start()
@@ -1461,9 +1430,6 @@ class RYOSApp(_BaseWindow):
         )
         self.status_var.set(f"Running: {name}")
         self.db.mark_run(script_id)
-        for _c in self._cards:
-            if _c.script_id == script_id:
-                _c.set_running(True)
         content = self._running_slots.get(group)
         if content and content.winfo_exists():
             self._add_running_row(content, job)
