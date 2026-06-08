@@ -409,11 +409,6 @@ class RYOSApp(_BaseWindow):
                        highlightbackground=C["border"], highlightthickness=1)
         row.pack(fill="x", pady=5, ipady=2)
         tk.Frame(row, bg=C["running"], width=5).pack(side="left", fill="y")
-        name_var = tk.StringVar(value=job.name)
-        tk.Label(row, textvariable=name_var,
-                 bg=C["card_bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 9), anchor="w",
-                 padx=8, pady=6).pack(side="left", fill="x", expand=True)
         stop_btn = tk.Button(
             row, text="⏹ Stop",
             bg=C["btn_stop_active"], fg=C["fg_on_dark"],
@@ -429,6 +424,11 @@ class RYOSApp(_BaseWindow):
         tk.Label(row, textvariable=time_var,
                  bg=C["card_bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), padx=6).pack(side="right")
+        name_var = tk.StringVar(value=job.name)
+        tk.Label(row, textvariable=name_var,
+                 bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9), anchor="w",
+                 width=1, padx=8, pady=6).pack(side="left", fill="x", expand=True)
         job.running_row = row
         job.name_var = name_var
         job.time_var = time_var
