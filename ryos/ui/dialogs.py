@@ -358,7 +358,8 @@ class ScriptDialog(tk.Toplevel):
         path = filedialog.askopenfilename(
             title="Select Script",
             filetypes=[("All Files", "*.*"), ("Python", "*.py"), ("Shell", "*.sh"),
-                       ("Batch", "*.bat;*.cmd"), ("Executable", "*.exe")],
+                       ("Batch", "*.bat;*.cmd"), ("Executable", "*.exe"),
+                       ("VS Solution", "*.sln"), ("VS Code Workspace", "*.code-workspace")],
             **kwargs,
         )
         if not path:
