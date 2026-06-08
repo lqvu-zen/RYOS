@@ -260,6 +260,55 @@ def _debug_run_py(app: RYOSApp):
     app.after(1000, _do)
 
 
+def _running_row_check(app: RYOSApp):
+    """Run a pipeline (if any) and a script, screenshot the Running section to verify
+    stop button and timestamp are visible in both cases."""
+    from PIL import ImageGrab
+
+    def _do():
+        print("running-row-check: initial screenshot")
+        _shot(app, "01_launch")
+
+        # --- Try to run a pipeline ---
+        pipeline_cards = app._pipeline_cards
+        if pipeline_cards:
+            pc = pipeline_cards[0]
+            print(f"  found pipeline card: pid={pc.pipeline_id}")
+            app._run_pipeline(pc.pipeline_id, pc._name)
+            app.after(800, _after_pipeline)
+        else:
+            print("  no pipeline cards found, skipping pipeline test")
+            app.after(0, _run_script)
+
+    def _after_pipeline():
+        print("running-row-check: pipeline running screenshot")
+        _shot(app, "02_pipeline_running")
+        # Stop it so it does not block script run
+        for job in list(app._jobs.values()):
+            if job.kind == "pipeline":
+                app._stop_job(job)
+                break
+        app.after(400, _run_script)
+
+    def _run_script():
+        cards = app._cards
+        if not cards:
+            print("  no script cards, skipping script test")
+            app.after(300, app.destroy)
+            return
+        card = cards[0]
+        print(f"  running script card: {card._name!r}")
+        card._run()
+        app.after(1200, _after_script)
+
+    def _after_script():
+        print("running-row-check: script running screenshot")
+        _shot(app, "03_script_running")
+        app.after(400, app.destroy)
+
+    app.after(1000, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -281,8 +330,10 @@ def main():
         _close_all_verify(app)
     elif scenario == "debug-run-py":
         _debug_run_py(app)
+    elif scenario == "running-row-check":
+        _running_row_check(app)
     else:
-        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py")
+        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check")
         app.after(0, app.destroy)
 
     app.mainloop()
