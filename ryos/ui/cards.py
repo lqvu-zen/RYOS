@@ -5,7 +5,7 @@ from tkinter import messagebox, ttk
 
 from ..db import ScriptDB
 from ..interpreter import _script_tag
-from .dialogs import ScriptDialog, _PresetEntryDialog
+from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
 from .theme import C
 from .widgets import ScrollingLabel, Tooltip
 
@@ -13,12 +13,15 @@ from .widgets import ScrollingLabel, Tooltip
 class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
+    # Displayed label for the always-available empty preset; maps to "" params.
+    _EMPTY_LABEL = "(no parameters)"
+
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
                  on_move_up, on_move_down, on_move_top, *,
                  group_base_dir: str = ""):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
-        sid, name, path, params, interp, _created, last_run, last_run_status, _group = record
+        sid, name, path, params, interp, _created, last_run, last_run_status, _group, temp_param = record
         self.script_id = sid
         self._name = name
         self._group_name = _group or ""
@@ -71,6 +74,12 @@ class ScriptCard(tk.Frame):
         badge_row.pack(anchor="w", fill="x", pady=(0, 2))
         tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
                  font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+        if temp_param:
+            temp_badge = tk.Label(badge_row, text="⏱ TEMP PARAM", bg=C["accent"],
+                                  fg=C["fg_on_dark"], font=("Segoe UI", 7, "bold"),
+                                  padx=5, pady=1)
+            temp_badge.pack(side="left", padx=(4, 0))
+            Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
         display_path = path
         if group_base_dir and path:
@@ -98,13 +107,15 @@ class ScriptCard(tk.Frame):
         self._params_combo = None
         presets = db.list_param_presets(sid)
         if presets:
-            preset_values = [p[2] for p in presets]
+            # Always offer an empty preset at the top (shown with a clear label)
+            # so a script can be run with no parameters regardless of its presets.
+            preset_values = [self._EMPTY_LABEL] + [p[2] for p in presets if p[2] != ""]
             self._params_combo = ttk.Combobox(
                 text_area, values=preset_values,
                 state="readonly", font=("Segoe UI", 8),
             )
             self._params_combo.pack(fill="x", pady=(4, 0))
-            if params in preset_values:
+            if params and params in preset_values:
                 self._params_combo.set(params)
             else:
                 self._params_combo.current(0)
@@ -176,8 +187,8 @@ class ScriptCard(tk.Frame):
     def _clone(self):
         rec = self.db.get(self.script_id)
         if rec:
-            _, name, path, params, interp, grp = rec
-            self.db.add(f"{name} (copy)", path, params, interp, grp)
+            _, name, path, params, interp, grp, temp_param = rec
+            self.db.add(f"{name} (copy)", path, params, interp, grp, temp_param)
             self.on_refresh()
 
     def _delete_card(self):
@@ -185,24 +196,40 @@ class ScriptCard(tk.Frame):
             self.db.delete(self.script_id)
             self.on_refresh()
 
+    def _selected_params(self, fallback: str) -> str:
+        """Return the combo's selected params, mapping the empty-preset label to ''."""
+        if not self._params_combo:
+            return fallback
+        value = self._params_combo.get()
+        return "" if value == self._EMPTY_LABEL else value
+
     def _run(self):
         rec = self.db.get(self.script_id)
-        if rec:
-            _, name, path, params, interp, _grp = rec
-            if self._params_combo:
-                params = self._params_combo.get()
-            self.runner(self.script_id, name, path, params, interp)
+        if not rec:
+            return
+        _, name, path, params, interp, _grp, temp_param = rec
+        params = self._selected_params(params)
+        if temp_param:
+            dlg = _TempParamDialog(self.winfo_toplevel(), saved_params=params,
+                                   title=f"Run with temp param — {name}")
+            self.wait_window(dlg)
+            if dlg.cancelled:
+                return
+            extra = dlg.result.strip()
+            if extra:
+                params = f"{params} {extra}".strip()
+        self.runner(self.script_id, name, path, params, interp)
 
     def _run_with_param(self):
         rec = self.db.get(self.script_id)
         if not rec:
             return
-        _, name, path, default_params, interp, _grp = rec
+        _, name, path, default_params, interp, _grp, _temp = rec
         script_id = self.script_id
         runner = self.runner
         on_refresh = self.on_refresh
         db = self.db
-        current = self._params_combo.get() if self._params_combo else default_params
+        current = self._selected_params(default_params)
 
         dlg = _PresetEntryDialog(self.winfo_toplevel(), current, title="Run with Parameters")
         self.wait_window(dlg)

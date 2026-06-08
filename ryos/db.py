@@ -66,6 +66,8 @@ class ScriptDB:
                 conn.execute("ALTER TABLE scripts ADD COLUMN last_run_status TEXT")
             if "group_name" not in cols:
                 conn.execute("ALTER TABLE scripts ADD COLUMN group_name TEXT DEFAULT ''")
+            if "temp_param" not in cols:
+                conn.execute("ALTER TABLE scripts ADD COLUMN temp_param INTEGER DEFAULT 0")
             # populate groups table from existing script group_name values
             existing_groups = {r[0] for r in conn.execute("SELECT name FROM groups")}
             named = conn.execute(
@@ -111,24 +113,33 @@ class ScriptDB:
                 conn.execute("ALTER TABLE pipeline_steps ADD COLUMN params_override TEXT DEFAULT NULL")
             conn.commit()
 
-    def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "") -> int:
+    def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "",
+            temp_param: int = 0) -> int:
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(order_index), 0) FROM scripts").fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name, temp_param) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds"),
-                 max_order + 1, group_name),
+                 max_order + 1, group_name, int(temp_param)),
             )
             conn.commit()
             return cur.lastrowid
 
-    def update(self, script_id: int, name: str, path: str, params: str, interpreter: str, group_name: str = ""):
+    def update(self, script_id: int, name: str, path: str, params: str, interpreter: str,
+               group_name: str = "", temp_param: int | None = None):
+        """Update a script. temp_param=None leaves the existing flag untouched."""
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE scripts SET name=?, path=?, params=?, interpreter=?, group_name=? WHERE id=?",
-                (name, path, params, interpreter, group_name, script_id),
-            )
+            if temp_param is None:
+                conn.execute(
+                    "UPDATE scripts SET name=?, path=?, params=?, interpreter=?, group_name=? WHERE id=?",
+                    (name, path, params, interpreter, group_name, script_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE scripts SET name=?, path=?, params=?, interpreter=?, group_name=?, temp_param=? WHERE id=?",
+                    (name, path, params, interpreter, group_name, int(temp_param), script_id),
+                )
             conn.commit()
 
     def delete(self, script_id: int):
@@ -336,7 +347,8 @@ class ScriptDB:
     def list_all(self):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status, group_name "
+                "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status, group_name, "
+                "COALESCE(temp_param, 0) "
                 "FROM scripts "
                 "ORDER BY CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
                 "group_name ASC, order_index ASC, id ASC"
@@ -437,16 +449,17 @@ class ScriptDB:
             )
             now = datetime.now().isoformat(timespec="seconds")
             source_scripts = conn.execute(
-                "SELECT id, name, path, params, interpreter, order_index FROM scripts WHERE group_name=?",
+                "SELECT id, name, path, params, interpreter, order_index, COALESCE(temp_param, 0) "
+                "FROM scripts WHERE group_name=?",
                 (source,),
             ).fetchall()
             id_map: dict[int, int] = {}
-            for old_id, s_name, path, params, interpreter, order_index in source_scripts:
+            for old_id, s_name, path, params, interpreter, order_index, temp_param in source_scripts:
                 cur = conn.execute(
                     "INSERT INTO scripts (name, path, params, interpreter, created_at, "
-                    "last_run_at, last_run_status, order_index, group_name) "
-                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
-                    (s_name, path, params, interpreter, now, order_index, new_name),
+                    "last_run_at, last_run_status, order_index, group_name, temp_param) "
+                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
+                    (s_name, path, params, interpreter, now, order_index, new_name, temp_param),
                 )
                 new_id = cur.lastrowid
                 id_map[old_id] = new_id
@@ -688,7 +701,8 @@ class ScriptDB:
     def get(self, script_id: int):
         with self._connect() as conn:
             cur = conn.execute(
-                "SELECT id, name, path, params, interpreter, group_name FROM scripts WHERE id=?",
+                "SELECT id, name, path, params, interpreter, group_name, "
+                "COALESCE(temp_param, 0) FROM scripts WHERE id=?",
                 (script_id,),
             )
             return cur.fetchone()

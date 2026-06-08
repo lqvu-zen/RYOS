@@ -79,6 +79,56 @@ class _PresetEntryDialog(tk.Toplevel):
         self.destroy()
 
 
+class _TempParamDialog(tk.Toplevel):
+    """One-time parameter prompt shown before a run; nothing is saved.
+
+    An empty value is allowed (the script just runs with its saved params).
+    ``cancelled`` distinguishes Cancel/closing the window from an empty OK.
+    """
+
+    def __init__(self, parent, saved_params: str = "", title: str = "Temporary Parameter"):
+        super().__init__(parent)
+        self.result = ""
+        self.cancelled = True
+        self.title(title)
+        self.resizable(False, False)
+        self.grab_set()
+        self.configure(bg=C["card_bg"])
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+
+        pad = {"padx": 6, "pady": 4}
+        if saved_params:
+            ttk.Label(frame, text=f"Saved params: {saved_params}",
+                      foreground="#888").grid(row=0, column=0, columnspan=2, sticky="w", **pad)
+        ttk.Label(frame, text="Temp param:").grid(row=1, column=0, sticky="w", **pad)
+        self._e_params = ttk.Entry(frame, width=36)
+        self._e_params.grid(row=1, column=1, sticky="ew", **pad)
+        ttk.Label(frame, text="Used for this run only — not saved. Appended to saved params.",
+                  foreground="#888").grid(row=2, column=0, columnspan=2, sticky="w", **pad)
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="e", pady=(8, 0))
+        ttk.Button(btn_row, text="Run",    command=self._ok).pack(side="right", padx=(4, 0))
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right")
+
+        self.bind("<Return>", lambda _: self._ok())
+        self.bind("<Escape>", lambda _: self.destroy())
+        self.transient(parent)
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        self._e_params.focus_set()
+
+    def _ok(self):
+        self.result = self._e_params.get().strip()
+        self.cancelled = False
+        self.destroy()
+
+
 class ScriptDialog(tk.Toplevel):
     """Modal dialog for adding or editing a script entry."""
 
@@ -107,12 +157,13 @@ class ScriptDialog(tk.Toplevel):
         if script_id:
             rec = db.get(script_id)
             if rec:
-                _, name, path, params, interp, grp = rec
+                _, name, path, params, interp, grp, temp_param = rec
                 self.e_name.insert(0, name)
                 self.e_path.insert(0, path)
                 self.e_params.insert(0, params)
                 self.e_interp.set(interp)
                 self.e_group.set(grp or "")
+                self.temp_param_var.set(bool(temp_param))
             for _, label, pparams in db.list_param_presets(script_id):
                 self._presets.append([label, pparams])
                 self._preset_listbox.insert(tk.END, label)
@@ -213,11 +264,17 @@ class ScriptDialog(tk.Toplevel):
         self.e_group.bind("<<ComboboxSelected>>", lambda _: self._refresh_path_inputs())
         self.e_group.bind("<FocusOut>", lambda _: self._refresh_path_inputs())
 
+        self.temp_param_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame, variable=self.temp_param_var,
+            text="Ask for a temporary parameter on each run (not saved)",
+        ).grid(row=7, column=1, columnspan=2, sticky="w", **pad)
+
         sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=7, column=0, columnspan=3, sticky="ew", pady=8)
+        sep.grid(row=8, column=0, columnspan=3, sticky="ew", pady=8)
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=8, column=0, columnspan=3, sticky="ew")
+        btn_row.grid(row=9, column=0, columnspan=3, sticky="ew")
         ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
         ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
 
@@ -289,7 +346,7 @@ class ScriptDialog(tk.Toplevel):
             if new_params is not None:
                 rec = self.db.get(self.script_id)
                 if rec:
-                    _, name, path, _, interp, grp = rec
+                    _, name, path, _, interp, grp, _temp = rec
                     self.db.update(self.script_id, name, path, new_params, interp, grp)
             if self.on_save:
                 self.on_save()
@@ -412,10 +469,11 @@ class ScriptDialog(tk.Toplevel):
             if not messagebox.askyesno("Warning", f"File not found:\n{path}\n\nSave anyway?", parent=self):
                 return
 
+        temp_param = int(self.temp_param_var.get())
         if self.script_id:
-            self.db.update(self.script_id, name, path, params, interp, group_name)
+            self.db.update(self.script_id, name, path, params, interp, group_name, temp_param)
         else:
-            self.script_id = self.db.add(name, path, params, interp, group_name)
+            self.script_id = self.db.add(name, path, params, interp, group_name, temp_param)
 
         self.db.replace_param_presets(self.script_id, [(l, p) for l, p in self._presets])
 
