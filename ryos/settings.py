@@ -62,6 +62,7 @@ _SETTINGS_DEFAULTS: dict = {
     "theme":                  "light",
     "accent_color":           None,
     "compact_mode":           False,
+    "card_size":              "medium",
 }
 
 

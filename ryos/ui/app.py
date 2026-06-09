@@ -90,6 +90,7 @@ class RYOSApp(_BaseWindow):
         apply_theme(self._settings.get("theme", "light"), self._settings.get("accent_color"))
         from ryos.ui import cards as _cards_mod
         _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
+        _cards_mod.set_card_size(self._settings.get("card_size", "medium"))
         self.configure(bg=C["bg"])
 
         self.update_idletasks()
@@ -398,21 +399,21 @@ class RYOSApp(_BaseWindow):
                 except tk.TclError:
                     pass
         from ryos.ui import cards as _cards_mod
-        _compact = _cards_mod._COMPACT
+        _row_pady, _row_ipady, _stop_pady, _name_pady = _cards_mod.row_metrics()
         row = tk.Frame(content, bg=C["card_bg"],
                        highlightbackground=C["border"], highlightthickness=1)
-        row.pack(fill="x", pady=2 if _compact else 5, ipady=0 if _compact else 2)
+        row.pack(fill="x", pady=_row_pady, ipady=_row_ipady)
         _strip_color = C["pipe_accent"] if job.kind == "pipeline" else C["running"]
         tk.Frame(row, bg=_strip_color, width=5).pack(side="left", fill="y")
         stop_btn = tk.Button(
             row, text="⏹ Stop",
             bg=C["btn_stop_active"], fg=C["fg_on_dark"],
             activebackground=C["btn_stop_active_hover"], activeforeground=C["fg_on_dark"],
-            relief="flat", bd=0, padx=10, pady=2 if _compact else 5,
+            relief="flat", bd=0, padx=10, pady=_stop_pady,
             font=("Segoe UI", 9, "bold"), cursor="hand2",
             command=lambda j=job: self._stop_job(j),
         )
-        stop_btn.pack(side="right", padx=6, pady=1 if _compact else 4)
+        stop_btn.pack(side="right", padx=6, pady=max(0, _stop_pady - 1))
         secs = int((datetime.now() - job.start_time).total_seconds())
         elapsed = f"{secs // 60}m {secs % 60:02d}s" if secs >= 60 else f"{secs}s"
         time_var = tk.StringVar(value=f"{job.start_time.strftime('%H:%M:%S')}  ·  {elapsed}")
@@ -423,7 +424,7 @@ class RYOSApp(_BaseWindow):
         tk.Label(row, textvariable=name_var,
                  bg=C["card_bg"], fg=C["name_fg"],
                  font=("Segoe UI", 9), anchor="w",
-                 width=1, padx=8, pady=2 if _compact else 6).pack(side="left", fill="x", expand=True)
+                 width=1, padx=8, pady=_name_pady).pack(side="left", fill="x", expand=True)
         job.running_row = row
         job.name_var = name_var
         job.time_var = time_var
@@ -767,6 +768,7 @@ class RYOSApp(_BaseWindow):
             )
             from ryos.ui import cards as _cards_mod
             _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
+            _cards_mod.set_card_size(self._settings.get("card_size", "medium"))
             if persist:
                 _save_settings(self._settings)
             self._rebuild_ui()
@@ -979,8 +981,7 @@ class RYOSApp(_BaseWindow):
             pipelines = self.db.list_pipelines(gname)
             if pipelines:
                 from ryos.ui import cards as _cards_mod
-                _pad_y = 2 if _cards_mod._COMPACT else 5
-                _ipad_y = 0 if _cards_mod._COMPACT else 2
+                _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
                 for p_id, p_name in pipelines:
                     pc = PipelineCard(
                         pipe_content, p_id, p_name, self.db,
@@ -1002,8 +1003,7 @@ class RYOSApp(_BaseWindow):
             )
             if scripts:
                 from ryos.ui import cards as _cards_mod
-                _pad_y = 2 if _cards_mod._COMPACT else 5
-                _ipad_y = 0 if _cards_mod._COMPACT else 2
+                _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
                 gids = [r[0] for r in scripts]
                 for gi, rec in enumerate(scripts):
                     sid = rec[0]

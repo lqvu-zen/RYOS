@@ -888,6 +888,7 @@ class AppearanceDialog(tk.Toplevel):
         self._theme  = tk.StringVar(value=settings.get("theme", "light"))
         self._accent: str | None = settings.get("accent_color")
         self._compact = tk.BooleanVar(value=settings.get("compact_mode", False))
+        self._card_size = tk.StringVar(value=settings.get("card_size", "medium"))
 
         self.title("Appearance")
         self.configure(bg=C["bg"])
@@ -899,9 +900,10 @@ class AppearanceDialog(tk.Toplevel):
         self.update_idletasks()
         self.geometry(f"+{parent.winfo_rootx() + 60}+{parent.winfo_rooty() + 60}")
 
-        # Live-preview as soon as the user changes the radio selection or compact toggle.
+        # Live-preview as soon as the user changes the radio selection, compact toggle, or card size.
         self._theme.trace_add("write", lambda *_: self._live_apply())
         self._compact.trace_add("write", lambda *_: self._live_apply())
+        self._card_size.trace_add("write", lambda *_: self._live_apply())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
     # ------------------------------------------------------------------
@@ -970,6 +972,17 @@ class AppearanceDialog(tk.Toplevel):
             font=("Segoe UI", 9), anchor="w", cursor="hand2",
         ).pack(fill="x", pady=2)
 
+        tk.Label(f, text="Card size", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9), anchor="w").pack(fill="x", pady=(8, 2))
+        for label, value in (("Small", "small"), ("Medium", "medium"), ("Large", "large")):
+            tk.Radiobutton(
+                f, text=label, variable=self._card_size, value=value,
+                bg=C["bg"], fg=C["name_fg"],
+                selectcolor=C["card_bg"],
+                activebackground=C["bg"], activeforeground=C["name_fg"],
+                font=("Segoe UI", 9), anchor="w", cursor="hand2",
+            ).pack(fill="x", pady=1)
+
         # ---- BUTTON ROW ----
         btn_row = tk.Frame(self, bg=C["bg"])
         btn_row.pack(fill="x", padx=16, pady=12)
@@ -999,14 +1012,16 @@ class AppearanceDialog(tk.Toplevel):
         """Push the current selection to the app without persisting to disk."""
         self._on_save(
             {"theme": self._theme.get(), "accent_color": self._accent,
-             "compact_mode": self._compact.get()},
+             "compact_mode": self._compact.get(),
+             "card_size": self._card_size.get()},
             persist=False,
         )
 
     def _apply(self) -> None:
         self._on_save(
             {"theme": self._theme.get(), "accent_color": self._accent,
-             "compact_mode": self._compact.get()},
+             "compact_mode": self._compact.get(),
+             "card_size": self._card_size.get()},
             persist=True,
         )
         self.destroy()

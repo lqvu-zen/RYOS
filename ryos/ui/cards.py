@@ -17,6 +17,46 @@ def set_compact_mode(enabled: bool) -> None:
     _COMPACT = enabled
 
 
+_CARD_SIZE: str = "medium"
+
+
+def set_card_size(size: str) -> None:
+    global _CARD_SIZE
+    _CARD_SIZE = size
+
+
+# Padding table: (padx, pady) for card body frame.
+_CARD_PADDING = {
+    # (compact, size): (padx, pady)
+    (False, "small"):  (12,  6),
+    (False, "medium"): (12, 10),
+    (False, "large"):  (12, 14),
+    (True,  "small"):  (10,  2),
+    (True,  "medium"): (10,  4),
+    (True,  "large"):  (10,  8),
+}
+
+# Row metrics: (row_pady, row_ipady, stop_pady, name_pady)
+_ROW_METRICS = {
+    (False, "small"):  (3, 1, 3, 4),
+    (False, "medium"): (5, 2, 5, 6),
+    (False, "large"):  (8, 4, 7, 9),
+    (True,  "small"):  (1, 0, 1, 1),
+    (True,  "medium"): (2, 0, 2, 2),
+    (True,  "large"):  (5, 2, 4, 5),
+}
+
+
+def card_padding() -> tuple[int, int]:
+    """Return (padx, pady) for the card body frame based on current mode and size."""
+    return _CARD_PADDING.get((_COMPACT, _CARD_SIZE), _CARD_PADDING[(_COMPACT, "medium")])
+
+
+def row_metrics() -> tuple[int, int, int, int]:
+    """Return (row_pady, row_ipady, stop_pady, name_pady) for running rows and card packing."""
+    return _ROW_METRICS.get((_COMPACT, _CARD_SIZE), _ROW_METRICS[(_COMPACT, "medium")])
+
+
 class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
@@ -73,7 +113,7 @@ class ScriptCard(tk.Frame):
                 Tooltip(b, tip)
             return b
 
-        _pad_x, _pad_y = (10, 4) if _COMPACT else (12, 10)
+        _pad_x, _pad_y = card_padding()
         self._text_area = text_area = tk.Frame(self, bg=C["card_bg"], padx=_pad_x, pady=_pad_y)
         text_area.pack(side="left", fill="both", expand=True)
 
@@ -312,7 +352,7 @@ class PipelineCard(tk.Frame):
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
               lambda: on_run(pipeline_id, name), tip="Run")
 
-        _pad_x, _pad_y = (10, 4) if _COMPACT else (12, 10)
+        _pad_x, _pad_y = card_padding()
         content = tk.Frame(self, bg=C["card_bg"], padx=_pad_x, pady=_pad_y)
         content.pack(side="left", fill="both", expand=True)
         self._content = content
