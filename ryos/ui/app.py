@@ -397,19 +397,21 @@ class RYOSApp(_BaseWindow):
                     w.destroy()
                 except tk.TclError:
                     pass
+        from ryos.ui import cards as _cards_mod
+        _compact = _cards_mod._COMPACT
         row = tk.Frame(content, bg=C["card_bg"],
                        highlightbackground=C["border"], highlightthickness=1)
-        row.pack(fill="x", pady=5, ipady=2)
+        row.pack(fill="x", pady=2 if _compact else 5, ipady=0 if _compact else 2)
         tk.Frame(row, bg=C["running"], width=5).pack(side="left", fill="y")
         stop_btn = tk.Button(
             row, text="⏹ Stop",
             bg=C["btn_stop_active"], fg=C["fg_on_dark"],
             activebackground=C["btn_stop_active_hover"], activeforeground=C["fg_on_dark"],
-            relief="flat", bd=0, padx=10, pady=5,
+            relief="flat", bd=0, padx=10, pady=2 if _compact else 5,
             font=("Segoe UI", 9, "bold"), cursor="hand2",
             command=lambda j=job: self._stop_job(j),
         )
-        stop_btn.pack(side="right", padx=6, pady=4)
+        stop_btn.pack(side="right", padx=6, pady=1 if _compact else 4)
         secs = int((datetime.now() - job.start_time).total_seconds())
         elapsed = f"{secs // 60}m {secs % 60:02d}s" if secs >= 60 else f"{secs}s"
         time_var = tk.StringVar(value=f"{job.start_time.strftime('%H:%M:%S')}  ·  {elapsed}")
@@ -420,7 +422,7 @@ class RYOSApp(_BaseWindow):
         tk.Label(row, textvariable=name_var,
                  bg=C["card_bg"], fg=C["name_fg"],
                  font=("Segoe UI", 9), anchor="w",
-                 width=1, padx=8, pady=6).pack(side="left", fill="x", expand=True)
+                 width=1, padx=8, pady=2 if _compact else 6).pack(side="left", fill="x", expand=True)
         job.running_row = row
         job.name_var = name_var
         job.time_var = time_var

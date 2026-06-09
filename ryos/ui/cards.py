@@ -324,7 +324,7 @@ class PipelineCard(tk.Frame):
                      font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
 
         name_label = ScrollingLabel(content, name, C["name_fg"], C["card_bg"])
-        name_label.pack(fill="x", pady=(2, 0))
+        name_label.pack(fill="x", pady=(0 if _COMPACT else 2, 0))
 
         n = len(steps)
         if _COMPACT:
