@@ -402,7 +402,8 @@ class RYOSApp(_BaseWindow):
         row = tk.Frame(content, bg=C["card_bg"],
                        highlightbackground=C["border"], highlightthickness=1)
         row.pack(fill="x", pady=2 if _compact else 5, ipady=0 if _compact else 2)
-        tk.Frame(row, bg=C["running"], width=5).pack(side="left", fill="y")
+        _strip_color = C["pipe_accent"] if job.kind == "pipeline" else C["running"]
+        tk.Frame(row, bg=_strip_color, width=5).pack(side="left", fill="y")
         stop_btn = tk.Button(
             row, text="⏹ Stop",
             bg=C["btn_stop_active"], fg=C["fg_on_dark"],
@@ -457,8 +458,9 @@ class RYOSApp(_BaseWindow):
         section_frame = tk.Frame(parent, bg=C["bg"])
         section_frame.pack(fill="x")
 
+        from ryos.ui import cards as _cards_mod
         hdr = tk.Frame(section_frame, bg=C["bg"], cursor="hand2")
-        hdr.pack(fill="x", padx=2, pady=(10, 2))
+        hdr.pack(fill="x", padx=2, pady=(4 if _cards_mod._COMPACT else 10, 2))
 
         arrow_var = tk.StringVar(value="▶" if collapsed else "▼")
         arrow_lbl = tk.Label(hdr, textvariable=arrow_var, bg=C["bg"], fg=C["path_fg"],

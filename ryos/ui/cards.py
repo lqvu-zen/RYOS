@@ -116,7 +116,7 @@ class ScriptCard(tk.Frame):
 
         self._params_combo = None
         presets = db.list_param_presets(sid)
-        if presets:
+        if presets and not _COMPACT:
             # Always offer an empty preset at the top (shown with a clear label)
             # so a script can be run with no parameters regardless of its presets.
             preset_values = [self._EMPTY_LABEL] + [p[2] for p in presets if p[2] != ""]
