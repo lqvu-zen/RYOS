@@ -1,5 +1,6 @@
 """Main RYOS window: header, tabs, card list, output panel, and run engine."""
 import ctypes
+import hashlib
 import os
 import queue
 import shlex
@@ -24,7 +25,7 @@ from ..db import ScriptDB
 from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
-from ..settings import _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
+from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
@@ -37,6 +38,43 @@ _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
 MAX_PARALLEL_JOBS = 10
 _QUICK_RUN_INDEX_TTL = 30.0  # seconds before the file-index cache is considered stale
+
+
+def _qr_index_path(base_dir: str) -> Path:
+    key = os.path.normcase(os.path.normpath(base_dir))
+    h = hashlib.md5(key.encode()).hexdigest()[:12]
+    return QR_INDEX_DIR / f"qr_index_{h}.json"
+
+
+def _quick_run_load_disk_index(base_dir: str, ttl: float) -> "tuple[float, list] | None":
+    import json as _json
+    import time
+    try:
+        raw = _qr_index_path(base_dir).read_text(encoding="utf-8")
+        data = _json.loads(raw)
+        # Hash-collision guard: verify the stored base_dir matches exactly.
+        if data["base_dir"] != base_dir:
+            return None
+        # Reject if the on-disk index is older than the configured TTL.
+        if time.time() - data["ts"] >= ttl:
+            return None
+        paths = [tuple(e) for e in data["paths"]]
+        return (data["ts"], paths)
+    except Exception:
+        return None
+
+
+def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> None:
+    import json as _json
+    try:
+        dest = _qr_index_path(base_dir)
+        tmp = Path(str(dest) + ".tmp")
+        payload = {"base_dir": base_dir, "ts": wall_ts, "paths": paths}
+        tmp.write_text(_json.dumps(payload), encoding="utf-8")
+        # Atomic swap so a concurrent read never sees a partial file.
+        os.replace(tmp, dest)
+    except Exception:
+        pass
 
 
 class _Job:
@@ -120,6 +158,7 @@ class RYOSApp(_BaseWindow):
         self._quick_run_bars: dict[str, dict] = {}
         self._quick_run_open_group: str | None = None
         self._quick_run_index_cache: dict[str, tuple[float, list]] = {}
+        self._quick_run_disk_loaded: set[str] = set()
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -1541,6 +1580,20 @@ class RYOSApp(_BaseWindow):
             if time.monotonic() - cached[0] > _QUICK_RUN_INDEX_TTL:
                 self._quick_run_build_index_async(base_dir)  # rebuild in background
             return cached[1]  # return stale data while rebuild runs
+        # First access this session: try disk before kicking a full rescan.
+        if base_dir not in self._quick_run_disk_loaded:
+            self._quick_run_disk_loaded.add(base_dir)
+            disk = _quick_run_load_disk_index(base_dir, self._settings.get("quick_run_index_ttl", 300))
+            if disk is not None:
+                wall_ts, paths = disk
+                age = time.time() - wall_ts
+                # Reconstruct a monotonic timestamp consistent with the wall-clock age.
+                mono_ts = time.monotonic() - age
+                self._quick_run_index_cache[base_dir] = (mono_ts, paths)
+                # If the disk data is already older than the in-memory TTL, refresh in background.
+                if age > _QUICK_RUN_INDEX_TTL:
+                    self._quick_run_build_index_async(base_dir)
+                return paths
         self._quick_run_build_index_async(base_dir)
         return None
 
@@ -1564,6 +1617,8 @@ class RYOSApp(_BaseWindow):
             except PermissionError:
                 pass
             ts = time.monotonic()
+            wall_ts = time.time()
+            _quick_run_save_disk_index(base_dir, wall_ts, paths)
             self.after(0, lambda: self._quick_run_on_index_ready(base_dir, ts, paths))
         threading.Thread(target=_worker, daemon=True).start()
 

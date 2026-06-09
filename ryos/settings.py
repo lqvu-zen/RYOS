@@ -14,6 +14,10 @@ LOG_DIR = _APPDATA / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = LOG_DIR / "ryos.log"
 
+DATA_DIR = _APPDATA  # public alias for ui/* to import without touching private name
+QR_INDEX_DIR = _APPDATA / "qr_index"
+QR_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+
 # Directory of the exe / script (used for icon and migration).
 _NUITKA   = "__compiled__" in dir()          # True only in Nuitka-compiled builds
 _PACKAGED = getattr(sys, "frozen", False) or _NUITKA  # True for Nuitka, PyInstaller, cx_Freeze
@@ -55,6 +59,7 @@ _SETTINGS_DEFAULTS: dict = {
     "quick_run_enabled":      True,
     "quick_run_autocomplete":    True,
     "quick_run_max_suggestions": 10,
+    "quick_run_index_ttl":    300,
     "logging_enabled":        True,
     "log_level":              "INFO",
     "log_runs_output":        False,
