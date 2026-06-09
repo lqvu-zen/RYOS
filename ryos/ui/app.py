@@ -26,9 +26,9 @@ from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
-from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
+from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
-from .theme import C, _apply_snap_corner, _configure_ttk_styles, _flat_button
+from .theme import C, _apply_snap_corner, _configure_ttk_styles, _flat_button, apply_theme
 from .widgets import Tooltip
 
 _log = get_logger("app")
@@ -85,6 +85,10 @@ class RYOSApp(_BaseWindow):
             self.iconbitmap(str(_icon))
         self.db = ScriptDB()
         self._settings: dict = _load_settings()
+        # Apply the saved theme before building any widgets so that C is
+        # already populated with the correct palette when _build_ui() runs.
+        apply_theme(self._settings.get("theme", "light"), self._settings.get("accent_color"))
+        self.configure(bg=C["bg"])
 
         self.update_idletasks()
         w = self._settings.get("window_width",  540)
@@ -235,6 +239,12 @@ class RYOSApp(_BaseWindow):
                                    self._show_options_menu, width=4)
         options_btn.pack(side="right", padx=8)
         self._options_btn = options_btn
+
+        appearance_btn = _flat_button(header, "🎨", C["btn_dark_bg"], C["btn_dark_hover"],
+                                      self._open_appearance, width=4)
+        appearance_btn.pack(side="right", padx=(0, 0))
+        Tooltip(appearance_btn, "Appearance")
+        self._appearance_btn = appearance_btn
 
         self._select_btn = None
 
@@ -728,6 +738,39 @@ class RYOSApp(_BaseWindow):
         menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
                          foreground=C["menu_danger"], activeforeground=C["menu_danger"])
         menu.tk_popup(event.x_root, event.y_root)
+
+    # ------------------------------------------------------------------
+    # Appearance / theme
+    # ------------------------------------------------------------------
+
+    def _rebuild_ui(self) -> None:
+        """Tear down and reconstruct all widgets after a theme switch.
+        Toplevel windows (open dialogs) are skipped — destroying the caller
+        from inside its own callback would crash Tcl."""
+        for child in self.winfo_children():
+            if not isinstance(child, tk.Toplevel):
+                child.destroy()
+        self._build_ui()
+        self._refresh()
+
+    def _open_appearance(self) -> None:
+        if self._jobs:
+            self.status_var.set("Stop running jobs before changing theme.")
+            return
+
+        def _apply(new_settings: dict, persist: bool = True) -> None:
+            self._settings.update(new_settings)
+            apply_theme(
+                self._settings.get("theme", "light"),
+                self._settings.get("accent_color"),
+            )
+            if persist:
+                _save_settings(self._settings)
+            self._rebuild_ui()
+
+        AppearanceDialog(self, self._settings, _apply)
+
+    # ------------------------------------------------------------------
 
     def _refresh(self):
         self._cards = []

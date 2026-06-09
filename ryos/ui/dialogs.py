@@ -3,7 +3,7 @@ import os
 import sys
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from ..db import ScriptDB
 from ..settings import (
@@ -13,7 +13,7 @@ from ..settings import (
     _SETTINGS_DEFAULTS,
 )
 from ..startup import _set_startup, _startup_enabled
-from .theme import C, _apply_snap_corner, _flat_button
+from .theme import C, THEMES, _apply_snap_corner, _flat_button
 
 
 def _is_inside(path: str, base: str) -> bool:
@@ -874,4 +874,129 @@ class AdvancedOptionsDialog(tk.Toplevel):
                                  parent=self)
             return
         self._on_save(self._settings)
+        self.destroy()
+
+
+class AppearanceDialog(tk.Toplevel):
+    """Modal dialog for choosing theme and accent color."""
+
+    def __init__(self, parent, settings: dict, on_save):
+        super().__init__(parent)
+        self._original_settings = dict(settings)
+        self._on_save = on_save
+
+        self._theme  = tk.StringVar(value=settings.get("theme", "light"))
+        self._accent: str | None = settings.get("accent_color")
+
+        self.title("Appearance")
+        self.configure(bg=C["bg"])
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self._build()
+        self.update_idletasks()
+        self.geometry(f"+{parent.winfo_rootx() + 60}+{parent.winfo_rooty() + 60}")
+
+        # Live-preview as soon as the user changes the radio selection.
+        self._theme.trace_add("write", lambda *_: self._live_apply())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _current_accent_hex(self) -> str:
+        """Return the accent hex to display — custom if set, else theme default."""
+        return self._accent if self._accent else THEMES[self._theme.get()]["accent"]
+
+    def _refresh_swatch(self) -> None:
+        self._swatch.configure(bg=self._current_accent_hex())
+
+    def _section(self, text: str) -> tk.Frame:
+        """Render a section heading identical to AdvancedOptionsDialog._section."""
+        tk.Label(self._body, text=text, bg=C["bg"], fg=C["accent"],
+                 font=("Segoe UI", 9, "bold"), anchor="w").pack(
+            fill="x", padx=16, pady=(14, 2))
+        tk.Frame(self._body, bg=C["accent"], height=1).pack(fill="x", padx=16, pady=(0, 6))
+        frame = tk.Frame(self._body, bg=C["bg"])
+        frame.pack(fill="x", padx=24, pady=2)
+        return frame
+
+    # ------------------------------------------------------------------
+    # Build
+    # ------------------------------------------------------------------
+
+    def _build(self) -> None:
+        self._body = tk.Frame(self, bg=C["bg"])
+        self._body.pack(fill="both", expand=True)
+
+        # ---- THEME ----
+        f = self._section("THEME")
+        for label, value in (("☀  Light", "light"), ("🌙  Dark", "dark")):
+            tk.Radiobutton(
+                f, text=label, variable=self._theme, value=value,
+                bg=C["bg"], fg=C["name_fg"],
+                selectcolor=C["card_bg"],
+                activebackground=C["bg"], activeforeground=C["name_fg"],
+                font=("Segoe UI", 9), anchor="w", cursor="hand2",
+            ).pack(fill="x", pady=2)
+
+        # ---- ACCENT COLOR ----
+        f = self._section("ACCENT COLOR")
+        swatch_row = tk.Frame(f, bg=C["bg"])
+        swatch_row.pack(fill="x", pady=(2, 6))
+
+        self._swatch = tk.Frame(swatch_row, width=32, height=22,
+                                relief="solid", bd=1,
+                                bg=self._current_accent_hex())
+        self._swatch.pack(side="left", padx=(0, 8))
+        self._swatch.pack_propagate(False)
+
+        _flat_button(swatch_row, "Choose…", C["btn_dark_bg"], C["btn_dark_hover"],
+                     self._pick_accent, width=8).pack(side="left", padx=(0, 4))
+        _flat_button(swatch_row, "Reset", C["btn_dark_bg"], C["btn_dark_hover"],
+                     self._reset_accent, width=6).pack(side="left")
+
+        # ---- BUTTON ROW ----
+        btn_row = tk.Frame(self, bg=C["bg"])
+        btn_row.pack(fill="x", padx=16, pady=12)
+        _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"],
+                     self._cancel, width=10).pack(side="right", padx=(6, 0))
+        _flat_button(btn_row, "Apply", C["accent"], C["accent2"],
+                     self._apply, width=10).pack(side="right")
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
+
+    def _pick_accent(self) -> None:
+        _, hex_str = colorchooser.askcolor(
+            color=self._current_accent_hex(), title="Accent color", parent=self)
+        if hex_str:
+            self._accent = hex_str
+            self._refresh_swatch()
+            self._live_apply()
+
+    def _reset_accent(self) -> None:
+        self._accent = None
+        self._refresh_swatch()
+        self._live_apply()
+
+    def _live_apply(self) -> None:
+        """Push the current selection to the app without persisting to disk."""
+        self._on_save(
+            {"theme": self._theme.get(), "accent_color": self._accent},
+            persist=False,
+        )
+
+    def _apply(self) -> None:
+        self._on_save(
+            {"theme": self._theme.get(), "accent_color": self._accent},
+            persist=True,
+        )
+        self.destroy()
+
+    def _cancel(self) -> None:
+        self._on_save(self._original_settings, persist=False)
         self.destroy()

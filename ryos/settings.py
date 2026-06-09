@@ -59,6 +59,8 @@ _SETTINGS_DEFAULTS: dict = {
     "log_level":              "INFO",
     "log_runs_output":        False,
     "max_parallel_jobs":      10,
+    "theme":                  "light",
+    "accent_color":           None,
 }
 
 
