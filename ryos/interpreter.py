@@ -35,10 +35,10 @@ def detect_interpreter(path: str) -> str:
         ".bat": "",
         ".cmd": "",
         ".exe": "",
-        ".sln": "devenv",
+        ".sln": "cmd",
         ".code-workspace": "code",
     }
-    return mapping.get(ext, "")
+    return mapping.get(ext, "cmd")
 
 
 def _script_tag(path: str) -> tuple[str, str]:
@@ -56,7 +56,7 @@ def _script_tag(path: str) -> tuple[str, str]:
         ".bat": ("Batch",      "#4A4A4A"),
         ".cmd": ("CMD",        "#4A4A4A"),
         ".exe": ("EXE",        "#3A3A3A"),
-        ".sln": ("Solution",   "#68217A"),
+        ".sln": ("VS",         "#68217A"),
         ".code-workspace": ("VS Code", "#0078D4"),
     }
     label = ext.lstrip(".").upper() if ext else "Script"
