@@ -28,7 +28,7 @@ from ..settings import _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
-from .theme import C, _apply_snap_corner, _flat_button
+from .theme import C, _apply_snap_corner, _configure_ttk_styles, _flat_button
 from .widgets import Tooltip
 
 _log = get_logger("app")
@@ -66,6 +66,7 @@ class _Job:
 class RYOSApp(_BaseWindow):
     def __init__(self):
         super().__init__()
+        _configure_ttk_styles()
         self.report_callback_exception = self._log_tk_exception
         if sys.platform == "win32":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RYOS.RunYourOwnScripts")
@@ -777,9 +778,9 @@ class RYOSApp(_BaseWindow):
 
             if group_base_dir and self._settings.get("quick_run_enabled", True):
                 _gn = gname
-                qr_btn = _flat_button(banner, "⚡", C["accent"], C["accent2"],
+                qr_btn = _flat_button(banner, "⚡", C["bolt"], C["bolt_hover"],
                                       lambda g=_gn: self._toggle_quick_run_bar(g),
-                                      width=4)
+                                      width=4, fg=C["name_fg"])
                 qr_btn.pack(side="right", padx=(0, 6))
                 Tooltip(qr_btn, "Toggle quick-run bar")
                 self._quick_run_buttons[gname] = qr_btn

@@ -113,6 +113,7 @@ class ScriptCard(tk.Frame):
             self._params_combo = ttk.Combobox(
                 text_area, values=preset_values,
                 state="readonly", font=("Segoe UI", 8),
+                style="Card.TCombobox",
             )
             self._params_combo.pack(fill="x", pady=(4, 0))
             if params and params in preset_values:

@@ -2,6 +2,7 @@
 import ctypes
 import sys
 import tkinter as tk
+from tkinter import ttk
 
 # Master palette. Mirrors the RYOS design system tokens
 # (ryos-design-system/colors_and_type.css) — the single source of
@@ -20,6 +21,7 @@ C = {
     "accent2":     "#3d5d8a",  # primary pressed / hover-darker
     "accent_wash": "#eef2ff",  # active-tab hover tint
     "bolt":        "#FFD23F",  # logo lightning bolt — signature gold
+    "bolt_hover":  "#e6bc00",  # bolt pressed / hover — darker gold
 
     # ---------- TEXT ----------
     "name_fg":      "#1a1a2e",  # primary text — near-black indigo
@@ -79,18 +81,66 @@ C = {
 }
 
 
-def _flat_button(parent, text, bg, hover_bg, command, width=9):
-    """Borderless button with hover color swap."""
+def _flat_button(parent, text, bg, hover_bg, command, width=9, fg=None):
+    """Borderless button with hover color swap. Pass fg to override white text."""
+    _fg = fg if fg is not None else C["btn_fg"]
     btn = tk.Button(
         parent, text=text, command=command,
-        bg=bg, fg=C["btn_fg"],
-        activebackground=hover_bg, activeforeground=C["btn_fg"],
+        bg=bg, fg=_fg,
+        activebackground=hover_bg, activeforeground=_fg,
         relief="flat", bd=0, padx=12, pady=5,
         font=("Segoe UI", 9, "bold"), cursor="hand2", width=width,
     )
     btn.bind("<Enter>", lambda e: btn.config(bg=hover_bg))
     btn.bind("<Leave>", lambda e: btn.config(bg=bg))
     return btn
+
+
+def _configure_ttk_styles() -> None:
+    """Configure ttk widget styles to harmonise with the flat card aesthetic."""
+    style = ttk.Style()
+    # Switch to 'clam' so ttk style overrides (especially Combobox) actually take
+    # effect instead of being swallowed by the native Windows renderer.
+    try:
+        style.theme_use("clam")
+    except tk.TclError:
+        pass  # clam unavailable — fall back to whatever the platform provides
+
+    style.configure(
+        "Card.TCombobox",
+        fieldbackground=C["card_bg"],
+        background=C["card_bg"],
+        foreground=C["name_fg"],
+        selectbackground=C["accent_wash"],
+        selectforeground=C["name_fg"],
+        borderwidth=1,
+        relief="flat",
+        arrowcolor=C["path_fg"],
+        arrowsize=12,
+        padding=(4, 2),
+    )
+    style.map(
+        "Card.TCombobox",
+        fieldbackground=[("readonly", C["card_bg"]), ("disabled", C["bg"])],
+        foreground=[("readonly", C["name_fg"])],
+        selectbackground=[("readonly", C["accent_wash"])],
+        selectforeground=[("readonly", C["name_fg"])],
+        background=[("active", C["card_hover"]), ("readonly", C["card_bg"])],
+        bordercolor=[("focus", C["accent"]), ("!focus", C["border"])],
+    )
+    # Keep the scrollbar slim and neutral.
+    style.configure(
+        "TScrollbar",
+        background=C["border"],
+        troughcolor=C["bg"],
+        borderwidth=0,
+        arrowsize=12,
+        relief="flat",
+    )
+    style.map("TScrollbar", background=[("active", C["path_fg"])])
+    # Remove the dotted grip marks from the PanedWindow sash.
+    style.configure("Sash", gripcount=0, sashthickness=4, sashpad=0,
+                    background=C["border"])
 
 
 def _apply_snap_corner(window, corner: str, margin: int = 10) -> None:
