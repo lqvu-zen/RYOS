@@ -227,6 +227,7 @@ class RYOSApp(_BaseWindow):
         self._options_menu.add_command(label="📥  Import config",      command=self._import_config)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="⚙  Advanced options…",  command=self._open_advanced_options)
+        self._options_menu.add_command(label="🎨  Appearance…",        command=self._open_appearance)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🔔  Check for updates",  command=self._manual_update_check)
         self._options_menu.add_separator()
@@ -239,12 +240,6 @@ class RYOSApp(_BaseWindow):
                                    self._show_options_menu, width=4)
         options_btn.pack(side="right", padx=8)
         self._options_btn = options_btn
-
-        appearance_btn = _flat_button(header, "🎨", C["btn_dark_bg"], C["btn_dark_hover"],
-                                      self._open_appearance, width=4)
-        appearance_btn.pack(side="right", padx=(0, 0))
-        Tooltip(appearance_btn, "Appearance")
-        self._appearance_btn = appearance_btn
 
         self._select_btn = None
 
