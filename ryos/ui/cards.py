@@ -9,6 +9,13 @@ from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
 from .theme import C
 from .widgets import ScrollingLabel, Tooltip
 
+_COMPACT: bool = False
+
+
+def set_compact_mode(enabled: bool) -> None:
+    global _COMPACT
+    _COMPACT = enabled
+
 
 class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
@@ -66,33 +73,36 @@ class ScriptCard(tk.Frame):
                 Tooltip(b, tip)
             return b
 
-        self._text_area = text_area = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
+        _pad_x, _pad_y = (10, 4) if _COMPACT else (12, 10)
+        self._text_area = text_area = tk.Frame(self, bg=C["card_bg"], padx=_pad_x, pady=_pad_y)
         text_area.pack(side="left", fill="both", expand=True)
 
-        tag_text, tag_bg = _script_tag(path)
-        badge_row = tk.Frame(text_area, bg=C["card_bg"])
-        badge_row.pack(anchor="w", fill="x", pady=(0, 2))
-        tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
-                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
-        if temp_param:
-            temp_badge = tk.Label(badge_row, text="⏱ TEMP PARAM", bg=C["accent"],
-                                  fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
-                                  padx=5, pady=1)
-            temp_badge.pack(side="left", padx=(4, 0))
-            Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
+        if not _COMPACT:
+            tag_text, tag_bg = _script_tag(path)
+            badge_row = tk.Frame(text_area, bg=C["card_bg"])
+            badge_row.pack(anchor="w", fill="x", pady=(0, 2))
+            tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
+                     font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
+            if temp_param:
+                temp_badge = tk.Label(badge_row, text="⏱ TEMP PARAM", bg=C["accent"],
+                                      fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
+                                      padx=5, pady=1)
+                temp_badge.pack(side="left", padx=(4, 0))
+                Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
         ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
-        display_path = path
-        if group_base_dir and path:
-            try:
-                rel = os.path.relpath(path, group_base_dir)
-                if not rel.startswith(".."):
-                    display_path = rel
-            except ValueError:
-                pass
-        tk.Label(text_area, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8), anchor="w").pack(fill="x")
+        if not _COMPACT:
+            display_path = path
+            if group_base_dir and path:
+                try:
+                    rel = os.path.relpath(path, group_base_dir)
+                    if not rel.startswith(".."):
+                        display_path = rel
+                except ValueError:
+                    pass
+            tk.Label(text_area, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 8), anchor="w").pack(fill="x")
 
-        if last_run and last_run != "-":
+        if not _COMPACT and last_run and last_run != "-":
             meta_row = tk.Frame(text_area, bg=C["card_bg"])
             meta_row.pack(fill="x")
             tk.Label(meta_row, text=f"Last run: {last_run}", bg=C["card_bg"],
@@ -302,42 +312,51 @@ class PipelineCard(tk.Frame):
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
               lambda: on_run(pipeline_id, name), tip="Run")
 
-        content = tk.Frame(self, bg=C["card_bg"], padx=12, pady=10)
+        _pad_x, _pad_y = (10, 4) if _COMPACT else (12, 10)
+        content = tk.Frame(self, bg=C["card_bg"], padx=_pad_x, pady=_pad_y)
         content.pack(side="left", fill="both", expand=True)
         self._content = content
 
-        badge_row = tk.Frame(content, bg=C["card_bg"])
-        badge_row.pack(fill="x")
-        tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
-                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
+        if not _COMPACT:
+            badge_row = tk.Frame(content, bg=C["card_bg"])
+            badge_row.pack(fill="x")
+            tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
+                     font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
 
-        ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
+        name_label = ScrollingLabel(content, name, C["name_fg"], C["card_bg"])
+        name_label.pack(fill="x", pady=(2, 0))
 
         n = len(steps)
-        if n == 0:
-            summary_text = "No steps — click ⚙ to add scripts"
+        if _COMPACT:
+            # Steps summary hidden; bind popup to name label so step detail stays reachable.
+            self._summary_row = None
+            if n > 0:
+                name_label.bind("<Button-1>", self._show_steps_popup)
         else:
-            parts = [s[2] for s in steps[:4]]
-            summary_text = "  →  ".join(parts)
-            if n > 4:
-                summary_text += f"  →  +{n - 4} more"
-            if len(summary_text) > 55:
-                summary_text = summary_text[:55] + "…"
+            if n == 0:
+                summary_text = "No steps — click ⚙ to add scripts"
+            else:
+                parts = [s[2] for s in steps[:4]]
+                summary_text = "  →  ".join(parts)
+                if n > 4:
+                    summary_text += f"  →  +{n - 4} more"
+                if len(summary_text) > 55:
+                    summary_text = summary_text[:55] + "…"
 
-        summary_row = tk.Frame(content, bg=C["card_bg"],
-                               cursor="hand2" if n > 0 else "")
-        summary_row.pack(fill="x")
-        self._summary_row = summary_row
-        if n > 0:
-            tk.Label(summary_row, text="▸ ", bg=C["card_bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 8), cursor="hand2").pack(side="left")
-        tk.Label(summary_row, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary_text}",
-                 bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8), anchor="w",
-                 cursor="hand2" if n > 0 else "").pack(side="left", fill="x", expand=True)
+            summary_row = tk.Frame(content, bg=C["card_bg"],
+                                   cursor="hand2" if n > 0 else "")
+            summary_row.pack(fill="x")
+            self._summary_row = summary_row
+            if n > 0:
+                tk.Label(summary_row, text="▸ ", bg=C["card_bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 8), cursor="hand2").pack(side="left")
+            tk.Label(summary_row, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary_text}",
+                     bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8), anchor="w",
+                     cursor="hand2" if n > 0 else "").pack(side="left", fill="x", expand=True)
 
-        if n > 0:
-            for w in (summary_row, *summary_row.winfo_children()):
-                w.bind("<Button-1>", self._show_steps_popup)
+            if n > 0:
+                for w in (summary_row, *summary_row.winfo_children()):
+                    w.bind("<Button-1>", self._show_steps_popup)
 
         for widget in (self, content):
             widget.bind("<Enter>", self._on_enter)

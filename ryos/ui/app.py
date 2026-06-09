@@ -88,6 +88,8 @@ class RYOSApp(_BaseWindow):
         # Apply the saved theme before building any widgets so that C is
         # already populated with the correct palette when _build_ui() runs.
         apply_theme(self._settings.get("theme", "light"), self._settings.get("accent_color"))
+        from ryos.ui import cards as _cards_mod
+        _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
         self.configure(bg=C["bg"])
 
         self.update_idletasks()
@@ -759,6 +761,8 @@ class RYOSApp(_BaseWindow):
                 self._settings.get("theme", "light"),
                 self._settings.get("accent_color"),
             )
+            from ryos.ui import cards as _cards_mod
+            _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
             if persist:
                 _save_settings(self._settings)
             self._rebuild_ui()
@@ -970,6 +974,9 @@ class RYOSApp(_BaseWindow):
             )
             pipelines = self.db.list_pipelines(gname)
             if pipelines:
+                from ryos.ui import cards as _cards_mod
+                _pad_y = 2 if _cards_mod._COMPACT else 5
+                _ipad_y = 0 if _cards_mod._COMPACT else 2
                 for p_id, p_name in pipelines:
                     pc = PipelineCard(
                         pipe_content, p_id, p_name, self.db,
@@ -978,7 +985,7 @@ class RYOSApp(_BaseWindow):
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
                     )
-                    pc.pack(fill="x", pady=5, ipady=2)
+                    pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
                     self._bind_pipeline_drag(pc)
                     self._pipeline_cards.append(pc)
             else:
@@ -990,6 +997,9 @@ class RYOSApp(_BaseWindow):
                 self.cards_frame, gname, "scripts", "Scripts"
             )
             if scripts:
+                from ryos.ui import cards as _cards_mod
+                _pad_y = 2 if _cards_mod._COMPACT else 5
+                _ipad_y = 0 if _cards_mod._COMPACT else 2
                 gids = [r[0] for r in scripts]
                 for gi, rec in enumerate(scripts):
                     sid = rec[0]
@@ -1002,7 +1012,7 @@ class RYOSApp(_BaseWindow):
                         on_move_top     = make_top(sid)           if up_id   else lambda: None,
                         group_base_dir  = group_base_dir,
                     )
-                    card.pack(fill="x", pady=5, ipady=2)
+                    card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
                     self._bind_card_drag(card)
                     self._cards.append(card)
             else:

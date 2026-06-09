@@ -61,6 +61,7 @@ _SETTINGS_DEFAULTS: dict = {
     "max_parallel_jobs":      10,
     "theme":                  "light",
     "accent_color":           None,
+    "compact_mode":           False,
 }
 
 

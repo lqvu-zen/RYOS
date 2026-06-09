@@ -887,6 +887,7 @@ class AppearanceDialog(tk.Toplevel):
 
         self._theme  = tk.StringVar(value=settings.get("theme", "light"))
         self._accent: str | None = settings.get("accent_color")
+        self._compact = tk.BooleanVar(value=settings.get("compact_mode", False))
 
         self.title("Appearance")
         self.configure(bg=C["bg"])
@@ -898,8 +899,9 @@ class AppearanceDialog(tk.Toplevel):
         self.update_idletasks()
         self.geometry(f"+{parent.winfo_rootx() + 60}+{parent.winfo_rooty() + 60}")
 
-        # Live-preview as soon as the user changes the radio selection.
+        # Live-preview as soon as the user changes the radio selection or compact toggle.
         self._theme.trace_add("write", lambda *_: self._live_apply())
+        self._compact.trace_add("write", lambda *_: self._live_apply())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
     # ------------------------------------------------------------------
@@ -958,6 +960,16 @@ class AppearanceDialog(tk.Toplevel):
         _flat_button(swatch_row, "Reset", C["btn_dark_bg"], C["btn_dark_hover"],
                      self._reset_accent, width=6).pack(side="left")
 
+        # ---- DISPLAY ----
+        f = self._section("DISPLAY")
+        tk.Checkbutton(
+            f, text="Compact cards (denser layout)", variable=self._compact,
+            bg=C["bg"], fg=C["name_fg"],
+            selectcolor=C["card_bg"],
+            activebackground=C["bg"], activeforeground=C["name_fg"],
+            font=("Segoe UI", 9), anchor="w", cursor="hand2",
+        ).pack(fill="x", pady=2)
+
         # ---- BUTTON ROW ----
         btn_row = tk.Frame(self, bg=C["bg"])
         btn_row.pack(fill="x", padx=16, pady=12)
@@ -986,13 +998,15 @@ class AppearanceDialog(tk.Toplevel):
     def _live_apply(self) -> None:
         """Push the current selection to the app without persisting to disk."""
         self._on_save(
-            {"theme": self._theme.get(), "accent_color": self._accent},
+            {"theme": self._theme.get(), "accent_color": self._accent,
+             "compact_mode": self._compact.get()},
             persist=False,
         )
 
     def _apply(self) -> None:
         self._on_save(
-            {"theme": self._theme.get(), "accent_color": self._accent},
+            {"theme": self._theme.get(), "accent_color": self._accent,
+             "compact_mode": self._compact.get()},
             persist=True,
         )
         self.destroy()
