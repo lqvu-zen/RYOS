@@ -36,6 +36,7 @@ _log = get_logger("app")
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
 MAX_PARALLEL_JOBS = 10
+_QUICK_RUN_INDEX_TTL = 30.0  # seconds before the file-index cache is considered stale
 
 
 class _Job:
@@ -1534,9 +1535,12 @@ class RYOSApp(_BaseWindow):
         return None, rels, ""
 
     def _quick_run_get_index(self, base_dir: str) -> list | None:
+        import time
         cached = self._quick_run_index_cache.get(base_dir)
         if cached is not None:
-            return cached[1]
+            if time.monotonic() - cached[0] > _QUICK_RUN_INDEX_TTL:
+                self._quick_run_build_index_async(base_dir)  # rebuild in background
+            return cached[1]  # return stale data while rebuild runs
         self._quick_run_build_index_async(base_dir)
         return None
 
