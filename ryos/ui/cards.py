@@ -73,10 +73,10 @@ class ScriptCard(tk.Frame):
         badge_row = tk.Frame(text_area, bg=C["card_bg"])
         badge_row.pack(anchor="w", fill="x", pady=(0, 2))
         tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
-                 font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
         if temp_param:
             temp_badge = tk.Label(badge_row, text="⏱ TEMP PARAM", bg=C["accent"],
-                                  fg=C["fg_on_dark"], font=("Segoe UI", 7, "bold"),
+                                  fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
                                   padx=5, pady=1)
             temp_badge.pack(side="left", padx=(4, 0))
             Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
@@ -99,10 +99,10 @@ class ScriptCard(tk.Frame):
                      fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(side="left")
             if last_run_status == "error":
                 tk.Label(meta_row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
-                         font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
+                         font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
             elif last_run_status == "ok":
                 tk.Label(meta_row, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
-                         font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
+                         font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
         self._params_combo = None
         presets = db.list_param_presets(sid)
@@ -308,7 +308,7 @@ class PipelineCard(tk.Frame):
         badge_row = tk.Frame(content, bg=C["card_bg"])
         badge_row.pack(fill="x")
         tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
-                 font=("Segoe UI", 7, "bold"), padx=5, pady=1).pack(side="left")
+                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
 
         ScrollingLabel(content, name, C["name_fg"], C["card_bg"]).pack(fill="x", pady=(2, 0))
 
@@ -320,6 +320,8 @@ class PipelineCard(tk.Frame):
             summary_text = "  →  ".join(parts)
             if n > 4:
                 summary_text += f"  →  +{n - 4} more"
+            if len(summary_text) > 55:
+                summary_text = summary_text[:55] + "…"
 
         summary_row = tk.Frame(content, bg=C["card_bg"],
                                cursor="hand2" if n > 0 else "")

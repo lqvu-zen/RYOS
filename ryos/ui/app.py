@@ -448,7 +448,7 @@ class RYOSApp(_BaseWindow):
         section_frame.pack(fill="x")
 
         hdr = tk.Frame(section_frame, bg=C["bg"], cursor="hand2")
-        hdr.pack(fill="x", padx=2, pady=(6, 0))
+        hdr.pack(fill="x", padx=2, pady=(10, 2))
 
         arrow_var = tk.StringVar(value="▶" if collapsed else "▼")
         arrow_lbl = tk.Label(hdr, textvariable=arrow_var, bg=C["bg"], fg=C["path_fg"],
