@@ -119,17 +119,20 @@ class ScriptCard(tk.Frame):
 
         if not _COMPACT:
             tag_text, tag_bg = _script_tag(path)
-            badge_row = tk.Frame(text_area, bg=C["card_bg"])
-            badge_row.pack(anchor="w", fill="x", pady=(0, 2))
-            tk.Label(badge_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
-                     font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
+            # Row 1: type badge(s) + name on one line
+            name_row = tk.Frame(text_area, bg=C["card_bg"])
+            name_row.pack(fill="x", pady=(0, 2))
+            tk.Label(name_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
+                     font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(0, 6))
             if temp_param:
-                temp_badge = tk.Label(badge_row, text="⏱ TEMP PARAM", bg=C["accent"],
+                temp_badge = tk.Label(name_row, text="⏱ TEMP PARAM", bg=C["accent"],
                                       fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
                                       padx=5, pady=1)
-                temp_badge.pack(side="left", padx=(4, 0))
+                temp_badge.pack(side="left", padx=(0, 6))
                 Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
-        ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
+            ScrollingLabel(name_row, name, C["name_fg"], C["card_bg"]).pack(side="left", fill="both", expand=True)
+        else:
+            ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
         if not _COMPACT:
             display_path = path
             if group_base_dir and path:
@@ -139,20 +142,24 @@ class ScriptCard(tk.Frame):
                         display_path = rel
                 except ValueError:
                     pass
-            tk.Label(text_area, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 8), anchor="w").pack(fill="x")
-
-        if not _COMPACT and last_run and last_run != "-":
-            meta_row = tk.Frame(text_area, bg=C["card_bg"])
-            meta_row.pack(fill="x")
-            tk.Label(meta_row, text=f"Last run: {last_run}", bg=C["card_bg"],
-                     fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(side="left")
-            if last_run_status == "error":
-                tk.Label(meta_row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
-                         font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
-            elif last_run_status == "ok":
-                tk.Label(meta_row, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
-                         font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
+            # Row 2: path + last-run timestamp + status badge on one line
+            has_run = last_run and last_run != "-"
+            if display_path or has_run:
+                sub_row = tk.Frame(text_area, bg=C["card_bg"])
+                sub_row.pack(fill="x")
+                if display_path:
+                    tk.Label(sub_row, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
+                             font=("Segoe UI", 8), anchor="w").pack(side="left")
+                if has_run:
+                    sep = "  ·  " if display_path else ""
+                    tk.Label(sub_row, text=f"{sep}{last_run}", bg=C["card_bg"],
+                             fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(side="left")
+                    if last_run_status == "error":
+                        tk.Label(sub_row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
+                                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
+                    elif last_run_status == "ok":
+                        tk.Label(sub_row, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
+                                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
 
         self._params_combo = None
         presets = db.list_param_presets(sid)
@@ -358,13 +365,16 @@ class PipelineCard(tk.Frame):
         self._content = content
 
         if not _COMPACT:
-            badge_row = tk.Frame(content, bg=C["card_bg"])
-            badge_row.pack(fill="x")
-            tk.Label(badge_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
-                     font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left")
-
-        name_label = ScrollingLabel(content, name, C["name_fg"], C["card_bg"])
-        name_label.pack(fill="x", pady=(0 if _COMPACT else 2, 0))
+            # Badge + name on one line
+            name_row = tk.Frame(content, bg=C["card_bg"])
+            name_row.pack(fill="x")
+            tk.Label(name_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
+                     font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(0, 6))
+            name_label = ScrollingLabel(name_row, name, C["name_fg"], C["card_bg"])
+            name_label.pack(side="left", fill="both", expand=True)
+        else:
+            name_label = ScrollingLabel(content, name, C["name_fg"], C["card_bg"])
+            name_label.pack(fill="x")
 
         n = len(steps)
         if _COMPACT:
