@@ -367,6 +367,80 @@ def _compact_running(app: RYOSApp):
     app.after(1000, _do)
 
 
+def _card_size_verify(app: RYOSApp):
+    """Cycle through all card size + compact combinations, screenshot each, then show Appearance dialog."""
+    from ryos.ui import cards as _cards_mod
+
+    combos = [
+        ("normal", "small",  False),
+        ("normal", "medium", False),
+        ("normal", "large",  False),
+        ("compact", "small",  True),
+        ("compact", "medium", True),
+        ("compact", "large",  True),
+    ]
+    idx = [0]
+
+    def _next():
+        if idx[0] >= len(combos):
+            _open_dialog()
+            return
+        mode_label, size, compact = combos[idx[0]]
+        print(f"card-size-verify: {mode_label} + {size}")
+        app._settings["compact_mode"] = compact
+        app._settings["card_size"] = size
+        _cards_mod.set_compact_mode(compact)
+        _cards_mod.set_card_size(size)
+        app._rebuild_ui()
+        app.after(400, lambda: _screenshot_and_advance(mode_label, size))
+
+    def _screenshot_and_advance(mode_label, size):
+        _shot(app, f"cs_{mode_label}_{size}")
+        idx[0] += 1
+        app.after(200, _next)
+
+    def _open_dialog():
+        print("card-size-verify: opening Appearance dialog")
+        app._settings["compact_mode"] = False
+        app._settings["card_size"] = "medium"
+        _cards_mod.set_compact_mode(False)
+        _cards_mod.set_card_size("medium")
+        app._rebuild_ui()
+        app.after(400, _do_dialog)
+
+    def _do_dialog():
+        app._open_appearance()
+        app.after(600, _screenshot_dialog)
+
+    def _screenshot_dialog():
+        from PIL import ImageGrab
+        # find the Appearance toplevel and screenshot it directly
+        dlg = None
+        for w in app.winfo_children():
+            try:
+                if hasattr(w, 'title') and w.title() == "Appearance":
+                    dlg = w
+                    break
+            except Exception:
+                pass
+        if dlg:
+            dlg.lift()
+            dlg.update_idletasks()
+            dlg.update()
+            x, y = dlg.winfo_rootx(), dlg.winfo_rooty()
+            w2, h2 = dlg.winfo_width(), dlg.winfo_height()
+            img = ImageGrab.grab(bbox=(x, y, x + w2, y + h2))
+            path = SHOTS_DIR / "cs_appearance_dialog.png"
+            img.save(str(path))
+            print(f"  screenshot -> {path.name}")
+            dlg.destroy()
+        else:
+            print("  Appearance dialog not found")
+        app.after(300, app.destroy)
+
+    app.after(900, _next)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -396,6 +470,8 @@ def main():
         _running_row_check(app)
     elif scenario == "compact-running":
         _compact_running(app)
+    elif scenario == "card-size-verify":
+        _card_size_verify(app)
     else:
         print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running")
         app.after(0, app.destroy)
