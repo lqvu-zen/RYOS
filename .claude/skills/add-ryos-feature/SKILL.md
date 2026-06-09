@@ -1,13 +1,13 @@
 ---
 name: add-ryos-feature
-description: 'Add a new feature to the RYOS desktop app the right way — end to end, following the project''s own conventions. Use this whenever the user asks to add, build, implement, or wire up any new capability in RYOS: a new setting or toggle, a new button or menu item, a new dialog, a new column or table in the script database, a change to how scripts run, pipeline behavior, the output panel, the Quick Run bar, notifications, startup behavior, or anything that means editing files under `ryos/`. Trigger even when the user just describes the behavior they want ("I want RYOS to remember the last window size", "can it auto-clear output between runs", "add a dark mode toggle") without saying the words "feature" or "implement". This skill carries RYOS''s architecture rules, the design→implement→test→review→commit workflow, and the exact verification commands, so you don''t reinvent them each time. Do NOT use it for pure UI/UX design reviews (use review-ryos-ui) or for just running the app (use run-ryos).'
+description: 'Add or improve a feature in the RYOS desktop app the right way — end to end, following the project''s own conventions. Use this whenever the user wants to build a NEW capability OR enhance an existing one: a new setting, button, dialog, or DB column; a change to how scripts run, pipelines, the output panel, the Quick Run bar, notifications, or startup — and also when an existing feature needs a UX improvement, better edge-case handling, performance work, or a small refactor. Trigger even when the user just describes the behavior they want ("remember the last window size", "auto-clear output between runs", "make switching groups less janky") without saying "feature" or "implement". It carries RYOS''s architecture rules, the design→implement→test→review→commit workflow with per-phase model assignments, and the exact verification commands. Do NOT use it to fix a reproducible bug or crash (use fix-ryos-bug), for pure UI/UX design review (use review-ryos-ui), or to just run the app (use run-ryos).'
 ---
 
-# Adding a feature to RYOS
+# Adding or improving a feature in RYOS
 
 RYOS ("Run Your Own Scripts") is a Tkinter desktop app. All code lives in the `ryos/` package; the entry point is `ryos.__main__:main`, exposed as the `ryos` console-script in `pyproject.toml`. There is no shim file.
 
-The point of this skill is that adding a feature here is not just "write the code." A change that ignores the app's threading model, its settings/DB migration patterns, or its dependency direction will look correct and still break the running app or corrupt an existing user's database. So the workflow below front-loads understanding and ends with real verification — the app actually launching and the tests actually passing — before anything is committed.
+The point of this skill is that adding or improving a feature here is not just "write the code." A change that ignores the app's threading model, its settings/DB migration patterns, or its dependency direction will look correct and still break the running app or corrupt an existing user's database. So the workflow below front-loads understanding and ends with real verification — the app actually launching and the tests actually passing — before anything is committed.
 
 Work through the phases in order. Don't skip the test/review phase to save time; a feature that isn't verified isn't done.
 
@@ -75,6 +75,8 @@ These are the invariants that make RYOS work. Most "looked fine, broke in practi
 
 Read what the user asked for and restate it to yourself in one sentence: what should the user be able to do after this ships that they can't do now? If a real ambiguity blocks the design (e.g. "remember settings" — which settings? per-script or global?), ask **one** focused question before writing code. Don't ask about things you can reasonably default.
 
+This skill covers both **new capabilities** and **improvements to existing ones** — a UX rough edge, a missing edge case, performance, a small refactor. For an improvement, also pin down what's wrong with the current behavior and what "good" looks like as a concrete, observable outcome. If instead the user is reporting something genuinely **broken** — a crash, a freeze, wrong output they can reproduce — that's a bug: use `fix-ryos-bug`, which insists on a failing regression test first.
+
 ### 2. Locate the code (delegate broad search to a Haiku agent)
 
 You need the current shape of the code to brief the design agent — but sweeping the package for the right functions is cheap, mechanical work. Hand it to a fast Haiku agent and keep your own context clean.
@@ -109,7 +111,7 @@ Agent({ description: "Design <feature>", subagent_type: "general-purpose", model
 
 The brief must be self-contained — the design agent can't see this conversation. Paste in, verbatim: the user's request (one paragraph); the **Where things live** table and the entire **Architecture rules that always apply** section from this skill; the Grep/Read output from step 2 showing the current shape of the code (and anything you found in step 2 that already exists); and this instruction: *"Design the smallest correct implementation. Do NOT write code — produce only a plan with the sections below. If something is ambiguous, list it as a question for the user instead of guessing."*
 
-The plan must answer: which **files** are edited (by path); which **functions/classes** are added or modified (one line of purpose each); any **schema/settings change** with its exact migration guard (`PRAGMA table_info` check + `ALTER TABLE`) or new `_SETTINGS_DEFAULTS` key; **UI placement** and behavior while a script runs; **thread-safety touch points** (anywhere a worker reaches the UI via `self.after`/`output_queue`); **risks/regressions** to watch; and **open questions**, if any.
+The plan must answer: which **files** are edited (by path); which **functions/classes** are added or modified (one line of purpose each); any **schema/settings change** with its exact migration guard (`PRAGMA table_info` check + `ALTER TABLE`) or new `_SETTINGS_DEFAULTS` key; **UI placement** and behavior while a script runs; **thread-safety touch points** (anywhere a worker reaches the UI via `self.after`/`output_queue`); the **regression surface** — which existing behaviors sit next to the change and must not break (run/stop, groups, output panel, drag-drop, pipeline editor, or specific tests); and **open questions**, if any. For an *improvement*, the plan also names the **root cause** of the current limitation, so the change targets the cause rather than the symptom.
 
 A good plan is concrete and small. Example, for *"confirm before stopping a running script"*:
 
