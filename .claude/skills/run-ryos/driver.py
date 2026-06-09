@@ -309,11 +309,73 @@ def _running_row_check(app: RYOSApp):
     app.after(1000, _do)
 
 
+def _compact_running(app: RYOSApp):
+    """Enable compact mode, run a pipeline (if any) and a script, screenshot each state."""
+    from PIL import ImageGrab
+
+    def _do():
+        print("compact-running: idle compact screenshot")
+        _shot(app, "cr_01_idle_compact")
+
+        pipeline_cards = app._pipeline_cards
+        if pipeline_cards:
+            pc = pipeline_cards[0]
+            print(f"  starting pipeline: {pc._name!r}")
+            app._run_pipeline(pc.pipeline_id, pc._name)
+            app.after(1000, _after_pipeline)
+        else:
+            print("  no pipeline cards, skipping to script")
+            app.after(0, _run_script)
+
+    def _after_pipeline():
+        print("compact-running: pipeline running screenshot")
+        _shot(app, "cr_02_pipeline_running")
+        for job in list(app._jobs.values()):
+            if job.kind == "pipeline":
+                app._stop_job(job)
+                break
+        app.after(600, _run_script)
+
+    def _run_script():
+        cards = app._cards
+        if not cards:
+            print("  no script cards, quitting")
+            app.after(300, app.destroy)
+            return
+        card = cards[0]
+        print(f"  running script: {card._name!r}")
+        card._run()
+        app.after(1400, _after_script)
+
+    def _after_script():
+        print("compact-running: script running screenshot")
+        _shot(app, "cr_03_script_running")
+        # also screenshot with both a pipeline and script if possible
+        pipeline_cards = app._pipeline_cards
+        if pipeline_cards:
+            pc = pipeline_cards[0]
+            app._run_pipeline(pc.pipeline_id, pc._name)
+            app.after(1000, _both_running)
+        else:
+            app.after(400, app.destroy)
+
+    def _both_running():
+        print("compact-running: both running screenshot")
+        _shot(app, "cr_04_both_running")
+        app.after(400, app.destroy)
+
+    app.after(1000, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
 
     scenario = sys.argv[1] if len(sys.argv) > 1 else "smoke"
+
+    if scenario == "compact-running":
+        _s._SETTINGS_DEFAULTS["compact_mode"] = True
+
     app = RYOSApp()
 
     if scenario == "smoke":
@@ -332,8 +394,10 @@ def main():
         _debug_run_py(app)
     elif scenario == "running-row-check":
         _running_row_check(app)
+    elif scenario == "compact-running":
+        _compact_running(app)
     else:
-        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check")
+        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running")
         app.after(0, app.destroy)
 
     app.mainloop()
