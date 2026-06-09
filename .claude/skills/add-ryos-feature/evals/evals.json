@@ -1,0 +1,108 @@
+{
+  "skill_name": "add-ryos-feature",
+  "evals": [
+    {
+      "id": 0,
+      "name": "confirm-before-stop-setting",
+      "prompt": "In RYOS, I keep accidentally hitting Stop on scripts that are still running and killing them. Can you add a setting that pops up a confirmation dialog before stopping a running script? It should be a toggle in the Advanced Options, on by default.",
+      "expected_output": "A new boolean key in _SETTINGS_DEFAULTS (settings.py), a toggle exposed in the Advanced Options dialog (dialogs.py), and the stop path in app.py guarded by a confirmation when the setting is on. Tests pass, app launches, __version__ bumped, edits confined to ryos/.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "unit_tests_pass",
+          "text": "Running `uv run python -m unittest discover -s tests -v` reports all tests passing (no failures or errors)."
+        },
+        {
+          "name": "version_bumped",
+          "text": "__version__ in ryos/__init__.py was changed from its original value (1.6.5-dev) to a higher/new version."
+        },
+        {
+          "name": "edits_confined_to_ryos",
+          "text": "Edits stay within the project's real source surface: only files under ryos/ and (optionally) a focused new test in tests/test_ryos.py. It does NOT modify pyproject.toml, any build*.bat, uv.lock, or packaging files."
+        },
+        {
+          "name": "dependency_direction_respected",
+          "text": "No new import of ryos.ui.* was added to ryos/settings.py or ryos/db.py (data layer never imports the UI)."
+        },
+        {
+          "name": "setting_in_defaults",
+          "text": "A new boolean key was added to the _SETTINGS_DEFAULTS dict in ryos/settings.py for the confirm-before-stop behavior."
+        },
+        {
+          "name": "toggle_in_advanced_dialog",
+          "text": "The new toggle is wired into the Advanced Options dialog in ryos/ui/dialogs.py so the user can change it."
+        },
+        {
+          "name": "stop_path_guarded",
+          "text": "The script-stop logic in ryos/ui/app.py shows a confirmation prompt before terminating when the setting is enabled."
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "per-script-run-count",
+      "prompt": "I'd like each script in RYOS to keep track of how many times I've run it, and show that run count somewhere on the script's card. The count should survive restarts (so it needs to be stored), and obviously existing databases shouldn't break when I upgrade.",
+      "expected_output": "A migration-safe new column (e.g. run_count) added in ScriptDB._init_db behind a PRAGMA table_info guard, a ScriptDB method to increment it, the increment happening on script completion via the main-thread/queue path, and the count shown on the card (cards.py). Tests pass, app launches, __version__ bumped, edits confined to ryos/.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "unit_tests_pass",
+          "text": "Running `uv run python -m unittest discover -s tests -v` reports all tests passing (no failures or errors)."
+        },
+        {
+          "name": "version_bumped",
+          "text": "__version__ in ryos/__init__.py was changed from its original value (1.6.5-dev) to a higher/new version."
+        },
+        {
+          "name": "edits_confined_to_ryos",
+          "text": "Edits stay within the project's real source surface: only files under ryos/ and (optionally) a focused new test in tests/test_ryos.py. It does NOT modify pyproject.toml, any build*.bat, uv.lock, or packaging files."
+        },
+        {
+          "name": "dependency_direction_respected",
+          "text": "No new import of ryos.ui.* was added to ryos/db.py or ryos/settings.py."
+        },
+        {
+          "name": "migration_is_guarded",
+          "text": "The new column is added in ScriptDB._init_db (ryos/db.py) using the existing migration pattern: a PRAGMA table_info / 'col not in cols' check guarding an ALTER TABLE ADD COLUMN. It does NOT use the invalid `ADD COLUMN IF NOT EXISTS` syntax and is not a bare unguarded ALTER that would crash on an existing DB."
+        },
+        {
+          "name": "count_persisted_via_db_method",
+          "text": "Run-count increment/storage is done through a ScriptDB method in ryos/db.py, not via raw SQL embedded in the UI layer."
+        },
+        {
+          "name": "count_shown_on_card",
+          "text": "The run count is displayed on the script card in ryos/ui/cards.py."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "copy-output-button",
+      "prompt": "Add a 'Copy output' button to RYOS's output panel that copies everything currently shown in the output text area to the clipboard, so I can paste it into a bug report.",
+      "expected_output": "A button added near the output panel in app.py, created through the theme button factory and styled with theme colors, that grabs the Text widget contents and puts them on the clipboard (clipboard_clear/clipboard_append). Tests pass, app launches, __version__ bumped, edits confined to ryos/.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "unit_tests_pass",
+          "text": "Running `uv run python -m unittest discover -s tests -v` reports all tests passing (no failures or errors)."
+        },
+        {
+          "name": "version_bumped",
+          "text": "__version__ in ryos/__init__.py was changed from its original value (1.6.5-dev) to a higher/new version."
+        },
+        {
+          "name": "edits_confined_to_ryos",
+          "text": "Edits stay within the project's real source surface: only files under ryos/ and (optionally) a focused new test in tests/test_ryos.py. It does NOT modify pyproject.toml, any build*.bat, uv.lock, or packaging files."
+        },
+        {
+          "name": "button_via_theme_factory",
+          "text": "The new button is created using the theme button factory / theme colors (C dict) from ryos/ui/theme.py, not hard-coded hex colors at the widget."
+        },
+        {
+          "name": "copies_to_clipboard",
+          "text": "The handler reads the output Text widget contents and writes them to the clipboard via tkinter clipboard calls (clipboard_clear / clipboard_append, or equivalent)."
+        }
+      ]
+    }
+  ]
+}

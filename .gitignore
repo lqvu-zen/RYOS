@@ -27,3 +27,4 @@ __pycache__/
 .claude/settings.local.json
 .claude/skills/*/screenshots/
 .claude/skills/*/outputs
+/eval_tmp
