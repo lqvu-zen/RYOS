@@ -92,7 +92,7 @@ def resolve(base_dir: str, query: str) -> tuple[str | None, list[str], str]:
 
     if os.sep in query or "/" in query or (Path(query).suffix and Path(query).suffix != query):
         candidate = (base / query).resolve()
-        if not _is_inside(str(candidate), base_dir):
+        if not _is_inside(str(candidate), str(base.resolve())):
             return None, [], f"Path '{query}' is outside the base directory."
         if not candidate.exists():
             return None, [], f"File not found:\n{candidate}"
@@ -114,5 +114,5 @@ def resolve(base_dir: str, query: str) -> tuple[str | None, list[str], str]:
     if len(matches) == 1:
         return str(matches[0]), [], ""
     base_resolved = base.resolve()
-    rels = [str(m.relative_to(base_resolved)) for m in matches]
+    rels = [str(m.resolve().relative_to(base_resolved)) for m in matches]
     return None, rels, ""

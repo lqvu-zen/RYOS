@@ -417,7 +417,7 @@ class TestParamPresets(unittest.TestCase):
                 cmd = build_command(str(self.BAT), preset_params, "")
                 result = subprocess.run(
                     cmd, capture_output=True, text=True, timeout=10,
-                    cwd=str(self.BAT.parent),
+                    shell=True, cwd=str(self.BAT.parent),
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(preset_params, result.stdout)
@@ -437,6 +437,7 @@ class TestBatchUvExecution(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            shell=True,
             cwd=str(self.BAT.parent),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -449,6 +450,7 @@ class TestBatchUvExecution(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=30,
+            shell=True,
             cwd=str(self.BAT.parent),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
