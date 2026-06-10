@@ -895,3 +895,68 @@ class TestSettings(unittest.TestCase):
         loaded = _load_settings()
         self.assertEqual(loaded["theme"], "dark")
         self.assertEqual(loaded["window_height"], 720)
+
+
+# ---------------------------------------------------------------------------
+# JobRegistry — job bookkeeping extracted from RYOSApp (ryos.jobs)
+# ---------------------------------------------------------------------------
+
+from ryos.jobs import JobRegistry  # noqa: E402
+
+
+class TestJobRegistry(unittest.TestCase):
+    """Id allocation, add/get/remove, group filtering, and emptiness checks."""
+
+    def _job(self, jid, group="g"):
+        return Job(jid, "script", jid, None, f"n{jid}", f"job:{jid}", group)
+
+    def test_new_id_is_monotonic(self):
+        r = JobRegistry()
+        self.assertEqual([r.new_id(), r.new_id(), r.new_id()], [1, 2, 3])
+
+    def test_add_get_all(self):
+        r = JobRegistry()
+        j = self._job(1)
+        r.add(j)
+        self.assertIs(r.get(1), j)
+        self.assertEqual(r.all(), [j])
+
+    def test_get_missing_returns_none(self):
+        self.assertIsNone(JobRegistry().get(99))
+
+    def test_remove(self):
+        r = JobRegistry()
+        r.add(self._job(1))
+        r.remove(1)
+        self.assertIsNone(r.get(1))
+        self.assertEqual(r.all(), [])
+
+    def test_remove_missing_is_noop(self):
+        r = JobRegistry()
+        r.remove(123)
+        self.assertEqual(len(r), 0)
+
+    def test_in_group_filters(self):
+        r = JobRegistry()
+        r.add(self._job(1, "a"))
+        r.add(self._job(2, "b"))
+        r.add(self._job(3, "a"))
+        self.assertEqual({j.job_id for j in r.in_group("a")}, {1, 3})
+        self.assertEqual(r.in_group("none"), [])
+
+    def test_len_and_bool(self):
+        r = JobRegistry()
+        self.assertFalse(r)
+        self.assertEqual(len(r), 0)
+        r.add(self._job(1))
+        self.assertTrue(r)
+        self.assertEqual(len(r), 1)
+
+    def test_all_is_a_snapshot(self):
+        # all() returns a list copy, so removing during iteration is safe.
+        r = JobRegistry()
+        r.add(self._job(1))
+        r.add(self._job(2))
+        for j in r.all():
+            r.remove(j.job_id)
+        self.assertEqual(len(r), 0)

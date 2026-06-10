@@ -27,7 +27,7 @@ from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
 from ..quickrun import _is_inside, build_entry, rank_suggestions, resolve
-from ..jobs import Job as _Job, format_elapsed
+from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
 from .pipeline import PipelineEditorDialog
@@ -117,8 +117,7 @@ class RYOSApp(_BaseWindow):
         sh = self.winfo_screenheight()
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
         self.output_queue: queue.Queue = queue.Queue()
-        self._jobs: dict[int, _Job] = {}
-        self._next_job_id: int = 0
+        self._jobreg = JobRegistry()
         self._cards: list[ScriptCard] = []
         self._pipeline_cards: list[PipelineCard] = []
         self._select_mode = False
@@ -376,33 +375,32 @@ class RYOSApp(_BaseWindow):
     def _new_job(self, kind: str, script_id, pipeline_id, name: str, group: str,
                  pipeline_name: str = "", pipeline_queue=None, pipeline_total: int = 0) -> "_Job":
         """Allocate a new job, register it, create its output tab, return it."""
-        self._next_job_id += 1
-        job_id = self._next_job_id
+        job_id = self._jobreg.new_id()
         tab_key = f"job:{job_id}"
         tab_name = pipeline_name if pipeline_name else name
         job = _Job(job_id, kind, script_id, pipeline_id, name, tab_key, group,
                    pipeline_name=pipeline_name,
                    pipeline_queue=pipeline_queue if pipeline_queue is not None else [],
                    pipeline_total=pipeline_total)
-        self._jobs[job_id] = job
+        self._jobreg.add(job)
         self._get_or_create_tab(tab_key, tab_name)
         if self._elapsed_timer_id is None:
             self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
         return job
 
     def _tick_elapsed_timers(self):
-        if not self._jobs:
+        if not self._jobreg:
             self._elapsed_timer_id = None
             return
         now = datetime.now()
-        for job in self._jobs.values():
+        for job in self._jobreg.all():
             if job.time_var is not None:
                 job.time_var.set(format_elapsed(job.start_time, now))
         self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
 
     def _finish_job(self, job: "_Job"):
         """Remove job from registry, tear down its running row, update card states."""
-        self._jobs.pop(job.job_id, None)
+        self._jobreg.remove(job.job_id)
         if job.running_row is not None:
             try:
                 if job.running_row.winfo_exists():
@@ -475,7 +473,7 @@ class RYOSApp(_BaseWindow):
         self._finish_job(job)
 
     def _running_jobs_in_group(self, group: str) -> list:
-        return [j for j in self._jobs.values() if j.group == group]
+        return self._jobreg.in_group(group)
 
     def _make_group_header(self, name: str):
         hdr = tk.Frame(self.cards_frame, bg=C["bg"])
@@ -788,7 +786,7 @@ class RYOSApp(_BaseWindow):
         self._refresh()
 
     def _open_appearance(self) -> None:
-        if self._jobs:
+        if self._jobreg:
             self.status_var.set("Stop running jobs before changing theme.")
             return
 
@@ -1321,7 +1319,7 @@ class RYOSApp(_BaseWindow):
 
     def _run_pipeline(self, pipeline_id: int, pipeline_name: str):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        if max_jobs > 0 and len(self._jobs) >= max_jobs:
+        if max_jobs > 0 and len(self._jobreg) >= max_jobs:
             messagebox.showinfo("Too many jobs",
                                 f"Maximum of {max_jobs} parallel jobs reached.\n"
                                 "Stop a running job before launching another.",
@@ -1497,7 +1495,7 @@ class RYOSApp(_BaseWindow):
 
     def _run_script(self, script_id, name, path, params, interpreter):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        if max_jobs > 0 and len(self._jobs) >= max_jobs:
+        if max_jobs > 0 and len(self._jobreg) >= max_jobs:
             messagebox.showinfo("Too many jobs",
                                 f"Maximum of {max_jobs} parallel jobs reached.\n"
                                 "Stop a running job before launching another.")
@@ -2028,7 +2026,7 @@ class RYOSApp(_BaseWindow):
             self._activate_tab("all")
 
     def _is_tab_running(self, key: str) -> bool:
-        return any(j.tab_key == key for j in self._jobs.values())
+        return any(j.tab_key == key for j in self._jobreg.all())
 
     def _close_all_tabs(self):
         keys_to_close = [k for k in list(self._output_tabs) if k != "all" and not self._is_tab_running(k)]
@@ -2128,7 +2126,7 @@ class RYOSApp(_BaseWindow):
 
     def _stop_all_jobs(self):
         """Stop every running job (used from on_close)."""
-        for job in list(self._jobs.values()):
+        for job in list(self._jobreg.all()):
             self._stop_job(job)
 
     def _drain_output_queue(self):
@@ -2137,7 +2135,7 @@ class RYOSApp(_BaseWindow):
                 item = self.output_queue.get_nowait()
                 kind = item[0]
                 job_id = item[1]
-                job = self._jobs.get(job_id)
+                job = self._jobreg.get(job_id)
                 if kind == "done":
                     _, _jid, sid, status, text = item
                     if job:
@@ -2302,7 +2300,7 @@ class RYOSApp(_BaseWindow):
             subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
     def _on_close(self):
-        alive = [j for j in self._jobs.values()
+        alive = [j for j in self._jobreg.all()
                  if j.current_process is not None and j.current_process.poll() is None]
         if alive:
             n = len(alive)
@@ -2310,13 +2308,11 @@ class RYOSApp(_BaseWindow):
             if not messagebox.askyesno("Still Running",
                                        f"{n} script {label} still running. Exit anyway?"):
                 return
-            for job in list(self._jobs.values()):
+            for job in list(self._jobreg.all()):
                 try:
                     if job.current_process is not None:
                         job.current_process.terminate()
                 except OSError:
                     pass  # process may have already exited
         if self._settings["remember_window_geometry"]:
-            self._settings["window_geometry"] = self.geometry()
-        _save_settings(self._settings)
-        self.destroy()
+            self._s

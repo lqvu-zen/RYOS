@@ -16,7 +16,7 @@ Priority score below = **(Impact + Risk) × (6 − Effort)**, each rated 1–5.
 | 3 | Zero tests for `ui/` and app logic | Test | **24** | 🟡 Ongoing — pure logic extracted & covered; widget code still by-design untested |
 | 4 | Giant methods: `_refresh_cards` (267), `_build_ui` (142) | Code | **21** | ✅ Done — `_refresh_cards` → 138, `_build_ui` → 6 (5 builders) |
 | 5 | Duplicated job-launch logic (`_run_script` vs pipeline step) | Code | **18** | ✅ Done — unified via `_launch` |
-| 6 | `RYOSApp` god class — ~90 methods, 2,275 lines | Architecture | **16** | 🟡 Ongoing — `quickrun` + `jobs` modules extracted; job lifecycle still on the class |
+| 6 | `RYOSApp` god class — ~90 methods, 2,275 lines | Architecture | **16** | 🟡 Ongoing — `quickrun` + `jobs` (`Job`, `JobRegistry`) extracted; threading/output lifecycle still on the class |
 | 7 | Three parallel build scripts, no canonical one | Infrastructure | **16** | ⬜ Not started |
 | 8 | Ad-hoc schema migrations in `_init_db`, no version tracking | Architecture | **15** | ✅ Done — `PRAGMA user_version` scheme |
 | 9 | Unpinned dependency (`tkinterdnd2`, no lower bound) | Dependency | **20*** | ✅ Done — pinned `>=0.3.0,<1.0` |
@@ -39,9 +39,9 @@ Remediation has been carried out in verified, independently-committable incremen
 - **Schema versioning (#8):** the idempotent setup is frozen as `_ensure_baseline` (v1); a `PRAGMA user_version` scheme with a tested `_run_migrations` runner handles future changes once-each, in order.
 - **Giant methods split (#4):** `_refresh_cards` 267 → 138 (lifted `_build_quick_run_bar`); `_build_ui` 142 → 6, delegating to five focused builders (`_build_header`, `_build_select_bar`, `_build_status_bar`, `_build_cards_pane`, `_build_output_panel`).
 - **Quick Run subsystem (#3, #6):** all pure Quick Run logic — `_is_inside` (traversal guard), `build_entry`, `rank_suggestions`, `resolve` — extracted into a new UI-independent `ryos/quickrun.py`. `_is_inside` consolidated from `ui/dialogs.py` (removes a duplication).
-- **Jobs module (#3, #6):** the `Job` state container moved out of `app.py` into a new `ryos/jobs.py`, alongside a pure `format_elapsed(start, now)` for the running-row time label. First step toward a `JobManager`; the lifecycle methods (`_new_job`/`_finish_job`/`_run_subprocess`/output queue) still live on `RYOSApp`.
+- **Jobs module (#3, #6):** the `Job` state container moved out of `app.py` into a new `ryos/jobs.py`, alongside a pure `format_elapsed(start, now)` for the running-row time label, and a `JobRegistry` that owns job storage + id allocation (replacing the inline `self._jobs` dict and `self._next_job_id` counter across 15 call sites). The remaining lifecycle (`_new_job` UI setup, `_run_subprocess` threading, output-queue drain) still lives on `RYOSApp` — that's the UI/thread-coupled part best moved with a runtime smoke-test.
 
-**Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **103 passing / 3 skipped**, now covering interpreter (`detect_interpreter`, `build_command`, `resolve_interpreter` incl. the RYOS.exe guard, `_script_tag`), DB CRUD/ordering/export/migrations + versioning, `settings` load/save fallbacks + round-trip, `notifications._parse_version`, the full `quickrun` module, and `jobs` (`Job` defaults + `format_elapsed`).
+**Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **111 passing / 3 skipped**, now covering interpreter (`detect_interpreter`, `build_command`, `resolve_interpreter` incl. the RYOS.exe guard, `_script_tag`), DB CRUD/ordering/export/migrations + versioning, `settings` load/save fallbacks + round-trip, `notifications._parse_version`, the full `quickrun` module, and `jobs` (`Job` defaults, `format_elapsed`, `JobRegistry`).
 
 **A note on infrastructure quirks found during the work:**
 - The entire `tests/` directory was gitignored, so the suite would not have reached CI. `.gitignore` was narrowed to track `tests/test_ryos.py` while keeping the sample fixture scripts ignored.
