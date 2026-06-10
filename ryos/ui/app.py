@@ -2315,4 +2315,6 @@ class RYOSApp(_BaseWindow):
                 except OSError:
                     pass  # process may have already exited
         if self._settings["remember_window_geometry"]:
-            self._s
+            self._settings["window_geometry"] = self.geometry()
+        _save_settings(self._settings)
+        self.destroy()
