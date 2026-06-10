@@ -7,8 +7,10 @@ dist/
 *.dist/
 *.onefile-build/
 
-# Test scripts
-tests/
+# Test scripts: ignore the sample programs used as subprocess fixtures,
+# but keep the actual unit-test module so CI can run it.
+tests/*
+!tests/test_ryos.py
 
 # Database
 scripts.db

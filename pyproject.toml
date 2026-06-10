@@ -3,7 +3,10 @@ name = "ryos"
 dynamic = ["version"]
 description = "RYOS - Run Your Own Scripts"
 requires-python = ">=3.10"
-dependencies = ["tkinterdnd2"]
+dependencies = ["tkinterdnd2>=0.3.0,<1.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.5"]
 
 [project.scripts]
 ryos = "ryos.__main__:main"
@@ -17,3 +20,21 @@ path = "ryos/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ryos"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Only collect the real test module; everything else in tests/ is a runnable
+# sample script used as a subprocess fixture, not a test.
+python_files = ["test_ryos.py"]
+
+[tool.ruff]
+target-version = "py310"
+# Skill helper scripts and build artifacts are not part of the shipped package.
+extend-exclude = [".claude", "build", "dist", "*.egg-info"]
+
+[tool.ruff.lint]
+# Ruff's default rule set (pyflakes + a focused pycodestyle subset). This does
+# NOT include E501/line-length, since the codebase predates an 88-col standard.
+# E741 (ambiguous names like `l`) is left off as a deliberate style exception.
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E741"]

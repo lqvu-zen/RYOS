@@ -1,9 +1,14 @@
 """Paths, settings defaults, and load/save helpers."""
 import json
+import logging
 import os
 import shutil
 import sys
 from pathlib import Path
+
+# Child of the "ryos" logger namespace; inherits handlers from setup_logging().
+# Using stdlib logging directly avoids a circular import with ryos.logger.
+_log = logging.getLogger("ryos.settings")
 
 # Store user data in %APPDATA%\RYOS (Windows) or ~/.local/share/RYOS (other).
 _APPDATA = Path(os.environ.get("APPDATA") or Path.home() / ".local" / "share") / "RYOS"
@@ -74,7 +79,12 @@ _SETTINGS_DEFAULTS: dict = {
 def _load_settings() -> dict:
     try:
         stored = json.loads(_SETTINGS_PATH.read_text(encoding="utf-8"))
-    except Exception:
+    except FileNotFoundError:
+        stored = {}  # First run — no settings file yet; defaults apply.
+    except (OSError, ValueError) as e:
+        # Unreadable or corrupt settings.json (ValueError covers JSONDecodeError).
+        # Fall back to defaults but leave a trace so the loss isn't silent.
+        _log.warning("Could not read settings from %s: %s; using defaults", _SETTINGS_PATH, e)
         stored = {}
     return {**_SETTINGS_DEFAULTS, **stored}
 
@@ -82,5 +92,5 @@ def _load_settings() -> dict:
 def _save_settings(settings: dict) -> None:
     try:
         _SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+    except OSError as e:
+        _log.warning("Could not save settings to %s: %s", _SETTINGS_PATH, e)

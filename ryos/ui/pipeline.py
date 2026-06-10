@@ -150,7 +150,7 @@ class PipelineEditorDialog(tk.Toplevel):
             idx = self._selected_index()
             if idx is None:
                 return
-            step_id, sid, name = self._steps[idx][0], self._steps[idx][1], self._steps[idx][2]
+            step_id, name = self._steps[idx][0], self._steps[idx][2]
             chosen = self._step_preset_var.get()
             override = None if chosen == "(Script default)" else chosen
             self.db.update_pipeline_step_params(step_id, override)

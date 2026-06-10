@@ -25,7 +25,7 @@ from ..db import ScriptDB
 from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
-from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _PACKAGED, _load_settings, _save_settings
+from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
@@ -998,7 +998,8 @@ class RYOSApp(_BaseWindow):
                     bar_frame.pack(fill="x", padx=8, pady=(2, 0), after=banner)
                     entry.focus_set()
 
-            _open = lambda e, g=gname: self._manage_group_base_dir(g)
+            def _open(e, g=gname):
+                self._manage_group_base_dir(g)
             for w in (banner, icon_lbl, path_lbl):
                 w.bind("<Button-1>", _open)
 
@@ -1389,10 +1390,7 @@ class RYOSApp(_BaseWindow):
             self.output_queue.put(("stderr", job.job_id, f"[ERROR] Parameter error: {e}\n"))
             self.output_queue.put(("done", job.job_id, sid, "error", ""))
             return
-        self.db.mark_run(sid)
-        threading.Thread(
-            target=self._run_subprocess, args=(job, cmd, name, sid), daemon=True,
-        ).start()
+        self._launch(job, cmd, name, sid)
 
     def _toggle_select_mode(self):
         self._select_mode = not self._select_mode
@@ -1487,6 +1485,17 @@ class RYOSApp(_BaseWindow):
             _log.error("Import failed: %s", e)
             messagebox.showerror("Import Failed", str(e))
 
+    def _launch(self, job: "_Job", cmd, name, script_id) -> None:
+        """Mark the script as run and start its worker thread.
+
+        Single entry point for both ad-hoc script runs and pipeline steps, so
+        any change to how jobs are spawned lives in one place.
+        """
+        self.db.mark_run(script_id)
+        threading.Thread(
+            target=self._run_subprocess, args=(job, cmd, name, script_id), daemon=True,
+        ).start()
+
     def _run_script(self, script_id, name, path, params, interpreter):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
         if max_jobs > 0 and len(self._jobs) >= max_jobs:
@@ -1522,13 +1531,10 @@ class RYOSApp(_BaseWindow):
             tab_key=job.tab_key,
         )
         self.status_var.set(f"Running: {name}")
-        self.db.mark_run(script_id)
         content = self._running_slots.get(group)
         if content and content.winfo_exists():
             self._add_running_row(content, job)
-        threading.Thread(
-            target=self._run_subprocess, args=(job, cmd, name, script_id), daemon=True
-        ).start()
+        self._launch(job, cmd, name, script_id)
 
     def _quick_run_resolve(self, base_dir: str, query: str) -> tuple[str | None, list[str], str]:
         """Search base_dir for a script matching query (exact stem, case-insensitive).

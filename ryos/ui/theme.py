@@ -1,5 +1,4 @@
 """Colour palette, flat-button factory, and window snap-to-corner helper."""
-import ctypes
 import sys
 import tkinter as tk
 from tkinter import ttk
