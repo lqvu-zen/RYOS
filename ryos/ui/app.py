@@ -865,138 +865,7 @@ class RYOSApp(_BaseWindow):
             path_lbl.pack(side="left")
 
             if group_base_dir and self._settings.get("quick_run_enabled", True):
-                _gn = gname
-                qr_btn = _flat_button(banner, "⚡", C["bolt"], C["bolt_hover"],
-                                      lambda g=_gn: self._toggle_quick_run_bar(g),
-                                      width=4, fg=C["name_fg"])
-                qr_btn.pack(side="right", padx=(0, 6))
-                Tooltip(qr_btn, "Toggle quick-run bar")
-                self._quick_run_buttons[gname] = qr_btn
-
-                bar_frame = tk.Frame(self.cards_frame, bg=C["bg"],
-                                     highlightbackground=C["border"], highlightthickness=1)
-                _PH = "script name [params...]"
-                entry_var = tk.StringVar()
-                is_ph = [True]
-                entry = tk.Entry(bar_frame, textvariable=entry_var, bg=C["card_bg"], fg=C["path_fg"],
-                                 insertbackground=C["name_fg"], relief="flat", bd=4,
-                                 font=("Segoe UI", 10))
-                entry_var.set(_PH)
-                entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=6)
-
-                def _ph_key(e, _ev=entry_var, _en=entry, _f=is_ph):
-                    if _f[0]:
-                        _ev.set("")
-                        _en.config(fg=C["name_fg"])
-                        _f[0] = False
-
-                def _ph_focus_out(e, _ev=entry_var, _en=entry, _f=is_ph):
-                    if not _ev.get().strip():
-                        _ev.set(_PH)
-                        _en.config(fg=C["path_fg"])
-                        _f[0] = True
-
-                entry.bind("<KeyPress>", _ph_key)
-                entry.bind("<FocusOut>", _ph_focus_out)
-
-                _flat_button(bar_frame, "Run", C["accent"], C["accent2"],
-                             lambda g=_gn: self._quick_run_submit(g), width=6).pack(side="left", pady=6)
-                _flat_button(bar_frame, "✕", C["btn_dark_bg"], C["btn_dark_hover"],
-                             lambda g=_gn: self._hide_quick_run_bar(g), width=3).pack(side="left", padx=(4, 8), pady=6)
-
-                def _on_key_release(e, _g=_gn):
-                    if e.keysym in ("Up", "Down", "Return", "Escape", "Tab", "Shift_L", "Shift_R",
-                                    "Control_L", "Control_R", "Alt_L", "Alt_R"):
-                        return
-                    bar = self._quick_run_bars.get(_g)
-                    if bar is None:
-                        return
-                    after_id = bar.get("suggest_after_id")
-                    if after_id:
-                        self.after_cancel(after_id)
-                    bar["suggest_after_id"] = self.after(120, lambda g=_g: self._quick_run_refresh_suggestions(g))
-                entry.bind("<KeyRelease>", _on_key_release)
-
-                def _on_down(e, _g=_gn):
-                    bar = self._quick_run_bars.get(_g)
-                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                        lb = bar["suggest_lb"]
-                        sel = lb.curselection()
-                        nxt = (sel[0] + 1) if sel else 0
-                        if nxt < lb.size():
-                            lb.selection_clear(0, "end")
-                            lb.selection_set(nxt)
-                            lb.see(nxt)
-                        return "break"
-                entry.bind("<Down>", _on_down)
-
-                def _on_up(e, _g=_gn):
-                    bar = self._quick_run_bars.get(_g)
-                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                        lb = bar["suggest_lb"]
-                        sel = lb.curselection()
-                        prev = (sel[0] - 1) if sel else lb.size() - 1
-                        if prev >= 0:
-                            lb.selection_clear(0, "end")
-                            lb.selection_set(prev)
-                            lb.see(prev)
-                        return "break"
-                entry.bind("<Up>", _on_up)
-
-                def _on_tab(e, _g=_gn):
-                    bar = self._quick_run_bars.get(_g)
-                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                        lb = bar["suggest_lb"]
-                        sel = lb.curselection()
-                        if sel:
-                            rel = lb.get(sel[0])
-                            if rel != "Indexing files…":
-                                self._quick_run_accept_suggestion(_g, rel, submit=False)
-                        return "break"
-                entry.bind("<Tab>", _on_tab)
-
-                def _on_return(e, _g=_gn):
-                    bar = self._quick_run_bars.get(_g)
-                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                        lb = bar["suggest_lb"]
-                        sel = lb.curselection()
-                        if sel:
-                            rel = lb.get(sel[0])
-                            if rel != "Indexing files…":
-                                self._quick_run_accept_suggestion(_g, rel, submit=True)
-                                return "break"
-                    self._quick_run_submit(_g)
-                    return "break"
-                entry.bind("<Return>", _on_return)
-
-                def _on_escape(e, _g=_gn):
-                    bar = self._quick_run_bars.get(_g)
-                    if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                        self._quick_run_hide_suggestions(_g)
-                        return "break"
-                    self._hide_quick_run_bar(_g)
-                    return "break"
-                entry.bind("<Escape>", _on_escape)
-
-                def _on_focus_out_ext(e, _g=_gn):
-                    self.after(150, lambda g=_g: self._quick_run_maybe_hide_suggestions(g))
-                entry.bind("<FocusOut>", _on_focus_out_ext, add=True)
-
-                self._quick_run_bars[gname] = {
-                    "frame": bar_frame,
-                    "entry": entry,
-                    "var": entry_var,
-                    "is_placeholder": is_ph,
-                    "base_dir": group_base_dir,
-                    "banner": banner,
-                    "suggest_win": None,
-                    "suggest_lb": None,
-                    "suggest_after_id": None,
-                }
-
-                if self._quick_run_open_group == gname:
-                    bar_frame.pack(fill="x", padx=8, pady=(2, 0), after=banner)
-                    entry.focus_set()
+                self._build_quick_run_bar(gname, group_base_dir, banner)
 
             def _open(e, g=gname):
                 self._manage_group_base_dir(g)
@@ -1093,6 +962,144 @@ class RYOSApp(_BaseWindow):
             scripts = [s for s in self.db.list_all()
                        if (s[8] or "") == self._active_group]
             render_group_sections(self._active_group, scripts)
+
+
+    def _build_quick_run_bar(self, gname, group_base_dir, banner):
+        """Build the per-group quick-run button, entry bar, and key
+        bindings, registering them into self._quick_run_buttons/_bars.
+        Extracted from _refresh_cards to keep that method focused."""
+        _gn = gname
+        qr_btn = _flat_button(banner, "⚡", C["bolt"], C["bolt_hover"],
+                              lambda g=_gn: self._toggle_quick_run_bar(g),
+                              width=4, fg=C["name_fg"])
+        qr_btn.pack(side="right", padx=(0, 6))
+        Tooltip(qr_btn, "Toggle quick-run bar")
+        self._quick_run_buttons[gname] = qr_btn
+
+        bar_frame = tk.Frame(self.cards_frame, bg=C["bg"],
+                             highlightbackground=C["border"], highlightthickness=1)
+        _PH = "script name [params...]"
+        entry_var = tk.StringVar()
+        is_ph = [True]
+        entry = tk.Entry(bar_frame, textvariable=entry_var, bg=C["card_bg"], fg=C["path_fg"],
+                         insertbackground=C["name_fg"], relief="flat", bd=4,
+                         font=("Segoe UI", 10))
+        entry_var.set(_PH)
+        entry.pack(side="left", fill="x", expand=True, padx=(8, 4), pady=6)
+
+        def _ph_key(e, _ev=entry_var, _en=entry, _f=is_ph):
+            if _f[0]:
+                _ev.set("")
+                _en.config(fg=C["name_fg"])
+                _f[0] = False
+
+        def _ph_focus_out(e, _ev=entry_var, _en=entry, _f=is_ph):
+            if not _ev.get().strip():
+                _ev.set(_PH)
+                _en.config(fg=C["path_fg"])
+                _f[0] = True
+
+        entry.bind("<KeyPress>", _ph_key)
+        entry.bind("<FocusOut>", _ph_focus_out)
+
+        _flat_button(bar_frame, "Run", C["accent"], C["accent2"],
+                     lambda g=_gn: self._quick_run_submit(g), width=6).pack(side="left", pady=6)
+        _flat_button(bar_frame, "✕", C["btn_dark_bg"], C["btn_dark_hover"],
+                     lambda g=_gn: self._hide_quick_run_bar(g), width=3).pack(side="left", padx=(4, 8), pady=6)
+
+        def _on_key_release(e, _g=_gn):
+            if e.keysym in ("Up", "Down", "Return", "Escape", "Tab", "Shift_L", "Shift_R",
+                            "Control_L", "Control_R", "Alt_L", "Alt_R"):
+                return
+            bar = self._quick_run_bars.get(_g)
+            if bar is None:
+                return
+            after_id = bar.get("suggest_after_id")
+            if after_id:
+                self.after_cancel(after_id)
+            bar["suggest_after_id"] = self.after(120, lambda g=_g: self._quick_run_refresh_suggestions(g))
+        entry.bind("<KeyRelease>", _on_key_release)
+
+        def _on_down(e, _g=_gn):
+            bar = self._quick_run_bars.get(_g)
+            if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                lb = bar["suggest_lb"]
+                sel = lb.curselection()
+                nxt = (sel[0] + 1) if sel else 0
+                if nxt < lb.size():
+                    lb.selection_clear(0, "end")
+                    lb.selection_set(nxt)
+                    lb.see(nxt)
+                return "break"
+        entry.bind("<Down>", _on_down)
+
+        def _on_up(e, _g=_gn):
+            bar = self._quick_run_bars.get(_g)
+            if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                lb = bar["suggest_lb"]
+                sel = lb.curselection()
+                prev = (sel[0] - 1) if sel else lb.size() - 1
+                if prev >= 0:
+                    lb.selection_clear(0, "end")
+                    lb.selection_set(prev)
+                    lb.see(prev)
+                return "break"
+        entry.bind("<Up>", _on_up)
+
+        def _on_tab(e, _g=_gn):
+            bar = self._quick_run_bars.get(_g)
+            if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                lb = bar["suggest_lb"]
+                sel = lb.curselection()
+                if sel:
+                    rel = lb.get(sel[0])
+                    if rel != "Indexing files…":
+                        self._quick_run_accept_suggestion(_g, rel, submit=False)
+                return "break"
+        entry.bind("<Tab>", _on_tab)
+
+        def _on_return(e, _g=_gn):
+            bar = self._quick_run_bars.get(_g)
+            if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                lb = bar["suggest_lb"]
+                sel = lb.curselection()
+                if sel:
+                    rel = lb.get(sel[0])
+                    if rel != "Indexing files…":
+                        self._quick_run_accept_suggestion(_g, rel, submit=True)
+                        return "break"
+            self._quick_run_submit(_g)
+            return "break"
+        entry.bind("<Return>", _on_return)
+
+        def _on_escape(e, _g=_gn):
+            bar = self._quick_run_bars.get(_g)
+            if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+                self._quick_run_hide_suggestions(_g)
+                return "break"
+            self._hide_quick_run_bar(_g)
+            return "break"
+        entry.bind("<Escape>", _on_escape)
+
+        def _on_focus_out_ext(e, _g=_gn):
+            self.after(150, lambda g=_g: self._quick_run_maybe_hide_suggestions(g))
+        entry.bind("<FocusOut>", _on_focus_out_ext, add=True)
+
+        self._quick_run_bars[gname] = {
+            "frame": bar_frame,
+            "entry": entry,
+            "var": entry_var,
+            "is_placeholder": is_ph,
+            "base_dir": group_base_dir,
+            "banner": banner,
+            "suggest_win": None,
+            "suggest_lb": None,
+            "suggest_after_id": None,
+        }
+
+        if self._quick_run_open_group == gname:
+            bar_frame.pack(fill="x", padx=8, pady=(2, 0), after=banner)
+            entry.focus_set()
 
     def _add_script(self):
         groups = self.db.list_groups()
@@ -2379,8 +2386,4 @@ class RYOSApp(_BaseWindow):
                 except Exception:
                     pass
         if self._settings["remember_window_geometry"]:
-            self._settings["window_geometry"] = self.geometry()
-        if self._settings["remember_last_group"]:
-            self._settings["last_group"] = self._active_group
-        _save_settings(self._settings)
-        self.destroy()
+            self._s
