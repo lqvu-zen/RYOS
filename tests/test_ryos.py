@@ -843,3 +843,55 @@ class TestScriptTag(unittest.TestCase):
 
     def test_no_extension(self):
         self.assertEqual(_script_tag("Makefile"), ("Script", "#555555"))
+
+
+# ---------------------------------------------------------------------------
+# Settings load/save (ryos.settings) — the #2 error-handling fix
+# ---------------------------------------------------------------------------
+
+import ryos.settings as _settings_mod  # noqa: E402
+
+from ryos.settings import _SETTINGS_DEFAULTS, _load_settings, _save_settings  # noqa: E402
+
+
+class TestSettings(unittest.TestCase):
+    """Loading tolerates missing/corrupt files; saving round-trips."""
+
+    def setUp(self):
+        self._orig_path = _settings_mod._SETTINGS_PATH
+        self._dir = tempfile.mkdtemp()
+        _settings_mod._SETTINGS_PATH = Path(self._dir) / "settings.json"
+
+    def tearDown(self):
+        _settings_mod._SETTINGS_PATH = self._orig_path
+
+    def test_missing_file_returns_defaults(self):
+        self.assertEqual(_load_settings(), dict(_SETTINGS_DEFAULTS))
+
+    def test_corrupt_file_falls_back_to_defaults(self):
+        _settings_mod._SETTINGS_PATH.write_text("{ not valid json", encoding="utf-8")
+        loaded = _load_settings()
+        self.assertEqual(loaded["theme"], _SETTINGS_DEFAULTS["theme"])
+        self.assertEqual(len(loaded), len(_SETTINGS_DEFAULTS))
+
+    def test_stored_values_override_defaults(self):
+        _settings_mod._SETTINGS_PATH.write_text(
+            json.dumps({"theme": "dark", "window_width": 999}), encoding="utf-8")
+        loaded = _load_settings()
+        self.assertEqual(loaded["theme"], "dark")
+        self.assertEqual(loaded["window_width"], 999)
+        self.assertEqual(loaded["card_size"], _SETTINGS_DEFAULTS["card_size"])  # untouched
+
+    def test_unknown_keys_preserved(self):
+        # Forward-compat: a key written by a newer version survives the merge.
+        _settings_mod._SETTINGS_PATH.write_text(json.dumps({"future_flag": True}), encoding="utf-8")
+        self.assertTrue(_load_settings()["future_flag"])
+
+    def test_save_then_load_roundtrip(self):
+        d = dict(_SETTINGS_DEFAULTS)
+        d["theme"] = "dark"
+        d["window_height"] = 720
+        _save_settings(d)
+        loaded = _load_settings()
+        self.assertEqual(loaded["theme"], "dark")
+        self.assertEqual(loaded["window_height"], 720)
