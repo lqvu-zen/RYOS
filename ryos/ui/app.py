@@ -26,6 +26,7 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
+from ..quickrun import build_entry, rank_suggestions
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
 from .pipeline import PipelineEditorDialog
@@ -1626,7 +1627,7 @@ class RYOSApp(_BaseWindow):
                             rel_str = str(p.relative_to(base_resolved))
                         except ValueError:
                             rel_str = p.name
-                        paths.append((rel_str, p.name.lower(), p.stem.lower(), rel_str.lower()))
+                        paths.append(build_entry(rel_str, p.name))
             except PermissionError:
                 pass
             ts = time.monotonic()
@@ -1647,25 +1648,7 @@ class RYOSApp(_BaseWindow):
         index = self._quick_run_get_index(base_dir)
         if index is None:
             return []
-        q = query.lower()
-        results = []
-        for entry in index:
-            rel, name_lower, stem_lower, rel_lower = entry
-            if stem_lower == q:
-                tier = 0
-            elif stem_lower.startswith(q):
-                tier = 1
-            elif name_lower.startswith(q):
-                tier = 2
-            elif name_lower.find(q) != -1:
-                tier = 3
-            elif rel_lower.find(q) != -1:
-                tier = 4
-            else:
-                continue
-            results.append((tier, len(stem_lower), rel))
-        results.sort(key=lambda x: (x[0], x[1], x[2]))
-        return [r[2] for r in results[:max_n]]
+        return rank_suggestions(index, query, max_n)
 
     def _quick_run_refresh_suggestions(self, group_name: str) -> None:
         if not self._settings.get("quick_run_autocomplete", True):

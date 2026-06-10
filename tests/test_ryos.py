@@ -513,3 +513,62 @@ class TestParseVersion(unittest.TestCase):
 
     def test_malformed_sorts_lowest(self):
         self.assertGreater(_parse_version("v1.0.0"), _parse_version("garbage"))
+
+# ---------------------------------------------------------------------------
+# Quick Run suggestion ranking (ryos.quickrun)
+# ---------------------------------------------------------------------------
+
+from ryos.quickrun import build_entry, rank_suggestions  # noqa: E402
+
+
+class TestQuickRunRanking(unittest.TestCase):
+    """Ranking drives the autocomplete dropdown order, so tiers and
+    tie-breaks must stay stable."""
+
+    def test_build_entry_shape(self):
+        self.assertEqual(
+            build_entry("sub/Foo.py", "Foo.py"),
+            ("sub/Foo.py", "foo.py", "foo", "sub/foo.py"),
+        )
+
+    def test_build_entry_multi_suffix_stem(self):
+        # Path.stem drops only the final suffix.
+        self.assertEqual(build_entry("a/x.tar.gz", "x.tar.gz")[2], "x.tar")
+
+    def _index(self):
+        return [
+            build_entry("foo.py", "foo.py"),            # tier 0: stem == query
+            build_entry("foobar.py", "foobar.py"),      # tier 1: stem startswith
+            build_entry("src/afoo.py", "afoo.py"),      # tier 3: name contains
+            build_entry("foo/zzz.py", "zzz.py"),        # tier 4: only path contains
+            build_entry("unrelated.py", "unrelated.py"),  # no match
+        ]
+
+    def test_tier_ordering(self):
+        self.assertEqual(
+            rank_suggestions(self._index(), "foo", 10),
+            ["foo.py", "foobar.py", "src/afoo.py", "foo/zzz.py"],
+        )
+
+    def test_non_matches_excluded(self):
+        self.assertNotIn("unrelated.py", rank_suggestions(self._index(), "foo", 10))
+
+    def test_no_match_returns_empty(self):
+        self.assertEqual(rank_suggestions(self._index(), "qqq", 10), [])
+
+    def test_max_n_limit(self):
+        self.assertEqual(rank_suggestions(self._index(), "foo", 2), ["foo.py", "foobar.py"])
+
+    def test_tiebreak_shorter_stem_first(self):
+        idx = [build_entry("abcd.py", "abcd.py"), build_entry("ab.py", "ab.py")]
+        # both stem-prefix matches (tier 1); shorter stem "ab" wins.
+        self.assertEqual(rank_suggestions(idx, "ab", 10), ["ab.py", "abcd.py"])
+
+    def test_tiebreak_alphabetical_relpath(self):
+        idx = [build_entry("dir2/abc.py", "abc.py"), build_entry("dir1/abd.py", "abd.py")]
+        # same tier, same stem length -> sorted by relative path.
+        self.assertEqual(rank_suggestions(idx, "ab", 10), ["dir1/abd.py", "dir2/abc.py"])
+
+    def test_case_insensitive(self):
+        idx = [build_entry("Deploy.PY", "Deploy.PY")]
+        self.assertEqual(rank_suggestions(idx, "DEPLOY", 10), ["Deploy.PY"])
