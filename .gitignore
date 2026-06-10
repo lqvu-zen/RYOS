@@ -7,10 +7,13 @@ dist/
 *.dist/
 *.onefile-build/
 
-# Test scripts: ignore the sample programs used as subprocess fixtures,
-# but keep the actual unit-test module so CI can run it.
+# Test scripts: ignore ad-hoc sample programs but track the unit-test
+# module and the fixture files that CI subprocess tests depend on.
 tests/*
 !tests/test_ryos.py
+!tests/echo_args.bat
+!tests/uv_runner.bat
+!tests/uv_hello.py
 
 # Database
 scripts.db
