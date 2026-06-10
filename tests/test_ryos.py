@@ -1104,3 +1104,97 @@ class TestScriptDBPipelines(unittest.TestCase):
         self.db.mark_run_status(self.s1, "error")
         rec = [r for r in self.db.list_all() if r[0] == self.s1][0]
         self.assertEqual(rec[7], "error")  # last_run_status column
+
+
+# ---------------------------------------------------------------------------
+# ScriptDB — drag-and-drop reordering and moving between groups
+# ---------------------------------------------------------------------------
+
+class TestScriptDBReorderMove(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("G")
+
+    def _script_ids(self, group):
+        return [r[0] for r in self.db.list_all() if r[8] == group]
+
+    def test_reorder_script_before(self):
+        a = self.db.add("A", "/a.py", "", "", "G")
+        b = self.db.add("B", "/b.py", "", "", "G")
+        c = self.db.add("C", "/c.py", "", "", "G")
+        self.db.reorder_script(c, "G", before_id=a)   # C jumps in front of A
+        self.assertEqual(self._script_ids("G"), [c, a, b])
+
+    def test_reorder_script_append_when_before_none(self):
+        a = self.db.add("A", "/a.py", "", "", "G")
+        b = self.db.add("B", "/b.py", "", "", "G")
+        self.db.reorder_script(a, "G", before_id=None)  # A goes to the end
+        self.assertEqual(self._script_ids("G"), [b, a])
+
+    def test_move_script_to_group(self):
+        self.db.create_group("H")
+        a = self.db.add("A", "/a.py", "", "", "G")
+        self.db.move_to_group(a, "H")
+        self.assertEqual([r[8] for r in self.db.list_all() if r[0] == a], ["H"])
+        self.assertEqual(self._script_ids("G"), [])
+
+    def test_reorder_pipeline_before(self):
+        p1 = self.db.create_pipeline("P1", "G")
+        p2 = self.db.create_pipeline("P2", "G")
+        p3 = self.db.create_pipeline("P3", "G")
+        self.db.reorder_pipeline(p3, "G", before_id=p1)
+        self.assertEqual([p[0] for p in self.db.list_pipelines("G")], [p3, p1, p2])
+
+    def test_move_pipeline_to_group(self):
+        self.db.create_group("H")
+        p = self.db.create_pipeline("P", "G")
+        self.db.move_pipeline_to_group(p, "H")
+        self.assertEqual([x[0] for x in self.db.list_pipelines("H")], [p])
+        self.assertEqual(self.db.list_pipelines("G"), [])
+
+
+# ---------------------------------------------------------------------------
+# ScriptDB — export/import round-trip with pipelines (and the preset boundary)
+# ---------------------------------------------------------------------------
+
+class TestExportImportPipelines(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+
+    def test_roundtrip_preserves_pipeline_steps_and_base_dir(self):
+        self.db.create_group("Deploy", base_dir="/srv")
+        s1 = self.db.add("Build", "/srv/build.py", "", "python", "Deploy")
+        s2 = self.db.add("Ship", "/srv/ship.sh", "", "bash", "Deploy")
+        pid = self.db.create_pipeline("Release", "Deploy")
+        self.db.add_pipeline_step(pid, s1)
+        self.db.add_pipeline_step(pid, s2)
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        self.db.export_to_file(path)
+
+        db2 = _make_db()
+        db2.import_from_file(path, replace=False)
+        self.assertEqual(db2.get_group_base_dir("Deploy"), "/srv")
+        pipes = db2.list_pipelines("Deploy")
+        self.assertEqual([p[1] for p in pipes], ["Release"])
+        steps = db2.list_pipeline_steps(pipes[0][0])
+        self.assertEqual([s[3] for s in steps], ["/srv/build.py", "/srv/ship.sh"])  # wired by path, in order
+
+    def test_export_omits_param_presets(self):
+        # Documents a known limitation: param presets are NOT part of the backup
+        # format, so a round-trip drops them. (Flag for a future format bump.)
+        sid = self.db.add("S", "/s.py", "", "")
+        self.db.replace_param_presets(sid, [("Fast", "--fast")])
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        self.db.export_to_file(path)
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.assertNotIn("presets", data)
+        self.assertNotIn("param_presets", data)
+        # And after a round-trip the preset is indeed gone.
+        db2 = _make_db()
+        db2.import_from_file(path, replace=False)
+        imported_id = db2.list_all()[0][0]
+        self.assertEqual(db2.list_param_presets(imported_id), [])
