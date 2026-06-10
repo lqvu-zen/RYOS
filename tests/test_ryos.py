@@ -246,7 +246,7 @@ class TestScriptDBExportImport(unittest.TestCase):
             path = f.name
         self.db.export_to_file(path)
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 2)
+        self.assertEqual(data["version"], 3)
         self.assertIn("exported_at", data)
         self.assertEqual(len(data["scripts"]), 2)
         names = [s["name"] for s in data["scripts"]]
@@ -1182,19 +1182,16 @@ class TestExportImportPipelines(unittest.TestCase):
         steps = db2.list_pipeline_steps(pipes[0][0])
         self.assertEqual([s[3] for s in steps], ["/srv/build.py", "/srv/ship.sh"])  # wired by path, in order
 
-    def test_export_omits_param_presets(self):
-        # Documents a known limitation: param presets are NOT part of the backup
-        # format, so a round-trip drops them. (Flag for a future format bump.)
+    def test_roundtrip_preserves_param_presets(self):
+        # Param presets are embedded per-script in the export (format v3) and
+        # restored on import, wired to the re-created script.
         sid = self.db.add("S", "/s.py", "", "")
-        self.db.replace_param_presets(sid, [("Fast", "--fast")])
+        self.db.replace_param_presets(sid, [("Fast", "--fast"), ("Slow", "--slow")])
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         self.db.export_to_file(path)
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertNotIn("presets", data)
-        self.assertNotIn("param_presets", data)
-        # And after a round-trip the preset is indeed gone.
         db2 = _make_db()
         db2.import_from_file(path, replace=False)
         imported_id = db2.list_all()[0][0]
-        self.assertEqual(db2.list_param_presets(imported_id), [])
+        presets = db2.list_param_presets(imported_id)
+        self.assertEqual([(p[1], p[2]) for p in presets], [("Fast", "--fast"), ("Slow", "--slow")])

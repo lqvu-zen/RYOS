@@ -43,7 +43,7 @@ Remediation has been carried out in verified, independently-committable incremen
 
 **Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **136 passing / 3 skipped**, now covering interpreter (`detect_interpreter`, `build_command`, `resolve_interpreter` incl. the RYOS.exe guard, `_script_tag`), DB CRUD/ordering/migrations + versioning + groups (rename propagation, orphan-on-delete, deep clone) + pipelines (steps join, cascade delete, deep clone, reorder) + reorder/move-between-groups + `mark_run_status` + export/import round-trip incl. pipelines & base_dir, `settings` load/save fallbacks + round-trip, `notifications._parse_version`, the full `quickrun` module, and `jobs` (`Job` defaults, `format_elapsed`, `JobRegistry`). The DB persistence layer — where bugs mean silent data loss — is now comprehensively protected.
 
-**Known limitation surfaced by tests:** export/import does not include `script_param_presets`, so a backup/restore silently drops param presets. Pinned by `test_export_omits_param_presets`; worth a future export-format bump if presets matter to users.
+**Data-loss bug found and fixed:** export/import previously did not include `script_param_presets`, so a backup/restore silently dropped param presets. Now fixed — presets are embedded per-script in the export (format bumped v2→v3, backward-compatible on import) and restored when the script is re-created. Verified by `test_roundtrip_preserves_param_presets`.
 
 **A note on infrastructure quirks found during the work:**
 - The entire `tests/` directory was gitignored, so the suite would not have reached CI. `.gitignore` was narrowed to track `tests/test_ryos.py` while keeping the sample fixture scripts ignored.

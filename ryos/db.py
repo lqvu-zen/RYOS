@@ -195,7 +195,7 @@ class ScriptDB:
         with self._connect() as conn:
             if group_name is not None:
                 scripts = conn.execute(
-                    "SELECT name, path, params, interpreter, order_index, group_name "
+                    "SELECT id, name, path, params, interpreter, order_index, group_name "
                     "FROM scripts WHERE COALESCE(group_name,'')=? "
                     "ORDER BY order_index ASC, id ASC",
                     (group_name,),
@@ -211,7 +211,7 @@ class ScriptDB:
                 ).fetchall()
             else:
                 scripts = conn.execute(
-                    "SELECT name, path, params, interpreter, order_index, group_name "
+                    "SELECT id, name, path, params, interpreter, order_index, group_name "
                     "FROM scripts ORDER BY "
                     "CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
                     "group_name ASC, order_index ASC, id ASC"
@@ -224,6 +224,20 @@ class ScriptDB:
                     "SELECT name, sort_order, COALESCE(base_dir, '') FROM groups "
                     "ORDER BY sort_order ASC, id ASC"
                 ).fetchall()
+
+            script_data = []
+            for s in scripts:
+                presets = conn.execute(
+                    "SELECT label, params FROM script_param_presets "
+                    "WHERE script_id=? ORDER BY sort_order ASC, id ASC",
+                    (s[0],),
+                ).fetchall()
+                script_data.append({
+                    "name": s[1], "path": s[2], "params": s[3],
+                    "interpreter": s[4], "order_index": s[5],
+                    "group_name": s[6] or "",
+                    "presets": [{"label": lbl, "params": prm} for lbl, prm in presets],
+                })
 
             pipeline_data = []
             for p_id, p_name, p_group, p_order in pipelines:
@@ -241,21 +255,14 @@ class ScriptDB:
                 })
 
         data = {
-            "version": 2,
+            "version": 3,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
             "groups": [{"name": g[0], "sort_order": g[1], "base_dir": g[2]} for g in groups],
-            "scripts": [
-                {
-                    "name": s[0], "path": s[1], "params": s[2],
-                    "interpreter": s[3], "order_index": s[4],
-                    "group_name": s[5] or "",
-                }
-                for s in scripts
-            ],
+            "scripts": script_data,
             "pipelines": pipeline_data,
         }
         Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
-        return len(scripts), len(pipeline_data)
+        return len(script_data), len(pipeline_data)
 
     def import_from_file(self, path: str, replace: bool = False) -> tuple[int, int]:
         """Returns (scripts_added, scripts_skipped)."""
@@ -328,7 +335,14 @@ class ScriptDB:
                      s.get("interpreter", ""), now,
                      s.get("order_index", 0), s.get("group_name", "")),
                 )
-                path_to_id[spath] = cur.lastrowid
+                new_sid = cur.lastrowid
+                path_to_id[spath] = new_sid
+                for i, pr in enumerate(s.get("presets", [])):
+                    conn.execute(
+                        "INSERT INTO script_param_presets (script_id, label, params, sort_order) "
+                        "VALUES (?, ?, ?, ?)",
+                        (new_sid, pr.get("label", ""), pr.get("params", ""), i),
+                    )
                 added += 1
 
             # Import pipelines
