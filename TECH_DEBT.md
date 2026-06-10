@@ -1,6 +1,7 @@
 # RYOS Technical Debt Audit
 
 _Generated 2026-06-10 · version 1.7.2-dev · ~5,600 LOC across `ryos/`_
+_Updated 2026-06-10 — remediation in progress; see Progress section below._
 
 ## Summary
 
@@ -8,19 +9,49 @@ RYOS is a healthy small codebase: clean package layout, a thin standard-library 
 
 Priority score below = **(Impact + Risk) × (6 − Effort)**, each rated 1–5.
 
-| # | Item | Type | Impact | Risk | Effort | Priority |
-|---|------|------|:------:|:----:|:------:|:--------:|
-| 1 | No CI / no lint / no type or format config | Infrastructure | 4 | 4 | 2 | **32** |
-| 2 | Broad `except Exception` swallowing failures silently | Architecture | 3 | 4 | 2 | **28** |
-| 3 | Zero tests for `ui/` and app logic (largest module untested) | Test | 4 | 4 | 3 | **24** |
-| 4 | Giant methods: `_refresh_cards` (267 lines), `_build_ui` (142) | Code | 4 | 3 | 3 | **21** |
-| 5 | Duplicated job-launch logic (`_run_script` vs pipeline step) | Code | 3 | 3 | 3 | **18** |
-| 6 | `RYOSApp` god class — ~90 methods, 2,275 lines, one class | Architecture | 5 | 3 | 4 | **16** |
-| 7 | Three parallel build scripts, no canonical one | Infrastructure | 2 | 2 | 2 | **16** |
-| 8 | Ad-hoc schema migrations in `_init_db`, no version tracking | Architecture | 2 | 3 | 3 | **15** |
-| 9 | Unpinned dependency (`tkinterdnd2`, no lower bound) | Dependency | 2 | 2 | 1 | **20*** |
+| # | Item | Type | Priority | Status |
+|---|------|------|:--------:|--------|
+| 1 | No CI / no lint / no type or format config | Infrastructure | **32** | ✅ Done |
+| 2 | Broad `except Exception` swallowing failures silently | Architecture | **28** | 🟡 Partial — `settings.py` done; cosmetic `app.py` guards remain |
+| 3 | Zero tests for `ui/` and app logic | Test | **24** | 🟡 Ongoing — pure logic extracted & covered; widget code still by-design untested |
+| 4 | Giant methods: `_refresh_cards` (267), `_build_ui` (142) | Code | **21** | ✅ Done — `_refresh_cards` → 138, `_build_ui` → 6 (5 builders) |
+| 5 | Duplicated job-launch logic (`_run_script` vs pipeline step) | Code | **18** | ✅ Done — unified via `_launch` |
+| 6 | `RYOSApp` god class — ~90 methods, 2,275 lines | Architecture | **16** | 🟡 Ongoing — `quickrun` subsystem extracted |
+| 7 | Three parallel build scripts, no canonical one | Infrastructure | **16** | ⬜ Not started |
+| 8 | Ad-hoc schema migrations in `_init_db`, no version tracking | Architecture | **15** | ✅ Done — `PRAGMA user_version` scheme |
+| 9 | Unpinned dependency (`tkinterdnd2`, no lower bound) | Dependency | **20*** | ✅ Done — pinned `>=0.3.0,<1.0` |
 
 _\*Item 9 scores high mechanically because it's near-zero effort, but the real-world risk is low (single, stable dep). Treat it as a 5-minute fix, not a priority._
+
+_(Full Impact/Risk/Effort breakdown for each item is in the Findings section below.)_
+
+---
+
+## Progress (2026-06-10)
+
+Remediation has been carried out in verified, independently-committable increments. Each landed with `ruff` clean and the test suite green.
+
+**Done**
+- **CI & tooling (#1):** GitHub Actions workflow runs `ruff` + `pytest` on push/PR across Ubuntu + Windows × Python 3.10/3.13. Added `ruff`/`pytest` config and a `dev` extra to `pyproject.toml`; fixed 8 lint findings.
+- **Dependency pin (#9):** `tkinterdnd2>=0.3.0,<1.0`.
+- **Settings error handling (#2):** `_load_settings`/`_save_settings` now distinguish missing vs corrupt/unwritable files and log a warning instead of swallowing silently. (`db._connect` was already correct — logs and re-raises.)
+- **Job-launch dedup (#5):** both the ad-hoc and pipeline-step paths funnel through one `_launch(job, cmd, name, script_id)` helper.
+- **Schema versioning (#8):** the idempotent setup is frozen as `_ensure_baseline` (v1); a `PRAGMA user_version` scheme with a tested `_run_migrations` runner handles future changes once-each, in order.
+- **Giant methods split (#4):** `_refresh_cards` 267 → 138 (lifted `_build_quick_run_bar`); `_build_ui` 142 → 6, delegating to five focused builders (`_build_header`, `_build_select_bar`, `_build_status_bar`, `_build_cards_pane`, `_build_output_panel`).
+- **Quick Run subsystem (#3, #6):** all pure Quick Run logic — `_is_inside` (traversal guard), `build_entry`, `rank_suggestions`, `resolve` — extracted into a new UI-independent `ryos/quickrun.py`. `_is_inside` consolidated from `ui/dialogs.py` (removes a duplication).
+
+**Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **83 passing / 3 skipped**, now covering interpreter, DB CRUD/ordering/export/migrations + versioning, `notifications._parse_version`, and the full `quickrun` module.
+
+**A note on infrastructure quirks found during the work:**
+- The entire `tests/` directory was gitignored, so the suite would not have reached CI. `.gitignore` was narrowed to track `tests/test_ryos.py` while keeping the sample fixture scripts ignored.
+- Two interpreter tests were already failing against current behavior (unknown extensions default to `cmd`); updated to match.
+
+**Remaining (recommended order)**
+1. Narrow the cosmetic `except Exception` guards in `app.py` (#2 tail).
+2. Continue peeling subsystems off `RYOSApp` (#6) — a `JobManager` (jobs + `_launch` + `_run_subprocess`) is the natural next seam.
+3. Consolidate the build scripts (#7): pick a canonical packager, quarantine the others.
+
+> UI refactors (`_build_quick_run_bar`, `_launch`, `quickrun.resolve`) are verified by compile + lint + the unit suite, but the widget paths themselves aren't runtime-tested — worth a manual smoke-test (toggle quick-run bar, run a script, run a pipeline, exercise autocomplete) or a `run-ryos` driver pass.
 
 ---
 

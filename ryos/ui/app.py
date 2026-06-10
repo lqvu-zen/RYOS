@@ -239,6 +239,14 @@ class RYOSApp(_BaseWindow):
             self._refresh_cards()
 
     def _build_ui(self):
+        self._build_header()
+        self._build_select_bar()
+        self._build_status_bar()
+        self._build_cards_pane()
+        self._build_output_panel()
+
+    def _build_header(self):
+        """Top header: brand, create buttons, and the options menu."""
         header = tk.Frame(self, bg=C["header_bg"], pady=14, padx=18)
         header.pack(fill="x")
         wm = tk.Frame(header, bg=C["header_bg"])
@@ -287,6 +295,8 @@ class RYOSApp(_BaseWindow):
 
         self._select_btn = None
 
+    def _build_select_bar(self):
+        """The multi-select delete bar (packed on demand by select mode)."""
         self._select_bar = tk.Frame(self, bg=C["warn_bg"],
                                     highlightbackground=C["warn_border"], highlightthickness=1)
         self._select_bar_var = tk.StringVar(value="Tick the checkboxes next to scripts you want to delete.")
@@ -308,12 +318,16 @@ class RYOSApp(_BaseWindow):
         self._sel_all_btn.bind("<Leave>", lambda e: self._sel_all_btn.config(bg=C["warn_bg"]))
         self._sel_all_btn.pack(side="right", padx=4, pady=4)
 
+    def _build_status_bar(self):
+        """The bottom status bar."""
         self.status_var = tk.StringVar(value="Ready.")
         self._status_bar = tk.Label(self, textvariable=self.status_var, anchor="w",
                                     bg=C["status_bg"], fg=C["btn_dark_hover"], font=("Segoe UI", 8),
                                     padx=10, pady=4)
         self._status_bar.pack(fill="x", side="bottom")
 
+    def _build_cards_pane(self):
+        """Scrollable cards area in the top pane of the vertical splitter."""
         self._paned = ttk.PanedWindow(self, orient="vertical")
         self._paned.pack(fill="both", expand=True)
 
@@ -353,6 +367,8 @@ class RYOSApp(_BaseWindow):
 
         self._canvas = canvas
 
+    def _build_output_panel(self):
+        """The collapsible output panel in the bottom pane."""
         self._out_expanded = False
         self.out_panel = tk.Frame(self._paned, bg=C["out_bg"])
 
