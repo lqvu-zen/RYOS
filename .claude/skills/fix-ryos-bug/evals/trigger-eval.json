@@ -1,0 +1,12 @@
+[
+  {"query": "RYOS freezes and the window goes white when a script prints thousands of lines really fast", "should_trigger": true},
+  {"query": "after I click Stop the script keeps running and the card stays stuck showing running", "should_trigger": true},
+  {"query": "my scripts.db won't open after updating RYOS — it throws a sqlite error on launch", "should_trigger": true},
+  {"query": "the remember-window-size setting in RYOS doesn't stick, every restart it opens at the default size", "should_trigger": true},
+  {"query": "dragging a .py file onto the RYOS window crashes it with a traceback about the drop handler", "should_trigger": true},
+  {"query": "add a confirmation dialog before stopping a running script in RYOS, on by default", "should_trigger": false},
+  {"query": "ship RYOS 1.6.5 to github with the windows zip and portable zip", "should_trigger": false},
+  {"query": "review the RYOS output panel design, the colours look washed out and spacing is off", "should_trigger": false},
+  {"query": "open RYOS so I can see the current state of the cards", "should_trigger": false},
+  {"query": "I'd like RYOS to support a new scripting language by adding it to the interpreter map", "should_trigger": false}
+]

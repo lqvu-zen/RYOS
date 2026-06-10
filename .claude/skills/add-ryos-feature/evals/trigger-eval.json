@@ -1,0 +1,12 @@
+[
+  {"query": "I want RYOS to remember which group I had selected last time and reopen to it on startup, with a toggle for it in advanced options", "should_trigger": true},
+  {"query": "can you make each script card in RYOS show how many times it has been run, persisted in the database across restarts", "should_trigger": true},
+  {"query": "add a dark mode to RYOS with a light/dark theme picker and an accent colour in settings", "should_trigger": true},
+  {"query": "I'd like to pin certain scripts to the top of the RYOS list and have that order saved", "should_trigger": true},
+  {"query": "make RYOS auto-clear the output panel each time a script starts, as an option in advanced settings", "should_trigger": true},
+  {"query": "RYOS hangs and the window goes white when a script floods stdout with thousands of lines", "should_trigger": false},
+  {"query": "cut a new RYOS release v1.6.5 and upload the exe and portable zip to github", "should_trigger": false},
+  {"query": "the RYOS settings dialog feels cramped and the contrast is poor — review the layout and tell me what to fix", "should_trigger": false},
+  {"query": "launch RYOS and grab a screenshot of the main window for me", "should_trigger": false},
+  {"query": "write me a standalone python script that bulk-renames files in a folder by date", "should_trigger": false}
+]
