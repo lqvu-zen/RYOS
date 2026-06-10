@@ -960,3 +960,147 @@ class TestJobRegistry(unittest.TestCase):
         for j in r.all():
             r.remove(j.job_id)
         self.assertEqual(len(r), 0)
+
+
+# ---------------------------------------------------------------------------
+# ScriptDB — groups
+# ---------------------------------------------------------------------------
+
+class TestScriptDBGroups(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+
+    def test_create_and_list_in_sort_order(self):
+        self.db.create_group("Beta")
+        self.db.create_group("Alpha")
+        self.assertEqual(self.db.list_groups(), ["Beta", "Alpha"])
+
+    def test_create_group_is_idempotent(self):
+        self.db.create_group("G")
+        self.db.create_group("G")
+        self.assertEqual(self.db.list_groups().count("G"), 1)
+
+    def test_base_dir_get_set(self):
+        self.db.create_group("G")
+        self.assertEqual(self.db.get_group_base_dir("G"), "")
+        self.db.set_group_base_dir("G", "/some/dir")
+        self.assertEqual(self.db.get_group_base_dir("G"), "/some/dir")
+
+    def test_list_groups_with_meta(self):
+        self.db.create_group("G", base_dir="/x")
+        self.assertEqual(self.db.list_groups_with_meta(), [("G", "/x")])
+
+    def test_reorder_groups(self):
+        for n in ("A", "B", "C"):
+            self.db.create_group(n)
+        self.db.reorder_groups(["C", "A", "B"])
+        self.assertEqual(self.db.list_groups(), ["C", "A", "B"])
+
+    def test_rename_group_propagates_to_scripts_and_pipelines(self):
+        self.db.create_group("Old")
+        sid = self.db.add("S", "/s.py", "", "", "Old")
+        self.db.create_pipeline("P", "Old")
+        self.db.rename_group("Old", "New")
+        self.assertIn("New", self.db.list_groups())
+        self.assertNotIn("Old", self.db.list_groups())
+        rec = [r for r in self.db.list_all() if r[0] == sid][0]
+        self.assertEqual(rec[8], "New")  # group_name column
+        self.assertEqual([p[1] for p in self.db.list_pipelines("New")], ["P"])
+
+    def test_delete_group_orphans_scripts_and_pipelines(self):
+        self.db.create_group("G")
+        sid = self.db.add("S", "/s.py", "", "", "G")
+        self.db.create_pipeline("P", "G")
+        self.db.delete_group("G")
+        self.assertNotIn("G", self.db.list_groups())
+        rec = [r for r in self.db.list_all() if r[0] == sid][0]
+        self.assertEqual(rec[8], "")            # script survives, ungrouped
+        self.assertEqual(self.db.list_pipelines("G"), [])
+
+    def test_clone_group_deep_copies(self):
+        self.db.create_group("Src", base_dir="/b")
+        self.db.add("S1", "/b/s1.py", "a", "", "Src")
+        self.db.create_pipeline("P", "Src")
+        n_scripts, n_pipes = self.db.clone_group("Src", "Dst")
+        self.assertEqual((n_scripts, n_pipes), (1, 1))
+        self.assertEqual(self.db.get_group_base_dir("Dst"), "/b")
+        self.assertEqual(len(self.db.list_pipelines("Dst")), 1)
+        self.assertEqual(len([r for r in self.db.list_all() if r[8] == "Dst"]), 1)
+
+
+# ---------------------------------------------------------------------------
+# ScriptDB — pipelines
+# ---------------------------------------------------------------------------
+
+class TestScriptDBPipelines(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("G")
+        self.s1 = self.db.add("One", "/one.py", "p1", "python", "G")
+        self.s2 = self.db.add("Two", "/two.py", "", "node", "G")
+
+    def test_create_and_list(self):
+        pid = self.db.create_pipeline("Deploy", "G")
+        self.assertEqual(self.db.list_pipelines("G"), [(pid, "Deploy")])
+
+    def test_add_and_list_steps_join_script_fields(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.s1)
+        self.db.add_pipeline_step(pid, self.s2)
+        steps = self.db.list_pipeline_steps(pid)
+        # (step_id, script_id, name, path, params, interpreter, params_override)
+        self.assertEqual([s[1] for s in steps], [self.s1, self.s2])
+        self.assertEqual(steps[0][2:6], ("One", "/one.py", "p1", "python"))
+        self.assertIsNone(steps[0][6])
+
+    def test_update_step_params_override(self):
+        pid = self.db.create_pipeline("P", "G")
+        st = self.db.add_pipeline_step(pid, self.s1)
+        self.db.update_pipeline_step_params(st, "--flag")
+        self.assertEqual(self.db.list_pipeline_steps(pid)[0][6], "--flag")
+
+    def test_remove_step(self):
+        pid = self.db.create_pipeline("P", "G")
+        st1 = self.db.add_pipeline_step(pid, self.s1)
+        self.db.add_pipeline_step(pid, self.s2)
+        self.db.remove_pipeline_step(st1)
+        self.assertEqual([s[1] for s in self.db.list_pipeline_steps(pid)], [self.s2])
+
+    def test_reorder_steps(self):
+        pid = self.db.create_pipeline("P", "G")
+        st1 = self.db.add_pipeline_step(pid, self.s1)
+        st2 = self.db.add_pipeline_step(pid, self.s2)
+        self.db.reorder_pipeline_steps(pid, [st2, st1])
+        self.assertEqual([s[0] for s in self.db.list_pipeline_steps(pid)], [st2, st1])
+
+    def test_delete_pipeline_cascades_steps(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.s1)
+        self.db.delete_pipeline(pid)
+        self.assertEqual(self.db.list_pipelines("G"), [])
+        self.assertEqual(self.db.list_pipeline_steps(pid), [])
+
+    def test_rename_pipeline(self):
+        pid = self.db.create_pipeline("Old", "G")
+        self.db.rename_pipeline(pid, "New")
+        self.assertEqual(self.db.list_pipelines("G"), [(pid, "New")])
+
+    def test_clone_pipeline_copies_steps(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.s1)
+        self.db.add_pipeline_step(pid, self.s2)
+        new_id = self.db.clone_pipeline(pid)
+        self.assertNotEqual(new_id, pid)
+        self.assertIn("P (copy)", [p[1] for p in self.db.list_pipelines("G")])
+        self.assertEqual([s[1] for s in self.db.list_pipeline_steps(new_id)], [self.s1, self.s2])
+
+    def test_clone_missing_pipeline_raises(self):
+        with self.assertRaises(ValueError):
+            self.db.clone_pipeline(9999)
+
+    def test_mark_run_status(self):
+        self.db.mark_run_status(self.s1, "error")
+        rec = [r for r in self.db.list_all() if r[0] == self.s1][0]
+        self.assertEqual(rec[7], "error")  # last_run_status column
