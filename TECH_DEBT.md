@@ -12,7 +12,7 @@ Priority score below = **(Impact + Risk) × (6 − Effort)**, each rated 1–5.
 | # | Item | Type | Priority | Status |
 |---|------|------|:--------:|--------|
 | 1 | No CI / no lint / no type or format config | Infrastructure | **32** | ✅ Done |
-| 2 | Broad `except Exception` swallowing failures silently | Architecture | **28** | 🟡 Partial — `settings.py` done; cosmetic `app.py` guards remain |
+| 2 | Broad `except Exception` swallowing failures silently | Architecture | **28** | ✅ Done — silent guards narrowed/logged; remaining broad catches are deliberate "never crash" guards |
 | 3 | Zero tests for `ui/` and app logic | Test | **24** | 🟡 Ongoing — pure logic extracted & covered; widget code still by-design untested |
 | 4 | Giant methods: `_refresh_cards` (267), `_build_ui` (142) | Code | **21** | ✅ Done — `_refresh_cards` → 138, `_build_ui` → 6 (5 builders) |
 | 5 | Duplicated job-launch logic (`_run_script` vs pipeline step) | Code | **18** | ✅ Done — unified via `_launch` |
@@ -34,7 +34,7 @@ Remediation has been carried out in verified, independently-committable incremen
 **Done**
 - **CI & tooling (#1):** GitHub Actions workflow runs `ruff` + `pytest` on push/PR across Ubuntu + Windows × Python 3.10/3.13. Added `ruff`/`pytest` config and a `dev` extra to `pyproject.toml`; fixed 8 lint findings.
 - **Dependency pin (#9):** `tkinterdnd2>=0.3.0,<1.0`.
-- **Settings error handling (#2):** `_load_settings`/`_save_settings` now distinguish missing vs corrupt/unwritable files and log a warning instead of swallowing silently. (`db._connect` was already correct — logs and re-raises.)
+- **Exception handling (#2):** `settings.py` `_load_settings`/`_save_settings` distinguish missing vs corrupt/unwritable files and log instead of swallowing. In `app.py`, the four silent guards (Quick Run disk-cache load/save, two `process.terminate()` calls) were narrowed to their real error types (`OSError`/`ValueError`/`KeyError`/`TypeError`) with debug logging, so unexpected exceptions now surface instead of hiding. (`db._connect` already logs + re-raises; the export/import/launch catches log + notify the user; the toast/tooltip/theme catches are intentional "optional feature, never crash" guards.)
 - **Job-launch dedup (#5):** both the ad-hoc and pipeline-step paths funnel through one `_launch(job, cmd, name, script_id)` helper.
 - **Schema versioning (#8):** the idempotent setup is frozen as `_ensure_baseline` (v1); a `PRAGMA user_version` scheme with a tested `_run_migrations` runner handles future changes once-each, in order.
 - **Giant methods split (#4):** `_refresh_cards` 267 → 138 (lifted `_build_quick_run_bar`); `_build_ui` 142 → 6, delegating to five focused builders (`_build_header`, `_build_select_bar`, `_build_status_bar`, `_build_cards_pane`, `_build_output_panel`).
@@ -47,9 +47,10 @@ Remediation has been carried out in verified, independently-committable incremen
 - Two interpreter tests were already failing against current behavior (unknown extensions default to `cmd`); updated to match.
 
 **Remaining (recommended order)**
-1. Narrow the cosmetic `except Exception` guards in `app.py` (#2 tail).
-2. Continue peeling subsystems off `RYOSApp` (#6) — a `JobManager` (jobs + `_launch` + `_run_subprocess`) is the natural next seam.
-3. Consolidate the build scripts (#7): pick a canonical packager, quarantine the others.
+1. Continue peeling subsystems off `RYOSApp` (#6) — a `JobManager` (jobs + `_launch` + `_run_subprocess`) is the natural next seam.
+2. Consolidate the build scripts (#7): pick a canonical packager, quarantine the others.
+
+_Optional follow-up: the broad catches in `notifications.py` (toast/version/fetch) could be narrowed too, but they are deliberate best-effort guards around non-critical features._
 
 > UI refactors (`_build_quick_run_bar`, `_launch`, `quickrun.resolve`) are verified by compile + lint + the unit suite, but the widget paths themselves aren't runtime-tested — worth a manual smoke-test (toggle quick-run bar, run a script, run a pipeline, exercise autocomplete) or a `run-ryos` driver pass.
 

@@ -61,7 +61,8 @@ def _quick_run_load_disk_index(base_dir: str, ttl: float) -> "tuple[float, list]
             return None
         paths = [tuple(e) for e in data["paths"]]
         return (data["ts"], paths)
-    except Exception:
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        _log.debug("Quick Run index cache unreadable for %s: %s", base_dir, e)
         return None
 
 
@@ -74,8 +75,8 @@ def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> No
         tmp.write_text(_json.dumps(payload), encoding="utf-8")
         # Atomic swap so a concurrent read never sees a partial file.
         os.replace(tmp, dest)
-    except Exception:
-        pass
+    except OSError as e:
+        _log.debug("Could not write Quick Run index cache for %s: %s", base_dir, e)
 
 
 class _Job:
@@ -493,8 +494,8 @@ class RYOSApp(_BaseWindow):
         if job.current_process is not None and job.current_process.poll() is None:
             try:
                 job.current_process.terminate()
-            except Exception:
-                pass
+            except OSError:
+                pass  # process may have already exited
             self._append_output("\n[STOPPED by user]\n", tag="stderr", tab_key=job.tab_key)
         self.status_var.set("Stopped.")
         self._finish_job(job)
@@ -2339,7 +2340,7 @@ class RYOSApp(_BaseWindow):
                 try:
                     if job.current_process is not None:
                         job.current_process.terminate()
-                except Exception:
-                    pass
+                except OSError:
+                    pass  # process may have already exited
         if self._settings["remember_window_geometry"]:
             self._s
