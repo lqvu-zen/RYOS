@@ -41,7 +41,7 @@ Remediation has been carried out in verified, independently-committable incremen
 - **Quick Run subsystem (#3, #6):** all pure Quick Run logic — `_is_inside` (traversal guard), `build_entry`, `rank_suggestions`, `resolve` — extracted into a new UI-independent `ryos/quickrun.py`. `_is_inside` consolidated from `ui/dialogs.py` (removes a duplication).
 - **Jobs module (#3, #6):** the `Job` state container moved out of `app.py` into a new `ryos/jobs.py`, alongside a pure `format_elapsed(start, now)` for the running-row time label. First step toward a `JobManager`; the lifecycle methods (`_new_job`/`_finish_job`/`_run_subprocess`/output queue) still live on `RYOSApp`.
 
-**Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **90 passing / 3 skipped**, now covering interpreter, DB CRUD/ordering/export/migrations + versioning, `notifications._parse_version`, the full `quickrun` module, and `jobs` (`Job` defaults + `format_elapsed`).
+**Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **98 passing / 3 skipped**, now covering interpreter (`detect_interpreter`, `build_command`, `resolve_interpreter` incl. the RYOS.exe guard, `_script_tag`), DB CRUD/ordering/export/migrations + versioning, `notifications._parse_version`, the full `quickrun` module, and `jobs` (`Job` defaults + `format_elapsed`).
 
 **A note on infrastructure quirks found during the work:**
 - The entire `tests/` directory was gitignored, so the suite would not have reached CI. `.gitignore` was narrowed to track `tests/test_ryos.py` while keeping the sample fixture scripts ignored.

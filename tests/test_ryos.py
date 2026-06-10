@@ -797,3 +797,47 @@ class TestJob(unittest.TestCase):
         b = Job(2, "s", 2, None, "b", "t", "g")
         a.pipeline_queue.append("step")
         self.assertEqual(b.pipeline_queue, [])
+
+# ---------------------------------------------------------------------------
+# resolve_interpreter + _script_tag (ryos.interpreter)
+# ---------------------------------------------------------------------------
+
+from ryos.interpreter import resolve_interpreter, _script_tag  # noqa: E402
+
+
+class TestResolveInterpreter(unittest.TestCase):
+    """Effective interpreter: stored value wins, else auto-detect; never RYOS.exe."""
+
+    def test_stored_value_used(self):
+        self.assertEqual(resolve_interpreter("x.py", "python3"), "python3")
+
+    def test_blank_stored_falls_back_to_detect(self):
+        self.assertEqual(resolve_interpreter("x.py", ""), sys.executable)
+        self.assertEqual(resolve_interpreter("x.js", "   "), "node")
+
+    def test_stored_is_trimmed(self):
+        self.assertEqual(resolve_interpreter("x.py", "  node  "), "node")
+
+    def test_ryos_exe_is_rejected_and_redetected(self):
+        # A stored interpreter pointing at RYOS itself (a stale compiled-build
+        # entry) must not relaunch the app — it falls back to detection.
+        self.assertEqual(resolve_interpreter("x.py", "RYOS.exe"), sys.executable)
+        self.assertEqual(resolve_interpreter("x.js", "/usr/local/bin/ryos.exe"), "node")
+        self.assertEqual(resolve_interpreter("x.js", "ryos"), "node")
+
+
+class TestScriptTag(unittest.TestCase):
+    """Badge label/colour shown on a script card."""
+
+    def test_known_extension(self):
+        self.assertEqual(_script_tag("a.py"), ("Python", "#2B5B84"))
+        self.assertEqual(_script_tag("a.ps1"), ("PowerShell", "#1A3A6C"))
+
+    def test_case_insensitive(self):
+        self.assertEqual(_script_tag("DEPLOY.PY"), ("Python", "#2B5B84"))
+
+    def test_unknown_extension_uppercased(self):
+        self.assertEqual(_script_tag("data.xyz"), ("XYZ", "#555555"))
+
+    def test_no_extension(self):
+        self.assertEqual(_script_tag("Makefile"), ("Script", "#555555"))
