@@ -572,3 +572,89 @@ class TestQuickRunRanking(unittest.TestCase):
     def test_case_insensitive(self):
         idx = [build_entry("Deploy.PY", "Deploy.PY")]
         self.assertEqual(rank_suggestions(idx, "DEPLOY", 10), ["Deploy.PY"])
+
+# ---------------------------------------------------------------------------
+# Schema versioning (ryos.db PRAGMA user_version migration scheme)
+# ---------------------------------------------------------------------------
+
+import sqlite3  # noqa: E402
+
+from ryos.db import SCHEMA_VERSION, _BASELINE_VERSION, _run_migrations  # noqa: E402
+
+
+def _user_version(path) -> int:
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        conn.close()
+
+
+class TestSchemaVersioning(unittest.TestCase):
+    """A fresh or legacy database must end up stamped at the current schema."""
+
+    def test_fresh_db_is_stamped_current(self):
+        db = _make_db()
+        self.assertEqual(_user_version(db.db_path), SCHEMA_VERSION)
+        self.assertGreaterEqual(SCHEMA_VERSION, _BASELINE_VERSION)
+
+    def test_reopen_is_idempotent(self):
+        db = _make_db()
+        first = _user_version(db.db_path)
+        ScriptDB(db.db_path)  # re-init the same file
+        self.assertEqual(_user_version(db.db_path), first)
+
+    def test_legacy_unversioned_db_gets_stamped(self):
+        db = _make_db()
+        conn = sqlite3.connect(db.db_path)
+        conn.execute("PRAGMA user_version = 0")  # mimic a pre-versioning database
+        conn.commit()
+        conn.close()
+        ScriptDB(db.db_path)  # re-init should bring it up and stamp it
+        self.assertEqual(_user_version(db.db_path), SCHEMA_VERSION)
+
+
+class TestRunMigrations(unittest.TestCase):
+    """The migration runner advances user_version, runs each step once, in order."""
+
+    def _mem(self):
+        return sqlite3.connect(":memory:")
+
+    def test_runs_in_order_and_stamps(self):
+        conn = self._mem()
+        calls = []
+        migs = {1: lambda c: calls.append(1),
+                2: lambda c: calls.append(2),
+                3: lambda c: calls.append(3)}
+        final = _run_migrations(conn, migs, 3)
+        self.assertEqual(calls, [1, 2, 3])
+        self.assertEqual(final, 3)
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+        conn.close()
+
+    def test_runs_only_pending(self):
+        conn = self._mem()
+        conn.execute("PRAGMA user_version = 2")
+        calls = []
+        migs = {2: lambda c: calls.append(2), 3: lambda c: calls.append(3)}
+        _run_migrations(conn, migs, 3)
+        self.assertEqual(calls, [3])  # version 2 already applied
+        conn.close()
+
+    def test_tolerates_version_gaps(self):
+        conn = self._mem()
+        calls = []
+        migs = {3: lambda c: calls.append(3)}  # no 1 or 2 registered
+        final = _run_migrations(conn, migs, 3)
+        self.assertEqual(calls, [3])
+        self.assertEqual(final, 3)
+        conn.close()
+
+    def test_noop_when_up_to_date(self):
+        conn = self._mem()
+        conn.execute("PRAGMA user_version = 5")
+        calls = []
+        _run_migrations(conn, {}, 5)
+        self.assertEqual(calls, [])
+        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 5)
+        conn.close()

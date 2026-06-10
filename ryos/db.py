@@ -12,6 +12,30 @@ from .settings import DB_PATH
 _log = get_logger("db")
 
 
+# --- Schema versioning -------------------------------------------------------
+# _ensure_baseline() brings any database up to the v1 schema; numbered
+# migrations beyond that run once each, gated by SQLite's PRAGMA user_version.
+_BASELINE_VERSION = 1
+_MIGRATIONS: dict = {}  # {2: lambda conn: conn.execute("ALTER ..."), ...}
+SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
+
+
+def _run_migrations(conn, migrations: dict, target_version: int) -> int:
+    """Apply pending migrations in ascending order, advancing user_version.
+
+    Each migrations[v] is a callable(conn) that upgrades the schema to version
+    v. Only versions greater than the database's current user_version (up to
+    target_version) run, each stamped on success. Returns the new version.
+    """
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    for v in range(current + 1, target_version + 1):
+        migrate = migrations.get(v)
+        if migrate is not None:
+            migrate(conn)
+        conn.execute(f"PRAGMA user_version = {v}")
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
 class ScriptDB:
     """SQLite wrapper - manages saved scripts."""
 
@@ -34,85 +58,95 @@ class ScriptDB:
 
     def _init_db(self):
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS scripts (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name        TEXT NOT NULL,
-                    path        TEXT NOT NULL,
-                    params      TEXT DEFAULT '',
-                    interpreter TEXT DEFAULT '',
-                    created_at  TEXT NOT NULL,
-                    last_run_at     TEXT,
-                    last_run_status TEXT,
-                    order_index     INTEGER DEFAULT 0
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS groups (
-                    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE
-                )
-                """
-            )
-            # migrate existing databases that lack newer columns
-            cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
-            if "order_index" not in cols:
-                conn.execute("ALTER TABLE scripts ADD COLUMN order_index INTEGER DEFAULT 0")
-                conn.execute("UPDATE scripts SET order_index = id")
-            if "last_run_status" not in cols:
-                conn.execute("ALTER TABLE scripts ADD COLUMN last_run_status TEXT")
-            if "group_name" not in cols:
-                conn.execute("ALTER TABLE scripts ADD COLUMN group_name TEXT DEFAULT ''")
-            if "temp_param" not in cols:
-                conn.execute("ALTER TABLE scripts ADD COLUMN temp_param INTEGER DEFAULT 0")
-            # populate groups table from existing script group_name values
-            existing_groups = {r[0] for r in conn.execute("SELECT name FROM groups")}
-            named = conn.execute(
-                "SELECT DISTINCT group_name FROM scripts "
-                "WHERE group_name != '' AND group_name IS NOT NULL"
-            ).fetchall()
-            for (g,) in named:
-                if g not in existing_groups:
-                    conn.execute("INSERT OR IGNORE INTO groups (name) VALUES (?)", (g,))
-            gcols = [r[1] for r in conn.execute("PRAGMA table_info(groups)")]
-            if "sort_order" not in gcols:
-                conn.execute("ALTER TABLE groups ADD COLUMN sort_order INTEGER DEFAULT 0")
-                conn.execute("UPDATE groups SET sort_order = id")
-            if "base_dir" not in gcols:
-                conn.execute("ALTER TABLE groups ADD COLUMN base_dir TEXT DEFAULT ''")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS pipelines (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name       TEXT NOT NULL,
-                    group_name TEXT NOT NULL DEFAULT '',
-                    sort_order INTEGER DEFAULT 0
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS pipeline_steps (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    pipeline_id INTEGER NOT NULL,
-                    script_id   INTEGER NOT NULL,
-                    step_order  INTEGER DEFAULT 0
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS script_param_presets (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    script_id  INTEGER NOT NULL,
-                    label      TEXT NOT NULL,
-                    params     TEXT DEFAULT '',
-                    sort_order INTEGER DEFAULT 0
-                )
-            """)
-            pscols = [r[1] for r in conn.execute("PRAGMA table_info(pipeline_steps)")]
-            if "params_override" not in pscols:
-                conn.execute("ALTER TABLE pipeline_steps ADD COLUMN params_override TEXT DEFAULT NULL")
+            self._ensure_baseline(conn)
+            # Stamp pre-versioning databases (and brand-new ones) at the
+            # baseline schema, then apply any later migrations exactly once.
+            if conn.execute("PRAGMA user_version").fetchone()[0] < _BASELINE_VERSION:
+                conn.execute(f"PRAGMA user_version = {_BASELINE_VERSION}")
+            _run_migrations(conn, _MIGRATIONS, SCHEMA_VERSION)
             conn.commit()
 
+    def _ensure_baseline(self, conn):
+        """Bring a database of any prior vintage up to the baseline (v1)
+        schema by creating tables and adding missing columns. Idempotent.
+        Frozen: future schema changes belong in _MIGRATIONS, not here."""
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS scripts (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                path        TEXT NOT NULL,
+                params      TEXT DEFAULT '',
+                interpreter TEXT DEFAULT '',
+                created_at  TEXT NOT NULL,
+                last_run_at     TEXT,
+                last_run_status TEXT,
+                order_index     INTEGER DEFAULT 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS groups (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+        # migrate existing databases that lack newer columns
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
+        if "order_index" not in cols:
+            conn.execute("ALTER TABLE scripts ADD COLUMN order_index INTEGER DEFAULT 0")
+            conn.execute("UPDATE scripts SET order_index = id")
+        if "last_run_status" not in cols:
+            conn.execute("ALTER TABLE scripts ADD COLUMN last_run_status TEXT")
+        if "group_name" not in cols:
+            conn.execute("ALTER TABLE scripts ADD COLUMN group_name TEXT DEFAULT ''")
+        if "temp_param" not in cols:
+            conn.execute("ALTER TABLE scripts ADD COLUMN temp_param INTEGER DEFAULT 0")
+        # populate groups table from existing script group_name values
+        existing_groups = {r[0] for r in conn.execute("SELECT name FROM groups")}
+        named = conn.execute(
+            "SELECT DISTINCT group_name FROM scripts "
+            "WHERE group_name != '' AND group_name IS NOT NULL"
+        ).fetchall()
+        for (g,) in named:
+            if g not in existing_groups:
+                conn.execute("INSERT OR IGNORE INTO groups (name) VALUES (?)", (g,))
+        gcols = [r[1] for r in conn.execute("PRAGMA table_info(groups)")]
+        if "sort_order" not in gcols:
+            conn.execute("ALTER TABLE groups ADD COLUMN sort_order INTEGER DEFAULT 0")
+            conn.execute("UPDATE groups SET sort_order = id")
+        if "base_dir" not in gcols:
+            conn.execute("ALTER TABLE groups ADD COLUMN base_dir TEXT DEFAULT ''")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipelines (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                group_name TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pipeline_steps (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                pipeline_id INTEGER NOT NULL,
+                script_id   INTEGER NOT NULL,
+                step_order  INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS script_param_presets (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                script_id  INTEGER NOT NULL,
+                label      TEXT NOT NULL,
+                params     TEXT DEFAULT '',
+                sort_order INTEGER DEFAULT 0
+            )
+        """)
+        pscols = [r[1] for r in conn.execute("PRAGMA table_info(pipeline_steps)")]
+        if "params_override" not in pscols:
+            conn.execute("ALTER TABLE pipeline_steps ADD COLUMN params_override TEXT DEFAULT NULL")
     def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "",
             temp_param: int = 0) -> int:
         with self._connect() as conn:
