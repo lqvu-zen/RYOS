@@ -746,3 +746,54 @@ class TestResolve(unittest.TestCase):
             abs_path, candidates, err = resolve(base, "hidden")
             self.assertIsNone(abs_path)
             self.assertIn("No script found", err)
+
+# ---------------------------------------------------------------------------
+# Job container + elapsed-time formatting (ryos.jobs)
+# ---------------------------------------------------------------------------
+
+from datetime import datetime as _dt  # noqa: E402
+
+from ryos.jobs import Job, format_elapsed  # noqa: E402
+
+
+class TestFormatElapsed(unittest.TestCase):
+    """The running-row time label shown next to each job."""
+
+    def test_seconds_only(self):
+        start = _dt(2026, 6, 10, 14, 3, 9)
+        self.assertEqual(format_elapsed(start, _dt(2026, 6, 10, 14, 3, 14)), "14:03:09  ·  5s")
+
+    def test_zero(self):
+        start = _dt(2026, 6, 10, 9, 0, 0)
+        self.assertEqual(format_elapsed(start, start), "09:00:00  ·  0s")
+
+    def test_one_minute_pads_seconds(self):
+        start = _dt(2026, 6, 10, 0, 0, 0)
+        self.assertEqual(format_elapsed(start, _dt(2026, 6, 10, 0, 1, 5)), "00:00:00  ·  1m 05s")
+
+    def test_exact_minute(self):
+        start = _dt(2026, 6, 10, 0, 0, 0)
+        self.assertEqual(format_elapsed(start, _dt(2026, 6, 10, 0, 10, 0)), "00:00:00  ·  10m 00s")
+
+    def test_minutes_not_capped_at_60(self):
+        start = _dt(2026, 6, 10, 0, 0, 0)
+        self.assertEqual(format_elapsed(start, _dt(2026, 6, 10, 1, 1, 1)), "00:00:00  ·  61m 01s")
+
+
+class TestJob(unittest.TestCase):
+    """Job state container construction and defaults."""
+
+    def test_defaults(self):
+        j = Job(1, "script", 5, None, "Test", "tab1", "grp")
+        self.assertEqual((j.job_id, j.kind, j.script_id), (1, "script", 5))
+        self.assertEqual(j.pipeline_queue, [])
+        self.assertEqual(j.pipeline_total, 0)
+        self.assertFalse(j.stopped)
+        self.assertIsNone(j.current_process)
+
+    def test_pipeline_queues_are_independent(self):
+        # Guards against a shared mutable default argument.
+        a = Job(1, "s", 1, None, "a", "t", "g")
+        b = Job(2, "s", 2, None, "b", "t", "g")
+        a.pipeline_queue.append("step")
+        self.assertEqual(b.pipeline_queue, [])

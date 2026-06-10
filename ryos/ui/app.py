@@ -27,6 +27,7 @@ from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
 from ..quickrun import _is_inside, build_entry, rank_suggestions, resolve
+from ..jobs import Job as _Job, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
 from .pipeline import PipelineEditorDialog
@@ -77,31 +78,6 @@ def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> No
         os.replace(tmp, dest)
     except OSError as e:
         _log.debug("Could not write Quick Run index cache for %s: %s", base_dir, e)
-
-
-class _Job:
-    """One running job (script or pipeline)."""
-
-    def __init__(self, job_id: int, kind: str, script_id, pipeline_id, name: str,
-                 tab_key: str, group: str, pipeline_name: str = "",
-                 pipeline_queue=None, pipeline_total: int = 0):
-        self.job_id = job_id
-        self.kind = kind
-        self.script_id = script_id
-        self.pipeline_id = pipeline_id
-        self.name = name
-        self.tab_key = tab_key
-        self.group = group
-        self.start_time: datetime = datetime.now()
-        self.current_process = None
-        self.stopped: bool = False
-        self.pipeline_name = pipeline_name
-        self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
-        self.pipeline_step_idx: int = 0
-        self.pipeline_total: int = pipeline_total
-        self.name_var: tk.StringVar | None = None
-        self.time_var: tk.StringVar | None = None
-        self.running_row: tk.Frame | None = None
 
 
 class RYOSApp(_BaseWindow):
@@ -421,9 +397,7 @@ class RYOSApp(_BaseWindow):
         now = datetime.now()
         for job in self._jobs.values():
             if job.time_var is not None:
-                secs = int((now - job.start_time).total_seconds())
-                elapsed = f"{secs // 60}m {secs % 60:02d}s" if secs >= 60 else f"{secs}s"
-                job.time_var.set(f"{job.start_time.strftime('%H:%M:%S')}  ·  {elapsed}")
+                job.time_var.set(format_elapsed(job.start_time, now))
         self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
 
     def _finish_job(self, job: "_Job"):
