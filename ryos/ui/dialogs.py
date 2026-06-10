@@ -13,15 +13,8 @@ from ..settings import (
     _SETTINGS_DEFAULTS,
 )
 from ..startup import _set_startup, _startup_enabled
+from ..quickrun import _is_inside
 from .theme import C, THEMES, _apply_snap_corner, _flat_button
-
-
-def _is_inside(path: str, base: str) -> bool:
-    if not path or not base:
-        return False
-    norm_path = os.path.normcase(os.path.normpath(path))
-    norm_base = os.path.normcase(os.path.normpath(base))
-    return norm_path == norm_base or norm_path.startswith(norm_base + os.sep)
 
 
 def _relative_under_base(path: str, base: str) -> str | None:

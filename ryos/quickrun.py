@@ -1,19 +1,33 @@
-"""Pure helpers for the Quick Run file index and suggestion ranking.
+"""Pure helpers for the Quick Run feature: path containment, file-index entry
+shape, suggestion ranking, and name resolution.
 
-Extracted from ryos.ui.app so the matching/ranking logic can be unit-tested
-without constructing the Tkinter application. The "index" passed to
-rank_suggestions is a list of entries in the shape produced by build_entry():
+Extracted from ryos.ui.app so this logic can be unit-tested without building
+the Tkinter application. None of it imports the UI layer. The "index" passed
+to rank_suggestions is a list of entries in the shape produced by build_entry():
 
     (rel_str, name_lower, stem_lower, rel_lower)
-
-Keeping this here makes the index format single-sourced and the ranking
-algorithm — the part most likely to harbour subtle ordering bugs — directly
-testable.
 """
+import os
 from pathlib import Path
 
 # An index entry: (relative path, filename lower, stem lower, relative path lower).
 Entry = tuple[str, str, str, str]
+
+# Directories skipped when scanning a base directory for scripts.
+_SKIP_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache"}
+
+
+def _is_inside(path: str, base: str) -> bool:
+    """True if path is base itself or located somewhere inside it.
+
+    Used as a directory-traversal guard so a user-typed path cannot escape the
+    configured base directory.
+    """
+    if not path or not base:
+        return False
+    norm_path = os.path.normcase(os.path.normpath(path))
+    norm_base = os.path.normcase(os.path.normpath(base))
+    return norm_path == norm_base or norm_path.startswith(norm_base + os.sep)
 
 
 def build_entry(rel_str: str, filename: str) -> Entry:
@@ -56,3 +70,49 @@ def rank_suggestions(index: list[Entry], query: str, max_n: int) -> list[str]:
         results.append((tier, len(stem_lower), rel))
     results.sort(key=lambda x: (x[0], x[1], x[2]))
     return [r[2] for r in results[:max_n]]
+
+
+def resolve(base_dir: str, query: str) -> tuple[str | None, list[str], str]:
+    """Find a script under base_dir matching query (exact stem, case-insensitive).
+
+    Returns exactly one of:
+        (abs_path, [], "")          exactly one match
+        (None, [rel, ...], "")      multiple matches (caller disambiguates)
+        (None, [], error_message)   zero matches, a traversal attempt, or an error
+
+    A query containing a path separator or a suffix is treated as a literal path
+    and validated to stay inside base_dir; otherwise base_dir is searched
+    recursively (skipping vendor/VCS directories) for a filename stem match.
+    """
+    query = query.strip()
+    if not query:
+        return None, [], "Please enter a script name."
+
+    base = Path(base_dir)
+
+    if os.sep in query or "/" in query or (Path(query).suffix and Path(query).suffix != query):
+        candidate = (base / query).resolve()
+        if not _is_inside(str(candidate), base_dir):
+            return None, [], f"Path '{query}' is outside the base directory."
+        if not candidate.exists():
+            return None, [], f"File not found:\n{candidate}"
+        return str(candidate), [], ""
+
+    query_lower = query.lower()
+    matches: list[Path] = []
+    try:
+        for p in base.rglob("*"):
+            if any(part in _SKIP_DIRS for part in p.parts):
+                continue
+            if p.is_file() and p.stem.lower() == query_lower:
+                matches.append(p)
+    except PermissionError:
+        pass
+
+    if not matches:
+        return None, [], f"No script found matching '{query}' in:\n{base_dir}"
+    if len(matches) == 1:
+        return str(matches[0]), [], ""
+    base_resolved = base.resolve()
+    rels = [str(m.relative_to(base_resolved)) for m in matches]
+    return None, rels, ""

@@ -26,9 +26,9 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
-from ..quickrun import build_entry, rank_suggestions
+from ..quickrun import _is_inside, build_entry, rank_suggestions, resolve
 from .cards import PipelineCard, ScriptCard
-from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog, _is_inside
+from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
 from .pipeline import PipelineEditorDialog
 from .theme import C, _apply_snap_corner, _configure_ttk_styles, _flat_button, apply_theme
 from .widgets import Tooltip
@@ -1544,49 +1544,6 @@ class RYOSApp(_BaseWindow):
             self._add_running_row(content, job)
         self._launch(job, cmd, name, script_id)
 
-    def _quick_run_resolve(self, base_dir: str, query: str) -> tuple[str | None, list[str], str]:
-        """Search base_dir for a script matching query (exact stem, case-insensitive).
-
-        Returns:
-            (abs_path, [], "")         — exactly one match
-            (None, [rel, ...], "")     — multiple matches (caller shows disambiguation)
-            (None, [], error_msg)      — zero matches or path error
-        """
-        query = query.strip()
-        if not query:
-            return None, [], "Please enter a script name."
-
-        base = Path(base_dir)
-
-        if os.sep in query or "/" in query or (Path(query).suffix and Path(query).suffix != query):
-            candidate = (base / query).resolve()
-            if not _is_inside(str(candidate), base_dir):
-                return None, [], f"Path '{query}' is outside the base directory."
-            if not candidate.exists():
-                return None, [], f"File not found:\n{candidate}"
-            return str(candidate), [], ""
-
-        query_lower = query.lower()
-        _SKIP = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache"}
-
-        matches: list[Path] = []
-        try:
-            for p in base.rglob("*"):
-                if any(part in _SKIP for part in p.parts):
-                    continue
-                if p.is_file() and p.stem.lower() == query_lower:
-                    matches.append(p)
-        except PermissionError:
-            pass
-
-        if not matches:
-            return None, [], f"No script found matching '{query}' in:\n{base_dir}"
-        if len(matches) == 1:
-            return str(matches[0]), [], ""
-        base_resolved = base.resolve()
-        rels = [str(m.relative_to(base_resolved)) for m in matches]
-        return None, rels, ""
-
     def _quick_run_get_index(self, base_dir: str) -> list | None:
         import time
         cached = self._quick_run_index_cache.get(base_dir)
@@ -1873,7 +1830,7 @@ class RYOSApp(_BaseWindow):
         base_dir = self.db.get_group_base_dir(group_name) or bar["base_dir"]
         self._hide_quick_run_bar(group_name)
 
-        abs_path, candidates, err = self._quick_run_resolve(base_dir, query)
+        abs_path, candidates, err = resolve(base_dir, query)
         if err:
             messagebox.showerror("Quick Run", err, parent=self)
             return

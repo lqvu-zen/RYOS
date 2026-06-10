@@ -658,3 +658,91 @@ class TestRunMigrations(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 5)
         conn.close()
+
+# ---------------------------------------------------------------------------
+# Quick Run path containment and name resolution (ryos.quickrun)
+# ---------------------------------------------------------------------------
+
+import tempfile as _tempfile  # noqa: E402
+
+from ryos.quickrun import _is_inside, resolve  # noqa: E402
+
+
+class TestIsInside(unittest.TestCase):
+    """Directory-traversal guard for user-typed quick-run paths."""
+
+    def test_direct_child_is_inside(self):
+        self.assertTrue(_is_inside("/base/sub/x.py", "/base"))
+
+    def test_base_itself_is_inside(self):
+        self.assertTrue(_is_inside("/base", "/base"))
+
+    def test_sibling_is_outside(self):
+        self.assertFalse(_is_inside("/other/x.py", "/base"))
+
+    def test_prefix_lookalike_is_outside(self):
+        # "/baseball" must not count as inside "/base".
+        self.assertFalse(_is_inside("/baseball/x.py", "/base"))
+
+    def test_empty_args_are_outside(self):
+        self.assertFalse(_is_inside("", "/base"))
+        self.assertFalse(_is_inside("/base/x", ""))
+
+
+class TestResolve(unittest.TestCase):
+    """Resolving a typed name/path to a script under a base directory."""
+
+    def _touch(self, base, *parts):
+        p = Path(base, *parts)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("# x", encoding="utf-8")
+        return p
+
+    def test_empty_query(self):
+        with _tempfile.TemporaryDirectory() as base:
+            self.assertEqual(resolve(base, "   "), (None, [], "Please enter a script name."))
+
+    def test_single_match(self):
+        with _tempfile.TemporaryDirectory() as base:
+            self._touch(base, "foo.py")
+            abs_path, candidates, err = resolve(base, "foo")
+            self.assertEqual((candidates, err), ([], ""))
+            self.assertEqual(os.path.basename(abs_path), "foo.py")
+
+    def test_no_match(self):
+        with _tempfile.TemporaryDirectory() as base:
+            self._touch(base, "foo.py")
+            abs_path, candidates, err = resolve(base, "nope")
+            self.assertIsNone(abs_path)
+            self.assertEqual(candidates, [])
+            self.assertIn("No script found", err)
+
+    def test_multiple_matches(self):
+        with _tempfile.TemporaryDirectory() as base:
+            self._touch(base, "a", "foo.py")
+            self._touch(base, "b", "foo.py")
+            abs_path, candidates, err = resolve(base, "foo")
+            self.assertIsNone(abs_path)
+            self.assertEqual(err, "")
+            self.assertEqual(len(candidates), 2)
+
+    def test_path_style_query_inside(self):
+        with _tempfile.TemporaryDirectory() as base:
+            self._touch(base, "sub", "bar.py")
+            abs_path, candidates, err = resolve(base, "sub/bar.py")
+            self.assertEqual((candidates, err), ([], ""))
+            self.assertEqual(os.path.basename(abs_path), "bar.py")
+
+    def test_traversal_attempt_rejected(self):
+        with _tempfile.TemporaryDirectory() as base:
+            abs_path, candidates, err = resolve(base, "../escape.txt")
+            self.assertIsNone(abs_path)
+            self.assertEqual(candidates, [])
+            self.assertIn("outside the base directory", err)
+
+    def test_skip_dirs_ignored(self):
+        with _tempfile.TemporaryDirectory() as base:
+            self._touch(base, "__pycache__", "hidden.py")  # only match is in a skipped dir
+            abs_path, candidates, err = resolve(base, "hidden")
+            self.assertIsNone(abs_path)
+            self.assertIn("No script found", err)
