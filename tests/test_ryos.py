@@ -1195,3 +1195,53 @@ class TestExportImportPipelines(unittest.TestCase):
         imported_id = db2.list_all()[0][0]
         presets = db2.list_param_presets(imported_id)
         self.assertEqual([(p[1], p[2]) for p in presets], [("Fast", "--fast"), ("Slow", "--slow")])
+
+
+# ---------------------------------------------------------------------------
+# Quick Run input parsing + display path (ryos.quickrun)
+# ---------------------------------------------------------------------------
+
+from ryos.quickrun import display_relpath, parse_input  # noqa: E402
+
+
+class TestParseInput(unittest.TestCase):
+    """Splitting a quick-run entry into query + params."""
+
+    def test_query_only(self):
+        self.assertEqual(parse_input("build"), ("build", "", False))
+
+    def test_query_with_params(self):
+        self.assertEqual(parse_input("build --fast"), ("build", "--fast", True))
+
+    def test_multiple_param_tokens_rejoined(self):
+        self.assertEqual(parse_input("deploy a b c"), ("deploy", "a b c", True))
+
+    def test_empty_and_whitespace(self):
+        self.assertEqual(parse_input(""), ("", "", False))
+        self.assertEqual(parse_input("   "), ("", "", False))
+
+    def test_quoting_is_platform_aware(self):
+        q, params, given = parse_input('run "hello world"')
+        self.assertEqual((q, given), ("run", True))
+        if os.name == "nt":
+            self.assertEqual(params, '"hello world"')   # posix=False keeps quotes
+        else:
+            self.assertEqual(params, "hello world")      # posix strips them
+
+    def test_unbalanced_quotes_fall_back_to_split(self):
+        # shlex would raise; we fall back to a plain whitespace split.
+        self.assertEqual(parse_input('a "b'), ("a", '"b', True))
+
+
+class TestDisplayRelpath(unittest.TestCase):
+    """The label shown for a resolved quick-run script."""
+
+    def test_inside_base_is_relative(self):
+        with tempfile.TemporaryDirectory() as base:
+            abs_path = os.path.join(base, "sub", "x.py")
+            self.assertEqual(display_relpath(abs_path, base), os.path.join("sub", "x.py"))
+
+    def test_outside_base_uses_name(self):
+        with tempfile.TemporaryDirectory() as base:
+            outside = os.path.join(os.path.dirname(base), "zzz_other.py")
+            self.assertEqual(display_relpath(outside, base), "zzz_other.py")

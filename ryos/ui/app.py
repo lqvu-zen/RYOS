@@ -3,7 +3,6 @@ import ctypes
 import hashlib
 import os
 import queue
-import shlex
 import subprocess
 import sys
 import threading
@@ -26,7 +25,9 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
-from ..quickrun import _SKIP_DIRS, _is_inside, build_entry, rank_suggestions, resolve
+from ..quickrun import (
+    _SKIP_DIRS, _is_inside, build_entry, display_relpath, parse_input, rank_suggestions, resolve,
+)
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
@@ -1806,13 +1807,7 @@ class RYOSApp(_BaseWindow):
         raw = bar["var"].get().strip()
         if not raw:
             return
-        try:
-            tokens = shlex.split(raw, posix=(os.name != "nt"))
-        except ValueError:
-            tokens = raw.split()
-        query = tokens[0] if tokens else ""
-        typed_params = " ".join(tokens[1:])
-        params_explicitly_set = len(tokens) >= 2
+        query, typed_params, params_explicitly_set = parse_input(raw)
         if not query:
             return
         base_dir = self.db.get_group_base_dir(group_name) or bar["base_dir"]
@@ -1828,10 +1823,7 @@ class RYOSApp(_BaseWindow):
                 return
             abs_path = str(Path(base_dir) / chosen)
 
-        try:
-            display = str(Path(abs_path).relative_to(Path(base_dir).resolve()))
-        except ValueError:
-            display = Path(abs_path).name
+        display = display_relpath(abs_path, base_dir)
 
         existing_id = None
         existing_name = ""

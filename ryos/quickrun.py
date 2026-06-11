@@ -8,6 +8,7 @@ to rank_suggestions is a list of entries in the shape produced by build_entry():
     (rel_str, name_lower, stem_lower, rel_lower)
 """
 import os
+import shlex
 from pathlib import Path
 
 # An index entry: (relative path, filename lower, stem lower, relative path lower).
@@ -116,3 +117,27 @@ def resolve(base_dir: str, query: str) -> tuple[str | None, list[str], str]:
     base_resolved = base.resolve()
     rels = [str(m.resolve().relative_to(base_resolved)) for m in matches]
     return None, rels, ""
+
+
+def parse_input(raw: str) -> tuple[str, str, bool]:
+    """Split a Quick Run entry into (query, params, params_were_given).
+
+    The first token is the script query; the remaining tokens (re-joined) are
+    its parameters. Quoting is parsed with shlex using platform-appropriate
+    rules, falling back to a plain whitespace split on unbalanced quotes.
+    """
+    raw = raw.strip()
+    try:
+        tokens = shlex.split(raw, posix=(os.name != "nt"))
+    except ValueError:
+        tokens = raw.split()
+    query = tokens[0] if tokens else ""
+    return query, " ".join(tokens[1:]), len(tokens) >= 2
+
+
+def display_relpath(abs_path: str, base_dir: str) -> str:
+    """Label for a resolved script: path relative to base_dir, else its name."""
+    try:
+        return str(Path(abs_path).relative_to(Path(base_dir).resolve()))
+    except ValueError:
+        return Path(abs_path).name
