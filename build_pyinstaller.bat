@@ -1,4 +1,7 @@
 @echo off
+REM === EXPERIMENTAL / unsupported. Single-file PyInstaller build.
+REM === The supported build is build.bat (cx_Freeze). Use this only if you
+REM === specifically need a PyInstaller one-file exe.
 cd /d "%~dp0"
 uv run --with pyinstaller --with tkinterdnd2 pyinstaller ^
   --onefile ^

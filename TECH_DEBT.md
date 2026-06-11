@@ -17,7 +17,7 @@ Priority score below = **(Impact + Risk) × (6 − Effort)**, each rated 1–5.
 | 4 | Giant methods: `_refresh_cards` (267), `_build_ui` (142) | Code | **21** | ✅ Done — `_refresh_cards` → 138, `_build_ui` → 6 (5 builders) |
 | 5 | Duplicated job-launch logic (`_run_script` vs pipeline step) | Code | **18** | ✅ Done — unified via `_launch` |
 | 6 | `RYOSApp` god class — ~90 methods, 2,275 lines | Architecture | **16** | 🟡 Ongoing — `quickrun` + `jobs` (`Job`, `JobRegistry`) extracted; threading/output lifecycle still on the class |
-| 7 | Three parallel build scripts, no canonical one | Infrastructure | **16** | ⬜ Not started |
+| 7 | Three parallel build scripts, no canonical one | Infrastructure | **16** | ✅ Done — `build_cxfreeze.bat` marked canonical; nuitka/pyinstaller marked experimental |
 | 8 | Ad-hoc schema migrations in `_init_db`, no version tracking | Architecture | **15** | ✅ Done — `PRAGMA user_version` scheme |
 | 9 | Unpinned dependency (`tkinterdnd2`, no lower bound) | Dependency | **20*** | ✅ Done — pinned `>=0.3.0,<1.0` |
 
@@ -40,6 +40,7 @@ Remediation has been carried out in verified, independently-committable incremen
 - **Giant methods split (#4):** `_refresh_cards` 267 → 138 (lifted `_build_quick_run_bar`); `_build_ui` 142 → 6, delegating to five focused builders (`_build_header`, `_build_select_bar`, `_build_status_bar`, `_build_cards_pane`, `_build_output_panel`).
 - **Quick Run subsystem (#3, #6):** all pure Quick Run logic — `_is_inside` (traversal guard), `build_entry`, `rank_suggestions`, `resolve` — extracted into a new UI-independent `ryos/quickrun.py`. `_is_inside` consolidated from `ui/dialogs.py` (removes a duplication).
 - **Jobs module (#3, #6):** the `Job` state container moved out of `app.py` into a new `ryos/jobs.py`, alongside a pure `format_elapsed(start, now)` for the running-row time label, and a `JobRegistry` that owns job storage + id allocation (replacing the inline `self._jobs` dict and `self._next_job_id` counter across 15 call sites). The remaining lifecycle (`_new_job` UI setup, `_run_subprocess` threading, output-queue drain) still lives on `RYOSApp` — that's the UI/thread-coupled part best moved with a runtime smoke-test.
+- **Build scripts (#7) & dedup:** `build_cxfreeze.bat` marked as the canonical/supported build; `build_nuitka.bat` and `build_pyinstaller.bat` marked experimental/unsupported. Also deduped the Quick Run skip-dirs set — `app.py`'s index-builder now imports `quickrun._SKIP_DIRS` instead of keeping its own copy, so the search and autocomplete index paths can't drift.
 
 **Test suite:** grew from a **red 45-passing baseline** (2 stale tests were failing) to **136 passing / 3 skipped**, now covering interpreter (`detect_interpreter`, `build_command`, `resolve_interpreter` incl. the RYOS.exe guard, `_script_tag`), DB CRUD/ordering/migrations + versioning + groups (rename propagation, orphan-on-delete, deep clone) + pipelines (steps join, cascade delete, deep clone, reorder) + reorder/move-between-groups + `mark_run_status` + export/import round-trip incl. pipelines & base_dir, `settings` load/save fallbacks + round-trip, `notifications._parse_version`, the full `quickrun` module, and `jobs` (`Job` defaults, `format_elapsed`, `JobRegistry`). The DB persistence layer — where bugs mean silent data loss — is now comprehensively protected.
 
@@ -50,8 +51,10 @@ Remediation has been carried out in verified, independently-committable incremen
 - Two interpreter tests were already failing against current behavior (unknown extensions default to `cmd`); updated to match.
 
 **Remaining (recommended order)**
-1. Continue peeling subsystems off `RYOSApp` (#6) — a `JobManager` (jobs + `_launch` + `_run_subprocess`) is the natural next seam.
-2. Consolidate the build scripts (#7): pick a canonical packager, quarantine the others.
+1. Wire the `run-ryos` driver + Xvfb into CI as a GUI smoke job (UI paths the headless suite can't reach).
+2. Extract the pure cores of `_quick_run_submit` / `_handle_step_done` into testable helpers.
+3. Continue peeling subsystems off `RYOSApp` (#6) — the job lifecycle (`_new_job` / `_run_subprocess` / output drain) is the natural next seam.
+4. Add a type-check job (mypy/pyright) once annotations are consistent.
 
 _Optional follow-up: the broad catches in `notifications.py` (toast/version/fetch) could be narrowed too, but they are deliberate best-effort guards around non-critical features._
 

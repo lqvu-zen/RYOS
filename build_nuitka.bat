@@ -1,4 +1,7 @@
 @echo off
+REM === EXPERIMENTAL / unsupported. Single-file build with extra AV flags.
+REM === The supported build is build.bat (cx_Freeze). Use this only if you
+REM === specifically need a Nuitka one-file exe.
 cd /d "%~dp0"
 uv run --with nuitka --with tkinterdnd2 python -m nuitka ^
   --onefile ^

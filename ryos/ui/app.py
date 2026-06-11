@@ -26,7 +26,7 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
-from ..quickrun import _is_inside, build_entry, rank_suggestions, resolve
+from ..quickrun import _SKIP_DIRS, _is_inside, build_entry, rank_suggestions, resolve
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
@@ -1559,14 +1559,13 @@ class RYOSApp(_BaseWindow):
 
     def _quick_run_build_index_async(self, base_dir: str) -> None:
         import time
-        _SKIP = {".git", "__pycache__", "node_modules", ".venv", "venv", ".mypy_cache"}
         def _worker():
             base = Path(base_dir)
             base_resolved = base.resolve()
             paths: list = []
             try:
                 for p in base.rglob("*"):
-                    if any(part in _SKIP for part in p.parts):
+                    if any(part in _SKIP_DIRS for part in p.parts):
                         continue
                     if p.is_file():
                         try:
