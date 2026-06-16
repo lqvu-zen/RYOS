@@ -3,7 +3,6 @@ import ctypes
 import hashlib
 import os
 import queue
-import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -21,9 +20,10 @@ except ImportError:
 
 from .. import __version__
 from ..db import ScriptDB
-from ..interpreter import build_command, detect_interpreter, resolve_interpreter, working_dir_for
+from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
+from ..runner import run_subprocess
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, display_relpath, parse_input, rank_suggestions, resolve,
@@ -1872,47 +1872,8 @@ class RYOSApp(_BaseWindow):
         self._run_script(script_id, display, abs_path, params, interpreter)
 
     def _run_subprocess(self, job: "_Job", cmd, name, script_id):
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                bufsize=1,
-                text=True,
-                cwd=working_dir_for(cmd),
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-            )
-            job.current_process = proc
-        except FileNotFoundError as e:
-            _log.error("Interpreter/file not found for %s: %s", name, e)
-            self.output_queue.put(("stderr", job.job_id, f"[ERROR] {e}\n"))
-            self.output_queue.put(("done", job.job_id, script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
-            return
-        except Exception as e:
-            _log.error("Failed to launch %s: %s", name, e)
-            self.output_queue.put(("stderr", job.job_id, f"[ERROR] {e}\n"))
-            self.output_queue.put(("done", job.job_id, script_id, "error", f"❌ Error: {name}\n"))
-            return
-
-        assert proc.stdout is not None
-        log_output = self._settings.get("log_runs_output", False)
-        for line in proc.stdout:
-            self.output_queue.put(("stdout", job.job_id, line))
-            if log_output:
-                _log.debug("[%s] %s", name, line.rstrip())
-
-        proc.wait()
-        rc = proc.returncode
-        tag = "ok" if rc == 0 else "stderr"
-        status = "ok" if rc == 0 else "error"
-        if rc == 0:
-            _log.info("Done: %s | exit=%s", name, rc)
-        else:
-            _log.error("Done: %s | exit=%s", name, rc)
-        self.output_queue.put((
-            "done_tag", job.job_id, script_id, status, tag,
-            f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
-        ))
+        run_subprocess(self.output_queue, job, cmd, name, script_id,
+                       log_output=self._settings.get("log_runs_output", False))
 
     def _init_all_tab(self):
         text = scrolledtext.ScrolledText(

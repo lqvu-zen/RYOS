@@ -1273,3 +1273,58 @@ class TestWorkingDirFor(unittest.TestCase):
     def test_falls_back_to_first_arg_when_no_file(self):
         # Nothing exists on disk -> parent of cmd[0].
         self.assertEqual(working_dir_for(["python", "ghost.py"]), str(Path("python").parent))
+
+
+# ---------------------------------------------------------------------------
+# run_subprocess — the job execution worker (ryos.runner)
+# ---------------------------------------------------------------------------
+
+import queue as _queue  # noqa: E402
+
+from ryos.runner import run_subprocess  # noqa: E402
+
+
+class TestRunSubprocess(unittest.TestCase):
+    """Runs real subprocesses and checks the queue protocol the UI consumes."""
+
+    def _job(self):
+        return Job(1, "script", 1, None, "t", "job:1", "g")
+
+    def _drain(self, q):
+        items = []
+        while not q.empty():
+            items.append(q.get_nowait())
+        return items
+
+    def test_success_streams_stdout_then_done_ok(self):
+        q = _queue.Queue()
+        run_subprocess(q, self._job(), [sys.executable, "-c", "print('hello')"], "t", 1)
+        items = self._drain(q)
+        self.assertIn(("stdout", 1, "hello\n"), items)
+        done = items[-1]
+        self.assertEqual(done[0], "done_tag")
+        self.assertEqual(done[3], "ok")          # status
+        self.assertIn("exit code 0", done[5])    # footer
+
+    def test_nonzero_exit_reports_error(self):
+        q = _queue.Queue()
+        run_subprocess(q, self._job(), [sys.executable, "-c", "import sys; sys.exit(3)"], "t", 1)
+        done = self._drain(q)[-1]
+        self.assertEqual(done[0], "done_tag")
+        self.assertEqual(done[3], "error")
+        self.assertIn("exit code 3", done[5])
+
+    def test_sets_current_process(self):
+        q = _queue.Queue()
+        job = self._job()
+        run_subprocess(q, job, [sys.executable, "-c", "pass"], "t", 1)
+        self.assertIsNotNone(job.current_process)
+
+    def test_missing_binary_reports_done_error_without_raising(self):
+        q = _queue.Queue()
+        run_subprocess(q, self._job(), ["__definitely_not_a_real_binary__"], "t", 7)
+        items = self._drain(q)
+        done = [it for it in items if it[0] == "done"]
+        self.assertEqual(len(done), 1)
+        self.assertEqual(done[0][2], 7)          # script_id echoed back
+        self.assertEqual(done[0][3], "error")
