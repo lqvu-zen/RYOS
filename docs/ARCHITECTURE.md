@@ -27,6 +27,7 @@ flowchart TD
         settings["settings"]
         quickrun["quickrun ★"]
         jobs["jobs ★"]
+        runner["runner ★"]
         notifications["notifications"]
         logger["logger"]
         startup["startup"]
@@ -49,9 +50,10 @@ could be tested in isolation.
 | `ryos/ui/pipeline.py` | `PipelineEditorDialog`. | — |
 | `ryos/ui/theme.py`, `widgets.py` | Palette, flat-button factory, snap-to-corner, tooltip. | — |
 | `ryos/db.py` | `ScriptDB` — all SQLite: scripts, groups, pipelines, presets, export/import, `PRAGMA user_version` migrations. | yes |
-| `ryos/quickrun.py` | Pure Quick Run helpers: path-containment guard, file-index entry shape, suggestion ranking, name resolution. | yes |
+| `ryos/quickrun.py` | Pure Quick Run helpers: path-containment guard, file-index entry shape, suggestion ranking, name resolution, input parsing. | yes |
 | `ryos/jobs.py` | `Job` state container, `JobRegistry` (storage + id allocation), `format_elapsed` time label. | yes |
-| `ryos/interpreter.py` | Extension→interpreter detection, command building, RYOS.exe self-relaunch guard. | yes |
+| `ryos/runner.py` | Subprocess execution worker (`run_subprocess`) and output-queue protocol decoding (`decode_output_item`). UI-free; talks to the app only via the queue. | yes |
+| `ryos/interpreter.py` | Extension→interpreter detection, command building, working-directory selection, RYOS.exe self-relaunch guard. | yes |
 | `ryos/settings.py` | App-data paths, defaults, tolerant load/save. | yes |
 | `ryos/notifications.py` | Windows toast + GitHub update check (`_parse_version`). | partial |
 | `ryos/logger.py` | Rotating-file logger setup for the `ryos` namespace. | — |
