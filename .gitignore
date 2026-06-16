@@ -33,3 +33,4 @@ __pycache__/
 .claude/skills/*/screenshots/
 .claude/skills/*/outputs
 /eval_tmp
+/.mypy_cache

@@ -138,6 +138,6 @@ def parse_input(raw: str) -> tuple[str, str, bool]:
 def display_relpath(abs_path: str, base_dir: str) -> str:
     """Label for a resolved script: path relative to base_dir, else its name."""
     try:
-        return str(Path(abs_path).relative_to(Path(base_dir).resolve()))
+        return str(Path(abs_path).resolve().relative_to(Path(base_dir).resolve()))
     except ValueError:
         return Path(abs_path).name
