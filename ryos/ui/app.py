@@ -55,6 +55,7 @@ def _quick_run_load_disk_index(base_dir: str, ttl: float) -> "tuple[float, list]
     import json as _json
     import time
     try:
+        t0 = time.monotonic()
         raw = _qr_index_path(base_dir).read_text(encoding="utf-8")
         data = _json.loads(raw)
         # Reject caches written by an older format (e.g. the verbose 4-tuple
@@ -68,6 +69,8 @@ def _quick_run_load_disk_index(base_dir: str, ttl: float) -> "tuple[float, list]
         if time.time() - data["ts"] >= ttl:
             return None
         paths = deserialize_index(data["paths"])
+        _log.info("Quick Run index: loaded %d entries from disk in %.0f ms (%s)",
+                  len(paths), (time.monotonic() - t0) * 1000, base_dir)
         return (data["ts"], paths)
     except (OSError, ValueError, KeyError, TypeError) as e:
         _log.debug("Quick Run index cache unreadable for %s: %s", base_dir, e)
@@ -1584,6 +1587,8 @@ class RYOSApp(_BaseWindow):
             base = Path(base_dir)
             base_resolved = base.resolve()
             paths: list = []
+            t0 = time.monotonic()
+            capped = False
             try:
                 for p in base.rglob("*"):
                     if any(part in _SKIP_DIRS for part in p.parts):
@@ -1595,11 +1600,14 @@ class RYOSApp(_BaseWindow):
                             rel_str = p.name
                         paths.append(build_entry(rel_str, p.name))
                         if max_files and len(paths) >= max_files:
+                            capped = True
                             break
             except PermissionError:
                 pass
             ts = time.monotonic()
             wall_ts = time.time()
+            _log.info("Quick Run index: scanned %s -> %d entries in %.0f ms%s",
+                      base_dir, len(paths), (ts - t0) * 1000, " (capped)" if capped else "")
             _quick_run_save_disk_index(base_dir, wall_ts, paths)
             self.after(0, lambda: self._quick_run_on_index_ready(base_dir, ts, paths))
         threading.Thread(target=_worker, daemon=True).start()
