@@ -31,7 +31,7 @@ from ..quickrun import (
 )
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
-from .dialogs import AdvancedOptionsDialog, AppearanceDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
+from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
 from .pipeline import PipelineEditorDialog
 from .theme import C, _apply_snap_corner, _configure_ttk_styles, _flat_button, apply_theme
 from .widgets import Tooltip
@@ -266,7 +266,6 @@ class RYOSApp(_BaseWindow):
         self._options_menu.add_command(label="📥  Import config",      command=self._import_config)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="⚙  Advanced options…",  command=self._open_advanced_options)
-        self._options_menu.add_command(label="🎨  Appearance…",        command=self._open_appearance)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🔔  Check for updates",  command=self._manual_update_check)
         self._options_menu.add_separator()
@@ -796,25 +795,22 @@ class RYOSApp(_BaseWindow):
         self._build_ui()
         self._refresh()
 
-    def _open_appearance(self) -> None:
-        if self._jobreg:
-            self.status_var.set("Stop running jobs before changing theme.")
-            return
+    def _apply_appearance(self, new_settings: dict, persist: bool = True) -> None:
+        """Apply theme / accent / card settings live and rebuild the UI.
 
-        def _apply(new_settings: dict, persist: bool = True) -> None:
-            self._settings.update(new_settings)
-            apply_theme(
-                self._settings.get("theme", "light"),
-                self._settings.get("accent_color"),
-            )
-            from ryos.ui import cards as _cards_mod
-            _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
-            _cards_mod.set_card_size(self._settings.get("card_size", "medium"))
-            if persist:
-                _save_settings(self._settings)
-            self._rebuild_ui()
-
-        AppearanceDialog(self, self._settings, _apply)
+        Used by the Appearance tab of Advanced Options for live preview
+        (persist=False) and on save (persist handled by the main save path)."""
+        self._settings.update(new_settings)
+        apply_theme(
+            self._settings.get("theme", "light"),
+            self._settings.get("accent_color"),
+        )
+        from ryos.ui import cards as _cards_mod
+        _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
+        _cards_mod.set_card_size(self._settings.get("card_size", "medium"))
+        if persist:
+            _save_settings(self._settings)
+        self._rebuild_ui()
 
     # ------------------------------------------------------------------
 
@@ -2241,7 +2237,11 @@ class RYOSApp(_BaseWindow):
             corner = self._settings.get("snap_corner") or ""
             if corner and corner != "none":
                 _apply_snap_corner(self, corner)
-        AdvancedOptionsDialog(self, self._settings, _apply)
+        # Appearance lives in a tab here too; rebuilding the UI mid-run would
+        # disrupt running jobs, so the tab is disabled while any job is active.
+        AdvancedOptionsDialog(self, self._settings, _apply,
+                              on_appearance=self._apply_appearance,
+                              jobs_running=bool(self._jobreg))
 
     def _open_log_folder(self):
         import subprocess

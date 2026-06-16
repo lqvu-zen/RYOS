@@ -673,15 +673,35 @@ class ParamPickerDialog(tk.Toplevel):
 
 
 class AdvancedOptionsDialog(tk.Toplevel):
-    def __init__(self, parent, settings: dict, on_save):
+    """Tabbed settings dialog grouping every preference by topic.
+
+    Appearance (theme / accent / cards) is merged in here too. It keeps the
+    live-preview behaviour of the old standalone Appearance dialog via
+    ``on_appearance``; all other settings persist together through ``on_save``.
+    """
+
+    def __init__(self, parent, settings: dict, on_save, on_appearance=None,
+                 jobs_running: bool = False):
         super().__init__(parent)
         self._settings = dict(settings)
         self._on_save  = on_save
+        # on_appearance(appearance_subset, persist) applies theme/cards live and
+        # rebuilds the UI. When jobs are running a rebuild would disrupt them, so
+        # the Appearance tab is disabled and this callback is never fired.
+        self._on_appearance = on_appearance
+        self._jobs_running = jobs_running
         self.title("Advanced Options")
         self.configure(bg=C["bg"])
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
+
+        # Appearance
+        self._theme     = tk.StringVar(value=self._settings.get("theme", "light"))
+        self._accent    = self._settings.get("accent_color")
+        self._compact   = tk.BooleanVar(value=self._settings.get("compact_mode", False))
+        self._card_size = tk.StringVar(value=self._settings.get("card_size", "medium"))
+        self._original_appearance = self._appearance_subset()
 
         self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
         self._always_on_top     = tk.BooleanVar(value=self._settings["always_on_top"])
@@ -714,23 +734,72 @@ class AdvancedOptionsDialog(tk.Toplevel):
         pw, ph = parent.winfo_rootx(), parent.winfo_rooty()
         self.geometry(f"+{pw + 60}+{ph + 60}")
 
+        # Live-preview appearance changes (skipped while jobs run — see __init__).
+        if self._on_appearance is not None and not self._jobs_running:
+            self._theme.trace_add("write", lambda *_: self._live_appearance())
+            self._compact.trace_add("write", lambda *_: self._live_appearance())
+            self._card_size.trace_add("write", lambda *_: self._live_appearance())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+
+    # ------------------------------------------------------------------
+    # Appearance helpers
+    # ------------------------------------------------------------------
+
+    def _appearance_subset(self) -> dict:
+        return {
+            "theme":        self._theme.get(),
+            "accent_color": self._accent,
+            "compact_mode": self._compact.get(),
+            "card_size":    self._card_size.get(),
+        }
+
+    def _current_accent_hex(self) -> str:
+        return self._accent if self._accent else THEMES[self._theme.get()]["accent"]
+
+    def _refresh_swatch(self) -> None:
+        self._swatch.configure(bg=self._current_accent_hex())
+
+    def _live_appearance(self) -> None:
+        if self._on_appearance is not None:
+            self._on_appearance(self._appearance_subset(), persist=False)
+
+    def _pick_accent(self) -> None:
+        _, hex_str = colorchooser.askcolor(
+            color=self._current_accent_hex(), title="Accent color", parent=self)
+        if hex_str:
+            self._accent = hex_str
+            self._refresh_swatch()
+            self._live_appearance()
+
+    def _reset_accent(self) -> None:
+        self._accent = None
+        self._refresh_swatch()
+        self._live_appearance()
+
+    def _cancel(self) -> None:
+        # Revert any live preview to the appearance we opened with.
+        if self._on_appearance is not None and not self._jobs_running:
+            self._on_appearance(self._original_appearance, persist=False)
+        self.destroy()
+
     def _on_corner_change(self, *_):
         val = _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none")
         if val and val != "none":
             _apply_snap_corner(self.master, val)
 
-    def _section(self, text: str) -> tk.Frame:
-        tk.Label(self._body, text=text, bg=C["bg"], fg=C["accent"],
+    def _section(self, parent: tk.Widget, text: str) -> tk.Frame:
+        tk.Label(parent, text=text, bg=C["bg"], fg=C["accent"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(
             fill="x", padx=16, pady=(14, 2))
-        sep = tk.Frame(self._body, bg=C["accent"], height=1)
+        sep = tk.Frame(parent, bg=C["accent"], height=1)
         sep.pack(fill="x", padx=16, pady=(0, 6))
-        frame = tk.Frame(self._body, bg=C["bg"])
+        frame = tk.Frame(parent, bg=C["bg"])
         frame.pack(fill="x", padx=24, pady=2)
         return frame
 
-    def _chk(self, parent, text: str, var: tk.BooleanVar) -> tk.Checkbutton:
-        cb = tk.Checkbutton(parent, text=text, variable=var,
+    def _chk(self, parent, text: str, var: tk.BooleanVar,
+             state: str = "normal") -> tk.Checkbutton:
+        cb = tk.Checkbutton(parent, text=text, variable=var, state=state,
                             bg=C["bg"], fg=C["name_fg"],
                             selectcolor=C["card_bg"],
                             activebackground=C["bg"], activeforeground=C["name_fg"],
@@ -738,11 +807,80 @@ class AdvancedOptionsDialog(tk.Toplevel):
         cb.pack(fill="x", pady=2)
         return cb
 
-    def _build(self):
-        self._body = tk.Frame(self, bg=C["bg"])
-        self._body.pack(fill="both", expand=True)
+    def _rb(self, parent, text: str, var: tk.StringVar, value: str,
+            state: str = "normal") -> tk.Radiobutton:
+        rb = tk.Radiobutton(parent, text=text, variable=var, value=value, state=state,
+                            bg=C["bg"], fg=C["name_fg"],
+                            selectcolor=C["card_bg"],
+                            activebackground=C["bg"], activeforeground=C["name_fg"],
+                            font=("Segoe UI", 9), anchor="w", cursor="hand2")
+        rb.pack(fill="x", pady=1)
+        return rb
 
-        f = self._section("STARTUP")
+    def _build(self):
+        self._vcmd_int = (self.register(lambda s: s.isdigit() or s == ""), "%P")
+        nb = ttk.Notebook(self, style="Card.TNotebook")
+        nb.pack(fill="both", expand=True, padx=12, pady=(12, 0))
+
+        appearance_tab = tk.Frame(nb, bg=C["bg"])
+        startup_tab    = tk.Frame(nb, bg=C["bg"])
+        output_tab     = tk.Frame(nb, bg=C["bg"])
+        logging_tab    = tk.Frame(nb, bg=C["bg"])
+        nb.add(appearance_tab, text="Appearance")
+        nb.add(startup_tab,    text="Startup & Window")
+        nb.add(output_tab,     text="Output")
+        nb.add(logging_tab,    text="Logging")
+
+        self._build_appearance_tab(appearance_tab)
+        self._build_startup_tab(startup_tab)
+        self._build_output_tab(output_tab)
+        self._build_logging_tab(logging_tab)
+
+        btn_row = tk.Frame(self, bg=C["bg"])
+        btn_row.pack(fill="x", padx=16, pady=12)
+        _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"],
+                     self._cancel, width=10).pack(side="right", padx=(6, 0))
+        _flat_button(btn_row, "Save", C["accent"], C["accent2"],
+                     self._save, width=10).pack(side="right")
+
+    def _build_appearance_tab(self, tab):
+        state = "disabled" if self._jobs_running else "normal"
+        if self._jobs_running:
+            tk.Label(tab, text="Stop running jobs to change appearance.",
+                     bg=C["bg"], fg=C["path_fg"], font=("Segoe UI", 8, "italic"),
+                     anchor="w").pack(fill="x", padx=16, pady=(10, 0))
+
+        f = self._section(tab, "THEME")
+        self._rb(f, "☀  Light", self._theme, "light", state)
+        self._rb(f, "🌙  Dark",  self._theme, "dark",  state)
+
+        f = self._section(tab, "ACCENT COLOR")
+        swatch_row = tk.Frame(f, bg=C["bg"])
+        swatch_row.pack(fill="x", pady=(2, 6))
+        self._swatch = tk.Frame(swatch_row, width=32, height=22,
+                                relief="solid", bd=1, bg=self._current_accent_hex())
+        self._swatch.pack(side="left", padx=(0, 8))
+        self._swatch.pack_propagate(False)
+        choose = _flat_button(swatch_row, "Choose…", C["btn_dark_bg"],
+                              C["btn_dark_hover"], self._pick_accent, width=8)
+        choose.pack(side="left", padx=(0, 4))
+        reset = _flat_button(swatch_row, "Reset", C["btn_dark_bg"],
+                             C["btn_dark_hover"], self._reset_accent, width=6)
+        reset.pack(side="left")
+        if self._jobs_running:
+            choose.configure(state="disabled", cursor="")
+            reset.configure(state="disabled", cursor="")
+
+        f = self._section(tab, "DISPLAY")
+        self._chk(f, "Compact cards (denser layout)", self._compact, state)
+        tk.Label(f, text="Card size", bg=C["bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 9), anchor="w").pack(fill="x", pady=(8, 2))
+        self._rb(f, "Small",  self._card_size, "small",  state)
+        self._rb(f, "Medium", self._card_size, "medium", state)
+        self._rb(f, "Large",  self._card_size, "large",  state)
+
+    def _build_startup_tab(self, tab):
+        f = self._section(tab, "STARTUP")
         if sys.platform == "win32":
             self._chk(f, "Start with Windows",               self._start_with_windows)
         self._chk(f, "Always on top",                     self._always_on_top)
@@ -757,7 +895,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                  font=("Segoe UI", 9)).pack(side="left")
         tk.Spinbox(size_row, from_=400, to=3840, increment=10,
                    textvariable=self._win_width, width=6,
-                   validate="key", validatecommand=vcmd_int,
+                   validate="key", validatecommand=self._vcmd_int,
                    bg=C["card_bg"], fg=C["name_fg"],
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
@@ -765,7 +903,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                  font=("Segoe UI", 9)).pack(side="left", padx=4)
         tk.Spinbox(size_row, from_=300, to=2160, increment=10,
                    textvariable=self._win_height, width=6,
-                   validate="key", validatecommand=vcmd_int,
+                   validate="key", validatecommand=self._vcmd_int,
                    bg=C["card_bg"], fg=C["name_fg"],
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left")
@@ -779,7 +917,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      state="readonly", width=18,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
-        f = self._section("OUTPUT")
+    def _build_output_tab(self, tab):
+        vcmd = self._vcmd_int
+        f = self._section(tab, "OUTPUT")
         self._chk(f, "Auto-clear output before each run",        self._auto_clear)
         self._chk(f, "Auto-scroll to bottom",                     self._auto_scroll)
         self._chk(f, "Notify when script / pipeline completes",   self._notify_on_complete)
@@ -791,7 +931,6 @@ class AdvancedOptionsDialog(tk.Toplevel):
         row.pack(fill="x", pady=4)
         tk.Label(row, text="Max output lines:", bg=C["bg"], fg=C["name_fg"],
                  font=("Segoe UI", 9)).pack(side="left")
-        vcmd = (self.register(lambda s: s.isdigit() or s == ""), "%P")
         tk.Spinbox(row, from_=100, to=50000, increment=100,
                    textvariable=self._max_lines, width=7,
                    validate="key", validatecommand=vcmd,
@@ -829,7 +968,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
-        f = self._section("LOGGING")
+    def _build_logging_tab(self, tab):
+        f = self._section(tab, "LOGGING")
         self._chk(f, "Enable logging to file",           self._logging_enabled)
         self._chk(f, "Include script output in logs",    self._log_runs_output)
         level_row = tk.Frame(f, bg=C["bg"])
@@ -840,13 +980,6 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      values=["DEBUG", "INFO", "WARNING", "ERROR"],
                      state="readonly", width=12,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
-
-        btn_row = tk.Frame(self, bg=C["bg"])
-        btn_row.pack(fill="x", padx=16, pady=12)
-        _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"],
-                     self.destroy, width=10).pack(side="right", padx=(6, 0))
-        _flat_button(btn_row, "Save", C["accent"], C["accent2"],
-                     self._save, width=10).pack(side="right")
 
     def _save(self):
         try:
@@ -873,6 +1006,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
             tok = tok.lower()
             qr_exts.append(tok if tok.startswith(".") else "." + tok)
         self._settings.update({
+            "theme":                    self._theme.get(),
+            "accent_color":             self._accent,
+            "compact_mode":             self._compact.get(),
+            "card_size":                self._card_size.get(),
             "always_on_top":            self._always_on_top.get(),
             "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
             "window_width":             win_w,
@@ -902,158 +1039,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
                                  parent=self)
             return
         self._on_save(self._settings)
-        self.destroy()
-
-
-class AppearanceDialog(tk.Toplevel):
-    """Modal dialog for choosing theme and accent color."""
-
-    def __init__(self, parent, settings: dict, on_save):
-        super().__init__(parent)
-        self._original_settings = dict(settings)
-        self._on_save = on_save
-
-        self._theme  = tk.StringVar(value=settings.get("theme", "light"))
-        self._accent: str | None = settings.get("accent_color")
-        self._compact = tk.BooleanVar(value=settings.get("compact_mode", False))
-        self._card_size = tk.StringVar(value=settings.get("card_size", "medium"))
-
-        self.title("Appearance")
-        self.configure(bg=C["bg"])
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-
-        self._build()
-        self.update_idletasks()
-        self.geometry(f"+{parent.winfo_rootx() + 60}+{parent.winfo_rooty() + 60}")
-
-        # Live-preview as soon as the user changes the radio selection, compact toggle, or card size.
-        self._theme.trace_add("write", lambda *_: self._live_apply())
-        self._compact.trace_add("write", lambda *_: self._live_apply())
-        self._card_size.trace_add("write", lambda *_: self._live_apply())
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _current_accent_hex(self) -> str:
-        """Return the accent hex to display — custom if set, else theme default."""
-        return self._accent if self._accent else THEMES[self._theme.get()]["accent"]
-
-    def _refresh_swatch(self) -> None:
-        self._swatch.configure(bg=self._current_accent_hex())
-
-    def _section(self, text: str) -> tk.Frame:
-        """Render a section heading identical to AdvancedOptionsDialog._section."""
-        tk.Label(self._body, text=text, bg=C["bg"], fg=C["accent"],
-                 font=("Segoe UI", 9, "bold"), anchor="w").pack(
-            fill="x", padx=16, pady=(14, 2))
-        tk.Frame(self._body, bg=C["accent"], height=1).pack(fill="x", padx=16, pady=(0, 6))
-        frame = tk.Frame(self._body, bg=C["bg"])
-        frame.pack(fill="x", padx=24, pady=2)
-        return frame
-
-    # ------------------------------------------------------------------
-    # Build
-    # ------------------------------------------------------------------
-
-    def _build(self) -> None:
-        self._body = tk.Frame(self, bg=C["bg"])
-        self._body.pack(fill="both", expand=True)
-
-        # ---- THEME ----
-        f = self._section("THEME")
-        for label, value in (("☀  Light", "light"), ("🌙  Dark", "dark")):
-            tk.Radiobutton(
-                f, text=label, variable=self._theme, value=value,
-                bg=C["bg"], fg=C["name_fg"],
-                selectcolor=C["card_bg"],
-                activebackground=C["bg"], activeforeground=C["name_fg"],
-                font=("Segoe UI", 9), anchor="w", cursor="hand2",
-            ).pack(fill="x", pady=2)
-
-        # ---- ACCENT COLOR ----
-        f = self._section("ACCENT COLOR")
-        swatch_row = tk.Frame(f, bg=C["bg"])
-        swatch_row.pack(fill="x", pady=(2, 6))
-
-        self._swatch = tk.Frame(swatch_row, width=32, height=22,
-                                relief="solid", bd=1,
-                                bg=self._current_accent_hex())
-        self._swatch.pack(side="left", padx=(0, 8))
-        self._swatch.pack_propagate(False)
-
-        _flat_button(swatch_row, "Choose…", C["btn_dark_bg"], C["btn_dark_hover"],
-                     self._pick_accent, width=8).pack(side="left", padx=(0, 4))
-        _flat_button(swatch_row, "Reset", C["btn_dark_bg"], C["btn_dark_hover"],
-                     self._reset_accent, width=6).pack(side="left")
-
-        # ---- DISPLAY ----
-        f = self._section("DISPLAY")
-        tk.Checkbutton(
-            f, text="Compact cards (denser layout)", variable=self._compact,
-            bg=C["bg"], fg=C["name_fg"],
-            selectcolor=C["card_bg"],
-            activebackground=C["bg"], activeforeground=C["name_fg"],
-            font=("Segoe UI", 9), anchor="w", cursor="hand2",
-        ).pack(fill="x", pady=2)
-
-        tk.Label(f, text="Card size", bg=C["bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 9), anchor="w").pack(fill="x", pady=(8, 2))
-        for label, value in (("Small", "small"), ("Medium", "medium"), ("Large", "large")):
-            tk.Radiobutton(
-                f, text=label, variable=self._card_size, value=value,
-                bg=C["bg"], fg=C["name_fg"],
-                selectcolor=C["card_bg"],
-                activebackground=C["bg"], activeforeground=C["name_fg"],
-                font=("Segoe UI", 9), anchor="w", cursor="hand2",
-            ).pack(fill="x", pady=1)
-
-        # ---- BUTTON ROW ----
-        btn_row = tk.Frame(self, bg=C["bg"])
-        btn_row.pack(fill="x", padx=16, pady=12)
-        _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"],
-                     self._cancel, width=10).pack(side="right", padx=(6, 0))
-        _flat_button(btn_row, "Apply", C["accent"], C["accent2"],
-                     self._apply, width=10).pack(side="right")
-
-    # ------------------------------------------------------------------
-    # Actions
-    # ------------------------------------------------------------------
-
-    def _pick_accent(self) -> None:
-        _, hex_str = colorchooser.askcolor(
-            color=self._current_accent_hex(), title="Accent color", parent=self)
-        if hex_str:
-            self._accent = hex_str
-            self._refresh_swatch()
-            self._live_apply()
-
-    def _reset_accent(self) -> None:
-        self._accent = None
-        self._refresh_swatch()
-        self._live_apply()
-
-    def _live_apply(self) -> None:
-        """Push the current selection to the app without persisting to disk."""
-        self._on_save(
-            {"theme": self._theme.get(), "accent_color": self._accent,
-             "compact_mode": self._compact.get(),
-             "card_size": self._card_size.get()},
-            persist=False,
-        )
-
-    def _apply(self) -> None:
-        self._on_save(
-            {"theme": self._theme.get(), "accent_color": self._accent,
-             "compact_mode": self._compact.get(),
-             "card_size": self._card_size.get()},
-            persist=True,
-        )
-        self.destroy()
-
-    def _cancel(self) -> None:
-        self._on_save(self._original_settings, persist=False)
+        # Apply theme / card changes and rebuild the UI (on_save already
+        # persisted them, so don't write to disk again). Skipped while jobs run.
+        if self._on_appearance is not None and not self._jobs_running:
+            self._on_appearance(self._appearance_subset(), persist=False)
         self.destroy()

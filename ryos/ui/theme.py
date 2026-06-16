@@ -232,6 +232,21 @@ def _configure_ttk_styles() -> None:
         relief="flat",
     )
     style.map("TScrollbar", background=[("active", C["path_fg"])])
+    # Tabbed dialogs (Advanced Options): flat notebook that picks up theme colors.
+    style.configure("Card.TNotebook", background=C["bg"], borderwidth=0)
+    style.configure(
+        "Card.TNotebook.Tab",
+        background=C["bg"],
+        foreground=C["path_fg"],
+        bordercolor=C["border"],
+        padding=(12, 6),
+        font=("Segoe UI", 9),
+    )
+    style.map(
+        "Card.TNotebook.Tab",
+        background=[("selected", C["card_bg"]), ("active", C["card_hover"])],
+        foreground=[("selected", C["accent"]), ("active", C["name_fg"])],
+    )
     # Remove the dotted grip marks from the PanedWindow sash.
     style.configure("Sash", gripcount=0, sashthickness=4, sashpad=0,
                     background=C["border"])
