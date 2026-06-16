@@ -65,6 +65,16 @@ _SETTINGS_DEFAULTS: dict = {
     "quick_run_autocomplete":    True,
     "quick_run_max_suggestions": 10,
     "quick_run_index_ttl":    300,
+    # Extensions the Quick Run file index includes. Empty list = index every
+    # file (slower on huge trees); the default keeps the index to runnable
+    # script types so it stays small on large project/data directories.
+    "quick_run_index_extensions": [
+        ".py", ".js", ".ts", ".rb", ".pl", ".php", ".sh", ".ps1",
+        ".bat", ".cmd", ".exe", ".sln", ".code-workspace",
+    ],
+    # Hard cap on indexed files so a misconfigured base dir can't build a
+    # multi-hundred-MB cache that freezes the UI on load.
+    "quick_run_index_max_files": 5000,
     "logging_enabled":        True,
     "log_level":              "INFO",
     "log_runs_output":        False,

@@ -26,7 +26,8 @@ from ..notifications import _fetch_latest_release, _parse_version, _show_notific
 from ..runner import decode_output_item, run_subprocess
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
 from ..quickrun import (
-    _SKIP_DIRS, _is_inside, build_entry, display_relpath, parse_input, rank_suggestions, resolve,
+    _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
+    rank_suggestions, resolve, serialize_index, should_index,
 )
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
@@ -40,7 +41,8 @@ _log = get_logger("app")
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
 MAX_PARALLEL_JOBS = 10
-_QUICK_RUN_INDEX_TTL = 30.0  # seconds before the file-index cache is considered stale
+_QUICK_RUN_INDEX_TTL = 300.0  # fallback TTL (seconds) when the setting is missing
+_QR_INDEX_VERSION = 2  # on-disk index format; bump to invalidate older caches
 
 
 def _qr_index_path(base_dir: str) -> Path:
@@ -55,13 +57,17 @@ def _quick_run_load_disk_index(base_dir: str, ttl: float) -> "tuple[float, list]
     try:
         raw = _qr_index_path(base_dir).read_text(encoding="utf-8")
         data = _json.loads(raw)
+        # Reject caches written by an older format (e.g. the verbose 4-tuple
+        # layout); they'll simply be rebuilt in the compact form.
+        if data.get("v") != _QR_INDEX_VERSION:
+            return None
         # Hash-collision guard: verify the stored base_dir matches exactly.
         if data["base_dir"] != base_dir:
             return None
         # Reject if the on-disk index is older than the configured TTL.
         if time.time() - data["ts"] >= ttl:
             return None
-        paths = [tuple(e) for e in data["paths"]]
+        paths = deserialize_index(data["paths"])
         return (data["ts"], paths)
     except (OSError, ValueError, KeyError, TypeError) as e:
         _log.debug("Quick Run index cache unreadable for %s: %s", base_dir, e)
@@ -73,7 +79,8 @@ def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> No
     try:
         dest = _qr_index_path(base_dir)
         tmp = Path(str(dest) + ".tmp")
-        payload = {"base_dir": base_dir, "ts": wall_ts, "paths": paths}
+        payload = {"v": _QR_INDEX_VERSION, "base_dir": base_dir, "ts": wall_ts,
+                   "paths": serialize_index(paths)}
         tmp.write_text(_json.dumps(payload), encoding="utf-8")
         # Atomic swap so a concurrent read never sees a partial file.
         os.replace(tmp, dest)
@@ -1536,31 +1543,44 @@ class RYOSApp(_BaseWindow):
 
     def _quick_run_get_index(self, base_dir: str) -> list | None:
         import time
+        ttl = self._settings.get("quick_run_index_ttl", _QUICK_RUN_INDEX_TTL)
         cached = self._quick_run_index_cache.get(base_dir)
         if cached is not None:
-            if time.monotonic() - cached[0] > _QUICK_RUN_INDEX_TTL:
-                self._quick_run_build_index_async(base_dir)  # rebuild in background
+            if time.monotonic() - cached[0] > ttl:
+                self._quick_run_build_index_async(base_dir, try_disk=False)  # rebuild in background
             return cached[1]  # return stale data while rebuild runs
-        # First access this session: try disk before kicking a full rescan.
-        if base_dir not in self._quick_run_disk_loaded:
+        # Nothing in memory yet. Build off-thread so reading a large on-disk
+        # cache — or a full rescan — never blocks the UI; the bar shows
+        # "Indexing files…" until _quick_run_on_index_ready posts results back.
+        # The disk-loaded gate is flipped here on the main thread so two rapid
+        # keystrokes can't both decide to read disk.
+        try_disk = base_dir not in self._quick_run_disk_loaded
+        if try_disk:
             self._quick_run_disk_loaded.add(base_dir)
-            disk = _quick_run_load_disk_index(base_dir, self._settings.get("quick_run_index_ttl", 300))
-            if disk is not None:
-                wall_ts, paths = disk
-                age = time.time() - wall_ts
-                # Reconstruct a monotonic timestamp consistent with the wall-clock age.
-                mono_ts = time.monotonic() - age
-                self._quick_run_index_cache[base_dir] = (mono_ts, paths)
-                # If the disk data is already older than the in-memory TTL, refresh in background.
-                if age > _QUICK_RUN_INDEX_TTL:
-                    self._quick_run_build_index_async(base_dir)
-                return paths
-        self._quick_run_build_index_async(base_dir)
+        self._quick_run_build_index_async(base_dir, try_disk=try_disk)
         return None
 
-    def _quick_run_build_index_async(self, base_dir: str) -> None:
+    def _quick_run_build_index_async(self, base_dir: str, try_disk: bool = False) -> None:
         import time
+        # Snapshot settings on the main thread; the worker must never read
+        # shared settings state from its own thread.
+        ttl = self._settings.get("quick_run_index_ttl", _QUICK_RUN_INDEX_TTL)
+        allowed_exts = {e.lower() for e in (self._settings.get("quick_run_index_extensions") or [])}
+        max_files = self._settings.get("quick_run_index_max_files", 5000)
+
         def _worker():
+            # Prefer a fresh on-disk cache before walking the whole tree. A
+            # stale cache is still posted first (so the UI has something) before
+            # the rescan replaces it.
+            if try_disk:
+                disk = _quick_run_load_disk_index(base_dir, ttl)
+                if disk is not None:
+                    wall_ts, paths = disk
+                    age = time.time() - wall_ts
+                    mono_ts = time.monotonic() - age
+                    self.after(0, lambda: self._quick_run_on_index_ready(base_dir, mono_ts, paths))
+                    if age <= ttl:
+                        return  # cache still fresh; no rescan needed
             base = Path(base_dir)
             base_resolved = base.resolve()
             paths: list = []
@@ -1568,12 +1588,14 @@ class RYOSApp(_BaseWindow):
                 for p in base.rglob("*"):
                     if any(part in _SKIP_DIRS for part in p.parts):
                         continue
-                    if p.is_file():
+                    if p.is_file() and should_index(p.name, allowed_exts):
                         try:
                             rel_str = str(p.relative_to(base_resolved))
                         except ValueError:
                             rel_str = p.name
                         paths.append(build_entry(rel_str, p.name))
+                        if max_files and len(paths) >= max_files:
+                            break
             except PermissionError:
                 pass
             ts = time.monotonic()

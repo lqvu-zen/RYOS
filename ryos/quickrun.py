@@ -39,6 +39,34 @@ def build_entry(rel_str: str, filename: str) -> Entry:
     return (rel_str, filename.lower(), Path(filename).stem.lower(), rel_str.lower())
 
 
+def should_index(filename: str, allowed_exts) -> bool:
+    """True if a file named *filename* belongs in the Quick Run index.
+
+    A falsy *allowed_exts* (e.g. an empty list) means "index every file"; the
+    escape hatch for users who run extensionless scripts. Otherwise only files
+    whose lowercased suffix is in *allowed_exts* are kept, which is what keeps
+    the index from ballooning to cover an entire data/project tree.
+    """
+    if not allowed_exts:
+        return True
+    return Path(filename).suffix.lower() in allowed_exts
+
+
+def serialize_index(entries: list[Entry]) -> list[str]:
+    """Reduce index entries to just their relative paths for on-disk storage.
+
+    The name/stem/path-lower fields are derivable from the relative path, so
+    persisting them only bloats the cache file (~3-4x); deserialize_index
+    rebuilds them on load.
+    """
+    return [e[0] for e in entries]
+
+
+def deserialize_index(rels: list[str]) -> list[Entry]:
+    """Rebuild full index entries from a list of relative paths."""
+    return [build_entry(rel, Path(rel).name) for rel in rels]
+
+
 def rank_suggestions(index: list[Entry], query: str, max_n: int) -> list[str]:
     """Return up to max_n relative paths from index that match query, best first.
 

@@ -575,6 +575,41 @@ class TestQuickRunRanking(unittest.TestCase):
         idx = [build_entry("Deploy.PY", "Deploy.PY")]
         self.assertEqual(rank_suggestions(idx, "DEPLOY", 10), ["Deploy.PY"])
 
+
+from ryos.quickrun import should_index, serialize_index, deserialize_index  # noqa: E402
+
+
+class TestQuickRunIndexHelpers(unittest.TestCase):
+    """Extension filtering and the compact on-disk index format."""
+
+    def test_should_index_filters_by_extension(self):
+        exts = {".py", ".sh"}
+        self.assertTrue(should_index("deploy.py", exts))
+        self.assertTrue(should_index("run.sh", exts))
+        self.assertFalse(should_index("notes.txt", exts))
+        self.assertFalse(should_index("data.csv", exts))
+
+    def test_should_index_case_insensitive(self):
+        self.assertTrue(should_index("Deploy.PY", {".py"}))
+
+    def test_should_index_empty_allowlist_indexes_everything(self):
+        # Falsy allowed_exts is the escape hatch: keep every file.
+        self.assertTrue(should_index("notes.txt", []))
+        self.assertTrue(should_index("noextension", set()))
+
+    def test_should_index_extensionless_excluded_when_filtering(self):
+        self.assertFalse(should_index("Makefile", {".py"}))
+
+    def test_serialize_keeps_only_relpath(self):
+        entries = [build_entry("sub/Foo.py", "Foo.py"), build_entry("bar.sh", "bar.sh")]
+        self.assertEqual(serialize_index(entries), ["sub/Foo.py", "bar.sh"])
+
+    def test_serialize_deserialize_round_trip(self):
+        # The lowercased fields are derivable, so a round trip through the
+        # compact form must reproduce the original entries exactly.
+        entries = [build_entry("sub/Foo.py", "Foo.py"), build_entry("a/x.tar.gz", "x.tar.gz")]
+        self.assertEqual(deserialize_index(serialize_index(entries)), entries)
+
 # ---------------------------------------------------------------------------
 # Schema versioning (ryos.db PRAGMA user_version migration scheme)
 # ---------------------------------------------------------------------------
