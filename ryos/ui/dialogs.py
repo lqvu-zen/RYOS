@@ -701,6 +701,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._notify_on_complete = tk.BooleanVar(value=self._settings.get("notify_on_complete", True))
         self._quick_run_enabled = tk.BooleanVar(value=self._settings.get("quick_run_enabled", True))
         self._quick_run_autocomplete = tk.BooleanVar(value=self._settings.get("quick_run_autocomplete", True))
+        self._qr_index_exts = tk.StringVar(
+            value=" ".join(self._settings.get("quick_run_index_extensions") or []))
+        self._qr_index_max_files = tk.StringVar(
+            value=str(self._settings.get("quick_run_index_max_files", 5000)))
         self._logging_enabled = tk.BooleanVar(value=self._settings.get("logging_enabled", True))
         self._log_level = tk.StringVar(value=self._settings.get("log_level", "INFO"))
         self._log_runs_output = tk.BooleanVar(value=self._settings.get("log_runs_output", False))
@@ -806,6 +810,25 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+        qr_ext_row = tk.Frame(f, bg=C["bg"])
+        qr_ext_row.pack(fill="x", pady=4)
+        tk.Label(qr_ext_row, text="Quick Run index file types (blank = all):",
+                 bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9)).pack(side="left")
+        tk.Entry(qr_ext_row, textvariable=self._qr_index_exts, width=22,
+                 bg=C["card_bg"], fg=C["name_fg"], insertbackground=C["name_fg"],
+                 font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
+        qr_max_row = tk.Frame(f, bg=C["bg"])
+        qr_max_row.pack(fill="x", pady=4)
+        tk.Label(qr_max_row, text="Quick Run index max files (0 = unlimited):",
+                 bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9)).pack(side="left")
+        tk.Spinbox(qr_max_row, from_=0, to=100000, increment=500,
+                   textvariable=self._qr_index_max_files, width=7,
+                   validate="key", validatecommand=vcmd,
+                   bg=C["card_bg"], fg=C["name_fg"],
+                   buttonbackground=C["card_bg"],
+                   font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
         f = self._section("LOGGING")
         self._chk(f, "Enable logging to file",           self._logging_enabled)
         self._chk(f, "Include script output in logs",    self._log_runs_output)
@@ -839,6 +862,16 @@ class AdvancedOptionsDialog(tk.Toplevel):
             win_h = max(300, int(self._win_height.get() or 640))
         except ValueError:
             win_w, win_h = 540, 640
+        try:
+            qr_max_files = max(0, int(self._qr_index_max_files.get() or 0))
+        except ValueError:
+            qr_max_files = _SETTINGS_DEFAULTS["quick_run_index_max_files"]
+        # Free-text list, separated by spaces and/or commas; normalize each
+        # token to a lowercase, dot-prefixed extension. Blank = index everything.
+        qr_exts = []
+        for tok in self._qr_index_exts.get().replace(",", " ").split():
+            tok = tok.lower()
+            qr_exts.append(tok if tok.startswith(".") else "." + tok)
         self._settings.update({
             "always_on_top":            self._always_on_top.get(),
             "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
@@ -854,6 +887,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "notify_on_complete":       self._notify_on_complete.get(),
             "quick_run_enabled":        self._quick_run_enabled.get(),
             "quick_run_autocomplete":   self._quick_run_autocomplete.get(),
+            "quick_run_index_extensions": qr_exts,
+            "quick_run_index_max_files":  qr_max_files,
             "auto_check_update":        self._auto_check_update.get(),
             "logging_enabled":          self._logging_enabled.get(),
             "log_level":                self._log_level.get(),
