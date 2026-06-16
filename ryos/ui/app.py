@@ -21,7 +21,7 @@ except ImportError:
 
 from .. import __version__
 from ..db import ScriptDB
-from ..interpreter import build_command, detect_interpreter, resolve_interpreter
+from ..interpreter import build_command, detect_interpreter, resolve_interpreter, working_dir_for
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
@@ -1879,7 +1879,7 @@ class RYOSApp(_BaseWindow):
                 stderr=subprocess.STDOUT,
                 bufsize=1,
                 text=True,
-                cwd=str(Path(next((c for c in cmd if Path(c).is_file()), cmd[0])).parent),
+                cwd=working_dir_for(cmd),
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
             job.current_process = proc

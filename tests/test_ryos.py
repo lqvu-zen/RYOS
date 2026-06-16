@@ -1245,3 +1245,31 @@ class TestDisplayRelpath(unittest.TestCase):
         with tempfile.TemporaryDirectory() as base:
             outside = os.path.join(os.path.dirname(base), "zzz_other.py")
             self.assertEqual(display_relpath(outside, base), "zzz_other.py")
+
+
+# ---------------------------------------------------------------------------
+# working_dir_for — cwd selection for a launched command (ryos.interpreter)
+# ---------------------------------------------------------------------------
+
+from ryos.interpreter import working_dir_for  # noqa: E402
+
+
+class TestWorkingDirFor(unittest.TestCase):
+    """The directory a script runs from, derived from its command list."""
+
+    def test_script_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "run.py")
+            open(script, "w").close()
+            self.assertEqual(working_dir_for([script]), d)
+
+    def test_interpreter_prefixed_uses_script_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "run.py")
+            open(script, "w").close()
+            # The interpreter ("python") isn't a file; the script is -> its dir wins.
+            self.assertEqual(working_dir_for(["python", script, "--flag"]), d)
+
+    def test_falls_back_to_first_arg_when_no_file(self):
+        # Nothing exists on disk -> parent of cmd[0].
+        self.assertEqual(working_dir_for(["python", "ghost.py"]), str(Path("python").parent))

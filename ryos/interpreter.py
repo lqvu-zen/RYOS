@@ -86,3 +86,15 @@ def build_command(path: str, params: str, interpreter: str):
     if params.strip():
         cmd.extend(shlex.split(params, posix=(os.name != "nt")))
     return cmd
+
+
+def working_dir_for(cmd: list[str]) -> str:
+    """Directory a command should run in.
+
+    Picks the parent of the first argument that is an existing file — i.e. the
+    script itself, even when the command is interpreter-prefixed like
+    ["python", "/path/script.py", ...] — falling back to the parent of the
+    executable when no argument names an existing file.
+    """
+    target = next((c for c in cmd if Path(c).is_file()), cmd[0])
+    return str(Path(target).parent)
