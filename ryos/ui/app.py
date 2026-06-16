@@ -23,7 +23,7 @@ from ..db import ScriptDB
 from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
-from ..runner import run_subprocess
+from ..runner import decode_output_item, run_subprocess
 from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, display_relpath, parse_input, rank_suggestions, resolve,
@@ -2085,29 +2085,14 @@ class RYOSApp(_BaseWindow):
         try:
             while True:
                 item = self.output_queue.get_nowait()
-                kind = item[0]
-                job_id = item[1]
-                job = self._jobreg.get(job_id)
-                if kind == "done":
-                    _, _jid, sid, status, text = item
+                job = self._jobreg.get(item[1])
+                act = decode_output_item(item)
+                if act.text is not None and job:
+                    self._append_output(act.text, tag=act.tag, tab_key=job.tab_key)
+                if act.status is not None:
+                    self.db.mark_run_status(act.sid, act.status)
                     if job:
-                        self._append_output(text, tag="info", tab_key=job.tab_key)
-                    self.db.mark_run_status(sid, status)
-                    if job:
-                        self._handle_step_done(job, sid, status)
-                elif kind == "done_tag":
-                    _, _jid, sid, status, tag, text = item
-                    if job:
-                        self._append_output(text, tag=tag, tab_key=job.tab_key)
-                    self.db.mark_run_status(sid, status)
-                    if job:
-                        self._handle_step_done(job, sid, status)
-                elif kind == "stderr":
-                    if job:
-                        self._append_output(item[2], tag="stderr", tab_key=job.tab_key)
-                else:  # stdout
-                    if job:
-                        self._append_output(item[2], tab_key=job.tab_key)
+                        self._handle_step_done(job, act.sid, act.status)
         except queue.Empty:
             pass
         self.after(80, self._drain_output_queue)

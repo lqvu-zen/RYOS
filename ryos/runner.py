@@ -12,6 +12,7 @@ Queue protocol (each item is a tuple keyed by its first element):
 """
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 
 from .interpreter import working_dir_for
@@ -66,3 +67,31 @@ def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False):
         "done_tag", job.job_id, script_id, status, tag,
         f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
     ))
+
+
+
+@dataclass
+class OutputAction:
+    """What the UI should do with one drained queue item.
+
+    Decodes the queue protocol into a flat decision so the drain loop in the UI
+    is a straight translation to widget calls — and so the index handling is
+    unit-testable without Tkinter.
+    """
+    text: str | None        # text to append (None = append nothing)
+    tag: str | None          # output tag: "info" / "stderr" / "ok" / None (stdout default)
+    status: str | None       # last_run_status to record (None = not a completion)
+    sid: int | None          # script id for a completion (None otherwise)
+    step_done: bool          # whether this item completes a run step
+
+
+def decode_output_item(item: tuple) -> OutputAction:
+    """Translate one output-queue item into an OutputAction (see run_subprocess)."""
+    kind = item[0]
+    if kind == "done":
+        return OutputAction(text=item[4], tag="info", status=item[3], sid=item[2], step_done=True)
+    if kind == "done_tag":
+        return OutputAction(text=item[5], tag=item[4], status=item[3], sid=item[2], step_done=True)
+    if kind == "stderr":
+        return OutputAction(text=item[2], tag="stderr", status=None, sid=None, step_done=False)
+    return OutputAction(text=item[2], tag=None, status=None, sid=None, step_done=False)

@@ -1328,3 +1328,37 @@ class TestRunSubprocess(unittest.TestCase):
         self.assertEqual(len(done), 1)
         self.assertEqual(done[0][2], 7)          # script_id echoed back
         self.assertEqual(done[0][3], "error")
+
+
+from ryos.runner import decode_output_item  # noqa: E402
+
+
+class TestDecodeOutputItem(unittest.TestCase):
+    """The queue protocol decoded from the consumer side (pairs with run_subprocess)."""
+
+    def test_stdout(self):
+        a = decode_output_item(("stdout", 5, "line\n"))
+        self.assertEqual((a.text, a.tag, a.status, a.step_done), ("line\n", None, None, False))
+
+    def test_stderr(self):
+        a = decode_output_item(("stderr", 5, "boom\n"))
+        self.assertEqual((a.text, a.tag, a.status, a.step_done), ("boom\n", "stderr", None, False))
+
+    def test_done(self):
+        a = decode_output_item(("done", 5, 9, "error", "msg"))
+        self.assertEqual((a.text, a.tag, a.status, a.sid, a.step_done),
+                         ("msg", "info", "error", 9, True))
+
+    def test_done_tag(self):
+        a = decode_output_item(("done_tag", 5, 9, "ok", "ok", "footer"))
+        self.assertEqual((a.text, a.tag, a.status, a.sid, a.step_done),
+                         ("footer", "ok", "ok", 9, True))
+
+    def test_round_trip_with_runner(self):
+        # An item produced by run_subprocess decodes to a completed step.
+        q = _queue.Queue()
+        run_subprocess(q, Job(1, "script", 1, None, "t", "job:1", "g"),
+                       [sys.executable, "-c", "pass"], "t", 1)
+        done = [decode_output_item(it) for it in list(q.queue) if it[0] == "done_tag"][0]
+        self.assertTrue(done.step_done)
+        self.assertEqual(done.status, "ok")
