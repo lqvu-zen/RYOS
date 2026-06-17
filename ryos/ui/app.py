@@ -274,9 +274,6 @@ class RYOSApp(_BaseWindow):
         self._options_menu.add_separator()
         self._options_menu.add_command(label="🔔  Check for updates",  command=self._manual_update_check)
         self._options_menu.add_separator()
-        self._options_menu.add_command(label="📁  Open log folder",    command=self._open_log_folder)
-        self._options_menu.add_command(label="📄  View logs",          command=self._view_logs)
-        self._options_menu.add_separator()
         self._options_menu.add_command(label="🗑  Delete All",         command=self._delete_all)
 
         options_btn = _flat_button(header, "⚙", C["btn_dark_bg"], C["btn_dark_hover"],
@@ -2261,29 +2258,6 @@ class RYOSApp(_BaseWindow):
         AdvancedOptionsDialog(self, self._settings, _apply,
                               on_appearance=self._apply_appearance,
                               jobs_running=bool(self._jobreg))
-
-    def _open_log_folder(self):
-        import subprocess
-        from ..settings import LOG_DIR
-        if sys.platform == "win32":
-            os.startfile(str(LOG_DIR))
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(LOG_DIR)])
-        else:
-            subprocess.Popen(["xdg-open", str(LOG_DIR)])
-
-    def _view_logs(self):
-        import subprocess
-        from ..settings import LOG_PATH
-        if not LOG_PATH.exists():
-            messagebox.showinfo("View Logs", "No log file found yet.")
-            return
-        if sys.platform == "win32":
-            os.startfile(str(LOG_PATH))
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", str(LOG_PATH)])
-        else:
-            subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
     def _on_close(self):
         alive = [j for j in self._jobreg.all()

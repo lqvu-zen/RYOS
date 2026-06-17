@@ -1074,7 +1074,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
     def _build_logging_tab(self, tab):
-        from ..settings import LOG_PATH
+        import subprocess
+        from ..settings import LOG_DIR, LOG_PATH
         f = self._section(tab, "LOGGING")
         self._chk(f, "Enable logging to file",           self._logging_enabled)
         self._chk(f, "Include script output in logs",    self._log_runs_output)
@@ -1087,25 +1088,34 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      style="Card.TCombobox",
                      state="readonly", width=12,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
-        def _open_log():
+
+        def _open_file():
             if not LOG_PATH.exists():
                 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
                 LOG_PATH.touch()
             if sys.platform == "win32":
                 os.startfile(str(LOG_PATH))
             elif sys.platform == "darwin":
-                import subprocess
                 subprocess.Popen(["open", str(LOG_PATH)])
             else:
-                import subprocess
                 subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
-        log_row = tk.Frame(f, bg=C["bg"])
-        log_row.pack(fill="x", pady=(10, 0))
-        tk.Label(log_row, text=str(LOG_PATH), bg=C["bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8), anchor="w", wraplength=300).pack(side="left", fill="x", expand=True)
-        _flat_button(log_row, "Open…", C["btn_dark_bg"], C["btn_dark_hover"],
-                     _open_log, width=7).pack(side="right")
+        def _open_folder():
+            if sys.platform == "win32":
+                os.startfile(str(LOG_DIR))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(LOG_DIR)])
+            else:
+                subprocess.Popen(["xdg-open", str(LOG_DIR)])
+
+        tk.Label(f, text=str(LOG_PATH), bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(10, 2))
+        btn_row = tk.Frame(f, bg=C["bg"])
+        btn_row.pack(fill="x", pady=(2, 0))
+        _flat_button(btn_row, "View log",     C["btn_dark_bg"], C["btn_dark_hover"],
+                     _open_file,   width=10).pack(side="left", padx=(0, 6))
+        _flat_button(btn_row, "Open folder",  C["btn_dark_bg"], C["btn_dark_hover"],
+                     _open_folder, width=12).pack(side="left")
 
     def _save(self):
         try:
