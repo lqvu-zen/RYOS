@@ -725,8 +725,11 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._notify_on_complete = tk.BooleanVar(value=self._settings.get("notify_on_complete", True))
         self._quick_run_enabled = tk.BooleanVar(value=self._settings.get("quick_run_enabled", True))
         self._quick_run_autocomplete = tk.BooleanVar(value=self._settings.get("quick_run_autocomplete", True))
-        self._qr_index_exts = tk.StringVar(
-            value=" ".join(self._settings.get("quick_run_index_extensions") or []))
+        # Authoritative list of indexed extensions (survives dialog rebuilds);
+        # the Listbox in the Quick Run tab is just a view onto it.
+        self._qr_exts = [self._normalize_ext(e)
+                         for e in (self._settings.get("quick_run_index_extensions") or [])]
+        self._qr_new_ext = tk.StringVar()
         self._qr_index_max_files = tk.StringVar(
             value=str(self._settings.get("quick_run_index_max_files", 5000)))
         self._logging_enabled = tk.BooleanVar(value=self._settings.get("logging_enabled", True))
@@ -982,19 +985,80 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+    @staticmethod
+    def _normalize_ext(token: str) -> str:
+        """Lowercase, dot-prefixed extension; '' for blank input."""
+        token = token.strip().lower()
+        if not token:
+            return ""
+        return token if token.startswith(".") else "." + token
+
+    def _qr_refresh_list(self) -> None:
+        self._qr_listbox.delete(0, "end")
+        for ext in self._qr_exts:
+            self._qr_listbox.insert("end", ext)
+
+    def _qr_add(self) -> None:
+        ext = self._normalize_ext(self._qr_new_ext.get())
+        if ext and ext not in self._qr_exts:
+            self._qr_exts.append(ext)
+            self._qr_refresh_list()
+        self._qr_new_ext.set("")
+
+    def _qr_remove(self) -> None:
+        # Remove every selected row, highest index first so positions stay valid.
+        for i in sorted(self._qr_listbox.curselection(), reverse=True):
+            del self._qr_exts[i]
+        self._qr_refresh_list()
+
     def _build_quick_run_tab(self, tab):
         vcmd = self._vcmd_int
         f = self._section(tab, "QUICK RUN")
         self._chk(f, "Show Quick Run bar (requires group base directory)", self._quick_run_enabled)
         self._chk(f, "Show suggestions as you type",   self._quick_run_autocomplete)
 
-        qr_ext_row = tk.Frame(f, bg=C["bg"])
-        qr_ext_row.pack(fill="x", pady=4)
-        tk.Label(qr_ext_row, text="Index file types (blank = all):",
-                 bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9)).pack(side="left")
-        tk.Entry(qr_ext_row, textvariable=self._qr_index_exts, width=22,
-                 bg=C["card_bg"], fg=C["name_fg"], insertbackground=C["name_fg"],
-                 font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+        tk.Label(f, text="Index file types (empty = index everything):",
+                 bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9),
+                 anchor="w").pack(fill="x", pady=(8, 2))
+
+        list_row = tk.Frame(f, bg=C["bg"])
+        list_row.pack(fill="x", pady=(0, 2))
+
+        list_box = tk.Frame(list_row, bg=C["bg"])
+        list_box.pack(side="left", fill="both", expand=True)
+        self._qr_listbox = tk.Listbox(
+            list_box, height=5, activestyle="none", exportselection=False,
+            bg=C["card_bg"], fg=C["name_fg"],
+            selectbackground=C["accent"], selectforeground=C["fg_on_dark"],
+            highlightthickness=1, highlightbackground=C["border"],
+            highlightcolor=C["accent"], relief="flat", borderwidth=0,
+            font=("Segoe UI", 9))
+        self._qr_listbox.pack(side="left", fill="both", expand=True)
+        qr_scroll = ttk.Scrollbar(list_box, orient="vertical",
+                                  command=self._qr_listbox.yview)
+        self._qr_listbox.configure(yscrollcommand=qr_scroll.set)
+        qr_scroll.pack(side="left", fill="y")
+        self._qr_listbox.bind("<Delete>", lambda _e: self._qr_remove())
+        self._qr_listbox.bind("<Double-Button-1>", lambda _e: self._qr_remove())
+
+        btns = tk.Frame(list_row, bg=C["bg"])
+        btns.pack(side="left", fill="y", padx=(8, 0))
+        _flat_button(btns, "Remove", C["btn_dark_bg"], C["btn_dark_hover"],
+                     self._qr_remove, width=8).pack(side="top")
+
+        add_row = tk.Frame(f, bg=C["bg"])
+        add_row.pack(fill="x", pady=(4, 2))
+        add_entry = tk.Entry(add_row, textvariable=self._qr_new_ext, width=14,
+                             bg=C["card_bg"], fg=C["name_fg"],
+                             insertbackground=C["name_fg"], font=("Segoe UI", 9))
+        add_entry.pack(side="left")
+        add_entry.bind("<Return>", lambda _e: self._qr_add())
+        _flat_button(add_row, "Add", C["accent"], C["accent2"],
+                     self._qr_add, width=6).pack(side="left", padx=(8, 0))
+        tk.Label(add_row, text="e.g. .py", bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8, "italic")).pack(side="left", padx=(8, 0))
+
+        self._qr_refresh_list()
 
         qr_max_row = tk.Frame(f, bg=C["bg"])
         qr_max_row.pack(fill="x", pady=4)
@@ -1038,12 +1102,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
             qr_max_files = max(0, int(self._qr_index_max_files.get() or 0))
         except ValueError:
             qr_max_files = _SETTINGS_DEFAULTS["quick_run_index_max_files"]
-        # Free-text list, separated by spaces and/or commas; normalize each
-        # token to a lowercase, dot-prefixed extension. Blank = index everything.
-        qr_exts = []
-        for tok in self._qr_index_exts.get().replace(",", " ").split():
-            tok = tok.lower()
-            qr_exts.append(tok if tok.startswith(".") else "." + tok)
+        # Fold in any extension left typed-but-not-added so it isn't lost.
+        self._qr_add()
+        qr_exts = list(self._qr_exts)  # already normalized; blank = index everything
         self._settings.update({
             "theme":                    self._theme.get(),
             "accent_color":             self._accent,
@@ -1079,4 +1140,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             return
         self._on_save(self._settings)
         # Apply theme / card changes and rebuild the UI (on_save already
-        # persis
+        # persisted them, so don't write to disk again). Skipped while jobs run.
+        if self._on_appearance is not None and not self._jobs_running:
+            self._on_appearance(self._appearance_subset(), persist=False)
+        self.destroy()
