@@ -845,15 +845,18 @@ class AdvancedOptionsDialog(tk.Toplevel):
         appearance_tab = tk.Frame(nb, bg=C["bg"])
         startup_tab    = tk.Frame(nb, bg=C["bg"])
         output_tab     = tk.Frame(nb, bg=C["bg"])
+        quick_run_tab  = tk.Frame(nb, bg=C["bg"])
         logging_tab    = tk.Frame(nb, bg=C["bg"])
         nb.add(appearance_tab, text="Appearance")
         nb.add(startup_tab,    text="Startup & Window")
         nb.add(output_tab,     text="Output")
+        nb.add(quick_run_tab,  text="Quick Run")
         nb.add(logging_tab,    text="Logging")
 
         self._build_appearance_tab(appearance_tab)
         self._build_startup_tab(startup_tab)
         self._build_output_tab(output_tab)
+        self._build_quick_run_tab(quick_run_tab)
         self._build_logging_tab(logging_tab)
 
         # Reopen on the tab the user last viewed (remembered for the session).
@@ -955,8 +958,6 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Auto-clear output before each run",        self._auto_clear)
         self._chk(f, "Auto-scroll to bottom",                     self._auto_scroll)
         self._chk(f, "Notify when script / pipeline completes",   self._notify_on_complete)
-        self._chk(f, "Show Quick Run bar (requires group base directory)", self._quick_run_enabled)
-        self._chk(f, "Quick Run: show suggestions as you type",   self._quick_run_autocomplete)
         self._chk(f, "Check for updates on startup",              self._auto_check_update)
 
         row = tk.Frame(f, bg=C["bg"])
@@ -981,9 +982,15 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+    def _build_quick_run_tab(self, tab):
+        vcmd = self._vcmd_int
+        f = self._section(tab, "QUICK RUN")
+        self._chk(f, "Show Quick Run bar (requires group base directory)", self._quick_run_enabled)
+        self._chk(f, "Show suggestions as you type",   self._quick_run_autocomplete)
+
         qr_ext_row = tk.Frame(f, bg=C["bg"])
         qr_ext_row.pack(fill="x", pady=4)
-        tk.Label(qr_ext_row, text="Quick Run index file types (blank = all):",
+        tk.Label(qr_ext_row, text="Index file types (blank = all):",
                  bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9)).pack(side="left")
         tk.Entry(qr_ext_row, textvariable=self._qr_index_exts, width=22,
                  bg=C["card_bg"], fg=C["name_fg"], insertbackground=C["name_fg"],
@@ -991,7 +998,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         qr_max_row = tk.Frame(f, bg=C["bg"])
         qr_max_row.pack(fill="x", pady=4)
-        tk.Label(qr_max_row, text="Quick Run index max files (0 = unlimited):",
+        tk.Label(qr_max_row, text="Index max files (0 = unlimited):",
                  bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9)).pack(side="left")
         tk.Spinbox(qr_max_row, from_=0, to=100000, increment=500,
                    textvariable=self._qr_index_max_files, width=7,
@@ -1072,7 +1079,4 @@ class AdvancedOptionsDialog(tk.Toplevel):
             return
         self._on_save(self._settings)
         # Apply theme / card changes and rebuild the UI (on_save already
-        # persisted them, so don't write to disk again). Skipped while jobs run.
-        if self._on_appearance is not None and not self._jobs_running:
-            self._on_appearance(self._appearance_subset(), persist=False)
-        self.destroy()
+        # persis
