@@ -680,6 +680,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
     ``on_appearance``; all other settings persist together through ``on_save``.
     """
 
+    # Remembered across opens within a session so reopening lands on the
+    # same tab the user last looked at.
+    _last_tab = 0
+
     def __init__(self, parent, settings: dict, on_save, on_appearance=None,
                  jobs_running: bool = False):
         super().__init__(parent)
@@ -735,8 +739,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self.geometry(f"+{pw + 60}+{ph + 60}")
 
         # Live-preview appearance changes (skipped while jobs run — see __init__).
+        # A theme switch changes the palette, so the dialog re-themes itself too;
+        # compact / card-size only affect the cards, so they don't.
         if self._on_appearance is not None and not self._jobs_running:
-            self._theme.trace_add("write", lambda *_: self._live_appearance())
+            self._theme.trace_add("write", lambda *_: self._live_appearance(retheme=True))
             self._compact.trace_add("write", lambda *_: self._live_appearance())
             self._card_size.trace_add("write", lambda *_: self._live_appearance())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
@@ -759,9 +765,22 @@ class AdvancedOptionsDialog(tk.Toplevel):
     def _refresh_swatch(self) -> None:
         self._swatch.configure(bg=self._current_accent_hex())
 
-    def _live_appearance(self) -> None:
+    def _live_appearance(self, retheme: bool = False) -> None:
         if self._on_appearance is not None:
             self._on_appearance(self._appearance_subset(), persist=False)
+        # Rebuild the dialog's own widgets onto the new palette. Deferred so we
+        # don't destroy the widget whose callback we're inside (crashes Tcl).
+        if retheme:
+            self.after(0, self._retheme_dialog)
+
+    def _retheme_dialog(self) -> None:
+        if not self.winfo_exists():
+            return
+        self._on_tab_changed()  # stash current tab before tearing down
+        for child in self.winfo_children():
+            child.destroy()
+        self.configure(bg=C["bg"])
+        self._build()
 
     def _pick_accent(self) -> None:
         _, hex_str = colorchooser.askcolor(
@@ -769,12 +788,12 @@ class AdvancedOptionsDialog(tk.Toplevel):
         if hex_str:
             self._accent = hex_str
             self._refresh_swatch()
-            self._live_appearance()
+            self._live_appearance(retheme=True)
 
     def _reset_accent(self) -> None:
         self._accent = None
         self._refresh_swatch()
-        self._live_appearance()
+        self._live_appearance(retheme=True)
 
     def _cancel(self) -> None:
         # Revert any live preview to the appearance we opened with.
@@ -821,6 +840,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._vcmd_int = (self.register(lambda s: s.isdigit() or s == ""), "%P")
         nb = ttk.Notebook(self, style="Card.TNotebook")
         nb.pack(fill="both", expand=True, padx=12, pady=(12, 0))
+        self._nb = nb
 
         appearance_tab = tk.Frame(nb, bg=C["bg"])
         startup_tab    = tk.Frame(nb, bg=C["bg"])
@@ -836,12 +856,25 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._build_output_tab(output_tab)
         self._build_logging_tab(logging_tab)
 
+        # Reopen on the tab the user last viewed (remembered for the session).
+        try:
+            nb.select(AdvancedOptionsDialog._last_tab)
+        except tk.TclError:
+            pass
+        nb.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
         btn_row = tk.Frame(self, bg=C["bg"])
         btn_row.pack(fill="x", padx=16, pady=12)
         _flat_button(btn_row, "Cancel", C["btn_dark_bg"], C["btn_dark_hover"],
                      self._cancel, width=10).pack(side="right", padx=(6, 0))
         _flat_button(btn_row, "Save", C["accent"], C["accent2"],
                      self._save, width=10).pack(side="right")
+
+    def _on_tab_changed(self, _event=None):
+        try:
+            AdvancedOptionsDialog._last_tab = self._nb.index("current")
+        except tk.TclError:
+            pass
 
     def _build_appearance_tab(self, tab):
         state = "disabled" if self._jobs_running else "normal"
