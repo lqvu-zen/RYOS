@@ -851,7 +851,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         quick_run_tab  = tk.Frame(nb, bg=C["bg"])
         logging_tab    = tk.Frame(nb, bg=C["bg"])
         nb.add(appearance_tab, text="Appearance")
-        nb.add(startup_tab,    text="Startup & Window")
+        nb.add(startup_tab,    text="Startup")
         nb.add(output_tab,     text="Output")
         nb.add(quick_run_tab,  text="Quick Run")
         nb.add(logging_tab,    text="Logging")
@@ -912,8 +912,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         f = self._section(tab, "DISPLAY")
         self._chk(f, "Compact cards (denser layout)", self._compact, state)
-        tk.Label(f, text="Card size", bg=C["bg"], fg=C["name_fg"],
-                 font=("Segoe UI", 9), anchor="w").pack(fill="x", pady=(8, 2))
+        tk.Label(f, text="Card size", bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(8, 2))
         self._rb(f, "Small",  self._card_size, "small",  state)
         self._rb(f, "Medium", self._card_size, "medium", state)
         self._rb(f, "Large",  self._card_size, "large",  state)
@@ -925,6 +925,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Always on top",                     self._always_on_top)
         self._chk(f, "Remember last active group",        self._remember_group)
         self._chk(f, "Start minimized",                  self._start_minimized)
+        self._chk(f, "Check for updates on startup",      self._auto_check_update)
         self._chk(f, "Remember window size and position", self._remember_geometry)
 
         size_row = tk.Frame(f, bg=C["bg"])
@@ -952,6 +953,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                  font=("Segoe UI", 9)).pack(side="left")
         ttk.Combobox(row, textvariable=self._snap_corner,
                      values=[l for l, _ in _CORNER_CHOICES],
+                     style="Card.TCombobox",
                      state="readonly", width=18,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
@@ -961,7 +963,6 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Auto-clear output before each run",        self._auto_clear)
         self._chk(f, "Auto-scroll to bottom",                     self._auto_scroll)
         self._chk(f, "Notify when script / pipeline completes",   self._notify_on_complete)
-        self._chk(f, "Check for updates on startup",              self._auto_check_update)
 
         row = tk.Frame(f, bg=C["bg"])
         row.pack(fill="x", pady=4)
@@ -1081,6 +1082,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                  font=("Segoe UI", 9)).pack(side="left")
         ttk.Combobox(level_row, textvariable=self._log_level,
                      values=["DEBUG", "INFO", "WARNING", "ERROR"],
+                     style="Card.TCombobox",
                      state="readonly", width=12,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 

@@ -441,6 +441,67 @@ def _card_size_verify(app: RYOSApp):
     app.after(900, _next)
 
 
+def _advanced_options_tabs(app: RYOSApp):
+    """Open Advanced Options and screenshot every tab in sequence."""
+    from PIL import ImageGrab
+
+    TAB_NAMES = ["appearance", "startup", "output", "quick_run", "logging"]
+
+    def _get_dlg():
+        for w in app.winfo_children():
+            try:
+                if hasattr(w, "title") and w.title() == "Advanced Options":
+                    return w
+            except Exception:
+                pass
+        return None
+
+    def _shot_dlg(dlg, name):
+        dlg.lift()
+        dlg.update_idletasks()
+        dlg.update()
+        x, y = dlg.winfo_rootx(), dlg.winfo_rooty()
+        w2, h2 = dlg.winfo_width(), dlg.winfo_height()
+        img = ImageGrab.grab(bbox=(x, y, x + w2, y + h2))
+        path = SHOTS_DIR / f"adv_{name}.png"
+        img.save(str(path))
+        print(f"  screenshot -> {path.name}")
+
+    def _do():
+        print("advanced-options-tabs: opening dialog")
+        app._open_advanced_options()
+        app.after(700, lambda: _cycle(0))
+
+    def _cycle(idx):
+        if idx >= len(TAB_NAMES):
+            dlg = _get_dlg()
+            if dlg:
+                dlg.destroy()
+            app.after(300, app.destroy)
+            return
+        dlg = _get_dlg()
+        if not dlg:
+            print("  dialog not found, quitting")
+            app.after(300, app.destroy)
+            return
+        try:
+            nb = dlg._nb
+            nb.select(idx)
+            dlg.update_idletasks()
+            dlg.update()
+        except Exception as e:
+            print(f"  could not select tab {idx}: {e}")
+        app.after(300, lambda: _screenshot_and_next(idx))
+
+    def _screenshot_and_next(idx):
+        dlg = _get_dlg()
+        if dlg:
+            _shot_dlg(dlg, TAB_NAMES[idx])
+        app.after(150, lambda: _cycle(idx + 1))
+
+    app.after(900, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -472,8 +533,10 @@ def main():
         _compact_running(app)
     elif scenario == "card-size-verify":
         _card_size_verify(app)
+    elif scenario == "advanced-options-tabs":
+        _advanced_options_tabs(app)
     else:
-        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running")
+        print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running | advanced-options-tabs")
         app.after(0, app.destroy)
 
     app.mainloop()
