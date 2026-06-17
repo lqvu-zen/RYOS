@@ -147,6 +147,11 @@ class RYOSApp(_BaseWindow):
         self._quick_run_open_group: str | None = None
         self._quick_run_index_cache: dict[str, tuple[float, list]] = {}
         self._quick_run_disk_loaded: set[str] = set()
+        # Base dirs with a load/scan worker in flight, so we never spawn a
+        # second full-tree scan while one is already running (a scan can take
+        # many seconds on a large tree, and every keystroke would otherwise
+        # kick off another).
+        self._quick_run_indexing: set[str] = set()
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -1561,6 +1566,13 @@ class RYOSApp(_BaseWindow):
 
     def _quick_run_build_index_async(self, base_dir: str, try_disk: bool = False) -> None:
         import time
+        # Single-flight: if a load/scan for this base dir is already running,
+        # don't start another. Without this, every keystroke during a slow scan
+        # would spawn its own full-tree scan and they'd pile up, each slowing
+        # the others down. Checked/mutated only on the main thread.
+        if base_dir in self._quick_run_indexing:
+            return
+        self._quick_run_indexing.add(base_dir)
         # Snapshot settings on the main thread; the worker must never read
         # shared settings state from its own thread.
         ttl = self._settings.get("quick_run_index_ttl", _QUICK_RUN_INDEX_TTL)
@@ -1568,44 +1580,51 @@ class RYOSApp(_BaseWindow):
         max_files = self._settings.get("quick_run_index_max_files", 5000)
 
         def _worker():
-            # Prefer a fresh on-disk cache before walking the whole tree. A
-            # stale cache is still posted first (so the UI has something) before
-            # the rescan replaces it.
-            if try_disk:
-                disk = _quick_run_load_disk_index(base_dir, ttl)
-                if disk is not None:
-                    wall_ts, paths = disk
-                    age = time.time() - wall_ts
-                    mono_ts = time.monotonic() - age
-                    self.after(0, lambda: self._quick_run_on_index_ready(base_dir, mono_ts, paths))
-                    if age <= ttl:
-                        return  # cache still fresh; no rescan needed
-            base = Path(base_dir)
-            base_resolved = base.resolve()
-            paths: list = []
-            t0 = time.monotonic()
-            capped = False
             try:
-                for p in base.rglob("*"):
-                    if any(part in _SKIP_DIRS for part in p.parts):
-                        continue
-                    if p.is_file() and should_index(p.name, allowed_exts):
+                # Prefer a fresh on-disk cache before walking the whole tree. A
+                # stale cache is still posted first (so the UI has something)
+                # before the rescan replaces it.
+                if try_disk:
+                    disk = _quick_run_load_disk_index(base_dir, ttl)
+                    if disk is not None:
+                        wall_ts, paths = disk
+                        age = time.time() - wall_ts
+                        mono_ts = time.monotonic() - age
+                        self.after(0, lambda: self._quick_run_on_index_ready(base_dir, mono_ts, paths))
+                        if age <= ttl:
+                            return  # cache still fresh; no rescan needed
+                paths = []
+                t0 = time.monotonic()
+                capped = False
+                # os.walk (not rglob) so we can prune skipped directories in
+                # place — rglob would still descend into and enumerate every
+                # file under node_modules/.git/etc. before we could discard it.
+                for root, dirs, files in os.walk(base_dir):
+                    dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+                    for fn in files:
+                        if not should_index(fn, allowed_exts):
+                            continue
+                        full = os.path.join(root, fn)
                         try:
-                            rel_str = str(p.relative_to(base_resolved))
+                            rel_str = os.path.relpath(full, base_dir)
                         except ValueError:
-                            rel_str = p.name
-                        paths.append(build_entry(rel_str, p.name))
+                            rel_str = fn
+                        paths.append(build_entry(rel_str, fn))
                         if max_files and len(paths) >= max_files:
                             capped = True
                             break
-            except PermissionError:
-                pass
-            ts = time.monotonic()
-            wall_ts = time.time()
-            _log.info("Quick Run index: scanned %s -> %d entries in %.0f ms%s",
-                      base_dir, len(paths), (ts - t0) * 1000, " (capped)" if capped else "")
-            _quick_run_save_disk_index(base_dir, wall_ts, paths)
-            self.after(0, lambda: self._quick_run_on_index_ready(base_dir, ts, paths))
+                    if capped:
+                        break
+                ts = time.monotonic()
+                wall_ts = time.time()
+                _log.info("Quick Run index: scanned %s -> %d entries in %.0f ms%s",
+                          base_dir, len(paths), (ts - t0) * 1000, " (capped)" if capped else "")
+                _quick_run_save_disk_index(base_dir, wall_ts, paths)
+                self.after(0, lambda: self._quick_run_on_index_ready(base_dir, ts, paths))
+            finally:
+                # Clear the in-flight flag on the main thread once fully done
+                # (covers both the fresh-disk early return and the rescan path).
+                self.after(0, lambda: self._quick_run_indexing.discard(base_dir))
         threading.Thread(target=_worker, daemon=True).start()
 
     def _quick_run_on_index_ready(self, base_dir: str, ts: float, paths: list) -> None:
