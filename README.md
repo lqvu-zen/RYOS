@@ -157,13 +157,6 @@ uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
 
 Output: `dist/cxfreeze/` containing `RYOS.exe` plus the required DLLs — distribute the whole folder (or zip it).
 
-Alternative single-file packagers are also available:
-
-| Script | Packager | Notes |
-|--------|----------|-------|
-| `build_nuitka.bat` | Nuitka | Single file; requires MSVC (VS Build Tools 2022); cached builds are fast |
-| `build_pyinstaller.bat` | PyInstaller | Single file; fastest to set up |
-
 ## Architecture
 
 Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script.
@@ -179,3 +172,11 @@ Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__mai
 | Theme, widgets, dialogs, cards, pipelines, app | `ryos/ui/*` |
 
 Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` and drained by a recurring `after(80, ...)` timer on the main UI thread, so the worker never touches the Tk widgets directly.
+
+## Documentation
+
+- [Tutorial](TUTORIAL.md) — step-by-step user guide.
+- [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
+- [Module reference](docs/API_REFERENCE.md) — public API of the core modules.
+- [Contributing](docs/CONTRIBUTING.md) — dev setup, conventions, build steps.
+- [Tech debt](TECH_DEBT.md) — known rough edges.

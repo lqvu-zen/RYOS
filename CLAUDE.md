@@ -21,7 +21,7 @@ uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 
-Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs. Distribute the whole folder (or zip it). Alternative packagers available: `build_nuitka.bat` (single-file, more AV flags), `build_pyinstaller.bat` (single-file).
+Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs. Distribute the whole folder (or zip it). cx_Freeze is the only supported packager.
 
 ## Architecture
 

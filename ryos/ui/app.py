@@ -24,7 +24,7 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import decode_output_item, run_subprocess
-from ..settings import QR_INDEX_DIR, _BASE, _NUITKA, _load_settings, _save_settings
+from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
     rank_suggestions, resolve, serialize_index, should_index,
@@ -102,12 +102,7 @@ class RYOSApp(_BaseWindow):
         self.title(f"RYOS v{__version__} — Run Your Own Scripts")
         self.minsize(480, 320)
         self.configure(bg=C["bg"])
-        if hasattr(sys, "_MEIPASS"):
-            _icon_base = Path(sys._MEIPASS)          # PyInstaller: temp extraction dir
-        elif _NUITKA:
-            _icon_base = Path(__file__).resolve().parents[2]  # Nuitka onefile: temp extraction dir
-        else:
-            _icon_base = _BASE                        # cx_Freeze or dev: next to exe / project root
+        _icon_base = _BASE  # cx_Freeze or dev: next to exe / project root
         _icon = _icon_base / "icon.ico"
         if _icon.exists():
             self.iconbitmap(str(_icon))

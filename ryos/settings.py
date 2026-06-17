@@ -24,8 +24,7 @@ QR_INDEX_DIR = _APPDATA / "qr_index"
 QR_INDEX_DIR.mkdir(parents=True, exist_ok=True)
 
 # Directory of the exe / script (used for icon and migration).
-_NUITKA   = "__compiled__" in dir()          # True only in Nuitka-compiled builds
-_PACKAGED = getattr(sys, "frozen", False) or _NUITKA  # True for Nuitka, PyInstaller, cx_Freeze
+_PACKAGED = getattr(sys, "frozen", False)  # True for cx_Freeze builds
 _BASE = Path(sys.executable).parent if _PACKAGED else Path(__file__).resolve().parents[1]
 
 # Migrate files from old location (next to exe / script) if not yet moved.

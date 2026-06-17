@@ -1,4 +1,4 @@
-# RYOS Tutorial — v1.1.4
+# RYOS Tutorial — v1.7.5
 
 **RYOS (Run Your Own Scripts)** is a lightweight desktop app for saving and running scripts with a single click. No terminal, no memorizing paths — just click ▶.
 
@@ -96,6 +96,9 @@ In the **Parameters** field, wrap a token in double-quotes with a `$` prefix to 
 ```
 
 When you click ▶, RYOS will ask you for the value of `output_folder` before running.
+
+### Parameter presets
+For a script you run with different arguments, save named **presets** instead of editing the card each time. In the Add/Edit Script dialog, save the current Parameters as a named preset; at run time, pick the preset you want. This keeps a single card flexible across several common argument sets.
 
 ---
 
@@ -205,6 +208,28 @@ Click **Options ▾** → **Advanced options**.
 | **Max output lines** | Truncates old output to keep the log fast (default 2000) |
 | **Auto-clear output on run** | Clears the log each time a new script starts |
 | **Auto-scroll to bottom** | Keeps the latest output in view |
+
+### Appearance
+| Setting | Description |
+|---|---|
+| **Theme** | Light or dark colour scheme |
+| **Accent colour** | Pick a custom highlight colour, or reset to the default |
+| **Compact mode** | Tighter spacing to fit more cards on screen |
+| **Card size** | Small / medium / large card rows |
+
+### Quick Run
+| Setting | Description |
+|---|---|
+| **Show Quick Run bar** | Toggle the bar (requires a group base directory) |
+| **Autocomplete** | Suggest matching filenames as you type |
+| **Indexed extensions** | Which file types the Quick Run index includes |
+| **Clear index cache** | Rebuild the file index for a base directory |
+
+### Notifications & updates
+| Setting | Description |
+|---|---|
+| **Notify when script / pipeline completes** | Windows toast on completion |
+| **Check for updates on startup** | Compare against the latest GitHub release |
 
 ---
 
