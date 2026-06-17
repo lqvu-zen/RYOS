@@ -55,7 +55,7 @@ This writes `dist/cxfreeze/` with `RYOS.exe` and its DLLs. Confirm it exists and
 ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe
 ```
 
-> `build.bat` / `build_cxfreeze.bat` run the same command; the Nuitka and PyInstaller batch files are alternative packagers and are **not** the release path — stick with cx_Freeze unless the user explicitly asks otherwise.
+> `build.bat` and `build_cxfreeze.bat` run the same command — cx_Freeze is the only packager and the sole release path.
 
 ### 4. Smoke-test the exe — hard gate
 

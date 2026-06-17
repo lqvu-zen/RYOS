@@ -9,9 +9,9 @@ The orchestrator running this skill is Sonnet 4.6. Design (Step 2) and review (S
 ## Context
 
 - **Current state**: all ~3600 lines live in `script_runner.py`
-- **Entry points to preserve**: `uv run ryos`, `run.bat`, `RYOS.exe` (PyInstaller)
+- **Entry points to preserve**: `uv run ryos`, `run.bat`, `RYOS.exe` (cx_Freeze)
 - **Test suite**: `tests/test_ryos.py` — must stay green throughout
-- **Build**: `RYOS.spec` + `uv run --with pyinstaller pyinstaller RYOS.spec`
+- **Build**: `uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe` (or `build.bat`)
 
 ## Target package layout
 
