@@ -46,7 +46,7 @@ could be tested in isolation.
 | `ryos/__main__.py` | Console entry point (`ryos` script → `main`). | — |
 | `ryos/ui/app.py` | `RYOSApp` — the window, job lifecycle, output panel, tabs. Orchestrates everything. | indirectly |
 | `ryos/ui/cards.py` | `ScriptCard`, `PipelineCard` row widgets. | — |
-| `ryos/ui/dialogs.py` | Add/edit script, presets, advanced options, appearance dialogs. | — |
+| `ryos/ui/dialogs.py` | Add/edit script, presets, and the tabbed Advanced Options dialog (Appearance / Startup & Window / Output / Logging). | — |
 | `ryos/ui/pipeline.py` | `PipelineEditorDialog`. | — |
 | `ryos/ui/theme.py`, `widgets.py` | Palette, flat-button factory, snap-to-corner, tooltip. | — |
 | `ryos/db.py` | `ScriptDB` — all SQLite: scripts, groups, pipelines, presets, export/import, `PRAGMA user_version` migrations. | yes |
@@ -80,5 +80,4 @@ uvx ruff check .                  # lint
 ```
 
 CI (`.github/workflows/ci.yml`) runs ruff and pytest on every push/PR across
-Ubuntu + Windows × Python 3.10/3.13. See `TECH_DEBT.md` for the remediation
-history and remaining items.
+Ubuntu + Windows × Python 3.10/3.13. See `TECH_DEBT.

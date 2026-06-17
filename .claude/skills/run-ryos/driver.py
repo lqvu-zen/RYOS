@@ -368,7 +368,7 @@ def _compact_running(app: RYOSApp):
 
 
 def _card_size_verify(app: RYOSApp):
-    """Cycle through all card size + compact combinations, screenshot each, then show Appearance dialog."""
+    """Cycle through all card size + compact combinations, screenshot each, then show the Advanced Options dialog (Appearance tab)."""
     from ryos.ui import cards as _cards_mod
 
     combos = [
@@ -400,7 +400,7 @@ def _card_size_verify(app: RYOSApp):
         app.after(200, _next)
 
     def _open_dialog():
-        print("card-size-verify: opening Appearance dialog")
+        print("card-size-verify: opening Advanced Options dialog")
         app._settings["compact_mode"] = False
         app._settings["card_size"] = "medium"
         _cards_mod.set_compact_mode(False)
@@ -409,16 +409,16 @@ def _card_size_verify(app: RYOSApp):
         app.after(400, _do_dialog)
 
     def _do_dialog():
-        app._open_appearance()
+        app._open_advanced_options()
         app.after(600, _screenshot_dialog)
 
     def _screenshot_dialog():
         from PIL import ImageGrab
-        # find the Appearance toplevel and screenshot it directly
+        # find the Advanced Options toplevel and screenshot it directly
         dlg = None
         for w in app.winfo_children():
             try:
-                if hasattr(w, 'title') and w.title() == "Appearance":
+                if hasattr(w, 'title') and w.title() == "Advanced Options":
                     dlg = w
                     break
             except Exception:
@@ -430,12 +430,12 @@ def _card_size_verify(app: RYOSApp):
             x, y = dlg.winfo_rootx(), dlg.winfo_rooty()
             w2, h2 = dlg.winfo_width(), dlg.winfo_height()
             img = ImageGrab.grab(bbox=(x, y, x + w2, y + h2))
-            path = SHOTS_DIR / "cs_appearance_dialog.png"
+            path = SHOTS_DIR / "cs_advanced_options_dialog.png"
             img.save(str(path))
             print(f"  screenshot -> {path.name}")
             dlg.destroy()
         else:
-            print("  Appearance dialog not found")
+            print("  Advanced Options dialog not found")
         app.after(300, app.destroy)
 
     app.after(900, _next)
