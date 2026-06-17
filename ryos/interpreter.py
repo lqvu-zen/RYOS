@@ -35,7 +35,7 @@ def detect_interpreter(path: str) -> str:
         ".bat": "",
         ".cmd": "",
         ".exe": "",
-        ".sln": "cmd",
+        ".sln": shutil.which("devenv") or "cmd /c",
         ".code-workspace": "code",
     }
     return mapping.get(ext, "cmd")
