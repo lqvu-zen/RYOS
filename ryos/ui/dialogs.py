@@ -1018,6 +1018,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Show Quick Run bar (requires group base directory)", self._quick_run_enabled)
         self._chk(f, "Show suggestions as you type",   self._quick_run_autocomplete)
 
+        f = self._section(tab, "FILE INDEX")
         tk.Label(f, text="Index file types (empty = index everything):",
                  bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9),
                  anchor="w").pack(fill="x", pady=(8, 2))
@@ -1073,6 +1074,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
     def _build_logging_tab(self, tab):
+        from ..settings import LOG_PATH
         f = self._section(tab, "LOGGING")
         self._chk(f, "Enable logging to file",           self._logging_enabled)
         self._chk(f, "Include script output in logs",    self._log_runs_output)
@@ -1085,6 +1087,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      style="Card.TCombobox",
                      state="readonly", width=12,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+        tk.Label(f, text=f"Log file: {LOG_PATH}", bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w", wraplength=380).pack(
+            fill="x", pady=(10, 0))
 
     def _save(self):
         try:
