@@ -923,7 +923,6 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         size_row = tk.Frame(f, bg=C["bg"])
         size_row.pack(fill="x", pady=(8, 2))
-        vcmd_int = (self.register(lambda s: s.isdigit() or s == ""), "%P")
         tk.Label(size_row, text="Window size:", bg=C["bg"], fg=C["name_fg"],
                  font=("Segoe UI", 9)).pack(side="left")
         tk.Spinbox(size_row, from_=400, to=3840, increment=10,
