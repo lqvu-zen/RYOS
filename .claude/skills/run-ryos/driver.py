@@ -457,9 +457,12 @@ def _advanced_options_tabs(app: RYOSApp):
         return None
 
     def _shot_dlg(dlg, name):
+        dlg.attributes("-topmost", True)
         dlg.lift()
+        dlg.focus_force()
         dlg.update_idletasks()
         dlg.update()
+        dlg.attributes("-topmost", False)
         x, y = dlg.winfo_rootx(), dlg.winfo_rooty()
         w2, h2 = dlg.winfo_width(), dlg.winfo_height()
         img = ImageGrab.grab(bbox=(x, y, x + w2, y + h2))

@@ -1087,9 +1087,25 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      style="Card.TCombobox",
                      state="readonly", width=12,
                      font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
-        tk.Label(f, text=f"Log file: {LOG_PATH}", bg=C["bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8), anchor="w", wraplength=380).pack(
-            fill="x", pady=(10, 0))
+        def _open_log():
+            if not LOG_PATH.exists():
+                LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                LOG_PATH.touch()
+            if sys.platform == "win32":
+                os.startfile(str(LOG_PATH))
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", str(LOG_PATH)])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", str(LOG_PATH)])
+
+        log_row = tk.Frame(f, bg=C["bg"])
+        log_row.pack(fill="x", pady=(10, 0))
+        tk.Label(log_row, text=str(LOG_PATH), bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w", wraplength=300).pack(side="left", fill="x", expand=True)
+        _flat_button(log_row, "Open…", C["btn_dark_bg"], C["btn_dark_hover"],
+                     _open_log, width=7).pack(side="right")
 
     def _save(self):
         try:
