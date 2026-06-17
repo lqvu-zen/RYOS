@@ -2257,6 +2257,7 @@ class RYOSApp(_BaseWindow):
         # disrupt running jobs, so the tab is disabled while any job is active.
         AdvancedOptionsDialog(self, self._settings, _apply,
                               on_appearance=self._apply_appearance,
+                              on_clear_qr_cache=self._quick_run_index_cache.clear,
                               jobs_running=bool(self._jobreg))
 
     def _on_close(self):

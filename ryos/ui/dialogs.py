@@ -17,6 +17,14 @@ from ..quickrun import _is_inside
 from .theme import C, THEMES, _apply_snap_corner, _flat_button
 
 
+def _try_unlink(path) -> bool:
+    try:
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def _relative_under_base(path: str, base: str) -> str | None:
     """Return the relative path string if path is inside base, else None."""
     if not path or not base:
@@ -685,7 +693,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
     _last_tab = 0
 
     def __init__(self, parent, settings: dict, on_save, on_appearance=None,
-                 jobs_running: bool = False):
+                 on_clear_qr_cache=None, jobs_running: bool = False):
         super().__init__(parent)
         self._settings = dict(settings)
         self._on_save  = on_save
@@ -693,6 +701,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         # rebuilds the UI. When jobs are running a rebuild would disrupt them, so
         # the Appearance tab is disabled and this callback is never fired.
         self._on_appearance = on_appearance
+        self._on_clear_qr_cache = on_clear_qr_cache
         self._jobs_running = jobs_running
         self.title("Advanced Options")
         self.configure(bg=C["bg"])
@@ -1073,6 +1082,23 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+        def _clear_cache():
+            from ..settings import QR_INDEX_DIR
+            cleared = sum(
+                1 for p in QR_INDEX_DIR.glob("qr_index_*.json")
+                if _try_unlink(p)
+            )
+            if self._on_clear_qr_cache:
+                self._on_clear_qr_cache()
+            messagebox.showinfo(
+                "Cache cleared",
+                f"Removed {cleared} cached index file(s).\n"
+                "The index will rebuild automatically on next use.",
+                parent=self)
+
+        _flat_button(f, "Clear index cache", C["btn_dark_bg"], C["btn_dark_hover"],
+                     _clear_cache, width=16).pack(anchor="w", pady=(8, 0))
+
     def _build_logging_tab(self, tab):
         import subprocess
         from ..settings import LOG_DIR, LOG_PATH
@@ -1108,6 +1134,15 @@ class AdvancedOptionsDialog(tk.Toplevel):
             else:
                 subprocess.Popen(["xdg-open", str(LOG_DIR)])
 
+        def _clear_log_file():
+            if not LOG_PATH.exists():
+                messagebox.showinfo("Clear log", "No log file found.", parent=self)
+                return
+            if messagebox.askyesno("Clear log file",
+                                   "Truncate the log file? This cannot be undone.",
+                                   parent=self):
+                LOG_PATH.write_text("", encoding="utf-8")
+
         tk.Label(f, text=str(LOG_PATH), bg=C["bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(10, 2))
         btn_row = tk.Frame(f, bg=C["bg"])
@@ -1116,6 +1151,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      _open_file,   width=10).pack(side="left", padx=(0, 6))
         _flat_button(btn_row, "Open folder",  C["btn_dark_bg"], C["btn_dark_hover"],
                      _open_folder, width=12).pack(side="left")
+        _flat_button(f, "Clear log file", C["btn_dark_bg"], C["btn_dark_hover"],
+                     _clear_log_file, width=14).pack(anchor="w", pady=(6, 0))
 
     def _save(self):
         try:
