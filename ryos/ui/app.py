@@ -29,6 +29,7 @@ from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
     rank_suggestions, resolve, serialize_index, should_index,
 )
+from ..job_controller import JobController
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
@@ -124,6 +125,19 @@ class RYOSApp(_BaseWindow):
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
         self.output_queue: queue.Queue = queue.Queue()
         self._jobreg = JobRegistry()
+        # Pipeline sequencing + step-completion live in a UI-free controller; it
+        # reaches the window only through these callbacks (status_var is built
+        # later in _build_ui, so it is referenced lazily via a lambda).
+        self._jobctl = JobController(
+            self._jobreg, self.output_queue,
+            on_output=lambda tab_key, text, tag=None: self._append_output(
+                text, tag=tag, tab_key=tab_key),
+            on_status=lambda text: self.status_var.set(text),
+            on_notify=self._on_job_notify,
+            on_finish=self._finish_job,
+            on_rename=self._on_job_rename,
+            launch=self._launch,
+        )
         self._cards: list[ScriptCard] = []
         self._pipeline_cards: list[PipelineCard] = []
         self._select_mode = False
@@ -1360,38 +1374,17 @@ class RYOSApp(_BaseWindow):
             tag="info",
             tab_key=job.tab_key,
         )
-        self._run_next_pipeline_step(job)
+        self._jobctl.run_next_pipeline_step(job)
 
-    def _run_next_pipeline_step(self, job: "_Job"):
-        if job.stopped or not job.pipeline_queue:
-            return
-        step_id, sid, name, path, params, interp, params_override = job.pipeline_queue.pop(0)
-        if params_override is not None:
-            params = params_override
-        job.pipeline_step_idx += 1
-        n, total = job.pipeline_step_idx, job.pipeline_total
-        self._append_output(
-            f"{'─' * 40}\nStep {n}/{total}:  {name}\n{'─' * 40}\n",
-            tag="info",
-            tab_key=job.tab_key,
-        )
-        self.status_var.set(f"Pipeline step {n}/{total}: {name}")
-        _lbl = f"⚡ {job.pipeline_name}  —  Step {n}/{total}: {name}"
-        job.name = _lbl
+    def _on_job_notify(self, title: str, body: str) -> None:
+        """Show a completion toast, gated by the notify-on-complete setting."""
+        if self._settings.get("notify_on_complete", True):
+            _show_notification(title, body)
+
+    def _on_job_rename(self, job: "_Job") -> None:
+        """Refresh the running-row label after the controller renames a job."""
         if job.name_var is not None:
-            job.name_var.set(_lbl)
-        if not Path(path).exists():
-            self.output_queue.put(("stderr", job.job_id, f"[ERROR] File not found: {path}\n"))
-            self.output_queue.put(("done", job.job_id, sid, "error", ""))
-            return
-        final_interp = resolve_interpreter(path, interp)
-        try:
-            cmd = build_command(path, params, final_interp)
-        except ValueError as e:
-            self.output_queue.put(("stderr", job.job_id, f"[ERROR] Parameter error: {e}\n"))
-            self.output_queue.put(("done", job.job_id, sid, "error", ""))
-            return
-        self._launch(job, cmd, name, sid)
+            job.name_var.set(job.name)
 
     def _toggle_select_mode(self):
         self._select_mode = not self._select_mode
@@ -2129,65 +2122,10 @@ class RYOSApp(_BaseWindow):
                 if act.status is not None:
                     self.db.mark_run_status(act.sid, act.status)
                     if job:
-                        self._handle_step_done(job, act.sid, act.status)
+                        self._jobctl.handle_step_done(job, act.sid, act.status)
         except queue.Empty:
             pass
         self.after(80, self._drain_output_queue)
-
-    def _handle_step_done(self, job: "_Job", sid: int, status: str):
-        notify = self._settings.get("notify_on_complete", True)
-        secs = (datetime.now() - job.start_time).total_seconds()
-        elapsed = f"{int(secs // 60)} m {secs % 60:.0f} s" if secs >= 60 else f"{secs:.1f} s"
-
-        if job.kind == "pipeline":
-            if status == "ok" and job.pipeline_queue:
-                self._run_next_pipeline_step(job)
-                return
-            elif status == "ok":
-                self._append_output(
-                    f"\n{'━' * 60}\n"
-                    f"✓  Pipeline complete  ·  {datetime.now().strftime('%H:%M:%S')}\n"
-                    f"{'━' * 60}\n",
-                    tag="ok",
-                    tab_key=job.tab_key,
-                )
-                self.status_var.set("Pipeline complete.")
-                total = job.pipeline_total
-                self._finish_job(job)
-                if notify:
-                    _show_notification(
-                        "RYOS — Pipeline passed",
-                        f"✓  {job.pipeline_name}  ·  {total} step{'s' if total != 1 else ''}  ·  {elapsed}",
-                    )
-            else:
-                job.pipeline_queue.clear()
-                self._append_output("\n[Pipeline stopped — step failed]\n", tag="stderr",
-                                    tab_key=job.tab_key)
-                self.status_var.set("Pipeline stopped (step failed).")
-                failed_at = job.pipeline_step_idx
-                total = job.pipeline_total
-                self._finish_job(job)
-                if notify:
-                    _show_notification(
-                        "RYOS — Pipeline failed",
-                        f"✗  {job.pipeline_name}  ·  failed at step {failed_at}/{total}  ·  {elapsed}",
-                    )
-        else:
-            if status == "ok":
-                self.status_var.set("Done.")
-                if notify:
-                    _show_notification(
-                        "RYOS — Script passed",
-                        f"✓  {job.name}  ·  {elapsed}",
-                    )
-            else:
-                self.status_var.set("Failed.")
-                if notify:
-                    _show_notification(
-                        "RYOS — Script failed",
-                        f"✗  {job.name}  ·  {elapsed}",
-                    )
-            self._finish_job(job)
 
     def _check_for_update(self):
         result = _fetch_latest_release()

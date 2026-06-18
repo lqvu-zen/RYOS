@@ -1397,3 +1397,128 @@ class TestDecodeOutputItem(unittest.TestCase):
         done = [decode_output_item(it) for it in list(q.queue) if it[0] == "done_tag"][0]
         self.assertTrue(done.step_done)
         self.assertEqual(done.status, "ok")
+
+
+from ryos.job_controller import JobController  # noqa: E402
+
+
+class TestJobController(unittest.TestCase):
+    """Pipeline sequencing + step completion, driven through recording fakes.
+
+    The controller is UI-free: it reaches the window only via injected
+    callbacks, so it is exercised here without any Tk display.
+    """
+
+    def setUp(self):
+        self.rec = {
+            "output": [], "status": [], "notify": [],
+            "finish": [], "rename": [], "launch": [],
+        }
+        self.q = _queue.Queue()
+        self.reg = JobRegistry()
+        self.ctl = JobController(
+            self.reg, self.q,
+            on_output=lambda tab, text, tag=None: self.rec["output"].append((tab, text, tag)),
+            on_status=lambda text: self.rec["status"].append(text),
+            on_notify=lambda title, body: self.rec["notify"].append((title, body)),
+            on_finish=lambda job: self.rec["finish"].append(job.job_id),
+            on_rename=lambda job: self.rec["rename"].append(job.name),
+            launch=lambda job, cmd, name, sid: self.rec["launch"].append((cmd, name, sid)),
+            now=lambda: _dt(2020, 1, 1, 12, 0, 0),
+        )
+        self._tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        self._tmp.write(b"print('hi')\n")
+        self._tmp.close()
+
+    def tearDown(self):
+        os.unlink(self._tmp.name)
+
+    def _step(self, sid=1, name="s1", params="", override=None):
+        return (sid, sid, name, self._tmp.name, params, "", override)
+
+    def _job(self, kind="script", queue=None, total=0):
+        job = Job(1, kind, 1, None, "n", "job:1", "g",
+                  pipeline_name="P", pipeline_queue=queue, pipeline_total=total)
+        job.start_time = _dt(2020, 1, 1, 12, 0, 0)
+        return job
+
+    def test_script_ok_finishes_and_notifies(self):
+        job = self._job("script")
+        self.ctl.handle_step_done(job, 1, "ok")
+        self.assertEqual(self.rec["status"], ["Done."])
+        self.assertEqual(self.rec["finish"], [1])
+        self.assertEqual(len(self.rec["notify"]), 1)
+        self.assertIn("passed", self.rec["notify"][0][0])
+
+    def test_script_error_finishes_and_notifies_failure(self):
+        job = self._job("script")
+        self.ctl.handle_step_done(job, 1, "error")
+        self.assertEqual(self.rec["status"], ["Failed."])
+        self.assertEqual(self.rec["finish"], [1])
+        self.assertIn("failed", self.rec["notify"][0][0])
+
+    def test_pipeline_ok_with_remaining_advances_not_finishes(self):
+        job = self._job("pipeline", queue=[self._step(2, "s2")], total=2)
+        self.ctl.handle_step_done(job, 1, "ok")
+        self.assertEqual(len(self.rec["launch"]), 1)
+        self.assertEqual(self.rec["launch"][0][2], 2)
+        self.assertEqual(self.rec["finish"], [])
+        self.assertEqual(self.rec["notify"], [])
+        self.assertEqual(job.pipeline_step_idx, 1)
+
+    def test_pipeline_ok_empty_queue_completes(self):
+        job = self._job("pipeline", queue=[], total=1)
+        self.ctl.handle_step_done(job, 1, "ok")
+        self.assertEqual(self.rec["status"], ["Pipeline complete."])
+        self.assertEqual(self.rec["finish"], [1])
+        self.assertIn("Pipeline passed", self.rec["notify"][0][0])
+
+    def test_pipeline_error_stops_and_clears_queue(self):
+        job = self._job("pipeline", queue=[self._step(2, "s2")], total=2)
+        job.pipeline_step_idx = 1
+        self.ctl.handle_step_done(job, 1, "error")
+        self.assertEqual(job.pipeline_queue, [])
+        self.assertEqual(self.rec["finish"], [1])
+        self.assertIn("Pipeline failed", self.rec["notify"][0][0])
+        self.assertIn("step 1/2", self.rec["notify"][0][1])
+
+    def test_run_next_advances_and_launches(self):
+        job = self._job("pipeline", queue=[self._step(7, "build")], total=1)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(job.pipeline_step_idx, 1)
+        self.assertEqual(self.rec["launch"][0][2], 7)
+        self.assertEqual(self.rec["rename"], [job.name])
+        self.assertIn("Step 1/1", job.name)
+
+    def test_run_next_noop_when_stopped(self):
+        job = self._job("pipeline", queue=[self._step()], total=1)
+        job.stopped = True
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(self.rec["launch"], [])
+
+    def test_run_next_missing_file_posts_error_no_launch(self):
+        bad = (1, 1, "gone", "/no/such/file.py", "", "", None)
+        job = self._job("pipeline", queue=[bad], total=1)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(self.rec["launch"], [])
+        kinds = [self.q.get_nowait()[0] for _ in range(self.q.qsize())]
+        self.assertIn("stderr", kinds)
+        self.assertIn("done", kinds)
+
+    def test_run_next_param_override_applied(self):
+        job = self._job("pipeline", queue=[self._step(3, "s", params="orig", override="NEW")],
+                        total=1)
+        self.ctl.run_next_pipeline_step(job)
+        cmd = self.rec["launch"][0][0]
+        self.assertIn("NEW", cmd)
+        self.assertNotIn("orig", cmd)
+"stderr", kinds)
+        self.assertIn("done", kinds)
+
+    def test_run_next_param_override_applied(self):
+        job = self._job("pipeline", queue=[self._step(3, "s", params="orig", override="NEW")],
+                        total=1)
+        self.ctl.run_next_pipeline_step(job)
+        cmd = self.rec["launch"][0][0]
+        self.assertIn("NEW", cmd)
+        self.assertNotIn("orig", cmd)

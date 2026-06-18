@@ -28,6 +28,7 @@ flowchart TD
         quickrun["quickrun ★"]
         jobs["jobs ★"]
         runner["runner ★"]
+        job_controller["job_controller ★"]
         notifications["notifications"]
         logger["logger"]
         startup["startup"]
@@ -53,6 +54,7 @@ could be tested in isolation.
 | `ryos/quickrun.py` | Pure Quick Run helpers: path-containment guard, file-index entry shape, suggestion ranking, name resolution, input parsing. | yes |
 | `ryos/jobs.py` | `Job` state container, `JobRegistry` (storage + id allocation), `format_elapsed` time label. | yes |
 | `ryos/runner.py` | Subprocess execution worker (`run_subprocess`) and output-queue protocol decoding (`decode_output_item` / `OutputAction`). UI-free; talks to the app only via the queue. | yes |
+| `ryos/job_controller.py` | `JobController` — pipeline sequencing (`run_next_pipeline_step`) and step completion (`handle_step_done`). UI-free; reaches the window only through injected callbacks. See `docs/adr/0001`. | yes |
 | `ryos/interpreter.py` | Extension→interpreter detection, command building, working-directory selection, RYOS.exe self-relaunch guard. | yes |
 | `ryos/settings.py` | App-data paths, defaults, tolerant load/save. | yes |
 | `ryos/notifications.py` | Windows toast + GitHub update check (`_parse_version`, `_fetch_latest_release`). | partial |
