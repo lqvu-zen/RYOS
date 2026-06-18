@@ -198,4 +198,53 @@ Click **⚙** → **Advanced options…**. Settings are split across five tabs.
 | Setting | Description |
 |---|---|
 | **Theme** | Light or dark colour scheme |
-| **Accent colour** | Pick a custom highlight colour, or reset to the d
+| **Accent colour** | Pick a custom highlight colour, or reset to the default |
+| **Compact cards** | Tighter spacing to fit more cards on screen |
+| **Card size** | Small / Medium / Large card rows |
+
+### Startup
+| Setting | Description |
+|---|---|
+| **Start with Windows** | Adds RYOS to the Windows startup registry key |
+| **Always on top** | RYOS floats above other windows |
+| **Remember last active group** | Reopen on the group you used last |
+| **Start minimized** | Window starts hidden in the taskbar |
+| **Check for updates on startup** | Compare against the latest GitHub release |
+| **Remember window size and position** | Restores size and position from last session |
+| **Window size** | Set a fixed width × height in pixels |
+| **Snap to screen corner** | Auto-positions the window in a screen corner — Bottom right / Bottom left / Top right / Top left / Off |
+
+### Output
+| Setting | Description |
+|---|---|
+| **Auto-clear output before each run** | Clears the log each time a new script starts |
+| **Auto-scroll to bottom** | Keeps the latest output in view |
+| **Notify when script / pipeline completes** | Windows notification on completion |
+| **Max output lines** | Truncates old output to keep the log fast |
+| **Max parallel jobs (0 = unlimited)** | How many scripts may run at once |
+
+### Quick Run
+| Setting | Description |
+|---|---|
+| **Show Quick Run bar** | Toggle the bar (requires a group base directory) |
+| **Show suggestions as you type** | Suggest matching filenames as you type |
+| **Index file types** | Which file extensions the Quick Run index includes (empty = index everything) |
+| **Index max files** | Cap on how many files are indexed (0 = unlimited) |
+| **Clear index cache** | Rebuild the file index from scratch |
+
+### Logging
+| Setting | Description |
+|---|---|
+| **Logging** | Turn the app's diagnostic log on or off |
+| **Log level** | How much detail to record |
+| **Log run output** | Also record each run's output to the log |
+
+---
+
+## Tips
+
+- **Collapsible sections** — click the **▼ RUNNING / PIPELINES / SCRIPTS** headers to fold sections you rarely use.
+- **Last-run status** — cards show the time of the last run and a **✓ OK** or **✗ Failed** badge.
+- **Auto-interpreter** — RYOS detects the right interpreter from the file extension (`.py` → `python`, `.bat` → `cmd`, `.ps1` → `powershell`, `.sh` → `bash`, etc.). Override in the script's **Interpreter** field.
+- **Presets vs. temp params** — save reusable argument sets as **presets**; use the **TEMP PARAM** prompt for one-off values.
+- **Back up your setup** — **⚙ → Export all groups** saves everything to a `.json` you can re-import later or on another machine.
