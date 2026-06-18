@@ -4,6 +4,8 @@ A lightweight Windows desktop app for organizing and running your scripts from a
 
 Built with Python + Tkinter. Ships as a single standalone `.exe` (no Python required on the target machine) or runs straight from source.
 
+![The RYOS main window](docs/tutorial/images/01-main-window.png)
+
 ## Contents
 
 - [Features](#features)
@@ -175,7 +177,8 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 
 ## Documentation
 
-- [Tutorial](TUTORIAL.md) — step-by-step user guide.
+- [Illustrated user guide](docs/tutorial/README.md) — a 10-page walkthrough with real screenshots of every screen.
+- [Tutorial](TUTORIAL.md) — single-page step-by-step reference.
 - [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
 - [Module reference](docs/API_REFERENCE.md) — public API of the core modules.
 - [Contributing](docs/CONTRIBUTING.md) — dev setup, conventions, build steps.
