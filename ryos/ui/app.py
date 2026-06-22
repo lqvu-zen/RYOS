@@ -1141,9 +1141,7 @@ class RYOSApp(_BaseWindow):
             for child in card_children:
                 child.pack_forget()
             for child in card_children:
-                name_match = query in child._name.lower()
-                group_match = query in getattr(child, "_group_name", "").lower()
-                if not query or name_match or group_match:
+                if not query or query in child._name.lower():
                     child.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
 
         for content in self._fav_contents:

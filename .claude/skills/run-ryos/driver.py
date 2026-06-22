@@ -530,37 +530,25 @@ def _favorites(app: RYOSApp):
 
 
 def _search_bar(app: RYOSApp):
-    """Screenshot the search bar idle, with a cross-group match, with a single-group match, then cleared."""
+    """Screenshot the search bar: idle, filtered (one group matches), cleared."""
     def _idle():
         print("search-bar: idle state")
         _shot(app, "search_01_idle")
-        app.after(300, _type_cross)
+        app.after(300, _type_query)
 
-    def _type_cross():
-        print("search-bar: typing 'inf' (matches both groups)")
+    def _type_query():
+        print("search-bar: typing 'inf' to filter")
         app._search_ph[0] = False
         from ryos.ui.theme import C as _C
         app._search_entry.config(fg=_C["name_fg"])
         app._search_var.set("inf")
         app.update_idletasks()
         app.update()
-        app.after(400, _filtered_cross)
+        app.after(400, _filtered)
 
-    def _filtered_cross():
-        print("search-bar: filtered (cross-group, both groups visible)")
+    def _filtered():
+        print("search-bar: filtered state")
         _shot(app, "search_02_filtered")
-        app.after(300, _type_single)
-
-    def _type_single():
-        print("search-bar: typing 'hello' (matches TestScripts only)")
-        app._search_var.set("hello")
-        app.update_idletasks()
-        app.update()
-        app.after(400, _filtered_single)
-
-    def _filtered_single():
-        print("search-bar: filtered (single-group match, copy group hidden)")
-        _shot(app, "search_04_single_group")
         app.after(300, _clear)
 
     def _clear():
