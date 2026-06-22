@@ -1091,6 +1091,22 @@ class RYOSApp(_BaseWindow):
         is_ph = getattr(self, "_search_ph", [False])[0]
         query = "" if is_ph else self._search_var.get().lower().strip()
 
+        # Cross-group search: when a query is active and a specific group tab is
+        # selected, temporarily expand to All so every group's cards are searched.
+        # _refresh_cards at the end will call us again with All rendered.
+        if query and self._active_group is not None:
+            if not hasattr(self, "_search_group_save"):
+                self._search_group_save = self._active_group
+            self._active_group = None
+            self._refresh_cards()
+            return
+        # When query is cleared, restore the group tab the user was on.
+        if not query and hasattr(self, "_search_group_save"):
+            self._active_group = self._search_group_save
+            del self._search_group_save
+            self._refresh_cards()
+            return
+
         # Show the ✕ button only while there is text to clear.
         if hasattr(self, "_search_clear_btn"):
             if query:
