@@ -336,6 +336,21 @@ class RYOSApp(_BaseWindow):
         self._tab_bar.pack(fill="x", padx=12, pady=(8, 0))
         tk.Frame(cards_pane, bg=C["border"], height=1).pack(fill="x", padx=12)
 
+        # Search/filter bar — sits between the tab divider and the card list.
+        search_bar = tk.Frame(cards_pane, bg=C["bg"])
+        search_bar.pack(fill="x", padx=12, pady=(6, 0))
+        tk.Label(search_bar, text="🔍", bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 10)).pack(side="left", padx=(0, 4))
+        self._search_var = tk.StringVar()
+        search_entry = tk.Entry(search_bar, textvariable=self._search_var,
+                                bg=C["card_bg"], fg=C["path_fg"],
+                                insertbackground=C["name_fg"],
+                                relief="flat", bd=4, font=("Segoe UI", 10))
+        search_entry.pack(side="left", fill="x", expand=True)
+        _flat_button(search_bar, "✕", C["btn_dark_bg"], C["btn_dark_hover"],
+                     self._clear_search, width=3).pack(side="left", padx=(4, 0))
+        self._search_var.trace_add("write", lambda *_: self._apply_search_filter())
+
         container = tk.Frame(cards_pane, bg=C["bg"])
         container.pack(fill="both", expand=True, padx=12, pady=(8, 12))
         self._cards_container = container
@@ -538,6 +553,11 @@ class RYOSApp(_BaseWindow):
         for w in (hdr, arrow_lbl) + tuple(hdr.winfo_children()):
             w.bind("<Button-1>", _toggle)
 
+        content._section_frame = section_frame
+        # Stash hdr so the search filter can hide/show just the header without
+        # removing section_frame from its pack position (which would break ordering).
+        content._hdr_frame = hdr
+        content._hdr_pack_opts = {k: v for k, v in hdr.pack_info().items() if k != "in"}
         return content
 
     def _refresh_tabs(self):
@@ -840,6 +860,11 @@ class RYOSApp(_BaseWindow):
             w.destroy()
         self._cards = []
         self._pipeline_cards = []
+        # Collect content frames for Favorites/Pipelines/Scripts sections so
+        # _apply_search_filter can pack/pack_forget cards and hide empty sections.
+        self._fav_contents: list[tk.Frame] = []
+        self._pipe_contents: list[tk.Frame] = []
+        self._scr_contents: list[tk.Frame] = []
 
         def make_move(a, b):
             def _move():
@@ -892,6 +917,7 @@ class RYOSApp(_BaseWindow):
             fav_content = self._make_section_header(
                 self.cards_frame, gname, "favorites", "★  Favorites"
             )
+            self._fav_contents.append(fav_content)
             fav_scripts = [r for r in scripts if r[10]]
             fav_pipelines = [(p_id, p_name) for p_id, p_name, p_fav in self.db.list_pipelines(gname) if p_fav]
             if not fav_scripts and not fav_pipelines:
@@ -934,6 +960,7 @@ class RYOSApp(_BaseWindow):
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
             )
+            self._pipe_contents.append(pipe_content)
             pipelines = self.db.list_pipelines(gname)
             if pipelines:
                 from ryos.ui import cards as _cards_mod
@@ -964,6 +991,7 @@ class RYOSApp(_BaseWindow):
             scr_content = self._make_section_header(
                 self.cards_frame, gname, "scripts", "Scripts"
             )
+            self._scr_contents.append(scr_content)
             if scripts:
                 from ryos.ui import cards as _cards_mod
                 _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
@@ -1021,6 +1049,78 @@ class RYOSApp(_BaseWindow):
             scripts = [s for s in self.db.list_all()
                        if (s[8] or "") == self._active_group]
             render_group_sections(self._active_group, scripts)
+
+        # Re-apply any active search so the filter survives group switches and reorders.
+        self._apply_search_filter()
+
+    def _clear_search(self):
+        """Clear the search bar; the StringVar trace re-applies the (empty) filter."""
+        self._search_var.set("")
+
+    def _apply_search_filter(self):
+        """Show/hide cards in Favorites, Pipelines, and Scripts sections based on
+        the search query. Running section is always left untouched."""
+        if not hasattr(self, "_fav_contents"):
+            return  # cards not built yet
+        query = self._search_var.get().lower().strip()
+
+        from ryos.ui import cards as _cards_mod
+        _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
+
+        def _filter_content(content: tk.Frame):
+            """Pack/pack_forget each card child based on whether it matches query.
+            Always pack_forget ALL cards before re-packing matching ones so that
+            re-shown cards are appended in creation order, not moved to the end."""
+            card_children = [c for c in content.winfo_children() if hasattr(c, "_name")]
+            for child in card_children:
+                child.pack_forget()
+            for child in card_children:
+                name_match = query in child._name.lower()
+                group_match = query in getattr(child, "_group_name", "").lower()
+                if not query or name_match or group_match:
+                    child.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+
+        for content in self._fav_contents:
+            _filter_content(content)
+        for content in self._pipe_contents:
+            _filter_content(content)
+        for content in self._scr_contents:
+            _filter_content(content)
+
+        self._update_section_visibility()
+
+    def _update_section_visibility(self):
+        """Hide/show the section header when a search query is active and no cards
+        match. Targets the inner hdr frame (not section_frame) so section_frame
+        stays packed in place, preserving its order among siblings."""
+        if not hasattr(self, "_fav_contents"):
+            return
+
+        query_active = bool(self._search_var.get().strip())
+
+        def _any_visible(content: tk.Frame) -> bool:
+            card_children = [c for c in content.winfo_children() if hasattr(c, "_name")]
+            # Sections with no real cards (only empty-state placeholders) always show.
+            if not card_children:
+                return True
+            return any(c.winfo_manager() == "pack" for c in card_children)
+
+        for content in self._fav_contents + self._pipe_contents + self._scr_contents:
+            hdr_frame = getattr(content, "_hdr_frame", None)
+            if hdr_frame is None:
+                continue
+            should_show = not query_active or _any_visible(content)
+            if should_show:
+                if hdr_frame.winfo_manager() != "pack":
+                    opts = getattr(content, "_hdr_pack_opts", {"fill": "x"})
+                    # Use before= only when content is packed; a collapsed section has
+                    # content pack_forgotten, and pack(before=unpacked_widget) raises TclError.
+                    if content.winfo_manager() == "pack":
+                        hdr_frame.pack(before=content, **opts)
+                    else:
+                        hdr_frame.pack(**opts)
+            else:
+                hdr_frame.pack_forget()
 
 
     def _build_quick_run_bar(self, gname, group_base_dir, banner):
