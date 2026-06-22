@@ -104,6 +104,8 @@ class ScriptDB:
             conn.execute("ALTER TABLE scripts ADD COLUMN group_name TEXT DEFAULT ''")
         if "temp_param" not in cols:
             conn.execute("ALTER TABLE scripts ADD COLUMN temp_param INTEGER DEFAULT 0")
+        if "is_favorite" not in cols:
+            conn.execute("ALTER TABLE scripts ADD COLUMN is_favorite INTEGER DEFAULT 0")
         # populate groups table from existing script group_name values
         existing_groups = {r[0] for r in conn.execute("SELECT name FROM groups")}
         named = conn.execute(
@@ -127,6 +129,9 @@ class ScriptDB:
                 sort_order INTEGER DEFAULT 0
             )
         """)
+        pcols = [r[1] for r in conn.execute("PRAGMA table_info(pipelines)")]
+        if "is_favorite" not in pcols:
+            conn.execute("ALTER TABLE pipelines ADD COLUMN is_favorite INTEGER DEFAULT 0")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS pipeline_steps (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -392,11 +397,19 @@ class ScriptDB:
             )
             conn.commit()
 
+    def set_favorite_script(self, script_id: int, fav: bool) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE scripts SET is_favorite=? WHERE id=?", (1 if fav else 0, script_id))
+
+    def set_favorite_pipeline(self, pipeline_id: int, fav: bool) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE pipelines SET is_favorite=? WHERE id=?", (1 if fav else 0, pipeline_id))
+
     def list_all(self):
         with self._connect() as conn:
             cur = conn.execute(
                 "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status, group_name, "
-                "COALESCE(temp_param, 0) "
+                "COALESCE(temp_param, 0), COALESCE(is_favorite, 0) "
                 "FROM scripts "
                 "ORDER BY CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
                 "group_name ASC, order_index ASC, id ASC"
@@ -624,7 +637,7 @@ class ScriptDB:
     def list_pipelines(self, group_name: str) -> list:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT id, name FROM pipelines WHERE group_name=? ORDER BY sort_order ASC, id ASC",
+                "SELECT id, name, COALESCE(is_favorite, 0) FROM pipelines WHERE group_name=? ORDER BY sort_order ASC, id ASC",
                 (group_name,),
             ).fetchall()
 

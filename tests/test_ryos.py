@@ -1078,7 +1078,7 @@ class TestScriptDBPipelines(unittest.TestCase):
 
     def test_create_and_list(self):
         pid = self.db.create_pipeline("Deploy", "G")
-        self.assertEqual(self.db.list_pipelines("G"), [(pid, "Deploy")])
+        self.assertEqual(self.db.list_pipelines("G"), [(pid, "Deploy", 0)])
 
     def test_add_and_list_steps_join_script_fields(self):
         pid = self.db.create_pipeline("P", "G")
@@ -1120,7 +1120,7 @@ class TestScriptDBPipelines(unittest.TestCase):
     def test_rename_pipeline(self):
         pid = self.db.create_pipeline("Old", "G")
         self.db.rename_pipeline(pid, "New")
-        self.assertEqual(self.db.list_pipelines("G"), [(pid, "New")])
+        self.assertEqual(self.db.list_pipelines("G"), [(pid, "New", 0)])
 
     def test_clone_pipeline_copies_steps(self):
         pid = self.db.create_pipeline("P", "G")

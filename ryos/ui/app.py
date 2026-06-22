@@ -889,6 +889,48 @@ class RYOSApp(_BaseWindow):
                          bg=C["bg"], fg=C["path_fg"],
                          font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
 
+            fav_content = self._make_section_header(
+                self.cards_frame, gname, "favorites", "Favorites"
+            )
+            fav_scripts = [r for r in scripts if r[10]]
+            fav_pipelines = [(p_id, p_name) for p_id, p_name, p_fav in self.db.list_pipelines(gname) if p_fav]
+            if not fav_scripts and not fav_pipelines:
+                tk.Label(fav_content, text="No favorites yet — click ☆ on a script or pipeline.",
+                         bg=C["bg"], fg=C["path_fg"],
+                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            else:
+                from ryos.ui import cards as _cards_mod
+                _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
+                for p_id, p_name in fav_pipelines:
+                    def make_fav_toggle_pipeline(pid):
+                        def _toggle(pid2, fav):
+                            self.db.set_favorite_pipeline(pid2, fav)
+                            self._refresh_cards()
+                        return lambda pid2, fav: _toggle(pid2, fav)
+                    pc = PipelineCard(
+                        fav_content, p_id, p_name, self.db,
+                        group_name=gname,
+                        on_run=self._run_pipeline,
+                        on_edit=self._edit_pipeline,
+                        on_refresh=self._refresh_cards,
+                        is_favorite=True,
+                        on_toggle_favorite=make_fav_toggle_pipeline(p_id),
+                    )
+                    pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+                for r in fav_scripts:
+                    def make_fav_toggle_script(sid):
+                        def _toggle(sid2, fav):
+                            self.db.set_favorite_script(sid2, fav)
+                            self._refresh_cards()
+                        return lambda sid2, fav: _toggle(sid2, fav)
+                    card = ScriptCard(
+                        fav_content, r, self.db, self._run_script, self._refresh_cards,
+                        lambda: None, lambda: None, lambda: None,
+                        group_base_dir=group_base_dir,
+                        on_toggle_favorite=make_fav_toggle_script(r[0]),
+                    )
+                    card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+
             pipe_content = self._make_section_header(
                 self.cards_frame, gname, "pipelines", "Pipelines"
             )
@@ -896,13 +938,20 @@ class RYOSApp(_BaseWindow):
             if pipelines:
                 from ryos.ui import cards as _cards_mod
                 _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
-                for p_id, p_name in pipelines:
+                for p_id, p_name, p_fav in pipelines:
+                    def make_toggle_fav_pipeline(pid):
+                        def _toggle(pid2, fav):
+                            self.db.set_favorite_pipeline(pid2, fav)
+                            self._refresh_cards()
+                        return lambda pid2, fav: _toggle(pid2, fav)
                     pc = PipelineCard(
                         pipe_content, p_id, p_name, self.db,
                         group_name=gname,
                         on_run=self._run_pipeline,
                         on_edit=self._edit_pipeline,
                         on_refresh=self._refresh_cards,
+                        is_favorite=bool(p_fav),
+                        on_toggle_favorite=make_toggle_fav_pipeline(p_id),
                     )
                     pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
                     self._bind_pipeline_drag(pc)
@@ -923,12 +972,18 @@ class RYOSApp(_BaseWindow):
                     sid = rec[0]
                     up_id   = gids[gi - 1] if gi > 0 else None
                     down_id = gids[gi + 1] if gi < len(gids) - 1 else None
+                    def make_toggle_fav_script(s_id):
+                        def _toggle(s_id2, fav):
+                            self.db.set_favorite_script(s_id2, fav)
+                            self._refresh_cards()
+                        return lambda s_id2, fav: _toggle(s_id2, fav)
                     card = ScriptCard(
                         scr_content, rec, self.db, self._run_script, self._refresh,
                         on_move_up      = make_move(sid, up_id)   if up_id   else lambda: None,
                         on_move_down    = make_move(sid, down_id) if down_id else lambda: None,
                         on_move_top     = make_top(sid)           if up_id   else lambda: None,
                         group_base_dir  = group_base_dir,
+                        on_toggle_favorite = make_toggle_fav_script(sid),
                     )
                     card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
                     self._bind_card_drag(card)
@@ -1348,7 +1403,7 @@ class RYOSApp(_BaseWindow):
         # Resolve group for this pipeline
         group = self._active_group or ""
         for gname in self._running_slots:
-            if any(p_id == pipeline_id for p_id, _ in self.db.list_pipelines(gname)):
+            if any(p_id == pipeline_id for p_id, _, _fav in self.db.list_pipelines(gname)):
                 group = gname
                 break
         job = self._jobctl.new_job(

@@ -65,10 +65,14 @@ class ScriptCard(tk.Frame):
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
                  on_move_up, on_move_down, on_move_top, *,
-                 group_base_dir: str = ""):
+                 group_base_dir: str = "", on_toggle_favorite=None):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
-        sid, name, path, params, interp, _created, last_run, last_run_status, _group, temp_param = record
+        sid, name, path, params, interp, _created, last_run, last_run_status, _group, temp_param = record[:10]
+        is_favorite = record[10] if len(record) > 10 else 0
+        self._is_favorite = bool(is_favorite)
+        self._sid = sid
+        self._on_toggle_favorite = on_toggle_favorite
         self.script_id = sid
         self._name = name
         self._group_name = _group or ""
@@ -178,6 +182,10 @@ class ScriptCard(tk.Frame):
             else:
                 self._params_combo.current(0)
 
+        fav_text = "★" if self._is_favorite else "☆"
+        self._fav_btn = _rbtn(fav_text, C["btn_neutral_bg"], C["btn_neutral_hover"],
+                              self._toggle_favorite,
+                              fg=C["btn_neutral_fg"], tip="Toggle favorite")
         _sep()
         _rbtn("⚙", C["btn_neutral_bg"], C["btn_neutral_hover"], self._modify,
               fg=C["btn_neutral_fg"], tip="Edit")
@@ -226,6 +234,9 @@ class ScriptCard(tk.Frame):
                        bg=C["menu_bg"], fg=C["fg_on_dark"],
                        activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                        font=("Segoe UI", 10))
+        fav_label = "☆ Remove from Favorites" if self._is_favorite else "★ Add to Favorites"
+        menu.add_command(label=fav_label, command=self._toggle_favorite)
+        menu.add_separator()
         menu.add_command(label="⤒  Move to Top", command=self._on_move_top)
         menu.add_command(label="▲  Move Up",     command=self._on_move_up)
         menu.add_command(label="▼  Move Down",   command=self._on_move_down)
@@ -252,6 +263,12 @@ class ScriptCard(tk.Frame):
     def _delete_card(self):
         if messagebox.askyesno("Delete", f"Delete '{self._name}'?", parent=self):
             self.db.delete(self.script_id)
+            self.on_refresh()
+
+    def _toggle_favorite(self):
+        if self._on_toggle_favorite:
+            self._on_toggle_favorite(self._sid, not self._is_favorite)
+        else:
             self.on_refresh()
 
     def _selected_params(self, fallback: str) -> str:
@@ -310,7 +327,8 @@ class PipelineCard(tk.Frame):
     _PIPE_ACCENT2 = C["pipe_accent2"]
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
-                 group_name: str, on_run, on_edit, on_refresh):
+                 group_name: str, on_run, on_edit, on_refresh,
+                 is_favorite: bool = False, on_toggle_favorite=None):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -320,6 +338,8 @@ class PipelineCard(tk.Frame):
         self.on_run = on_run
         self.on_edit = on_edit
         self.on_refresh = on_refresh
+        self._is_favorite = is_favorite
+        self._on_toggle_favorite = on_toggle_favorite
 
         steps = db.list_pipeline_steps(pipeline_id)
 
@@ -351,6 +371,10 @@ class PipelineCard(tk.Frame):
                 Tooltip(b, tip)
             return b
 
+        pipe_fav_text = "★" if is_favorite else "☆"
+        self._fav_btn = _rbtn(pipe_fav_text, C["btn_neutral_bg"], C["btn_neutral_hover"],
+                              self._toggle_favorite,
+                              fg=C["btn_neutral_fg"], tip="Toggle favorite")
         _sep()
         _rbtn("⚙", C["btn_neutral_bg"], C["btn_neutral_hover"],
               lambda: on_edit(pipeline_id, name), tip="Edit",
@@ -486,11 +510,20 @@ class PipelineCard(tk.Frame):
         for ch in widget.winfo_children():
             self._set_bg(ch, color)
 
+    def _toggle_favorite(self):
+        if self._on_toggle_favorite:
+            self._on_toggle_favorite(self.pipeline_id, not self._is_favorite)
+        else:
+            self.on_refresh()
+
     def _context_menu(self, event):
         menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
                        bg=C["menu_bg"], fg=C["fg_on_dark"],
                        activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                        font=("Segoe UI", 10))
+        pipe_fav_label = "☆ Remove from Favorites" if self._is_favorite else "★ Add to Favorites"
+        menu.add_command(label=pipe_fav_label, command=self._toggle_favorite)
+        menu.add_separator()
         menu.add_command(label="⚙  Edit",
                          command=lambda: self.on_edit(self.pipeline_id, self._name))
         menu.add_command(label="⧉  Clone", command=self._clone)
