@@ -337,18 +337,40 @@ class RYOSApp(_BaseWindow):
         tk.Frame(cards_pane, bg=C["border"], height=1).pack(fill="x", padx=12)
 
         # Search/filter bar — sits between the tab divider and the card list.
+        _SEARCH_PH = "Filter scripts & pipelines…"
         search_bar = tk.Frame(cards_pane, bg=C["bg"])
         search_bar.pack(fill="x", padx=12, pady=(6, 0))
         tk.Label(search_bar, text="🔍", bg=C["bg"], fg=C["path_fg"],
                  font=("Segoe UI", 10)).pack(side="left", padx=(0, 4))
         self._search_var = tk.StringVar()
-        search_entry = tk.Entry(search_bar, textvariable=self._search_var,
-                                bg=C["card_bg"], fg=C["path_fg"],
-                                insertbackground=C["name_fg"],
-                                relief="flat", bd=4, font=("Segoe UI", 10))
-        search_entry.pack(side="left", fill="x", expand=True)
-        _flat_button(search_bar, "✕", C["btn_dark_bg"], C["btn_dark_hover"],
-                     self._clear_search, width=3).pack(side="left", padx=(4, 0))
+        self._search_ph = [True]
+        self._search_entry = tk.Entry(search_bar, textvariable=self._search_var,
+                                      bg=C["card_bg"], fg=C["path_fg"],
+                                      insertbackground=C["name_fg"],
+                                      relief="flat", bd=4, font=("Segoe UI", 10))
+        self._search_entry.pack(side="left", fill="x", expand=True)
+        self._search_var.set(_SEARCH_PH)
+        # ✕ button uses neutral secondary style (matching ⚙/▶+ row buttons),
+        # and is hidden until the user actually types something.
+        self._search_clear_btn = _flat_button(
+            search_bar, "✕", C["btn_neutral_bg"], C["btn_neutral_hover"],
+            self._clear_search, width=3, fg=C["btn_neutral_fg"])
+
+        def _ph_key(_e):
+            if self._search_ph[0]:
+                self._search_ph[0] = False
+                self._search_entry.config(fg=C["name_fg"])
+                self._search_var.set("")
+
+        def _ph_focus_out(_e):
+            if not self._search_var.get().strip():
+                self._search_ph[0] = True
+                self._search_entry.config(fg=C["path_fg"])
+                self._search_var.set(_SEARCH_PH)
+
+        self._search_entry.bind("<KeyPress>", _ph_key)
+        self._search_entry.bind("<FocusOut>", _ph_focus_out)
+        self._search_entry.bind("<Escape>", lambda _e: self._clear_search())
         self._search_var.trace_add("write", lambda *_: self._apply_search_filter())
 
         container = tk.Frame(cards_pane, bg=C["bg"])
@@ -1054,15 +1076,27 @@ class RYOSApp(_BaseWindow):
         self._apply_search_filter()
 
     def _clear_search(self):
-        """Clear the search bar; the StringVar trace re-applies the (empty) filter."""
-        self._search_var.set("")
+        """Restore placeholder and re-apply (empty) filter; the StringVar trace does the rest."""
+        _SEARCH_PH = "Filter scripts & pipelines…"
+        self._search_ph[0] = True
+        self._search_entry.config(fg=C["path_fg"])
+        self._search_var.set(_SEARCH_PH)
 
     def _apply_search_filter(self):
         """Show/hide cards in Favorites, Pipelines, and Scripts sections based on
         the search query. Running section is always left untouched."""
         if not hasattr(self, "_fav_contents"):
             return  # cards not built yet
-        query = self._search_var.get().lower().strip()
+        # Treat placeholder as "no query" so setting the placeholder doesn't filter.
+        is_ph = getattr(self, "_search_ph", [False])[0]
+        query = "" if is_ph else self._search_var.get().lower().strip()
+
+        # Show the ✕ button only while there is text to clear.
+        if hasattr(self, "_search_clear_btn"):
+            if query:
+                self._search_clear_btn.pack(side="left", padx=(4, 0))
+            else:
+                self._search_clear_btn.pack_forget()
 
         from ryos.ui import cards as _cards_mod
         _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]

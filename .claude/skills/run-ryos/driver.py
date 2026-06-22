@@ -529,6 +529,44 @@ def _favorites(app: RYOSApp):
     app.after(900, _do)
 
 
+def _search_bar(app: RYOSApp):
+    """Screenshot the search bar idle, then with a query typed, then cleared."""
+    def _idle():
+        print("search-bar: idle state")
+        _shot(app, "search_01_idle")
+        app.after(300, _type_query)
+
+    def _type_query():
+        print("search-bar: typing 'inf' to filter")
+        # Simulate user typing: clear placeholder flag first, then set the value.
+        app._search_ph[0] = False
+        from ryos.ui.theme import C as _C
+        app._search_entry.config(fg=_C["name_fg"])
+        app._search_var.set("inf")
+        app.update_idletasks()
+        app.update()
+        app.after(400, _filtered)
+
+    def _filtered():
+        print("search-bar: filtered state")
+        _shot(app, "search_02_filtered")
+        app.after(300, _clear)
+
+    def _clear():
+        print("search-bar: clearing search")
+        app._clear_search()
+        app.update_idletasks()
+        app.update()
+        app.after(300, _done)
+
+    def _done():
+        print("search-bar: after clear")
+        _shot(app, "search_03_cleared")
+        app.after(300, app.destroy)
+
+    app.after(900, _idle)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -564,6 +602,8 @@ def main():
         _advanced_options_tabs(app)
     elif scenario == "favorites":
         _favorites(app)
+    elif scenario == "search-bar":
+        _search_bar(app)
     else:
         print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running | advanced-options-tabs")
         app.after(0, app.destroy)
