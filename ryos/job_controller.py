@@ -1,12 +1,12 @@
 """UI-independent job lifecycle / pipeline sequencing for RYOS.
 
-`JobController` owns the step-completion and pipeline-advance logic that used to
-live on the `RYOSApp` god class. It knows nothing about Tkinter: it reaches the
-UI only through callbacks injected at construction, so the sequencing and
-completion rules can be unit-tested without a display.
+`JobController` owns the job allocation, step-completion, and pipeline-advance
+logic that used to live on the `RYOSApp` god class. It knows nothing about
+Tkinter: it reaches the UI only through callbacks injected at construction, so
+the lifecycle rules can be unit-tested without a display.
 
-See docs/adr/0001-decompose-job-lifecycle.md for the rationale and the planned
-later increments (job allocation, running-row teardown).
+See docs/adr/0001-decompose-job-lifecycle.md for the rationale and remaining
+increment (running-row teardown).
 """
 
 from __future__ import annotations
@@ -17,11 +17,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from .interpreter import build_command, resolve_interpreter
+from .jobs import Job
 from .runner import decode_output_item
 
 if TYPE_CHECKING:
     from .db import ScriptDB
-    from .jobs import Job, JobRegistry
+    from .jobs import JobRegistry
 
 
 def _format_elapsed_secs(secs: float) -> str:
@@ -30,12 +31,12 @@ def _format_elapsed_secs(secs: float) -> str:
 
 
 class JobController:
-    """Drives pipeline stepping and per-job completion.
+    """Drives job allocation, pipeline stepping, and per-job completion.
 
-    The UI injects callbacks; the controller decides *when* to advance a
-    pipeline, finish a job, set the status line, emit output, or notify. Widget
-    construction and teardown stay in the app, behind ``on_finish`` /
-    ``on_rename``.
+    The UI injects callbacks; the controller decides *when* to start a job,
+    advance a pipeline, finish a job, set the status line, emit output, or
+    notify. Widget construction and teardown stay in the app, behind
+    ``on_started`` / ``on_finish`` / ``on_rename``.
     """
 
     def __init__(
@@ -47,9 +48,10 @@ class JobController:
         on_output: Callable[[str, str, str | None], None],
         on_status: Callable[[str], None],
         on_notify: Callable[[str, str], None],
-        on_finish: Callable[["Job"], None],
-        on_rename: Callable[["Job"], None],
-        launch: Callable[["Job", list, str, int], None],
+        on_started: Callable[[Job], None],
+        on_finish: Callable[[Job], None],
+        on_rename: Callable[[Job], None],
+        launch: Callable[[Job, list, str, int], None],
         now: Callable[[], datetime] = datetime.now,
     ) -> None:
         self._registry = registry
@@ -58,10 +60,39 @@ class JobController:
         self._on_output = on_output      # (tab_key, text, tag) -> None
         self._on_status = on_status      # (text) -> None
         self._on_notify = on_notify      # (title, body) -> None; app gates on the setting
+        self._on_started = on_started    # (job) -> None; app builds tab + elapsed ticker
         self._on_finish = on_finish      # (job) -> None; widget teardown stays in the app
         self._on_rename = on_rename      # (job) -> None; running-row label refresh
         self._launch = launch            # (job, cmd, name, script_id) -> None
         self._now = now
+
+    def at_capacity(self, max_jobs: int) -> bool:
+        """True when a positive cap is set and the registry is already that full."""
+        return max_jobs > 0 and len(self._registry) >= max_jobs
+
+    def new_job(
+        self,
+        kind: str,
+        script_id,
+        pipeline_id,
+        name: str,
+        group: str,
+        pipeline_name: str = "",
+        pipeline_queue=None,
+        pipeline_total: int = 0,
+    ) -> Job:
+        """Allocate, construct, and register a job; fire on_started; return it."""
+        job_id = self._registry.new_id()
+        tab_key = f"job:{job_id}"
+        job = Job(
+            job_id, kind, script_id, pipeline_id, name, tab_key, group,
+            pipeline_name=pipeline_name,
+            pipeline_queue=pipeline_queue if pipeline_queue is not None else [],
+            pipeline_total=pipeline_total,
+        )
+        self._registry.add(job)
+        self._on_started(job)
+        return job
 
     def pump(self) -> None:
         """Drain all pending output-queue items on the UI thread.
@@ -85,7 +116,7 @@ class JobController:
         except queue.Empty:
             pass
 
-    def run_next_pipeline_step(self, job: "Job") -> None:
+    def run_next_pipeline_step(self, job: Job) -> None:
         """Pop and launch the next pipeline step, or no-op if stopped/empty."""
         if job.stopped or not job.pipeline_queue:
             return
@@ -115,7 +146,7 @@ class JobController:
             return
         self._launch(job, cmd, name, sid)
 
-    def handle_step_done(self, job: "Job", sid: int, status: str) -> None:
+    def handle_step_done(self, job: Job, sid: int, status: str) -> None:
         """Dispatch a finished step: advance the pipeline, or finish the job."""
         secs = (self._now() - job.start_time).total_seconds()
         elapsed = _format_elapsed_secs(secs)

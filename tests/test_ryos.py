@@ -1422,7 +1422,7 @@ class TestJobController(unittest.TestCase):
     def setUp(self):
         self.rec = {
             "output": [], "status": [], "notify": [],
-            "finish": [], "rename": [], "launch": [],
+            "finish": [], "rename": [], "launch": [], "started": [],
         }
         self.q = _queue.Queue()
         self.reg = JobRegistry()
@@ -1432,6 +1432,7 @@ class TestJobController(unittest.TestCase):
             on_output=lambda tab, text, tag=None: self.rec["output"].append((tab, text, tag)),
             on_status=lambda text: self.rec["status"].append(text),
             on_notify=lambda title, body: self.rec["notify"].append((title, body)),
+            on_started=lambda job: self.rec["started"].append(job.job_id),
             on_finish=lambda job: self.rec["finish"].append(job.job_id),
             on_rename=lambda job: self.rec["rename"].append(job.name),
             launch=lambda job, cmd, name, sid: self.rec["launch"].append((cmd, name, sid)),
@@ -1559,3 +1560,34 @@ class TestJobController(unittest.TestCase):
         self.q.put(("stdout", job.job_id, "b\n"))
         self.ctl.pump()
         self.assertEqual([t[1] for t in self.rec["output"]], ["a\n", "b\n"])
+
+    # --- new_job allocation + capacity ---
+
+    def test_new_job_registers_and_fires_started(self):
+        job = self.ctl.new_job("script", 1, None, "n", "g")
+        self.assertEqual(job.tab_key, "job:1")
+        self.assertIs(self.reg.get(job.job_id), job)
+        self.assertEqual(self.rec["started"], [job.job_id])
+
+    def test_new_job_sets_pipeline_fields(self):
+        steps = [self._step(2, "s2")]
+        job = self.ctl.new_job("pipeline", None, 9, "P", "g",
+                               pipeline_name="P", pipeline_queue=steps, pipeline_total=1)
+        self.assertEqual(job.kind, "pipeline")
+        self.assertEqual(job.pipeline_total, 1)
+        self.assertEqual(job.pipeline_queue, steps)
+
+    def test_new_job_allocates_monotonic_ids(self):
+        a = self.ctl.new_job("script", 1, None, "a", "g")
+        b = self.ctl.new_job("script", 2, None, "b", "g")
+        self.assertNotEqual(a.job_id, b.job_id)
+        self.assertEqual(self.rec["started"], [a.job_id, b.job_id])
+
+    def test_at_capacity(self):
+        self.assertFalse(self.ctl.at_capacity(0))   # 0 == unlimited
+        self.assertFalse(self.ctl.at_capacity(2))
+        self.ctl.new_job("script", 1, None, "a", "g")
+        self.ctl.new_job("script", 2, None, "b", "g")
+        self.assertTrue(self.ctl.at_capacity(2))
+        self.assertFalse(self.ctl.at_capacity(0))   # still unlimited
+        self.assertFalse(self.ctl.at_capacity(3))

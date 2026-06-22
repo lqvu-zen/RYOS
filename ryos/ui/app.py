@@ -134,6 +134,7 @@ class RYOSApp(_BaseWindow):
                 text, tag=tag, tab_key=tab_key),
             on_status=lambda text: self.status_var.set(text),
             on_notify=self._on_job_notify,
+            on_started=self._on_job_started,
             on_finish=self._finish_job,
             on_rename=self._on_job_rename,
             launch=self._launch,
@@ -393,21 +394,16 @@ class RYOSApp(_BaseWindow):
 
         self._paned.add(self.out_panel, weight=0)
 
-    def _new_job(self, kind: str, script_id, pipeline_id, name: str, group: str,
-                 pipeline_name: str = "", pipeline_queue=None, pipeline_total: int = 0) -> "_Job":
-        """Allocate a new job, register it, create its output tab, return it."""
-        job_id = self._jobreg.new_id()
-        tab_key = f"job:{job_id}"
-        tab_name = pipeline_name if pipeline_name else name
-        job = _Job(job_id, kind, script_id, pipeline_id, name, tab_key, group,
-                   pipeline_name=pipeline_name,
-                   pipeline_queue=pipeline_queue if pipeline_queue is not None else [],
-                   pipeline_total=pipeline_total)
-        self._jobreg.add(job)
-        self._get_or_create_tab(tab_key, tab_name)
+    def _on_job_started(self, job: "_Job") -> None:
+        """Build the job's output tab and ensure the elapsed-time ticker runs.
+
+        Invoked by JobController.new_job once the job is registered; this is the
+        widget half of job allocation.
+        """
+        tab_name = job.pipeline_name if job.pipeline_name else job.name
+        self._get_or_create_tab(job.tab_key, tab_name)
         if self._elapsed_timer_id is None:
             self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
-        return job
 
     def _tick_elapsed_timers(self):
         if not self._jobreg:
@@ -1337,7 +1333,7 @@ class RYOSApp(_BaseWindow):
 
     def _run_pipeline(self, pipeline_id: int, pipeline_name: str):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        if max_jobs > 0 and len(self._jobreg) >= max_jobs:
+        if self._jobctl.at_capacity(max_jobs):
             messagebox.showinfo("Too many jobs",
                                 f"Maximum of {max_jobs} parallel jobs reached.\n"
                                 "Stop a running job before launching another.",
@@ -1355,7 +1351,7 @@ class RYOSApp(_BaseWindow):
             if any(p_id == pipeline_id for p_id, _ in self.db.list_pipelines(gname)):
                 group = gname
                 break
-        job = self._new_job(
+        job = self._jobctl.new_job(
             "pipeline", script_id=None, pipeline_id=pipeline_id,
             name=f"⚡ {pipeline_name}", group=group,
             pipeline_name=pipeline_name,
@@ -1492,7 +1488,7 @@ class RYOSApp(_BaseWindow):
 
     def _run_script(self, script_id, name, path, params, interpreter):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        if max_jobs > 0 and len(self._jobreg) >= max_jobs:
+        if self._jobctl.at_capacity(max_jobs):
             messagebox.showinfo("Too many jobs",
                                 f"Maximum of {max_jobs} parallel jobs reached.\n"
                                 "Stop a running job before launching another.")
@@ -1511,7 +1507,7 @@ class RYOSApp(_BaseWindow):
 
         rec = self.db.get(script_id)
         group = (rec[5] or "") if rec else (self._active_group or "")
-        job = self._new_job("script", script_id=script_id, pipeline_id=None,
+        job = self._jobctl.new_job("script", script_id=script_id, pipeline_id=None,
                             name=name, group=group)
         job.start_time = datetime.now()
 
