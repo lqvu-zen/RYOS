@@ -505,6 +505,30 @@ def _advanced_options_tabs(app: RYOSApp):
     app.after(900, _do)
 
 
+def _favorites(app: RYOSApp):
+    """Mark the first script as a favorite, refresh, screenshot the Favorites section."""
+    def _do():
+        print("favorites: marking first script as favorite")
+        all_scripts = app.db.list_all()
+        if not all_scripts:
+            print("  no scripts in DB, quitting")
+            app.after(300, app.destroy)
+            return
+        first_id = all_scripts[0][0]
+        first_name = all_scripts[0][1]
+        print(f"  favoriting script id={first_id} name={first_name!r}")
+        app.db.set_favorite_script(first_id, True)
+        app._refresh_cards()
+        app.after(500, _screenshot)
+
+    def _screenshot():
+        print("favorites: taking screenshot")
+        _shot(app, "favorites_section")
+        app.after(300, app.destroy)
+
+    app.after(900, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -538,6 +562,8 @@ def main():
         _card_size_verify(app)
     elif scenario == "advanced-options-tabs":
         _advanced_options_tabs(app)
+    elif scenario == "favorites":
+        _favorites(app)
     else:
         print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running | advanced-options-tabs")
         app.after(0, app.destroy)
