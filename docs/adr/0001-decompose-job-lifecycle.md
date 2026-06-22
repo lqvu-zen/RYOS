@@ -1,6 +1,6 @@
 # ADR-0001: Decompose the job lifecycle out of `RYOSApp`
 
-**Status:** Accepted — increment 1 implemented (`JobController` owns `handle_step_done` + `run_next_pipeline_step`)
+**Status:** Accepted — increments 1-2 implemented (`JobController` owns step completion, pipeline stepping, and the drain loop)
 **Date:** 2026-06-18
 **Deciders:** RYOS maintainer(s) — owner of `ryos/ui/app.py` and the core modules
 **Supersedes / relates to:** TECH_DEBT.md item #6 (`RYOSApp` god class), the last open structural item
@@ -133,7 +133,7 @@ The cost of B is a callback indirection and a contract to maintain. That is a mo
 
 1. [ ] Add `ryos/job_controller.py` with a `JobController` holding `JobRegistry`, the output queue, and `db`; define the callback Protocol (or accept callables in `__init__`).
 2. [x] Move `_handle_step_done` and `_run_next_pipeline_step` logic into the controller, calling back for output/status/notify. Keep `RYOSApp` thin wrappers initially. *(Done: `ryos/job_controller.py`, callbacks `on_output`/`on_status`/`on_notify`/`on_finish`/`on_rename`/`launch`; 9 unit tests.)*
-3. [ ] Move the drain *logic* into `JobController.pump()`; leave `after(80, ...)` scheduling in `RYOSApp._drain_output_queue`, which just calls `pump()`.
+3. [x] Move the drain *logic* into `JobController.pump()`; leave `after(80, ...)` scheduling in `RYOSApp._drain_output_queue`, which just calls `pump()`. *(Done: `pump()` owns drain + `mark_run_status`; controller now holds the `db` ref; 5 pump tests.)*
 4. [ ] Move the parallel-job-cap check and `Job` construction (`_new_job`) into the controller; have the app supply `on_job_started` to build the tab + running row.
 5. [ ] Add `tests/` coverage: pipeline advance-on-ok, stop-on-failure, single-script ok/fail, cap enforcement, notify on/off — all via recording fake callbacks, no `Tk()`.
 6. [ ] Run the gate at each increment: `uvx ruff check .` and `uv run --no-project --with pytest pytest -q` green; then a `run-ryos` driver smoke pass (run a script, run a pipeline, stop a job) since the widget paths stay headless-untested.

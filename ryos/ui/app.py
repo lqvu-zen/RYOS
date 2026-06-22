@@ -23,7 +23,7 @@ from ..db import ScriptDB
 from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
-from ..runner import decode_output_item, run_subprocess
+from ..runner import run_subprocess
 from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
@@ -129,7 +129,7 @@ class RYOSApp(_BaseWindow):
         # reaches the window only through these callbacks (status_var is built
         # later in _build_ui, so it is referenced lazily via a lambda).
         self._jobctl = JobController(
-            self._jobreg, self.output_queue,
+            self._jobreg, self.output_queue, self.db,
             on_output=lambda tab_key, text, tag=None: self._append_output(
                 text, tag=tag, tab_key=tab_key),
             on_status=lambda text: self.status_var.set(text),
@@ -2112,19 +2112,8 @@ class RYOSApp(_BaseWindow):
             self._stop_job(job)
 
     def _drain_output_queue(self):
-        try:
-            while True:
-                item = self.output_queue.get_nowait()
-                job = self._jobreg.get(item[1])
-                act = decode_output_item(item)
-                if act.text is not None and job:
-                    self._append_output(act.text, tag=act.tag, tab_key=job.tab_key)
-                if act.status is not None:
-                    self.db.mark_run_status(act.sid, act.status)
-                    if job:
-                        self._jobctl.handle_step_done(job, act.sid, act.status)
-        except queue.Empty:
-            pass
+        # Logic lives in JobController.pump(); the app owns only the repeat tick.
+        self._jobctl.pump()
         self.after(80, self._drain_output_queue)
 
     def _check_for_update(self):

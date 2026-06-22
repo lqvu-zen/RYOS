@@ -1402,8 +1402,18 @@ class TestDecodeOutputItem(unittest.TestCase):
 from ryos.job_controller import JobController  # noqa: E402
 
 
+class _FakeDB:
+    """Records mark_run_status calls so pump() can be tested without SQLite."""
+
+    def __init__(self):
+        self.marked = []
+
+    def mark_run_status(self, sid, status):
+        self.marked.append((sid, status))
+
+
 class TestJobController(unittest.TestCase):
-    """Pipeline sequencing + step completion, driven through recording fakes.
+    """Pipeline sequencing, step completion, and the drain loop (pump).
 
     The controller is UI-free: it reaches the window only via injected
     callbacks, so it is exercised here without any Tk display.
@@ -1416,8 +1426,9 @@ class TestJobController(unittest.TestCase):
         }
         self.q = _queue.Queue()
         self.reg = JobRegistry()
+        self.db = _FakeDB()
         self.ctl = JobController(
-            self.reg, self.q,
+            self.reg, self.q, self.db,
             on_output=lambda tab, text, tag=None: self.rec["output"].append((tab, text, tag)),
             on_status=lambda text: self.rec["status"].append(text),
             on_notify=lambda title, body: self.rec["notify"].append((title, body)),
@@ -1512,13 +1523,39 @@ class TestJobController(unittest.TestCase):
         cmd = self.rec["launch"][0][0]
         self.assertIn("NEW", cmd)
         self.assertNotIn("orig", cmd)
-"stderr", kinds)
-        self.assertIn("done", kinds)
 
-    def test_run_next_param_override_applied(self):
-        job = self._job("pipeline", queue=[self._step(3, "s", params="orig", override="NEW")],
-                        total=1)
-        self.ctl.run_next_pipeline_step(job)
-        cmd = self.rec["launch"][0][0]
-        self.assertIn("NEW", cmd)
-        self.assertNotIn("orig", cmd)
+    def test_pump_appends_stdout_text(self):
+        job = self._job("script")
+        self.reg.add(job)
+        self.q.put(("stdout", job.job_id, "hello\n"))
+        self.ctl.pump()
+        self.assertEqual(self.rec["output"], [(job.tab_key, "hello\n", None)])
+        self.assertEqual(self.db.marked, [])
+
+    def test_pump_done_tag_persists_status_and_dispatches(self):
+        job = self._job("script")
+        self.reg.add(job)
+        self.q.put(("done_tag", job.job_id, 5, "ok", "ok", "footer"))
+        self.ctl.pump()
+        self.assertEqual(self.db.marked, [(5, "ok")])
+        self.assertEqual(self.rec["status"], ["Done."])
+        self.assertEqual(self.rec["finish"], [job.job_id])
+
+    def test_pump_empty_queue_is_noop(self):
+        self.ctl.pump()
+        self.assertEqual(self.rec["output"], [])
+        self.assertEqual(self.db.marked, [])
+
+    def test_pump_persists_status_even_without_registered_job(self):
+        self.q.put(("done_tag", 999, 7, "error", "error", "f"))
+        self.ctl.pump()
+        self.assertEqual(self.db.marked, [(7, "error")])
+        self.assertEqual(self.rec["finish"], [])
+
+    def test_pump_drains_multiple_items_in_order(self):
+        job = self._job("script")
+        self.reg.add(job)
+        self.q.put(("stdout", job.job_id, "a\n"))
+        self.q.put(("stdout", job.job_id, "b\n"))
+        self.ctl.pump()
+        self.assertEqual([t[1] for t in self.rec["output"]], ["a\n", "b\n"])

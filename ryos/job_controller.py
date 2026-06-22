@@ -6,20 +6,21 @@ UI only through callbacks injected at construction, so the sequencing and
 completion rules can be unit-tested without a display.
 
 See docs/adr/0001-decompose-job-lifecycle.md for the rationale and the planned
-later increments (drain loop, job allocation).
+later increments (job allocation, running-row teardown).
 """
 
 from __future__ import annotations
 
+import queue
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from .interpreter import build_command, resolve_interpreter
+from .runner import decode_output_item
 
 if TYPE_CHECKING:
-    import queue
-
+    from .db import ScriptDB
     from .jobs import Job, JobRegistry
 
 
@@ -41,6 +42,7 @@ class JobController:
         self,
         registry: "JobRegistry",
         output_queue: "queue.Queue",
+        db: "ScriptDB",
         *,
         on_output: Callable[[str, str, str | None], None],
         on_status: Callable[[str], None],
@@ -52,6 +54,7 @@ class JobController:
     ) -> None:
         self._registry = registry
         self._queue = output_queue
+        self._db = db                    # persists per-step run status
         self._on_output = on_output      # (tab_key, text, tag) -> None
         self._on_status = on_status      # (text) -> None
         self._on_notify = on_notify      # (title, body) -> None; app gates on the setting
@@ -59,6 +62,28 @@ class JobController:
         self._on_rename = on_rename      # (job) -> None; running-row label refresh
         self._launch = launch            # (job, cmd, name, script_id) -> None
         self._now = now
+
+    def pump(self) -> None:
+        """Drain all pending output-queue items on the UI thread.
+
+        For each item: append its text to the right tab, persist a finished
+        step's run status, and dispatch completion. The caller owns the repeat
+        scheduling (``after(80, ...)``); the worker never touches a widget — it
+        only feeds this queue.
+        """
+        try:
+            while True:
+                item = self._queue.get_nowait()
+                job = self._registry.get(item[1])
+                act = decode_output_item(item)
+                if act.text is not None and job:
+                    self._on_output(job.tab_key, act.text, act.tag)
+                if act.status is not None:
+                    self._db.mark_run_status(act.sid, act.status)
+                    if job:
+                        self.handle_step_done(job, act.sid, act.status)
+        except queue.Empty:
+            pass
 
     def run_next_pipeline_step(self, job: "Job") -> None:
         """Pop and launch the next pipeline step, or no-op if stopped/empty."""
