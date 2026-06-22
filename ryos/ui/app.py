@@ -529,8 +529,8 @@ class RYOSApp(_BaseWindow):
     def _running_jobs_in_group(self, group: str) -> list:
         return self._jobreg.in_group(group)
 
-    def _make_group_header(self, name: str):
-        hdr = tk.Frame(self.cards_frame, bg=C["bg"])
+    def _make_group_header(self, parent: tk.Frame, name: str):
+        hdr = tk.Frame(parent, bg=C["bg"])
         hdr.pack(fill="x", pady=(16, 2))
         tk.Label(hdr, text=name.upper(), bg=C["bg"], fg=C["path_fg"],
                  font=("Segoe UI", 8, "bold")).pack(side="left")
@@ -900,9 +900,9 @@ class RYOSApp(_BaseWindow):
                 self._refresh()
             return _top
 
-        def render_group_sections(gname: str, scripts: list):
+        def render_group_sections(parent: tk.Frame, gname: str, scripts: list):
             group_base_dir = self.db.get_group_base_dir(gname)
-            banner = tk.Frame(self.cards_frame, bg=C["card_bg"],
+            banner = tk.Frame(parent, bg=C["card_bg"],
                               highlightbackground=C["border"], highlightthickness=1,
                               cursor="hand2")
             banner.pack(fill="x", padx=8, pady=(10, 0))
@@ -924,7 +924,7 @@ class RYOSApp(_BaseWindow):
                 w.bind("<Button-1>", _open)
 
             run_content = self._make_section_header(
-                self.cards_frame, gname, "running", "Running"
+                parent, gname, "running", "Running"
             )
             self._running_slots[gname] = run_content
             jobs_here = self._running_jobs_in_group(gname)
@@ -937,7 +937,7 @@ class RYOSApp(_BaseWindow):
                          font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
 
             fav_content = self._make_section_header(
-                self.cards_frame, gname, "favorites", "★  Favorites"
+                parent, gname, "favorites", "★  Favorites"
             )
             self._fav_contents.append(fav_content)
             fav_scripts = [r for r in scripts if r[10]]
@@ -980,7 +980,7 @@ class RYOSApp(_BaseWindow):
                     card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
 
             pipe_content = self._make_section_header(
-                self.cards_frame, gname, "pipelines", "Pipelines"
+                parent, gname, "pipelines", "Pipelines"
             )
             self._pipe_contents.append(pipe_content)
             pipelines = self.db.list_pipelines(gname)
@@ -1011,7 +1011,7 @@ class RYOSApp(_BaseWindow):
                          font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
 
             scr_content = self._make_section_header(
-                self.cards_frame, gname, "scripts", "Scripts"
+                parent, gname, "scripts", "Scripts"
             )
             self._scr_contents.append(scr_content)
             if scripts:
@@ -1059,18 +1059,34 @@ class RYOSApp(_BaseWindow):
                 group_scripts.setdefault(g, [])
                 group_scripts[g].append(rec)
             any_named = bool(groups)
+            self._group_wrappers: list[tk.Frame] = []
             for gname in groups:
-                self._make_group_header(gname)
-                render_group_sections(gname, group_scripts.get(gname, []))
+                wrapper = tk.Frame(self.cards_frame, bg=C["bg"])
+                wrapper.pack(fill="x")
+                wrapper._grp_name = gname
+                self._make_group_header(wrapper, gname)
+                render_group_sections(wrapper, gname, group_scripts.get(gname, []))
+                wrapper._fav_content  = self._fav_contents[-1]
+                wrapper._pipe_content = self._pipe_contents[-1]
+                wrapper._scr_content  = self._scr_contents[-1]
+                self._group_wrappers.append(wrapper)
             ungrouped = group_scripts.get("", [])
             if ungrouped:
+                wrapper = tk.Frame(self.cards_frame, bg=C["bg"])
+                wrapper.pack(fill="x")
+                wrapper._grp_name = ""
                 if any_named:
-                    self._make_group_header("Other")
-                render_group_sections("", ungrouped)
+                    self._make_group_header(wrapper, "Other")
+                render_group_sections(wrapper, "", ungrouped)
+                wrapper._fav_content  = self._fav_contents[-1]
+                wrapper._pipe_content = self._pipe_contents[-1]
+                wrapper._scr_content  = self._scr_contents[-1]
+                self._group_wrappers.append(wrapper)
         else:
+            self._group_wrappers = []
             scripts = [s for s in self.db.list_all()
                        if (s[8] or "") == self._active_group]
-            render_group_sections(self._active_group, scripts)
+            render_group_sections(self.cards_frame, self._active_group, scripts)
 
         # Re-apply any active search so the filter survives group switches and reorders.
         self._apply_search_filter()
@@ -1172,6 +1188,33 @@ class RYOSApp(_BaseWindow):
             else:
                 hdr_frame.pack_forget()
 
+        # Hide group wrappers whose groups have no matching cards. Use
+        # pack_propagate(False)+height=1 so the wrapper stays in its pack slot
+        # (no re-ordering issues) while becoming visually invisible.
+        # Hide group wrappers with no matching cards when a query is active.
+        # Two-pass (forget all → re-pack visible) keeps the original order on each
+        # keystroke without needing before=/after= tricks. Query-clear restores via
+        # _refresh_cards, so no separate restore path is needed here.
+        wrappers = getattr(self, "_group_wrappers", [])
+        if wrappers and query_active:
+            def _has_match(content: tk.Frame) -> bool:
+                card_ch = [c for c in content.winfo_children() if hasattr(c, "_name")]
+                return bool(card_ch) and any(c.winfo_manager() == "pack" for c in card_ch)
+
+            to_show = []
+            for wrapper in wrappers:
+                gname  = getattr(wrapper, "_grp_name", "")
+                fav_c  = getattr(wrapper, "_fav_content",  None)
+                pipe_c = getattr(wrapper, "_pipe_content", None)
+                scr_c  = getattr(wrapper, "_scr_content",  None)
+                contents = [c for c in [fav_c, pipe_c, scr_c] if c is not None]
+                if any(_has_match(c) for c in contents) or self._running_jobs_in_group(gname):
+                    to_show.append(wrapper)
+            for w in wrappers:
+                w.pack_forget()
+            for w in to_show:
+                w.pack(fill="x")
+
 
     def _build_quick_run_bar(self, gname, group_base_dir, banner):
         """Build the per-group quick-run button, entry bar, and key
@@ -1185,7 +1228,8 @@ class RYOSApp(_BaseWindow):
         Tooltip(qr_btn, "Toggle quick-run bar")
         self._quick_run_buttons[gname] = qr_btn
 
-        bar_frame = tk.Frame(self.cards_frame, bg=C["bg"],
+        # bar_frame must be a sibling of banner so pack(after=banner) works.
+        bar_frame = tk.Frame(banner.master, bg=C["bg"],
                              highlightbackground=C["border"], highlightthickness=1)
         _PH = "script name [params...]"
         entry_var = tk.StringVar()
