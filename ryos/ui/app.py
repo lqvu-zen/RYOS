@@ -890,7 +890,7 @@ class RYOSApp(_BaseWindow):
                          font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
 
             fav_content = self._make_section_header(
-                self.cards_frame, gname, "favorites", "Favorites"
+                self.cards_frame, gname, "favorites", "★  Favorites"
             )
             fav_scripts = [r for r in scripts if r[10]]
             fav_pipelines = [(p_id, p_name) for p_id, p_name, p_fav in self.db.list_pipelines(gname) if p_fav]

@@ -183,9 +183,13 @@ class ScriptCard(tk.Frame):
                 self._params_combo.current(0)
 
         fav_text = "★" if self._is_favorite else "☆"
-        self._fav_btn = _rbtn(fav_text, C["btn_neutral_bg"], C["btn_neutral_hover"],
+        fav_bg  = C["accent_wash"]    if self._is_favorite else C["btn_neutral_bg"]
+        fav_hbg = C["btn_neutral_hover"]
+        fav_fg  = C["bolt"]           if self._is_favorite else C["btn_neutral_fg"]
+        fav_tip = "Remove from favorites" if self._is_favorite else "Add to favorites"
+        self._fav_btn = _rbtn(fav_text, fav_bg, fav_hbg,
                               self._toggle_favorite,
-                              fg=C["btn_neutral_fg"], tip="Toggle favorite")
+                              fg=fav_fg, tip=fav_tip)
         _sep()
         _rbtn("⚙", C["btn_neutral_bg"], C["btn_neutral_hover"], self._modify,
               fg=C["btn_neutral_fg"], tip="Edit")
@@ -372,9 +376,13 @@ class PipelineCard(tk.Frame):
             return b
 
         pipe_fav_text = "★" if is_favorite else "☆"
-        self._fav_btn = _rbtn(pipe_fav_text, C["btn_neutral_bg"], C["btn_neutral_hover"],
+        pipe_fav_bg  = C["accent_wash"]    if is_favorite else C["btn_neutral_bg"]
+        pipe_fav_hbg = C["btn_neutral_hover"]
+        pipe_fav_fg  = C["bolt"]           if is_favorite else C["btn_neutral_fg"]
+        pipe_fav_tip = "Remove from favorites" if is_favorite else "Add to favorites"
+        self._fav_btn = _rbtn(pipe_fav_text, pipe_fav_bg, pipe_fav_hbg,
                               self._toggle_favorite,
-                              fg=C["btn_neutral_fg"], tip="Toggle favorite")
+                              fg=pipe_fav_fg, tip=pipe_fav_tip)
         _sep()
         _rbtn("⚙", C["btn_neutral_bg"], C["btn_neutral_hover"],
               lambda: on_edit(pipeline_id, name), tip="Edit",
