@@ -332,14 +332,10 @@ class RYOSApp(_BaseWindow):
         cards_pane = tk.Frame(self._paned, bg=C["bg"])
         self._paned.add(cards_pane, weight=3)
 
-        self._tab_bar = tk.Frame(cards_pane, bg=C["bg"])
-        self._tab_bar.pack(fill="x", padx=12, pady=(8, 0))
-        tk.Frame(cards_pane, bg=C["border"], height=1).pack(fill="x", padx=12)
-
-        # Search/filter bar — sits between the tab divider and the card list.
+        # Search/filter bar — sits above the group tab bar.
         _SEARCH_PH = "Filter scripts & pipelines…"
         search_bar = tk.Frame(cards_pane, bg=C["bg"])
-        search_bar.pack(fill="x", padx=12, pady=(6, 0))
+        search_bar.pack(fill="x", padx=12, pady=(8, 4))
         tk.Label(search_bar, text="🔍", bg=C["bg"], fg=C["path_fg"],
                  font=("Segoe UI", 10)).pack(side="left", padx=(0, 4))
         self._search_var = tk.StringVar()
@@ -372,6 +368,10 @@ class RYOSApp(_BaseWindow):
         self._search_entry.bind("<FocusOut>", _ph_focus_out)
         self._search_entry.bind("<Escape>", lambda _e: self._clear_search())
         self._search_var.trace_add("write", lambda *_: self._apply_search_filter())
+
+        self._tab_bar = tk.Frame(cards_pane, bg=C["bg"])
+        self._tab_bar.pack(fill="x", padx=12)
+        tk.Frame(cards_pane, bg=C["border"], height=1).pack(fill="x", padx=12)
 
         container = tk.Frame(cards_pane, bg=C["bg"])
         container.pack(fill="both", expand=True, padx=12, pady=(8, 12))
