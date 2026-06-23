@@ -566,6 +566,41 @@ def _search_bar(app: RYOSApp):
     app.after(900, _idle)
 
 
+def _search_hint(app: RYOSApp):
+    """Switch to Group2, type a query that matches Group1 scripts but not Group2,
+    screenshot the 'found in other groups' hint callout."""
+    def _do():
+        groups = app.db.list_groups()
+        if len(groups) < 2:
+            print("search-hint: need at least 2 groups, quitting")
+            app.after(300, app.destroy)
+            return
+        # Switch to the second group so the query has no local match
+        target_group = groups[1]
+        print(f"search-hint: switching to group {target_group!r}")
+        app._switch_group(target_group)
+        app.update_idletasks()
+        app.update()
+        app.after(400, _type_query)
+
+    def _type_query():
+        print("search-hint: typing 'inf' (matches Group1, not current group)")
+        app._search_ph[0] = False
+        from ryos.ui.theme import C as _C
+        app._search_entry.config(fg=_C["name_fg"])
+        app._search_var.set("inf")
+        app.update_idletasks()
+        app.update()
+        app.after(400, _screenshot)
+
+    def _screenshot():
+        print("search-hint: screenshotting hint callout")
+        _shot(app, "search_hint_callout")
+        app.after(300, app.destroy)
+
+    app.after(900, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -603,6 +638,8 @@ def main():
         _favorites(app)
     elif scenario == "search-bar":
         _search_bar(app)
+    elif scenario == "search-hint":
+        _search_hint(app)
     else:
         print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running | advanced-options-tabs")
         app.after(0, app.destroy)

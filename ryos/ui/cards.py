@@ -157,7 +157,7 @@ class ScriptCard(tk.Frame):
                 if has_run:
                     sep = "  ·  " if display_path else ""
                     tk.Label(sub_row, text=f"{sep}{last_run}", bg=C["card_bg"],
-                             fg=C["path_fg"], font=("Segoe UI", 7, "italic"), anchor="w").pack(side="left")
+                             fg=C["path_fg"], font=("Segoe UI", 8), anchor="w").pack(side="left")
                     if last_run_status == "error":
                         tk.Label(sub_row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
                                  font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))

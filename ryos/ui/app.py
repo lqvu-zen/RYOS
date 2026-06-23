@@ -380,7 +380,8 @@ class RYOSApp(_BaseWindow):
         # "Found in other groups" hint — packed above the cards (before the
         # container) only when a search has no match in the current group but
         # matches elsewhere. Built empty; _update_search_hint fills it.
-        self._search_hint = tk.Frame(cards_pane, bg=C["bg"])
+        self._search_hint = tk.Frame(cards_pane, bg=C["card_bg"],
+                                      highlightbackground=C["border"], highlightthickness=1)
 
         canvas = tk.Canvas(container, highlightthickness=0, bg=C["bg"])
         scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
@@ -417,16 +418,16 @@ class RYOSApp(_BaseWindow):
         tk.Label(out_header, text="Output", bg=C["out_header"], fg=C["fg_on_dark_2"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(side="left")
         self._toggle_btn = tk.Button(out_header, text="▲  Show Output", bg=C["out_header"], fg=C["fg_on_dark_2"],
-                                     activebackground="#3d3d3d", activeforeground=C["fg_on_dark"],
+                                     activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                                      relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                                      command=self._toggle_output)
         self._toggle_btn.pack(side="right")
         tk.Button(out_header, text="🗑 Clear", bg=C["out_header"], fg=C["fg_on_dark_2"],
-                  activebackground="#3d3d3d", activeforeground=C["fg_on_dark"],
+                  activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._clear_log).pack(side="right", padx=4)
         tk.Button(out_header, text="✕ Close All", bg=C["out_header"], fg=C["fg_on_dark_2"],
-                  activebackground="#3d3d3d", activeforeground=C["fg_on_dark"],
+                  activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._close_all_tabs).pack(side="right", padx=4)
 
@@ -717,7 +718,7 @@ class RYOSApp(_BaseWindow):
                 pname, pbtn = self._group_tab_btns[prev][0], self._group_tab_btns[prev][1]
                 pbtn.config(bg=C["card_bg"] if self._active_group == pname else C["tab_inactive_bg"])
             if hover_idx is not None and hover_idx != self._drag_state["src_idx"]:
-                self._group_tab_btns[hover_idx][1].config(bg="#4a4a6a")
+                self._group_tab_btns[hover_idx][1].config(bg=C["accent"])
             self._drag_state["hover_idx"] = hover_idx
 
     def _drag_end(self, event):
@@ -1175,20 +1176,22 @@ class RYOSApp(_BaseWindow):
             hint.pack_forget()
             return
 
-        tk.Label(hint, text=f"No matches in “{active}”. Found in:",
-                 bg=C["bg"], fg=C["path_fg"], font=("Segoe UI", 9)).pack(side="left", padx=(2, 6))
+        tk.Label(hint, text=f'No matches in "{active}". Found in:',
+                 bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 6), pady=6)
         for gname, count in others:
             label = "Other" if gname == "" else gname
             target = None if gname == "" else gname
-            link = tk.Label(hint, text=f"{label} ({count})", bg=C["bg"], fg=C["accent"],
+            link = tk.Label(hint, text=f"{label} ({count})", bg=C["card_bg"], fg=C["accent"],
                             font=("Segoe UI", 9, "underline"), cursor="hand2")
-            link.pack(side="left", padx=(0, 8))
+            link.pack(side="left", padx=(0, 8), pady=6)
             link.bind("<Button-1>", lambda _e, g=target: self._switch_group(g))
-        dismiss = tk.Label(hint, text="✕", bg=C["bg"], fg=C["path_fg"],
+        dismiss = tk.Label(hint, text="✕", bg=C["card_bg"], fg=C["path_fg"],
                            font=("Segoe UI", 9), cursor="hand2")
-        dismiss.pack(side="right", padx=(6, 2))
+        dismiss.pack(side="right", padx=(6, 8), pady=6)
         dismiss.bind("<Button-1>", lambda _e, q=query: self._dismiss_search_hint(q))
-        hint.pack(fill="x", padx=12, pady=(0, 4), before=self._cards_container)
+        dismiss.bind("<Enter>", lambda _e: dismiss.config(fg=C["name_fg"]))
+        dismiss.bind("<Leave>", lambda _e: dismiss.config(fg=C["path_fg"]))
+        hint.pack(fill="x", padx=12, pady=(0, 6), before=self._cards_container)
 
     def _dismiss_search_hint(self, query: str):
         """Hide the 'found in other groups' hint for the current query string."""
@@ -1203,7 +1206,8 @@ class RYOSApp(_BaseWindow):
         if not hasattr(self, "_fav_contents"):
             return
 
-        query_active = bool(self._search_var.get().strip())
+        is_ph = getattr(self, "_search_ph", [False])[0]
+        query_active = not is_ph and bool(self._search_var.get().strip())
 
         def _any_visible(content: tk.Frame) -> bool:
             card_children = [c for c in content.winfo_children() if hasattr(c, "_name")]
@@ -1228,6 +1232,30 @@ class RYOSApp(_BaseWindow):
                         hdr_frame.pack(**opts)
             else:
                 hdr_frame.pack_forget()
+
+        # Hide the RUNNING section header + content during an active search when
+        # no jobs are live — "No script is currently running." is noise while
+        # the user is filtering for a specific script. The section_frame itself
+        # stays packed so it holds its position in the layout; only its children
+        # are hidden, the same way _update_section_visibility handles other sections.
+        for gname, run_content in getattr(self, "_running_slots", {}).items():
+            hdr_frame = getattr(run_content, "_hdr_frame", None)
+            if hdr_frame is None:
+                continue
+            has_live_jobs = bool(self._running_jobs_in_group(gname))
+            should_show = not query_active or has_live_jobs
+            if should_show:
+                if hdr_frame.winfo_manager() != "pack":
+                    opts = getattr(run_content, "_hdr_pack_opts", {"fill": "x"})
+                    if run_content.winfo_manager() == "pack":
+                        hdr_frame.pack(before=run_content, **opts)
+                    else:
+                        hdr_frame.pack(**opts)
+                if run_content.winfo_manager() != "pack":
+                    run_content.pack(fill="x")
+            else:
+                hdr_frame.pack_forget()
+                run_content.pack_forget()
 
         # Hide group wrappers whose groups have no matching cards. Use
         # pack_propagate(False)+height=1 so the wrapper stays in its pack slot
