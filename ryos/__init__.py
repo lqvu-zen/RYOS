@@ -1,2 +1,2 @@
 """RYOS - Run Your Own Scripts."""
-__version__ = "1.7.11-dev"
+__version__ = "1.7.12-dev"
