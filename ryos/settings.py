@@ -51,6 +51,10 @@ _SETTINGS_DEFAULTS: dict = {
     "start_minimized":        False,
     "remember_window_geometry": True,
     "window_geometry":        None,
+    # On a manual launch, open on the monitor under the mouse cursor (relocating
+    # the remembered position onto it). Login launches always restore the last
+    # screen regardless of this setting.
+    "open_on_cursor_monitor": True,
     "always_on_top":          False,
     "snap_corner":            "bottom_right",
     "window_width":           540,

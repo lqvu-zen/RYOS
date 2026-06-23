@@ -28,6 +28,7 @@ sys.modules.setdefault("tkinter.simpledialog", mock.MagicMock())
 
 from ryos.db import ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
+from ryos.screens import relocate_geometry  # noqa: E402
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -487,6 +488,52 @@ class TestScriptDBGroupsWithMatch(unittest.TestCase):
             self.db.group_match_counts("backup"),
             [("Alpha", 1), ("Beta", 1), ("", 1)],
         )
+
+
+# ---------------------------------------------------------------------------
+# relocate_geometry (multi-monitor window placement)
+# ---------------------------------------------------------------------------
+
+class TestRelocateGeometry(unittest.TestCase):
+    PRIMARY = (0, 0, 1920, 1040)        # work area (taskbar trimmed)
+    RIGHT   = (1920, 0, 1920, 1040)     # monitor to the right
+    LEFT    = (-1920, 0, 1920, 1040)    # monitor to the left
+
+    def test_preserves_relative_offset(self):
+        # 100,200 from primary origin -> same offset from right monitor origin.
+        self.assertEqual(
+            relocate_geometry("540x640+100+200", self.PRIMARY, self.RIGHT),
+            "540x640+2020+200",
+        )
+
+    def test_relocate_to_left_monitor_negative_coords(self):
+        self.assertEqual(
+            relocate_geometry("540x640+100+200", self.PRIMARY, self.LEFT),
+            "540x640+-1820+200",
+        )
+
+    def test_parses_negative_source_origin(self):
+        # Window was on the left monitor; move it to primary keeps the offset.
+        self.assertEqual(
+            relocate_geometry("540x640+-1820+200", self.LEFT, self.PRIMARY),
+            "540x640+100+200",
+        )
+
+    def test_clamps_to_destination_right_edge(self):
+        # Near the right edge of a wide monitor -> clamped onto a narrow one.
+        narrow = (1920, 0, 800, 600)
+        out = relocate_geometry("540x640+1700+50", self.PRIMARY, narrow)
+        # width 540 > 600? no; height 640 > 600 -> y pinned to top (1920..), x clamped.
+        self.assertEqual(out, "540x640+2180+0")
+
+    def test_size_only_geometry_unchanged(self):
+        self.assertEqual(
+            relocate_geometry("540x640", self.PRIMARY, self.RIGHT),
+            "540x640",
+        )
+
+    def test_unparseable_returns_input(self):
+        self.assertEqual(relocate_geometry("garbage", self.PRIMARY, self.RIGHT), "garbage")
 
 
 # ---------------------------------------------------------------------------

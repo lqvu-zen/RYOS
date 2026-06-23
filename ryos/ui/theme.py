@@ -252,12 +252,15 @@ def _configure_ttk_styles() -> None:
                     background=C["border"])
 
 
-def _apply_snap_corner(window, corner: str, margin: int = 10) -> None:
+def _apply_snap_corner(window, corner: str, margin: int = 10, work_area=None) -> None:
     window.update_idletasks()
     w = window.winfo_width()
     h = window.winfo_height()
-    # Use work area (excludes taskbar) on Windows; fall back to full screen elsewhere
-    if sys.platform == "win32":
+    # Prefer an explicit target monitor work area (multi-monitor); otherwise use
+    # the primary monitor's work area on Windows, full screen elsewhere.
+    if work_area is not None:
+        ax, ay, aw, ah = work_area
+    elif sys.platform == "win32":
         try:
             import ctypes.wintypes
             wa = ctypes.wintypes.RECT()

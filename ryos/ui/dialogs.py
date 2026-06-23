@@ -724,6 +724,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
+        self._open_on_cursor    = tk.BooleanVar(value=self._settings.get("open_on_cursor_monitor", True))
         self._win_width         = tk.StringVar(value=str(self._settings.get("window_width",  540)))
         self._win_height        = tk.StringVar(value=str(self._settings.get("window_height", 640)))
         self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
@@ -936,6 +937,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Start minimized",                  self._start_minimized)
         self._chk(f, "Check for updates on startup",      self._auto_check_update)
         self._chk(f, "Remember window size and position", self._remember_geometry)
+        self._chk(f, "Open on the screen where the cursor is", self._open_on_cursor)
 
         size_row = tk.Frame(f, bg=C["bg"])
         size_row.pack(fill="x", pady=(8, 2))
@@ -1187,6 +1189,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "remember_last_group":      self._remember_group.get(),
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
+            "open_on_cursor_monitor":   self._open_on_cursor.get(),
             "max_output_lines":         max_lines,
             "max_parallel_jobs":        max_parallel,
             "auto_clear_output":        self._auto_clear.get(),

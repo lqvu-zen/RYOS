@@ -3,6 +3,7 @@ import ctypes
 import hashlib
 import os
 import queue
+import re
 import sys
 import threading
 import tkinter as tk
@@ -24,6 +25,7 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
+from ..screens import cursor_work_area, relocate_geometry, work_area_at_point
 from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
@@ -93,8 +95,9 @@ def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> No
 
 
 class RYOSApp(_BaseWindow):
-    def __init__(self):
+    def __init__(self, launched_at_startup: bool = False):
         super().__init__()
+        self._launched_at_startup = launched_at_startup
         _configure_ttk_styles()
         self.report_callback_exception = self._log_tk_exception
         if sys.platform == "win32":
@@ -118,6 +121,9 @@ class RYOSApp(_BaseWindow):
         self.configure(bg=C["bg"])
 
         self.update_idletasks()
+        # Provisional size + primary-screen centering; _apply_initial_placement
+        # (called below, once settings are loaded) refines this for the right
+        # monitor and the saved/snapped position.
         w = self._settings.get("window_width",  540)
         h = self._settings.get("window_height", 640)
         sw = self.winfo_screenwidth()
@@ -169,10 +175,7 @@ class RYOSApp(_BaseWindow):
         else:
             self._active_group = groups[0] if groups else None
 
-        corner = self._settings.get("snap_corner") or ""
-        if not corner or corner == "none":
-            if self._settings["remember_window_geometry"] and self._settings.get("window_geometry"):
-                self.geometry(self._settings["window_geometry"])
+        self._target_monitor = self._apply_initial_placement(w, h)
 
         self._running_slots: dict = {}
         self._elapsed_timer_id: str | None = None
@@ -184,10 +187,59 @@ class RYOSApp(_BaseWindow):
         if self._settings.get("auto_check_update", True):
             threading.Thread(target=self._check_for_update, daemon=True).start()
         self.attributes("-topmost", self._settings["always_on_top"])
+        corner = self._settings.get("snap_corner") or ""
         if corner and corner != "none":
-            self.after(0, lambda c=corner: _apply_snap_corner(self, c))
+            self.after(0, lambda c=corner: _apply_snap_corner(
+                self, c, work_area=self._target_monitor))
         if self._settings["start_minimized"]:
             self.after(0, self.iconify)
+
+    def _apply_initial_placement(self, w: int, h: int):
+        """Decide where the window opens and return the target monitor work area
+        (x, y, width, height) so a later snap-to-corner lands on the same screen.
+
+        Manual launch + 'open on cursor monitor' on  → restore the last geometry
+        but shift it onto the monitor under the cursor (or center there if no
+        saved geometry). Login launch (or the setting off) → restore the saved
+        geometry as-is. None target means "use the primary monitor" downstream.
+        """
+        remember = self._settings.get("remember_window_geometry", True)
+        saved = self._settings.get("window_geometry") if remember else None
+        follow_cursor = (not self._launched_at_startup
+                         and self._settings.get("open_on_cursor_monitor", True))
+
+        target = cursor_work_area() if follow_cursor else None
+
+        # When snapping, position is set later by _apply_snap_corner; here we
+        # only need to report the target monitor (and nudge onto it if known).
+        corner = self._settings.get("snap_corner") or ""
+        snapping = bool(corner) and corner != "none"
+
+        if target is None:
+            # No cursor monitor (login launch, non-Windows, or detection failed):
+            # restore the saved geometry as-is when not snapping.
+            if not snapping and saved:
+                self.geometry(saved)
+            return target
+
+        if not snapping:
+            if saved:
+                src = work_area_at_point(*self._geometry_origin(saved)) or target
+                self.geometry(relocate_geometry(saved, src, target))
+            else:
+                x = target[0] + max(0, (target[2] - w) // 2)
+                y = target[1] + max(0, (target[3] - h) // 2)
+                self.geometry(f"{w}x{h}+{x}+{y}")
+        else:
+            # Nudge onto the target monitor now; the corner snap refines it.
+            self.geometry(f"{w}x{h}+{target[0]}+{target[1]}")
+        return target
+
+    @staticmethod
+    def _geometry_origin(geometry: str) -> tuple[int, int]:
+        """Best-effort (x, y) from a 'WxH+X+Y' string; (0, 0) if unparseable."""
+        m = re.search(r"\+(-?\d+)\+(-?\d+)\s*$", geometry or "")
+        return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
 
     def _log_tk_exception(self, exc, val, tb):
         _log.error("Unhandled Tk callback exception", exc_info=(exc, val, tb))
