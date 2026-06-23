@@ -377,6 +377,11 @@ class RYOSApp(_BaseWindow):
         container.pack(fill="both", expand=True, padx=12, pady=(8, 12))
         self._cards_container = container
 
+        # "Found in other groups" hint — packed above the cards (before the
+        # container) only when a search has no match in the current group but
+        # matches elsewhere. Built empty; _update_search_hint fills it.
+        self._search_hint = tk.Frame(cards_pane, bg=C["bg"])
+
         canvas = tk.Canvas(container, highlightthickness=0, bg=C["bg"])
         scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -1140,6 +1145,56 @@ class RYOSApp(_BaseWindow):
             _filter_content(content)
 
         self._update_section_visibility()
+        self._update_search_hint(query)
+
+    def _update_search_hint(self, query: str):
+        """When a query is active on a specific group tab and that group has no
+        matching script/pipeline but other groups do, show a hint listing those
+        groups (with match counts) as clickable links that switch to them (the
+        query persists, so the target group is filtered on arrival). A ✕ lets
+        the user dismiss the hint; it stays hidden until the query text changes."""
+        hint = getattr(self, "_search_hint", None)
+        if hint is None:
+            return
+        for w in hint.winfo_children():
+            w.destroy()
+
+        active = self._active_group
+        if not query or active is None:
+            hint.pack_forget()
+            return
+        # Dismissed for this exact query — reappear only when the text changes.
+        if query == getattr(self, "_search_hint_dismissed", None):
+            hint.pack_forget()
+            return
+
+        counts = self.db.group_match_counts(query)
+        others = [(g, n) for g, n in counts if g != active]
+        active_has_match = any(g == active for g, _ in counts)
+        if active_has_match or not others:
+            hint.pack_forget()
+            return
+
+        tk.Label(hint, text=f"No matches in “{active}”. Found in:",
+                 bg=C["bg"], fg=C["path_fg"], font=("Segoe UI", 9)).pack(side="left", padx=(2, 6))
+        for gname, count in others:
+            label = "Other" if gname == "" else gname
+            target = None if gname == "" else gname
+            link = tk.Label(hint, text=f"{label} ({count})", bg=C["bg"], fg=C["accent"],
+                            font=("Segoe UI", 9, "underline"), cursor="hand2")
+            link.pack(side="left", padx=(0, 8))
+            link.bind("<Button-1>", lambda _e, g=target: self._switch_group(g))
+        dismiss = tk.Label(hint, text="✕", bg=C["bg"], fg=C["path_fg"],
+                           font=("Segoe UI", 9), cursor="hand2")
+        dismiss.pack(side="right", padx=(6, 2))
+        dismiss.bind("<Button-1>", lambda _e, q=query: self._dismiss_search_hint(q))
+        hint.pack(fill="x", padx=12, pady=(0, 4), before=self._cards_container)
+
+    def _dismiss_search_hint(self, query: str):
+        """Hide the 'found in other groups' hint for the current query string."""
+        self._search_hint_dismissed = query
+        if getattr(self, "_search_hint", None) is not None:
+            self._search_hint.pack_forget()
 
     def _update_section_visibility(self):
         """Hide/show the section header when a search query is active and no cards

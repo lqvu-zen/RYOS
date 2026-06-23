@@ -424,6 +424,72 @@ class TestParamPresets(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# groups_with_match (cross-group search hint)
+# ---------------------------------------------------------------------------
+
+class TestScriptDBGroupsWithMatch(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("Alpha")
+        self.db.create_group("Beta")
+        self.db.add("deploy", "/a/deploy.py", "", "", "Alpha")
+        self.db.add("backup", "/b/backup.py", "", "", "Beta")
+        self.db.add("loose", "/loose.py", "", "")  # ungrouped
+
+    def test_blank_query_returns_empty(self):
+        self.assertEqual(self.db.groups_with_match(""), [])
+        self.assertEqual(self.db.groups_with_match("   "), [])
+
+    def test_finds_group_by_script_name(self):
+        self.assertEqual(self.db.groups_with_match("backup"), ["Beta"])
+
+    def test_case_insensitive(self):
+        self.assertEqual(self.db.groups_with_match("BACKUP"), ["Beta"])
+
+    def test_substring_match(self):
+        self.assertEqual(self.db.groups_with_match("ploy"), ["Alpha"])
+
+    def test_no_match_returns_empty(self):
+        self.assertEqual(self.db.groups_with_match("nonexistent"), [])
+
+    def test_ungrouped_reported_last(self):
+        self.db.add("zdeploy", "/z.py", "", "")  # ungrouped, also matches "deploy"
+        self.assertEqual(self.db.groups_with_match("deploy"), ["Alpha", ""])
+
+    def test_matches_pipeline_name(self):
+        self.db.create_pipeline("nightly", "Beta")
+        self.assertEqual(self.db.groups_with_match("nightly"), ["Beta"])
+
+    def test_underscore_is_literal_not_wildcard(self):
+        self.db.add("a_b", "/ab.py", "", "", "Alpha")
+        # 'axb' must not match 'a_b' — underscore is escaped to a literal.
+        self.assertEqual(self.db.groups_with_match("axb"), [])
+        self.assertEqual(self.db.groups_with_match("a_b"), ["Alpha"])
+
+    def test_counts_blank_query(self):
+        self.assertEqual(self.db.group_match_counts(""), [])
+
+    def test_counts_single_match(self):
+        self.assertEqual(self.db.group_match_counts("backup"), [("Beta", 1)])
+
+    def test_counts_sum_scripts_and_pipelines(self):
+        self.db.add("deploy2", "/a/deploy2.py", "", "", "Alpha")
+        self.db.create_pipeline("deploy-nightly", "Alpha")
+        # 'deploy', 'deploy2' (scripts) + 'deploy-nightly' (pipeline) = 3 in Alpha.
+        self.assertEqual(self.db.group_match_counts("deploy"), [("Alpha", 3)])
+
+    def test_counts_ordering_and_ungrouped_last(self):
+        self.db.add("backup-x", "/x.py", "", "", "Alpha")
+        self.db.add("backup-z", "/z.py", "", "")  # ungrouped
+        # Alpha first (group order), Beta next, ungrouped last.
+        self.assertEqual(
+            self.db.group_match_counts("backup"),
+            [("Alpha", 1), ("Beta", 1), ("", 1)],
+        )
+
+
+# ---------------------------------------------------------------------------
 # Batch + uv execution
 # ---------------------------------------------------------------------------
 

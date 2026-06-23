@@ -641,6 +641,40 @@ class ScriptDB:
                 (group_name,),
             ).fetchall()
 
+    def group_match_counts(self, query: str) -> list[tuple[str, int]]:
+        """(group_name, count) for each group containing a script or pipeline
+        whose name matches `query` (case-insensitive substring); count is the
+        total matching scripts + pipelines in that group. Group sort order with
+        the ungrouped bucket ('') last. Blank query returns []. The LIKE pattern
+        is escaped so '%'/'_' behave as literals, matching the plain-substring
+        search used by the UI filter."""
+        q = (query or "").strip().lower()
+        if not q:
+            return []
+        esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{esc}%"
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT g, SUM(c) FROM ("
+                "  SELECT COALESCE(group_name, '') AS g, COUNT(*) AS c FROM scripts "
+                "  WHERE LOWER(name) LIKE ? ESCAPE '\\' GROUP BY g "
+                "  UNION ALL "
+                "  SELECT COALESCE(group_name, '') AS g, COUNT(*) AS c FROM pipelines "
+                "  WHERE LOWER(name) LIKE ? ESCAPE '\\' GROUP BY g"
+                ") GROUP BY g",
+                (like, like),
+            ).fetchall()
+        counts = {r[0]: r[1] for r in rows}
+        ordered = [(g, counts[g]) for g in self.list_groups() if g in counts]
+        if "" in counts:
+            ordered.append(("", counts[""]))
+        return ordered
+
+    def groups_with_match(self, query: str) -> list[str]:
+        """Group names containing a script or pipeline matching `query`, in the
+        same order as group_match_counts (ungrouped last). Blank query → []."""
+        return [g for g, _ in self.group_match_counts(query)]
+
     def list_pipeline_steps(self, pipeline_id: int) -> list:
         """Returns list of (step_id, script_id, name, path, params, interpreter, params_override)."""
         with self._connect() as conn:
