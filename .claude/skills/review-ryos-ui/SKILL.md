@@ -55,7 +55,7 @@ Use the template in `assets/report-template.md`. The core of a useful report is 
 
 Order findings by severity. Lead with a 2–3 sentence summary of the overall impression so the user gets the gist before the details. Reference screenshots by filename so the user can look at exactly what you saw.
 
-Save the report to the outputs folder (or the project root if the user prefers) as a markdown file.
+Save the report to `.claude/discarded/` as a markdown file (e.g. `ui-review-YYYY-MM-DD.md`). This folder is gitignored — review files are working documents, not project artefacts.
 
 ### 5. Propose the edits
 

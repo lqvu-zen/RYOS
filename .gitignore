@@ -32,5 +32,6 @@ __pycache__/
 .claude/settings.local.json
 .claude/skills/*/screenshots/
 .claude/skills/*/outputs
+.claude/discarded/
 /eval_tmp
 /.mypy_cache
