@@ -35,6 +35,7 @@ Built with Python + Tkinter. Ships as a single standalone `.exe` (no Python requ
 - **Desktop notifications** — optional Windows toast when a script or pipeline finishes.
 - **Auto-update check** — checks GitHub for new releases on startup (or on demand).
 - **Runs at login** — optionally start with Windows, minimized, always-on-top, snapped to a screen corner.
+- **Multi-monitor aware** — opens on the monitor where your cursor is when you launch it; when started with Windows, it reopens on the last screen you used.
 - **Logging** — built-in log viewer and a one-click "open log folder" for troubleshooting.
 
 ## Getting Started
@@ -124,7 +125,8 @@ Open **Options → Advanced options…**:
 | **Always on top** | Keep the window above others |
 | **Start minimized** | Launch hidden / minimized |
 | **Remember window size and position** | Restore geometry on next launch |
-| **Snap to screen corner** | Dock the window to a chosen corner |
+| **Open on the screen where the cursor is** | On a manual launch, open on the monitor under the mouse (login launches restore the last screen) |
+| **Snap to screen corner** | Dock the window to a chosen corner (of the same monitor) |
 | **Auto-clear output before each run** | Wipe the log when a new run starts |
 | **Auto-scroll to bottom** | Follow output as it streams |
 | **Notify when script / pipeline completes** | Windows toast on completion |

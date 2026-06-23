@@ -211,8 +211,9 @@ Click **⚙** → **Advanced options…**. Settings are split across five tabs.
 | **Start minimized** | Window starts hidden in the taskbar |
 | **Check for updates on startup** | Compare against the latest GitHub release |
 | **Remember window size and position** | Restores size and position from last session |
+| **Open on the screen where the cursor is** | Manual launches open on the monitor under the mouse (carrying over the remembered position); login launches restore the last screen. Off = always restore the last screen |
 | **Window size** | Set a fixed width × height in pixels |
-| **Snap to screen corner** | Auto-positions the window in a screen corner — Bottom right / Bottom left / Top right / Top left / Off |
+| **Snap to screen corner** | Auto-positions the window in a screen corner of the monitor it opens on — Bottom right / Bottom left / Top right / Top left / Off |
 
 ### Output
 | Setting | Description |

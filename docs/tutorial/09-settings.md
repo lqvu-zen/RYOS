@@ -23,8 +23,9 @@ Open **⚙ → Advanced options…** from the header. The settings are organised
 - **Start minimized** — start hidden in the taskbar.
 - **Check for updates on startup** — look for a newer version when the app opens.
 - **Remember window size and position** — reopen where you left it.
+- **Open on the screen where the cursor is** — on a multi-monitor setup, a manual launch (double-click / `uv run ryos`) opens on the monitor your mouse is on, carrying over the remembered position. When RYOS starts with Windows at login, it instead reopens on the last screen you used. Turn this off to always reopen on the last screen.
 - **Window size** — set a fixed width × height.
-- **Snap to screen corner** — pin the window to a chosen corner of the screen.
+- **Snap to screen corner** — pin the window to a chosen corner of the screen (the same monitor it opens on).
 
 ## Output
 
