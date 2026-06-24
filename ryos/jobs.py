@@ -8,6 +8,10 @@ does not import tkinter (``from __future__ import annotations`` keeps them lazy)
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import tkinter as tk
 
 
 class Job:
@@ -30,9 +34,9 @@ class Job:
         self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
         self.pipeline_step_idx: int = 0
         self.pipeline_total: int = pipeline_total
-        self.name_var: tk.StringVar | None = None       # noqa: F821 (annotation only)
-        self.time_var: tk.StringVar | None = None       # noqa: F821 (annotation only)
-        self.running_row: tk.Frame | None = None        # noqa: F821 (annotation only)
+        self.name_var: tk.StringVar | None = None
+        self.time_var: tk.StringVar | None = None
+        self.running_row: tk.Frame | None = None
 
 
 def format_elapsed(start_time: datetime, now: datetime) -> str:

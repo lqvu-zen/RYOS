@@ -110,6 +110,8 @@ class JobController:
                 if act.text is not None and job:
                     self._on_output(job.tab_key, act.text, act.tag)
                 if act.status is not None:
+                    # A completion item always carries its script id (protocol).
+                    assert act.sid is not None
                     self._db.mark_run_status(act.sid, act.status)
                     if job:
                         self.handle_step_done(job, act.sid, act.status)
