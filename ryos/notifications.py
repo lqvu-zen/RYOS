@@ -2,7 +2,12 @@
 import json
 import subprocess
 import sys
+import urllib.error
 import urllib.request
+
+from .logger import get_logger
+
+_log = get_logger("notifications")
 
 _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
@@ -34,14 +39,17 @@ $t2.AppendChild($xml.CreateTextNode("{b}")) | Out-Null
             creationflags=subprocess.CREATE_NO_WINDOW,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
-    except Exception:
-        pass
+    except OSError as e:
+        # Best-effort cosmetic toast (e.g. PowerShell missing / spawn failure);
+        # log for diagnosis but never let it stop a job from completing.
+        _log.debug("Toast notification failed: %s", e)
 
 
 def _parse_version(tag: str) -> tuple:
     try:
         return tuple(int(x.split("-")[0]) for x in tag.lstrip("v").split("."))
-    except Exception:
+    except (ValueError, AttributeError):
+        # Non-numeric component, or tag isn't a string: sorts lowest.
         return (0,)
 
 
@@ -52,5 +60,8 @@ def _fetch_latest_release() -> tuple[str, str] | None:
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read())
         return data["tag_name"], data["html_url"]
-    except Exception:
+    except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+        # Network down, non-JSON body, or an unexpected response shape: the
+        # update check is optional, so log and skip rather than surface an error.
+        _log.debug("Update check failed: %s", e)
         return None

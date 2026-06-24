@@ -618,6 +618,10 @@ class TestParseVersion(unittest.TestCase):
         self.assertEqual(_parse_version("not-a-version"), (0,))
         self.assertEqual(_parse_version(""), (0,))
 
+    def test_non_string_tag_returns_zero_tuple(self):
+        # AttributeError path (tag is not a str) still sorts lowest.
+        self.assertEqual(_parse_version(None), (0,))
+
     def test_newer_compares_greater(self):
         self.assertGreater(_parse_version("v1.7.3"), _parse_version("v1.7.2"))
         self.assertGreater(_parse_version("v1.8.0"), _parse_version("v1.7.9"))
