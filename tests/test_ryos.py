@@ -1704,3 +1704,46 @@ class TestJobController(unittest.TestCase):
         self.assertTrue(self.ctl.at_capacity(2))
         self.assertFalse(self.ctl.at_capacity(0))   # still unlimited
         self.assertFalse(self.ctl.at_capacity(3))
+
+
+class TestSourceIntegrity(unittest.TestCase):
+    """Guard shipped source against corruption and bad merges.
+
+    Catches the failure modes that actually bite this repo: NUL bytes or
+    truncation from a flaky filesystem, non-UTF-8 bytes, and leftover merge
+    conflict markers. Pure and fast, so it runs headless in CI.
+    """
+
+    _ROOT = Path(__file__).resolve().parents[1]
+    _CONFLICT = ("<<<<<<< ", ">>>>>>> ", "||||||| ")
+
+    def _py_files(self):
+        files = sorted((self._ROOT / "ryos").rglob("*.py"))
+        files += [self._ROOT / "tests" / "test_ryos.py",
+                  self._ROOT / "tests" / "gui_smoke.py"]
+        return [p for p in files if "__pycache__" not in p.parts and p.exists()]
+
+    def test_files_found(self):
+        # Sanity: the walk actually discovers the package (guards against a
+        # silently-empty scan making the other checks vacuously pass).
+        self.assertGreater(len(self._py_files()), 5)
+
+    def test_no_nul_bytes(self):
+        for p in self._py_files():
+            self.assertNotIn(b"\x00", p.read_bytes(), f"NUL byte found in {p}")
+
+    def test_valid_utf8(self):
+        for p in self._py_files():
+            try:
+                p.read_bytes().decode("utf-8")
+            except UnicodeDecodeError as e:
+                self.fail(f"{p} is not valid UTF-8: {e}")
+
+    def test_no_merge_conflict_markers(self):
+        for p in self._py_files():
+            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+                for marker in self._CONFLICT:
+                    self.assertFalse(
+                        line.startswith(marker),
+                        f"merge conflict marker at {p}:{n}",
+                    )
