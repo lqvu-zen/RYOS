@@ -35,7 +35,7 @@ class Tooltip:
         if self._job:
             try:
                 self._widget.after_cancel(self._job)
-            except Exception:
+            except tk.TclError:
                 pass
             self._job = None
 
@@ -63,7 +63,7 @@ class Tooltip:
         if self._tip:
             try:
                 self._tip.destroy()
-            except Exception:
+            except tk.TclError:
                 pass
             self._tip = None
 

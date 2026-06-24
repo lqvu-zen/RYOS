@@ -223,7 +223,7 @@ class ScriptCard(tk.Frame):
         try:
             if widget.cget("bg") in (C["card_bg"], C["card_hover"]):
                 widget.config(bg=color)
-        except Exception:
+        except tk.TclError:
             pass
         for child in widget.winfo_children():
             self._set_card_bg(child, color)

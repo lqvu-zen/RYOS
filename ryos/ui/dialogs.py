@@ -1206,7 +1206,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
         })
         try:
             _set_startup(self._start_with_windows.get())
-        except Exception as e:
+        except OSError as e:
+            # winreg raises OSError on registry failure; show it. An unexpected
+            # (non-OSError) error is a bug and should surface, not be masked.
             messagebox.showerror("Startup Error",
                                  f"Could not update Windows startup entry:\n{e}",
                                  parent=self)
