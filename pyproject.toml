@@ -58,6 +58,7 @@ files = [
     "ryos/job_controller.py",
     "ryos/notifications.py",
     "ryos/logger.py",
+    "ryos/search.py",
     "ryos/ui/__init__.py",
     "ryos/ui/theme.py",
     "ryos/ui/widgets.py",

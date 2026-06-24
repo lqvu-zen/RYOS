@@ -26,6 +26,7 @@ from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
 from ..screens import cursor_work_area, relocate_geometry, work_area_at_point
+from ..search import compute_hint, matches, normalize_query
 from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
@@ -1168,7 +1169,7 @@ class RYOSApp(_BaseWindow):
             return  # cards not built yet
         # Treat placeholder as "no query" so setting the placeholder doesn't filter.
         is_ph = getattr(self, "_search_ph", [False])[0]
-        query = "" if is_ph else self._search_var.get().lower().strip()
+        query = normalize_query(self._search_var.get(), is_ph)
 
         # Search is scoped to the current view: a query filters only the cards
         # rendered for the active group tab. The "All" tab still searches every
@@ -1192,7 +1193,7 @@ class RYOSApp(_BaseWindow):
             for child in card_children:
                 child.pack_forget()
             for child in card_children:
-                if not query or query in child._name.lower():
+                if matches(child._name, query):
                     child.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
 
         for content in self._fav_contents:
@@ -1226,22 +1227,20 @@ class RYOSApp(_BaseWindow):
             hint.pack_forget()
             return
 
-        counts = self.db.group_match_counts(query)
-        others = [(g, n) for g, n in counts if g != active]
-        active_has_match = any(g == active for g, _ in counts)
-        if active_has_match or not others:
+        model = compute_hint(query, active, self.db.group_match_counts(query),
+                             getattr(self, "_search_hint_dismissed", None))
+        if model is None:
             hint.pack_forget()
             return
 
         tk.Label(hint, text=f'No matches in "{active}". Found in:',
                  bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 9)).pack(side="left", padx=(8, 6), pady=6)
-        for gname, count in others:
-            label = "Other" if gname == "" else gname
-            target = None if gname == "" else gname
-            link = tk.Label(hint, text=f"{label} ({count})", bg=C["card_bg"], fg=C["accent"],
+        for link_model in model.links:
+            link = tk.Label(hint, text=f"{link_model.label} ({link_model.count})",
+                            bg=C["card_bg"], fg=C["accent"],
                             font=("Segoe UI", 9, "underline"), cursor="hand2")
             link.pack(side="left", padx=(0, 8), pady=6)
-            link.bind("<Button-1>", lambda _e, g=target: self._switch_group(g))
+            link.bind("<Button-1>", lambda _e, g=link_model.target: self._switch_group(g))
         dismiss = tk.Label(hint, text="✕", bg=C["card_bg"], fg=C["path_fg"],
                            font=("Segoe UI", 9), cursor="hand2")
         dismiss.pack(side="right", padx=(6, 8), pady=6)

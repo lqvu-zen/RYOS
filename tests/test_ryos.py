@@ -1751,3 +1751,48 @@ class TestSourceIntegrity(unittest.TestCase):
                         line.startswith(marker),
                         f"merge conflict marker at {p}:{n}",
                     )
+
+
+from ryos.search import HintLink, SearchHint, compute_hint, matches, normalize_query  # noqa: E402
+
+
+class TestSearchNormalizeAndMatch(unittest.TestCase):
+    def test_placeholder_is_no_query(self):
+        self.assertEqual(normalize_query("Search…", True), "")
+
+    def test_normalize_lowercases_and_strips(self):
+        self.assertEqual(normalize_query("  Deploy ", False), "deploy")
+
+    def test_matches_empty_query_is_true(self):
+        self.assertTrue(matches("anything", ""))
+
+    def test_matches_is_case_insensitive_substring(self):
+        self.assertTrue(matches("Deploy Prod", "prod"))
+        self.assertFalse(matches("Deploy Prod", "stage"))
+
+
+class TestComputeHint(unittest.TestCase):
+    def test_no_query_returns_none(self):
+        self.assertIsNone(compute_hint("", "A", [("A", 1)]))
+
+    def test_no_active_group_returns_none(self):
+        self.assertIsNone(compute_hint("x", None, [("A", 1)]))
+
+    def test_dismissed_query_returns_none(self):
+        self.assertIsNone(compute_hint("x", "A", [("B", 1)], dismissed="x"))
+
+    def test_active_group_has_match_returns_none(self):
+        self.assertIsNone(compute_hint("x", "A", [("A", 2), ("B", 1)]))
+
+    def test_no_other_group_matches_returns_none(self):
+        self.assertIsNone(compute_hint("x", "A", []))
+
+    def test_other_groups_produce_links(self):
+        hint = compute_hint("x", "A", [("B", 3), ("C", 1)])
+        self.assertIsInstance(hint, SearchHint)
+        self.assertEqual(hint.links,
+                         [HintLink("B", "B", 3), HintLink("C", "C", 1)])
+
+    def test_unnamed_group_maps_to_other_label_and_none_target(self):
+        hint = compute_hint("x", "A", [("", 2)])
+        self.assertEqual(hint.links, [HintLink("Other", None, 2)])
