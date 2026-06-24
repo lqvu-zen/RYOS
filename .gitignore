@@ -14,6 +14,7 @@ tests/*
 !tests/echo_args.bat
 !tests/uv_runner.bat
 !tests/uv_hello.py
+!tests/gui_smoke.py
 
 # Database
 scripts.db
