@@ -109,7 +109,12 @@ class RYOSApp(_BaseWindow):
         _icon_base = _BASE  # cx_Freeze or dev: next to exe / project root
         _icon = _icon_base / "icon.ico"
         if _icon.exists():
-            self.iconbitmap(str(_icon))
+            try:
+                self.iconbitmap(str(_icon))
+            except tk.TclError:
+                # .ico isn't supported by every Tk build (e.g. Linux/X11); the
+                # window icon is cosmetic, so a failure must not stop startup.
+                _log.debug("Could not set window icon from %s", _icon, exc_info=True)
         self.db = ScriptDB()
         self._settings: dict = _load_settings()
         # Apply the saved theme before building any widgets so that C is
