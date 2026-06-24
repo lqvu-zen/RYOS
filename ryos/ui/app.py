@@ -25,6 +25,7 @@ from ..interpreter import build_command, detect_interpreter, resolve_interpreter
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
+from ..dragdrop import compute_insertion, first_rect_at
 from ..screens import cursor_work_area, relocate_geometry, work_area_at_point
 from ..search import compute_hint, matches, normalize_query
 from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
@@ -1580,15 +1581,15 @@ class RYOSApp(_BaseWindow):
             self._update_insertion_indicator(event)
 
     def _find_tab_at(self, x_root, y_root):
+        rects = []
         for entry in self._group_tab_btns:
             _, btn, *_ = entry
             try:
-                if (btn.winfo_rootx() <= x_root <= btn.winfo_rootx() + btn.winfo_width() and
-                        btn.winfo_rooty() <= y_root <= btn.winfo_rooty() + btn.winfo_height()):
-                    return entry
+                rects.append((entry, btn.winfo_rootx(), btn.winfo_rooty(),
+                              btn.winfo_width(), btn.winfo_height()))
             except tk.TclError:
                 pass
-        return None
+        return first_rect_at(x_root, y_root, rects)
 
     def _update_insertion_indicator(self, event):
         is_pipeline_drag = isinstance(self._drag_card, PipelineCard)
@@ -1598,28 +1599,16 @@ class RYOSApp(_BaseWindow):
                 self._drag_indicator.place_forget()
             return
 
-        insert_y_screen = None
-        before_id = None
         visible = [c for c in active_list if c is not self._drag_card]
-
         id_attr = "pipeline_id" if is_pipeline_drag else "script_id"
+        cards = []
         for card in visible:
             try:
-                mid = card.winfo_rooty() + card.winfo_height() // 2
+                cards.append((getattr(card, id_attr),
+                              card.winfo_rooty(), card.winfo_height()))
             except tk.TclError:
                 continue
-            if event.y_root <= mid:
-                before_id = getattr(card, id_attr)
-                insert_y_screen = card.winfo_rooty()
-                break
-
-        if insert_y_screen is None and visible:
-            last = visible[-1]
-            try:
-                insert_y_screen = last.winfo_rooty() + last.winfo_height()
-            except tk.TclError:
-                pass
-
+        before_id, insert_y_screen = compute_insertion(event.y_root, cards)
         self._drag_insert_before = before_id
 
         if insert_y_screen is not None:

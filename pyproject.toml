@@ -59,6 +59,7 @@ files = [
     "ryos/notifications.py",
     "ryos/logger.py",
     "ryos/search.py",
+    "ryos/dragdrop.py",
     "ryos/ui/__init__.py",
     "ryos/ui/theme.py",
     "ryos/ui/widgets.py",

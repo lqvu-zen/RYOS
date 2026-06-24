@@ -1796,3 +1796,48 @@ class TestComputeHint(unittest.TestCase):
     def test_unnamed_group_maps_to_other_label_and_none_target(self):
         hint = compute_hint("x", "A", [("", 2)])
         self.assertEqual(hint.links, [HintLink("Other", None, 2)])
+
+
+from ryos.dragdrop import compute_insertion, first_rect_at  # noqa: E402
+
+
+class TestComputeInsertion(unittest.TestCase):
+    # ids 10/20/30 at tops 0/20/40, height 20 -> mids 10/30/50.
+    CARDS = [(10, 0, 20), (20, 20, 20), (30, 40, 20)]
+
+    def test_empty_returns_none_none(self):
+        self.assertEqual(compute_insertion(5, []), (None, None))
+
+    def test_drop_above_first_mid_lands_before_first(self):
+        self.assertEqual(compute_insertion(5, self.CARDS), (10, 0))
+
+    def test_boundary_at_mid_is_inclusive(self):
+        self.assertEqual(compute_insertion(10, self.CARDS), (10, 0))
+
+    def test_drop_in_middle_lands_before_that_card(self):
+        self.assertEqual(compute_insertion(25, self.CARDS), (20, 20))
+
+    def test_drop_below_all_mids_appends(self):
+        self.assertEqual(compute_insertion(100, self.CARDS), (None, 60))
+
+
+class TestFirstRectAt(unittest.TestCase):
+    RECTS = [("a", 0, 0, 10, 10), ("b", 20, 0, 10, 10)]
+
+    def test_point_inside_returns_key(self):
+        self.assertEqual(first_rect_at(5, 5, self.RECTS), "a")
+        self.assertEqual(first_rect_at(25, 5, self.RECTS), "b")
+
+    def test_point_in_gap_returns_none(self):
+        self.assertIsNone(first_rect_at(15, 5, self.RECTS))
+
+    def test_edge_is_inclusive(self):
+        self.assertEqual(first_rect_at(0, 0, self.RECTS), "a")
+        self.assertEqual(first_rect_at(10, 10, self.RECTS), "a")
+
+    def test_first_match_wins_on_overlap(self):
+        rects = [("a", 0, 0, 100, 100), ("b", 0, 0, 10, 10)]
+        self.assertEqual(first_rect_at(5, 5, rects), "a")
+
+    def test_empty_returns_none(self):
+        self.assertIsNone(first_rect_at(5, 5, []))
