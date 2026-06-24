@@ -25,6 +25,7 @@ from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
 from ..dragdrop import compute_insertion, first_rect_at
+from ..grouping import bucket_by_group
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
 from ..search import compute_hint, matches, normalize_query
@@ -1118,12 +1119,7 @@ class RYOSApp(_BaseWindow):
                          bg=C["bg"], fg=C["path_fg"],
                          font=("Segoe UI", 10), justify="center").pack(pady=60)
                 return
-            group_scripts: dict[str, list] = {g: [] for g in groups}
-            group_scripts.setdefault("", [])
-            for rec in all_scripts:
-                g = rec[8] or ""
-                group_scripts.setdefault(g, [])
-                group_scripts[g].append(rec)
+            group_scripts = bucket_by_group(all_scripts, groups, lambda r: r[8] or "")
             any_named = bool(groups)
             self._group_wrappers: list[tk.Frame] = []
             for gname in groups:

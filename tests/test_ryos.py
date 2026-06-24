@@ -1871,3 +1871,31 @@ class TestCenterInWorkArea(unittest.TestCase):
     def test_window_larger_than_area_clamps_to_origin(self):
         self.assertEqual(center_in_work_area(2000, 2000, (10, 20, 800, 600)),
                          "2000x2000+10+20")
+
+
+from ryos.grouping import bucket_by_group  # noqa: E402
+
+
+class TestBucketByGroup(unittest.TestCase):
+    @staticmethod
+    def _key(r):
+        return r[1]
+
+    def test_named_groups_always_present_even_if_empty(self):
+        self.assertEqual(bucket_by_group([], ["A", "B"], self._key),
+                         {"A": [], "B": [], "": []})
+
+    def test_ungrouped_key_always_present(self):
+        self.assertEqual(bucket_by_group([], [], self._key), {"": []})
+
+    def test_records_bucketed_and_order_preserved(self):
+        recs = [(1, "A"), (2, ""), (3, "A"), (4, "B")]
+        out = bucket_by_group(recs, ["A", "B"], self._key)
+        self.assertEqual(out["A"], [(1, "A"), (3, "A")])
+        self.assertEqual(out["B"], [(4, "B")])
+        self.assertEqual(out[""], [(2, "")])
+
+    def test_unknown_group_bucket_created_on_demand(self):
+        out = bucket_by_group([(1, "Z")], ["A"], self._key)
+        self.assertEqual(out["Z"], [(1, "Z")])
+        self.assertEqual(out["A"], [])
