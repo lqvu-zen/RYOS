@@ -42,11 +42,12 @@ ignore = ["E741"]
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
-# Scope: the UI-free core modules, which are kept type-clean. The Tkinter UI
-# (ryos/ui/*) is intentionally excluded -- Tk's dynamic widget API yields many
-# false positives -- and ryos/startup.py is Windows-only (winreg), so it can't
-# be checked on the Linux CI runner. Running `mypy` with no arguments checks
-# exactly the files listed here.
+# Scope: the UI-free core plus the cleanly-typed Tkinter modules. The heavily
+# widget-driven UI files (ryos/ui/app.py, dialogs.py, cards.py) are excluded for
+# now -- Tk's dynamic API yields many false positives there -- and
+# ryos/startup.py is Windows-only (winreg), so it can't be checked on the Linux
+# CI runner. Running `mypy` with no arguments checks exactly the files listed
+# here; widening into the remaining UI files is tracked as future work.
 files = [
     "ryos/db.py",
     "ryos/interpreter.py",
@@ -57,4 +58,8 @@ files = [
     "ryos/job_controller.py",
     "ryos/notifications.py",
     "ryos/logger.py",
+    "ryos/ui/__init__.py",
+    "ryos/ui/theme.py",
+    "ryos/ui/widgets.py",
+    "ryos/ui/pipeline.py",
 ]
