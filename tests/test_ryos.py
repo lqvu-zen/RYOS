@@ -1841,3 +1841,33 @@ class TestFirstRectAt(unittest.TestCase):
 
     def test_empty_returns_none(self):
         self.assertIsNone(first_rect_at(5, 5, []))
+
+
+from ryos.screens import center_in_work_area, geometry_origin  # noqa: E402
+
+
+class TestGeometryOrigin(unittest.TestCase):
+    def test_positive_origin(self):
+        self.assertEqual(geometry_origin("540x640+100+200"), (100, 200))
+
+    def test_negative_origin(self):
+        self.assertEqual(geometry_origin("540x640+-1920+0"), (-1920, 0))
+
+    def test_unparseable_returns_zero(self):
+        self.assertEqual(geometry_origin(""), (0, 0))
+        self.assertEqual(geometry_origin("garbage"), (0, 0))
+        self.assertEqual(geometry_origin(None), (0, 0))
+
+
+class TestCenterInWorkArea(unittest.TestCase):
+    def test_centers_on_primary(self):
+        self.assertEqual(center_in_work_area(540, 640, (0, 0, 1920, 1080)),
+                         "540x640+690+220")
+
+    def test_centers_in_offset_work_area(self):
+        self.assertEqual(center_in_work_area(540, 640, (100, 50, 800, 600)),
+                         "540x640+230+50")
+
+    def test_window_larger_than_area_clamps_to_origin(self):
+        self.assertEqual(center_in_work_area(2000, 2000, (10, 20, 800, 600)),
+                         "2000x2000+10+20")

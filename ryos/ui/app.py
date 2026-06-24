@@ -3,7 +3,6 @@ import ctypes
 import hashlib
 import os
 import queue
-import re
 import sys
 import threading
 import tkinter as tk
@@ -26,7 +25,8 @@ from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
 from ..dragdrop import compute_insertion, first_rect_at
-from ..screens import cursor_work_area, relocate_geometry, work_area_at_point
+from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
+                       relocate_geometry, work_area_at_point)
 from ..search import compute_hint, matches, normalize_query
 from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
 from ..quickrun import (
@@ -231,22 +231,15 @@ class RYOSApp(_BaseWindow):
 
         if not snapping:
             if saved:
-                src = work_area_at_point(*self._geometry_origin(saved)) or target
+                src = work_area_at_point(*geometry_origin(saved)) or target
                 self.geometry(relocate_geometry(saved, src, target))
             else:
-                x = target[0] + max(0, (target[2] - w) // 2)
-                y = target[1] + max(0, (target[3] - h) // 2)
-                self.geometry(f"{w}x{h}+{x}+{y}")
+                self.geometry(center_in_work_area(w, h, target))
         else:
             # Nudge onto the target monitor now; the corner snap refines it.
             self.geometry(f"{w}x{h}+{target[0]}+{target[1]}")
         return target
 
-    @staticmethod
-    def _geometry_origin(geometry: str) -> tuple[int, int]:
-        """Best-effort (x, y) from a 'WxH+X+Y' string; (0, 0) if unparseable."""
-        m = re.search(r"\+(-?\d+)\+(-?\d+)\s*$", geometry or "")
-        return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
 
     def _log_tk_exception(self, exc, val, tb):
         _log.error("Unhandled Tk callback exception", exc_info=(exc, val, tb))

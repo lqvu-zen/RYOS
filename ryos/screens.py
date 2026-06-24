@@ -92,3 +92,17 @@ def cursor_work_area():
         return work_area_at_point(pt.x, pt.y)
     except Exception:
         return None
+
+
+def geometry_origin(geometry: str) -> tuple[int, int]:
+    """Best-effort (x, y) origin from a 'WxH+X+Y' string; (0, 0) if unparseable."""
+    m = re.search(r"\+(-?\d+)\+(-?\d+)\s*$", geometry or "")
+    return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+
+def center_in_work_area(w: int, h: int, work_area: tuple[int, int, int, int]) -> str:
+    """Tk geometry string centering a w×h window in a work area (left, top, width, height)."""
+    left, top, aw, ah = work_area
+    x = left + max(0, (aw - w) // 2)
+    y = top + max(0, (ah - h) // 2)
+    return f"{w}x{h}+{x}+{y}"
