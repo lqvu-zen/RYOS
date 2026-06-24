@@ -65,7 +65,7 @@ These invariants are also the usual suspects: when something breaks, a violated 
 
 - **Comments explain WHY, not WHAT.** Add a comment only when the reason for a line is non-obvious.
 
-- **Bump `__version__`** in `ryos/__init__.py` — patch level for a bug fix.
+- **Don't touch `__version__`.** It's bumped only at release time (see `release-ryos`), not per fix.
 
 ## The workflow
 
@@ -110,18 +110,17 @@ You do not write the fix or run the tests yourself. Spawn a Sonnet agent to appl
 Agent({ description: "Fix <bug>", subagent_type: "general-purpose", model: "sonnet", prompt: <self-contained brief> })
 ```
 
-The brief includes, verbatim: the root cause and fix plan from step 3; the failing test to add (or the visual check); the entire **Architecture rules that always apply** section (paste it — the fix must not trade one violation for another); the `__version__` patch bump; and the acceptance criteria:
+The brief includes, verbatim: the root cause and fix plan from step 3; the failing test to add (or the visual check); the entire **Architecture rules that always apply** section (paste it — the fix must not trade one violation for another); and the acceptance criteria:
 
 - `cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v` — the new regression test passes and the whole suite is green.
 - `cd D:/Projects/RYOS && uv run ryos` — the original repro no longer reproduces, and run/stop, groups, output panel, drag-drop, and the pipeline editor still work. **If there's no display and the GUI can't launch, don't silently skip this** — say so, rely on the unit tests, and use the `run-ryos` screenshot driver where possible.
 
-Add: *"Read only the files in the plan plus direct callers/callees; don't scan the repo. Edit only inside `ryos/`, plus the regression test in tests/test_ryos.py. Don't touch pyproject.toml, build*.bat, or uv.lock. Apply the fix, add the failing test, bump `__version__`, then run the suite and the repro check; if anything fails, read the traceback, fix, and re-run until clean. Do not commit or push. Report files changed, the regression test going red→green, the final suite result, and a one-line repro-gone note."*
+Add: *"Read only the files in the plan plus direct callers/callees; don't scan the repo. Edit only inside `ryos/`, plus the regression test in tests/test_ryos.py. Don't touch pyproject.toml, build*.bat, or uv.lock. Apply the fix, add the failing test, then run the suite and the repro check; if anything fails, read the traceback, fix, and re-run until clean. Do not commit or push. Report files changed, the regression test going red→green, the final suite result, and a one-line repro-gone note."*
 
 When the agent returns, **verify before moving on** — this is the gate. Run `git diff` and re-run the suite yourself, then check the diff:
 
 - [ ] The regression test actually fails on the old code and passes on the fix (not a test written to trivially pass).
 - [ ] The fix addresses the root cause from step 3, not just the surface symptom.
-- [ ] `__version__` bumped (patch) in `ryos/__init__.py`.
 - [ ] No worker thread touches a widget except via `self.after` / `self.output_queue`.
 - [ ] No new `import ryos.ui.*` inside top-level modules; any DB change stays `PRAGMA`-guarded.
 - [ ] Run/stop still flips the affected card in place — no `_refresh_cards()` on start/stop.
@@ -158,4 +157,4 @@ EOF
 
 ### 7. Report back
 
-Tell the user, briefly: what was broken and the root cause, the fix and which files under `ryos/` changed, the regression test added, the new `__version__`, the commit hash, and anything to watch for.
+Tell the user, briefly: what was broken and the root cause, the fix and which files under `ryos/` changed, the regression test added, the commit hash, and anything to watch for.

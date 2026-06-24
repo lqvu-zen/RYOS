@@ -67,7 +67,7 @@ These are the invariants that make RYOS work. Most "looked fine, broke in practi
 
 - **Comments explain WHY, not WHAT.** The codebase is sparing with comments. Add one only when the reason for a line is non-obvious; don't narrate what the code plainly does.
 
-- **Bump `__version__`.** It lives in `ryos/__init__.py` (currently a `-dev` string). Bump the patch number for fixes and small features, the minor for a notable new capability.
+- **Don't touch `__version__`.** Leave `ryos/__init__.py` alone — the version is bumped only when cutting a release (see the `release-ryos` skill), never per feature, and carries no `-dev` suffix.
 
 ## The workflow
 
@@ -121,7 +121,6 @@ A good plan is concrete and small. Example, for *"confirm before stopping a runn
 > - **UI placement:** checkbox in the Advanced Options dialog; the confirm prompt fires from the existing Stop control; no change to running-card behavior.
 > - **Thread-safety:** none — the stop path is on the main thread.
 > - **Risks:** don't double-prompt when stopping many scripts at once; default-on shouldn't surprise on first upgrade.
-> - **Version:** patch bump.
 
 Present the plan to the user and proceed once they're on board (a "go ahead" with no comment counts as approval). Use a task list so each concrete change is visible during implementation.
 
@@ -133,17 +132,16 @@ You do not write the implementation, run the tests, or launch the app yourself. 
 Agent({ description: "Implement <feature>", subagent_type: "general-purpose", model: "sonnet", prompt: <self-contained brief> })
 ```
 
-The brief must include, verbatim: the **full approved plan** from step 3; the entire **Architecture rules that always apply** section (paste it — don't summarize; the full list is the contract); the exact `__version__` bump expected (the agent does it in the same pass); and the verification + acceptance criteria:
+The brief must include, verbatim: the **full approved plan** from step 3; the entire **Architecture rules that always apply** section (paste it — don't summarize; the full list is the contract); and the verification + acceptance criteria:
 
 - `cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v` — all tests pass.
 - `cd D:/Projects/RYOS && uv run ryos` — the app launches, the feature works end-to-end, and run/stop, groups, the output panel, drag-drop, and the pipeline editor do not regress. **If the environment has no display and the GUI can't launch, don't silently skip this** — say so, lean harder on the unit tests, and use the `run-ryos` skill's screenshot driver to verify the UI states where possible.
 
-Add this instruction: *"Read only the files in the plan plus the direct callers/callees you need; use targeted Grep and narrow Reads — don't scan the repo. Edit only inside `ryos/` (a focused new test in `tests/test_ryos.py` is allowed when the feature adds testable non-UI logic). Don't touch `pyproject.toml`, `build*.bat`, or `uv.lock`. Implement the plan, bump `__version__`, then run the unit tests and the smoke check; if anything fails, read the traceback, fix, and re-run until both are clean. Do not commit or push. Report the files changed, the final test result, and a one-line smoke-test note."*
+Add this instruction: *"Read only the files in the plan plus the direct callers/callees you need; use targeted Grep and narrow Reads — don't scan the repo. Edit only inside `ryos/` (a focused new test in `tests/test_ryos.py` is allowed when the feature adds testable non-UI logic). Don't touch `pyproject.toml`, `build*.bat`, or `uv.lock`. Implement the plan, then run the unit tests and the smoke check; if anything fails, read the traceback, fix, and re-run until both are clean. Do not commit or push. Report the files changed, the final test result, and a one-line smoke-test note."*
 
 When the agent returns, **verify before moving on** — this is the gate, not a formality. Run `git diff` and `cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v` yourself (cheap insurance against a green run that wasn't), then walk this checklist against the diff:
 
 - [ ] Changes match the approved plan; nothing extra crept in.
-- [ ] `__version__` was bumped in `ryos/__init__.py`.
 - [ ] No worker thread touches a widget except via `self.after` / `self.output_queue`.
 - [ ] No new `import ryos.ui.*` inside `ryos/db.py`, `ryos/settings.py`, or other top-level modules.
 - [ ] Any new DB column/table is `PRAGMA`-guarded (or `CREATE TABLE IF NOT EXISTS`) — no bare or `IF NOT EXISTS`-style `ALTER`.
@@ -181,4 +179,4 @@ EOF
 
 ### 7. Report back
 
-Tell the user, briefly: what was added and where it appears in the UI, which files under `ryos/` changed, the new `__version__`, the commit hash, and any known limitation or follow-up worth doing next.
+Tell the user, briefly: what was added and where it appears in the UI, which files under `ryos/` changed, the commit hash, and any known limitation or follow-up worth doing next.

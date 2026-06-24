@@ -22,10 +22,9 @@ If you're somewhere without a display or without Windows (e.g. a Linux sandbox),
 
 ## Version scheme
 
-The in-tree `__version__` (in `ryos/__init__.py`) is always a `-dev` string one step **ahead** of the last published release — e.g. after shipping `1.6.4`, the tree reads `1.6.5-dev`. A release turns that into the concrete version, then moves the tree to the next `-dev`:
+`__version__` (in `ryos/__init__.py`) is bumped **only here, at release time** — never per feature or fix. Between releases the tree simply holds the last published version; there is no `-dev` suffix. A release sets the next concrete version:
 
-1. Release `X.Y.Z`: set `__version__ = "X.Y.Z"` (no `-dev`, no `v` prefix). `pyproject.toml` reads the version dynamically from this line via hatchling, so this is the single source.
-2. After publishing: set `__version__ = "X.Y.(Z+1)-dev"` so the tree is again ahead of the release.
+- Release `X.Y.Z`: set `__version__ = "X.Y.Z"` (no `-dev`, no `v` prefix). `pyproject.toml` reads the version dynamically from this line via hatchling, so this is the single source.
 
 The tag on GitHub uses the `v` prefix (`vX.Y.Z`); `__version__` does not.
 
@@ -33,7 +32,7 @@ The tag on GitHub uses the `v` prefix (`vX.Y.Z`); `__version__` does not.
 
 ### 1. Decide the version and notes
 
-Check the latest published tag (`gh release list -R lqvu-zen/RYOS -L 5` or the releases page) and confirm the next version with the user — patch for fixes, minor for notable features, following the `-dev` already in the tree. Gather release notes; if the user didn't give any, draft them from `git log <last-tag>..HEAD --oneline` and show them for approval. Don't invent a version or notes silently.
+Check the latest published tag (`gh release list -R lqvu-zen/RYOS -L 5` or the releases page) and confirm the next version with the user — patch for fixes, minor for notable features, based on the last released version. Gather release notes; if the user didn't give any, draft them from `git log <last-tag>..HEAD --oneline` and show them for approval. Don't invent a version or notes silently.
 
 ### 2. Set `__version__`
 
@@ -125,16 +124,6 @@ Include the download guidance in the notes so users know which asset to grab:
 - **RYOS-portable.zip** — run from source; extract and double-click `run.bat` (needs uv; run `install_uv.bat` first if needed).
 ```
 
-### 8. Move the tree to the next dev version
-
-So the in-tree version is always ahead of the last release (and the update check behaves):
-
-```bash
-cd D:/Projects/RYOS && git add ryos/__init__.py && git commit -m "Begin <X.Y.(Z+1)> development" && git push
-```
-
-Edit `__version__` to `"X.Y.(Z+1)-dev"` before committing.
-
-### 9. Report
+### 8. Report
 
 Give the user the release URL (`gh` prints it), the version shipped, the two assets attached, and a one-line confirmation that the smoke test and zip checks passed. Note anything you skipped or that needs follow-up.
