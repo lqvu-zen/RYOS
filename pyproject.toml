@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = ["tkinterdnd2>=0.3.0,<1.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.5"]
+dev = ["pytest>=7", "ruff>=0.5", "mypy>=1.11"]
 
 [project.scripts]
 ryos = "ryos.__main__:main"
@@ -38,3 +38,23 @@ extend-exclude = [".claude", "build", "dist", "*.egg-info"]
 # E741 (ambiguous names like `l`) is left off as a deliberate style exception.
 select = ["E4", "E7", "E9", "F"]
 ignore = ["E741"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+# Scope: the UI-free core modules, which are kept type-clean. The Tkinter UI
+# (ryos/ui/*) is intentionally excluded -- Tk's dynamic widget API yields many
+# false positives -- and ryos/startup.py is Windows-only (winreg), so it can't
+# be checked on the Linux CI runner. Running `mypy` with no arguments checks
+# exactly the files listed here.
+files = [
+    "ryos/db.py",
+    "ryos/interpreter.py",
+    "ryos/settings.py",
+    "ryos/quickrun.py",
+    "ryos/jobs.py",
+    "ryos/runner.py",
+    "ryos/job_controller.py",
+    "ryos/notifications.py",
+    "ryos/logger.py",
+]
