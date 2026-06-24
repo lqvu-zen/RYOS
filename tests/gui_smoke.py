@@ -101,12 +101,42 @@ def check_stop_running_job(app):
         os.unlink(path)
 
 
+def check_card_rendering(app):
+    """Seed a favorite, a plain script, and a pipeline, then re-render the list.
+
+    Exercises the extracted section builders (banner / running / favorites /
+    pipelines / scripts) on a real Tk surface -- the headless unit suite can't
+    reach these widget paths."""
+    paths = [_write_script("print('a')\n"), _write_script("print('b')\n")]
+    s1 = app.db.add("smoke-fav", paths[0], "", sys.executable)
+    s2 = app.db.add("smoke-plain", paths[1], "", sys.executable)
+    app.db.set_favorite_script(s1, True)
+    pid = app.db.create_pipeline("smoke-pipe", "")
+    try:
+        app._active_group = None  # "All" view renders ungrouped scripts
+        app._refresh_cards()
+        app.update_idletasks()
+        app.update()
+        names = [getattr(c, "_name", "") for c in app._cards]
+        assert "smoke-fav" in names and "smoke-plain" in names, \
+            f"cards not rendered: {names}"
+        print("  [ok] card-rendering: section builders ran, scripts rendered")
+    finally:
+        app.db.delete(s1)
+        app.db.delete(s2)
+        app.db.delete_pipeline(pid)
+        for fp in paths:
+            os.unlink(fp)
+        app._refresh_cards()
+
+
 def main():
     print("RYOS GUI smoke starting...")
     app = RYOSApp()
     app._settings["auto_check_update"] = False  # avoid network in CI
     try:
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
+        check_card_rendering(app)
         check_run_to_completion(app)
         check_stop_running_job(app)
     finally:

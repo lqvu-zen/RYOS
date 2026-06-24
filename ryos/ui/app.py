@@ -936,7 +936,8 @@ class RYOSApp(_BaseWindow):
         self._refresh_tabs()
         self._refresh_cards()
 
-    def _refresh_cards(self):
+    def _reset_cards_state(self):
+        """Tear down existing card widgets and reset the per-render collections."""
         for gn in list(self._quick_run_bars):
             self._quick_run_hide_suggestions(gn)
         self._quick_run_buttons.clear()
@@ -946,167 +947,174 @@ class RYOSApp(_BaseWindow):
             w.destroy()
         self._cards = []
         self._pipeline_cards = []
-        # Collect content frames for Favorites/Pipelines/Scripts sections so
-        # _apply_search_filter can pack/pack_forget cards and hide empty sections.
+        # Content frames for Favorites/Pipelines/Scripts so _apply_search_filter
+        # can pack/pack_forget cards and hide empty sections.
         self._fav_contents: list[tk.Frame] = []
         self._pipe_contents: list[tk.Frame] = []
         self._scr_contents: list[tk.Frame] = []
 
-        def make_move(a, b):
-            def _move():
-                self.db.swap_order(a, b)
-                self._refresh()
-            return _move
+    def _make_move_cb(self, a, b):
+        def _move():
+            self.db.swap_order(a, b)
+            self._refresh()
+        return _move
 
-        def make_top(s):
-            def _top():
-                self.db.move_to_top(s)
-                self._refresh()
-            return _top
+    def _make_top_cb(self, s):
+        def _top():
+            self.db.move_to_top(s)
+            self._refresh()
+        return _top
 
-        def render_group_sections(parent: tk.Frame, gname: str, scripts: list):
-            group_base_dir = self.db.get_group_base_dir(gname)
-            banner = tk.Frame(parent, bg=C["card_bg"],
-                              highlightbackground=C["border"], highlightthickness=1,
-                              cursor="hand2")
-            banner.pack(fill="x", padx=8, pady=(10, 0))
-            icon_lbl = tk.Label(banner, text="📁", bg=C["card_bg"], fg=C["path_fg"],
-                                font=("Segoe UI", 11), padx=10, pady=8, cursor="hand2")
-            icon_lbl.pack(side="left")
-            path_text = group_base_dir if group_base_dir else "No base directory — click to set"
-            path_fg = C["name_fg"] if group_base_dir else C["path_fg"]
-            path_lbl = tk.Label(banner, text=path_text, bg=C["card_bg"], fg=path_fg,
-                                font=("Segoe UI", 10), anchor="w", pady=8, cursor="hand2")
-            path_lbl.pack(side="left")
+    def _render_group_banner(self, parent: tk.Frame, gname: str, group_base_dir: str):
+        banner = tk.Frame(parent, bg=C["card_bg"],
+                          highlightbackground=C["border"], highlightthickness=1,
+                          cursor="hand2")
+        banner.pack(fill="x", padx=8, pady=(10, 0))
+        icon_lbl = tk.Label(banner, text="📁", bg=C["card_bg"], fg=C["path_fg"],
+                            font=("Segoe UI", 11), padx=10, pady=8, cursor="hand2")
+        icon_lbl.pack(side="left")
+        path_text = group_base_dir if group_base_dir else "No base directory — click to set"
+        path_fg = C["name_fg"] if group_base_dir else C["path_fg"]
+        path_lbl = tk.Label(banner, text=path_text, bg=C["card_bg"], fg=path_fg,
+                            font=("Segoe UI", 10), anchor="w", pady=8, cursor="hand2")
+        path_lbl.pack(side="left")
 
-            if group_base_dir and self._settings.get("quick_run_enabled", True):
-                self._build_quick_run_bar(gname, group_base_dir, banner)
+        if group_base_dir and self._settings.get("quick_run_enabled", True):
+            self._build_quick_run_bar(gname, group_base_dir, banner)
 
-            def _open(e, g=gname):
-                self._manage_group_base_dir(g)
-            for w in (banner, icon_lbl, path_lbl):
-                w.bind("<Button-1>", _open)
+        def _open(e, g=gname):
+            self._manage_group_base_dir(g)
+        for w in (banner, icon_lbl, path_lbl):
+            w.bind("<Button-1>", _open)
 
-            run_content = self._make_section_header(
-                parent, gname, "running", "Running"
+    def _render_running_section(self, parent: tk.Frame, gname: str):
+        run_content = self._make_section_header(parent, gname, "running", "Running")
+        self._running_slots[gname] = run_content
+        jobs_here = self._running_jobs_in_group(gname)
+        if jobs_here:
+            for job in jobs_here:
+                self._add_running_row(run_content, job)
+        else:
+            tk.Label(run_content, text="No script is currently running.",
+                     bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+
+    def _render_favorites_section(self, parent: tk.Frame, gname: str, scripts: list,
+                                  group_base_dir: str):
+        fav_content = self._make_section_header(parent, gname, "favorites", "★  Favorites")
+        self._fav_contents.append(fav_content)
+        fav_scripts = [r for r in scripts if r[10]]
+        fav_pipelines = [(p_id, p_name) for p_id, p_name, p_fav in self.db.list_pipelines(gname) if p_fav]
+        if not fav_scripts and not fav_pipelines:
+            tk.Label(fav_content, text="No favorites yet — click ☆ on a script or pipeline.",
+                     bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            return
+        from ryos.ui import cards as _cards_mod
+        _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
+        for p_id, p_name in fav_pipelines:
+            def make_fav_toggle_pipeline(pid):
+                def _toggle(pid2, fav):
+                    self.db.set_favorite_pipeline(pid2, fav)
+                    self._refresh_cards()
+                return lambda pid2, fav: _toggle(pid2, fav)
+            pc = PipelineCard(
+                fav_content, p_id, p_name, self.db,
+                group_name=gname,
+                on_run=self._run_pipeline,
+                on_edit=self._edit_pipeline,
+                on_refresh=self._refresh_cards,
+                is_favorite=True,
+                on_toggle_favorite=make_fav_toggle_pipeline(p_id),
             )
-            self._running_slots[gname] = run_content
-            jobs_here = self._running_jobs_in_group(gname)
-            if jobs_here:
-                for job in jobs_here:
-                    self._add_running_row(run_content, job)
-            else:
-                tk.Label(run_content, text="No script is currently running.",
-                         bg=C["bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
-
-            fav_content = self._make_section_header(
-                parent, gname, "favorites", "★  Favorites"
+            pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+        for r in fav_scripts:
+            def make_fav_toggle_script(sid):
+                def _toggle(sid2, fav):
+                    self.db.set_favorite_script(sid2, fav)
+                    self._refresh_cards()
+                return lambda sid2, fav: _toggle(sid2, fav)
+            card = ScriptCard(
+                fav_content, r, self.db, self._run_script, self._refresh_cards,
+                lambda: None, lambda: None, lambda: None,
+                group_base_dir=group_base_dir,
+                on_toggle_favorite=make_fav_toggle_script(r[0]),
             )
-            self._fav_contents.append(fav_content)
-            fav_scripts = [r for r in scripts if r[10]]
-            fav_pipelines = [(p_id, p_name) for p_id, p_name, p_fav in self.db.list_pipelines(gname) if p_fav]
-            if not fav_scripts and not fav_pipelines:
-                tk.Label(fav_content, text="No favorites yet — click ☆ on a script or pipeline.",
-                         bg=C["bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
-            else:
-                from ryos.ui import cards as _cards_mod
-                _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
-                for p_id, p_name in fav_pipelines:
-                    def make_fav_toggle_pipeline(pid):
-                        def _toggle(pid2, fav):
-                            self.db.set_favorite_pipeline(pid2, fav)
-                            self._refresh_cards()
-                        return lambda pid2, fav: _toggle(pid2, fav)
-                    pc = PipelineCard(
-                        fav_content, p_id, p_name, self.db,
-                        group_name=gname,
-                        on_run=self._run_pipeline,
-                        on_edit=self._edit_pipeline,
-                        on_refresh=self._refresh_cards,
-                        is_favorite=True,
-                        on_toggle_favorite=make_fav_toggle_pipeline(p_id),
-                    )
-                    pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
-                for r in fav_scripts:
-                    def make_fav_toggle_script(sid):
-                        def _toggle(sid2, fav):
-                            self.db.set_favorite_script(sid2, fav)
-                            self._refresh_cards()
-                        return lambda sid2, fav: _toggle(sid2, fav)
-                    card = ScriptCard(
-                        fav_content, r, self.db, self._run_script, self._refresh_cards,
-                        lambda: None, lambda: None, lambda: None,
-                        group_base_dir=group_base_dir,
-                        on_toggle_favorite=make_fav_toggle_script(r[0]),
-                    )
-                    card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+            card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
 
-            pipe_content = self._make_section_header(
-                parent, gname, "pipelines", "Pipelines"
+    def _render_pipelines_section(self, parent: tk.Frame, gname: str):
+        pipe_content = self._make_section_header(parent, gname, "pipelines", "Pipelines")
+        self._pipe_contents.append(pipe_content)
+        pipelines = self.db.list_pipelines(gname)
+        if not pipelines:
+            tk.Label(pipe_content, text="No pipelines yet.",
+                     bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            return
+        from ryos.ui import cards as _cards_mod
+        _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
+        for p_id, p_name, p_fav in pipelines:
+            def make_toggle_fav_pipeline(pid):
+                def _toggle(pid2, fav):
+                    self.db.set_favorite_pipeline(pid2, fav)
+                    self._refresh_cards()
+                return lambda pid2, fav: _toggle(pid2, fav)
+            pc = PipelineCard(
+                pipe_content, p_id, p_name, self.db,
+                group_name=gname,
+                on_run=self._run_pipeline,
+                on_edit=self._edit_pipeline,
+                on_refresh=self._refresh_cards,
+                is_favorite=bool(p_fav),
+                on_toggle_favorite=make_toggle_fav_pipeline(p_id),
             )
-            self._pipe_contents.append(pipe_content)
-            pipelines = self.db.list_pipelines(gname)
-            if pipelines:
-                from ryos.ui import cards as _cards_mod
-                _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
-                for p_id, p_name, p_fav in pipelines:
-                    def make_toggle_fav_pipeline(pid):
-                        def _toggle(pid2, fav):
-                            self.db.set_favorite_pipeline(pid2, fav)
-                            self._refresh_cards()
-                        return lambda pid2, fav: _toggle(pid2, fav)
-                    pc = PipelineCard(
-                        pipe_content, p_id, p_name, self.db,
-                        group_name=gname,
-                        on_run=self._run_pipeline,
-                        on_edit=self._edit_pipeline,
-                        on_refresh=self._refresh_cards,
-                        is_favorite=bool(p_fav),
-                        on_toggle_favorite=make_toggle_fav_pipeline(p_id),
-                    )
-                    pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
-                    self._bind_pipeline_drag(pc)
-                    self._pipeline_cards.append(pc)
-            else:
-                tk.Label(pipe_content, text="No pipelines yet.",
-                         bg=C["bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+            self._bind_pipeline_drag(pc)
+            self._pipeline_cards.append(pc)
 
-            scr_content = self._make_section_header(
-                parent, gname, "scripts", "Scripts"
+    def _render_scripts_section(self, parent: tk.Frame, gname: str, scripts: list,
+                                group_base_dir: str):
+        scr_content = self._make_section_header(parent, gname, "scripts", "Scripts")
+        self._scr_contents.append(scr_content)
+        if not scripts:
+            tk.Label(scr_content, text="No scripts yet.",
+                     bg=C["bg"], fg=C["path_fg"],
+                     font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            return
+        from ryos.ui import cards as _cards_mod
+        _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
+        gids = [r[0] for r in scripts]
+        for gi, rec in enumerate(scripts):
+            sid = rec[0]
+            up_id   = gids[gi - 1] if gi > 0 else None
+            down_id = gids[gi + 1] if gi < len(gids) - 1 else None
+            def make_toggle_fav_script(s_id):
+                def _toggle(s_id2, fav):
+                    self.db.set_favorite_script(s_id2, fav)
+                    self._refresh_cards()
+                return lambda s_id2, fav: _toggle(s_id2, fav)
+            card = ScriptCard(
+                scr_content, rec, self.db, self._run_script, self._refresh,
+                on_move_up      = self._make_move_cb(sid, up_id)   if up_id   else lambda: None,
+                on_move_down    = self._make_move_cb(sid, down_id) if down_id else lambda: None,
+                on_move_top     = self._make_top_cb(sid)           if up_id   else lambda: None,
+                group_base_dir  = group_base_dir,
+                on_toggle_favorite = make_toggle_fav_script(sid),
             )
-            self._scr_contents.append(scr_content)
-            if scripts:
-                from ryos.ui import cards as _cards_mod
-                _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
-                gids = [r[0] for r in scripts]
-                for gi, rec in enumerate(scripts):
-                    sid = rec[0]
-                    up_id   = gids[gi - 1] if gi > 0 else None
-                    down_id = gids[gi + 1] if gi < len(gids) - 1 else None
-                    def make_toggle_fav_script(s_id):
-                        def _toggle(s_id2, fav):
-                            self.db.set_favorite_script(s_id2, fav)
-                            self._refresh_cards()
-                        return lambda s_id2, fav: _toggle(s_id2, fav)
-                    card = ScriptCard(
-                        scr_content, rec, self.db, self._run_script, self._refresh,
-                        on_move_up      = make_move(sid, up_id)   if up_id   else lambda: None,
-                        on_move_down    = make_move(sid, down_id) if down_id else lambda: None,
-                        on_move_top     = make_top(sid)           if up_id   else lambda: None,
-                        group_base_dir  = group_base_dir,
-                        on_toggle_favorite = make_toggle_fav_script(sid),
-                    )
-                    card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
-                    self._bind_card_drag(card)
-                    self._cards.append(card)
-            else:
-                tk.Label(scr_content, text="No scripts yet.",
-                         bg=C["bg"], fg=C["path_fg"],
-                         font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
+            card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+            self._bind_card_drag(card)
+            self._cards.append(card)
 
+    def _render_group_sections(self, parent: tk.Frame, gname: str, scripts: list):
+        group_base_dir = self.db.get_group_base_dir(gname)
+        self._render_group_banner(parent, gname, group_base_dir)
+        self._render_running_section(parent, gname)
+        self._render_favorites_section(parent, gname, scripts, group_base_dir)
+        self._render_pipelines_section(parent, gname)
+        self._render_scripts_section(parent, gname, scripts, group_base_dir)
+
+    def _refresh_cards(self):
+        self._reset_cards_state()
         if self._active_group is None:
             all_scripts = self.db.list_all()
             groups = self.db.list_groups()
@@ -1129,7 +1137,7 @@ class RYOSApp(_BaseWindow):
                 wrapper.pack(fill="x")
                 wrapper._grp_name = gname
                 self._make_group_header(wrapper, gname)
-                render_group_sections(wrapper, gname, group_scripts.get(gname, []))
+                self._render_group_sections(wrapper, gname, group_scripts.get(gname, []))
                 wrapper._fav_content  = self._fav_contents[-1]
                 wrapper._pipe_content = self._pipe_contents[-1]
                 wrapper._scr_content  = self._scr_contents[-1]
@@ -1141,7 +1149,7 @@ class RYOSApp(_BaseWindow):
                 wrapper._grp_name = ""
                 if any_named:
                     self._make_group_header(wrapper, "Other")
-                render_group_sections(wrapper, "", ungrouped)
+                self._render_group_sections(wrapper, "", ungrouped)
                 wrapper._fav_content  = self._fav_contents[-1]
                 wrapper._pipe_content = self._pipe_contents[-1]
                 wrapper._scr_content  = self._scr_contents[-1]
@@ -1150,7 +1158,7 @@ class RYOSApp(_BaseWindow):
             self._group_wrappers = []
             scripts = [s for s in self.db.list_all()
                        if (s[8] or "") == self._active_group]
-            render_group_sections(self.cards_frame, self._active_group, scripts)
+            self._render_group_sections(self.cards_frame, self._active_group, scripts)
 
         # Re-apply any active search so the filter survives group switches and reorders.
         self._apply_search_filter()
