@@ -21,6 +21,26 @@ from .settings import DATA_DIR
 # The 7 curated colours a seed carries (besides "mode").
 SEED_KEYS = ("bg", "surface", "border", "accent", "text", "text_muted", "header_bg")
 
+# Optional advanced colours. A seed may carry any of these to override the value
+# build_palette would otherwise derive; absent ones stay auto-derived. Each is
+# (palette_key, label). Some have companion colours (hovers/variants) that
+# build_palette refreshes from the override so the result stays coherent.
+ADVANCED_KEYS = (
+    ("btn_run_bg",      "Run button"),
+    ("error",           "Error / failed"),
+    ("out_bg",          "Terminal background"),
+    ("out_stdout",      "Terminal text"),
+    ("out_stderr",      "Terminal error text"),
+    ("out_status",      "Terminal status text"),
+    ("accent2",         "Accent (pressed)"),
+    ("btn_neutral_bg",  "Neutral button"),
+    ("tab_inactive_bg", "Inactive tab"),
+    ("pipe_accent",     "Pipeline accent"),
+    ("bolt",            "Logo bolt"),
+    ("warn_bg",         "Warning background"),
+)
+_ADVANCED_SET = frozenset(k for k, _ in ADVANCED_KEYS)
+
 # User-created themes persist here, separate from settings.json (keeps each file
 # small, mirroring the QR-index split).
 CUSTOM_THEMES_PATH = DATA_DIR / "themes.json"
@@ -248,4 +268,144 @@ def contrast_ratio(c1: str, c2: str) -> float:
 
 
 def build_palette(seed: dict, overrides: dict | None = None) -> dict:
-    """Expand a 7-colour seed into the 
+    """Expand a 7-colour seed into the full palette the UI consumes.
+
+    Starts from the mode's REFERENCE palette (so every key is present and the
+    not-user-edited colours — semantic badges, the terminal output panel, menus,
+    tooltips, the signature bolt gold — get sensible mode defaults), then
+    overlays the seed colours and the values derived from them. `overrides` pins
+    exact values last (used by presets that want to hand-tune a few keys)."""
+    mode = seed.get("mode", "light")
+    light = mode != "dark"
+    base = dict(REFERENCE["light" if light else "dark"])
+
+    bg = seed["bg"]
+    surface = seed["surface"]
+    border = seed["border"]
+    accent = seed["accent"]
+    text = seed["text"]
+    muted = seed["text_muted"]
+    header = seed["header_bg"]
+    accent2 = _shade(accent, -0.15)
+
+    base.update({
+        "bg":          bg,
+        "card_bg":     surface,
+        "border":      border,
+        "header_bg":   header,
+        "accent":      accent,
+        "name_fg":     text,
+        "path_fg":     muted,
+        "tab_fg":      text,
+        "card_hover":  _shade(surface, -0.03 if light else 0.10),
+        "status_bg":   _shade(bg, -0.05 if light else 0.05),
+        "accent2":     accent2,
+        "accent_wash": _shade(accent, 0.86 if light else -0.55),
+        "btn_mod_bg":        accent,
+        "btn_mod_hover":     accent2,
+        "btn_create_bg":     accent,
+        "btn_create_hover":  accent2,
+        "btn_neutral_bg":    _shade(surface, -0.06 if light else 0.08),
+        "btn_neutral_hover": _shade(surface, -0.12 if light else 0.14),
+        "btn_neutral_fg":    muted,
+        "tab_inactive_bg":    _shade(bg, -0.05 if light else 0.06),
+        "tab_inactive_hover": _shade(bg, -0.10 if light else 0.11),
+    })
+
+    # Optional advanced overrides: pin the chosen key and refresh any companion
+    # colour (hover/variant) so buttons and tabs stay coherent.
+    adv = {k: seed[k] for k, _ in ADVANCED_KEYS if is_hex_color(seed.get(k))}
+    base.update(adv)
+    if "btn_run_bg" in adv:
+        base["btn_run_hover"] = _shade(adv["btn_run_bg"], -0.12)
+    if "btn_neutral_bg" in adv:
+        base["btn_neutral_hover"] = _shade(adv["btn_neutral_bg"], -0.10 if light else 0.12)
+    if "tab_inactive_bg" in adv:
+        base["tab_inactive_hover"] = _shade(adv["tab_inactive_bg"], -0.06 if light else 0.08)
+    if "pipe_accent" in adv:
+        base["pipe_accent2"] = _shade(adv["pipe_accent"], 0.12)
+    if "accent2" in adv:
+        base["btn_mod_hover"] = base["btn_create_hover"] = adv["accent2"]
+
+    if overrides:
+        base.update(overrides)
+    return base
+
+
+_HEX_RE = re.compile(r"#[0-9a-fA-F]{6}")
+
+
+def is_hex_color(value) -> bool:
+    """True if value is a '#rrggbb' string."""
+    return isinstance(value, str) and bool(_HEX_RE.fullmatch(value))
+
+
+def validate_seed(seed) -> list[str]:
+    """Return a list of hard problems with a seed (empty list = structurally
+    valid). Used to gate saving and to filter a corrupt themes.json on load."""
+    problems = []
+    if not isinstance(seed, dict):
+        return ["theme must be an object"]
+    if seed.get("mode") not in ("light", "dark"):
+        problems.append("mode must be 'light' or 'dark'")
+    for key in SEED_KEYS:
+        if not is_hex_color(seed.get(key)):
+            problems.append(f"{key} must be a #rrggbb color")
+    # Advanced colours are optional, but if present must be valid.
+    for key in _ADVANCED_SET:
+        if key in seed and not is_hex_color(seed[key]):
+            problems.append(f"{key} must be a #rrggbb color")
+    return problems
+
+
+def contrast_warnings(seed) -> list[str]:
+    """Soft, non-fatal readability warnings for a seed (shown in the editor)."""
+    out = []
+    pairs = [
+        ("text", "bg", 4.5, "Primary text on the background is low contrast"),
+        ("text", "surface", 4.5, "Primary text on cards is low contrast"),
+        ("text_muted", "bg", 3.0, "Secondary text on the background is low contrast"),
+    ]
+    for fg, bgk, threshold, msg in pairs:
+        if is_hex_color(seed.get(fg)) and is_hex_color(seed.get(bgk)):
+            ratio = contrast_ratio(seed[fg], seed[bgk])
+            if ratio < threshold:
+                out.append(f"{msg} ({ratio:.1f}:1, aim for {threshold:.0f}:1).")
+    return out
+
+
+def load_custom_themes(path=None) -> dict:
+    """Load user themes from themes.json as {name: seed}. Missing or corrupt
+    file -> {} (with no raise); structurally invalid entries are dropped."""
+    p = Path(path) if path is not None else CUSTOM_THEMES_PATH
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {name: seed for name, seed in data.items()
+            if isinstance(name, str) and not validate_seed(seed)}
+
+
+def save_custom_themes(themes: dict, path=None) -> None:
+    """Persist {name: seed} to themes.json. Best-effort; never raises."""
+    p = Path(path) if path is not None else CUSTOM_THEMES_PATH
+    try:
+        p.write_text(json.dumps(themes, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _builtin_palette(name: str) -> dict:
+    """Light/Dark keep their hand-tuned REFERENCE verbatim (identical look);
+    every other built-in is derived from its seed by build_palette."""
+    if name in ("light", "dark"):
+        return dict(REFERENCE[name])
+    return build_palette(SEEDS[name])
+
+
+# Built-in theme palettes the UI selects among, keyed by slug.
+BUILTIN_THEMES: dict[str, dict] = {name: _builtin_palette(name) for name in THEME_ORDER}
