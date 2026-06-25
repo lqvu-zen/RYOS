@@ -6,6 +6,7 @@ Run with:  uv run python -m pytest tests/test_ryos.py -v
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,9 @@ sys.modules.setdefault("tkinter.simpledialog", mock.MagicMock())
 from ryos.db import ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
+from ryos.themes import (  # noqa: E402
+    BUILTIN_THEMES, REFERENCE, SEEDS, build_palette, contrast_ratio,
+)
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -534,6 +538,59 @@ class TestRelocateGeometry(unittest.TestCase):
 
     def test_unparseable_returns_input(self):
         self.assertEqual(relocate_geometry("garbage", self.PRIMARY, self.RIGHT), "garbage")
+
+
+# ---------------------------------------------------------------------------
+# Theme engine (seed -> palette derivation)
+# ---------------------------------------------------------------------------
+
+class TestThemeEngine(unittest.TestCase):
+    HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+    REF_KEYS = set(REFERENCE["light"])
+
+    def test_reference_themes_share_key_set(self):
+        self.assertEqual(set(REFERENCE["dark"]), self.REF_KEYS)
+
+    def test_builtins_identical_to_reference(self):
+        # Phase 1 must not change the look of light/dark.
+        self.assertEqual(BUILTIN_THEMES["light"], REFERENCE["light"])
+        self.assertEqual(BUILTIN_THEMES["dark"], REFERENCE["dark"])
+
+    def test_build_palette_key_parity(self):
+        for name in ("light", "dark"):
+            with self.subTest(seed=name):
+                self.assertEqual(set(build_palette(SEEDS[name])), self.REF_KEYS)
+
+    def test_build_palette_all_valid_hex(self):
+        for name in ("light", "dark"):
+            p = build_palette(SEEDS[name])
+            bad = [k for k, v in p.items() if not self.HEX.match(v)]
+            self.assertEqual(bad, [], f"non-hex values: {bad}")
+
+    def test_synthetic_seed_derives_complete_palette(self):
+        nord = {"mode": "dark", "bg": "#2e3440", "surface": "#3b4252",
+                "border": "#434c5e", "accent": "#88c0d0", "text": "#eceff4",
+                "text_muted": "#9aa3b5", "header_bg": "#272c36"}
+        p = build_palette(nord)
+        self.assertEqual(set(p), self.REF_KEYS)
+        self.assertTrue(all(self.HEX.match(v) for v in p.values()))
+        self.assertEqual(p["accent"], "#88c0d0")
+        self.assertEqual(p["bg"], "#2e3440")
+
+    def test_overrides_pin_exact_values(self):
+        p = build_palette(SEEDS["light"], overrides={"accent": "#ff0000"})
+        self.assertEqual(p["accent"], "#ff0000")
+
+    def test_builtin_seeds_meet_contrast(self):
+        for name in ("light", "dark"):
+            s = SEEDS[name]
+            self.assertGreaterEqual(contrast_ratio(s["text"], s["bg"]), 4.5)
+            self.assertGreaterEqual(contrast_ratio(s["text"], s["surface"]), 4.5)
+            self.assertGreaterEqual(contrast_ratio(s["text_muted"], s["bg"]), 3.0)
+
+    def test_contrast_ratio_known_values(self):
+        self.assertAlmostEqual(contrast_ratio("#000000", "#ffffff"), 21.0, places=1)
+        self.assertEqual(contrast_ratio("#ffffff", "#ffffff"), 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -1898,4 +1955,4 @@ class TestBucketByGroup(unittest.TestCase):
     def test_unknown_group_bucket_created_on_demand(self):
         out = bucket_by_group([(1, "Z")], ["A"], self._key)
         self.assertEqual(out["Z"], [(1, "Z")])
-        self.assertEqual(out["A"], [])
+        self.assertEqual(out[
