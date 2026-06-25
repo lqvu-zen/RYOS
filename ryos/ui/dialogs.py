@@ -14,7 +14,9 @@ from ..settings import (
 )
 from ..startup import _set_startup, _startup_enabled
 from ..quickrun import _is_inside
-from ..themes import SEEDS, THEME_LABELS, save_custom_themes
+from ..themes import (
+    SEEDS, THEME_LABELS, export_theme, import_theme, save_custom_themes,
+)
 from .theme import (
     C, THEMES, _apply_snap_corner, _flat_button,
     available_themes, custom_themes, set_custom_themes,
@@ -880,6 +882,47 @@ class AdvancedOptionsDialog(tk.Toplevel):
         save_custom_themes(customs)
         self._theme.set("light")  # switch off the now-deleted theme
 
+    def _export_theme(self) -> None:
+        tid = self._theme.get()
+        customs = custom_themes()
+        if tid not in customs:
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Export theme", defaultextension=".json",
+            initialfile=f"{tid}.json",
+            filetypes=[("RYOS theme", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            export_theme(tid, customs[tid], path)
+        except OSError as exc:
+            messagebox.showerror("Export theme",
+                                 f"Could not write file:\n{exc}", parent=self)
+
+    def _unique_theme_name(self, base: str) -> str:
+        base = base.strip() or "Imported theme"
+        taken = {n.lower() for n in self._taken_names()}
+        if base.lower() not in taken:
+            return base
+        i = 2
+        while f"{base} ({i})".lower() in taken:
+            i += 1
+        return f"{base} ({i})"
+
+    def _import_theme(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self, title="Import theme",
+            filetypes=[("RYOS theme", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            name, seed = import_theme(path)
+        except ValueError as exc:
+            messagebox.showerror("Import theme", str(exc), parent=self)
+            return
+        name = self._unique_theme_name(name or Path(path).stem)
+        self._save_custom_theme(name, seed)
+
     def _cancel(self) -> None:
         # Revert any live preview to the appearance we opened with.
         if self._on_appearance is not None and not self._jobs_running:
@@ -1008,12 +1051,23 @@ class AdvancedOptionsDialog(tk.Toplevel):
         del_btn = _flat_button(actions, "Delete", C["btn_dark_bg"],
                                C["btn_dark_hover"], self._delete_theme, width=7)
         del_btn.pack(side="left")
+
+        share = tk.Frame(f, bg=C["bg"])
+        share.pack(fill="x", pady=(2, 2))
+        export_btn = _flat_button(share, "Export…", C["btn_dark_bg"],
+                                  C["btn_dark_hover"], self._export_theme, width=8)
+        export_btn.pack(side="left")
+        import_btn = _flat_button(share, "Import…", C["btn_dark_bg"],
+                                  C["btn_dark_hover"], self._import_theme, width=8)
+        import_btn.pack(side="left", padx=4)
+
         if self._jobs_running:
-            for b in (create_btn, edit_btn, del_btn):
+            for b in (create_btn, edit_btn, del_btn, export_btn, import_btn):
                 b.configure(state="disabled", cursor="")
         elif not is_custom:
             edit_btn.configure(state="disabled", cursor="")
             del_btn.configure(state="disabled", cursor="")
+            export_btn.configure(state="disabled", cursor="")
 
         f = self._section(tab, "ACCENT COLOR")
         swatch_row = tk.Frame(f, bg=C["bg"])
@@ -1240,4 +1294,94 @@ class AdvancedOptionsDialog(tk.Toplevel):
             else:
                 subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
-        def _open_
+        def _open_folder():
+            if sys.platform == "win32":
+                os.startfile(str(LOG_DIR))
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(LOG_DIR)])
+            else:
+                subprocess.Popen(["xdg-open", str(LOG_DIR)])
+
+        def _clear_log_file():
+            if not LOG_PATH.exists():
+                messagebox.showinfo("Clear log", "No log file found.", parent=self)
+                return
+            if messagebox.askyesno("Clear log file",
+                                   "Truncate the log file? This cannot be undone.",
+                                   parent=self):
+                LOG_PATH.write_text("", encoding="utf-8")
+
+        tk.Label(f, text=str(LOG_PATH), bg=C["bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(10, 2))
+        btn_row = tk.Frame(f, bg=C["bg"])
+        btn_row.pack(fill="x", pady=(2, 0))
+        _flat_button(btn_row, "View log",     C["btn_dark_bg"], C["btn_dark_hover"],
+                     _open_file,   width=10).pack(side="left", padx=(0, 6))
+        _flat_button(btn_row, "Open folder",  C["btn_dark_bg"], C["btn_dark_hover"],
+                     _open_folder, width=12).pack(side="left")
+        _flat_button(f, "Clear log file", C["btn_dark_bg"], C["btn_dark_hover"],
+                     _clear_log_file, width=14).pack(anchor="w", pady=(6, 0))
+
+    def _save(self):
+        try:
+            max_lines = max(100, int(self._max_lines.get() or 100))
+        except ValueError:
+            max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
+        try:
+            max_parallel = max(0, int(self._max_parallel.get() or 0))
+        except ValueError:
+            max_parallel = _SETTINGS_DEFAULTS["max_parallel_jobs"]
+        try:
+            win_w = max(400, int(self._win_width.get()  or 540))
+            win_h = max(300, int(self._win_height.get() or 640))
+        except ValueError:
+            win_w, win_h = 540, 640
+        try:
+            qr_max_files = max(0, int(self._qr_index_max_files.get() or 0))
+        except ValueError:
+            qr_max_files = _SETTINGS_DEFAULTS["quick_run_index_max_files"]
+        # Fold in any extension left typed-but-not-added so it isn't lost.
+        self._qr_add()
+        qr_exts = list(self._qr_exts)  # already normalized; blank = index everything
+        self._settings.update({
+            "theme":                    self._theme.get(),
+            "accent_color":             self._accent,
+            "compact_mode":             self._compact.get(),
+            "card_size":                self._card_size.get(),
+            "always_on_top":            self._always_on_top.get(),
+            "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
+            "window_width":             win_w,
+            "window_height":            win_h,
+            "remember_last_group":      self._remember_group.get(),
+            "start_minimized":          self._start_minimized.get(),
+            "remember_window_geometry": self._remember_geometry.get(),
+            "open_on_cursor_monitor":   self._open_on_cursor.get(),
+            "max_output_lines":         max_lines,
+            "max_parallel_jobs":        max_parallel,
+            "auto_clear_output":        self._auto_clear.get(),
+            "auto_scroll_output":       self._auto_scroll.get(),
+            "notify_on_complete":       self._notify_on_complete.get(),
+            "quick_run_enabled":        self._quick_run_enabled.get(),
+            "quick_run_autocomplete":   self._quick_run_autocomplete.get(),
+            "quick_run_index_extensions": qr_exts,
+            "quick_run_index_max_files":  qr_max_files,
+            "auto_check_update":        self._auto_check_update.get(),
+            "logging_enabled":          self._logging_enabled.get(),
+            "log_level":                self._log_level.get(),
+            "log_runs_output":          self._log_runs_output.get(),
+        })
+        try:
+            _set_startup(self._start_with_windows.get())
+        except OSError as e:
+            # winreg raises OSError on registry failure; show it. An unexpected
+            # (non-OSError) error is a bug and should surface, not be masked.
+            messagebox.showerror("Startup Error",
+                                 f"Could not update Windows startup entry:\n{e}",
+                                 parent=self)
+            return
+        self._on_save(self._settings)
+        # Apply theme / card changes and rebuild the UI (on_save already
+        # persisted them, so don't write to disk again). Skipped while jobs run.
+        if self._on_appearance is not None and not self._jobs_running:
+            self._on_appearance(self._appearance_subset(), persist=False)
+        self.destroy()

@@ -33,7 +33,8 @@ from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, REFERENCE, SEEDS, THEME_LABELS, THEME_MODES,
     THEME_ORDER, _shade, build_palette, contrast_ratio, contrast_warnings,
-    is_hex_color, load_custom_themes, save_custom_themes, validate_seed,
+    export_theme, import_theme, is_hex_color, load_custom_themes,
+    save_custom_themes, validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -700,6 +701,45 @@ class TestCustomThemes(unittest.TestCase):
             loaded = load_custom_themes(p)
             self.assertIn("ok", loaded)
             self.assertNotIn("bad", loaded)
+
+    def test_export_import_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "t.json"
+            export_theme("My Theme", self.GOOD, p)
+            name, seed = import_theme(p)
+            self.assertEqual(name, "My Theme")
+            self.assertEqual(seed, self.GOOD)
+
+    def test_import_bare_seed(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "bare.json"
+            p.write_text(json.dumps(self.GOOD), encoding="utf-8")
+            name, seed = import_theme(p)
+            self.assertEqual(name, "")
+            self.assertEqual(seed, self.GOOD)
+
+    def test_import_single_map(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "map.json"
+            p.write_text(json.dumps({"Cool": self.GOOD}), encoding="utf-8")
+            name, seed = import_theme(p)
+            self.assertEqual(name, "Cool")
+            self.assertEqual(seed, self.GOOD)
+
+    def test_import_invalid_seed_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "bad.json"
+            p.write_text(json.dumps({"name": "x", "seed": {"mode": "dark"}}),
+                         encoding="utf-8")
+            with self.assertRaises(ValueError):
+                import_theme(p)
+
+    def test_import_non_theme_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "no.json"
+            p.write_text(json.dumps({"foo": 1, "bar": 2}), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                import_theme(p)
 
 
 # ---------------------------------------------------------------------------

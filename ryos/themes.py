@@ -399,6 +399,44 @@ def save_custom_themes(themes: dict, path=None) -> None:
         pass
 
 
+THEME_FILE_VERSION = 1
+
+
+def export_theme(name: str, seed: dict, path) -> None:
+    """Write a single custom theme to a shareable JSON file (an envelope with a
+    name + seed). Raises OSError if the file can't be written."""
+    payload = {"ryos_theme": THEME_FILE_VERSION, "name": name, "seed": dict(seed)}
+    Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def import_theme(path) -> tuple[str, dict]:
+    """Read a theme JSON file and return (name, seed). Accepts the export
+    envelope, a bare seed, or a single {name: seed} mapping. Raises ValueError
+    with a readable message if the file is unreadable or the seed is invalid."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Could not read theme file: {exc}")
+
+    name, seed = "", None
+    if isinstance(data, dict) and isinstance(data.get("seed"), dict):
+        name = data["name"] if isinstance(data.get("name"), str) else ""
+        seed = data["seed"]
+    elif isinstance(data, dict) and "mode" in data:
+        seed = data
+    elif isinstance(data, dict) and len(data) == 1:
+        (key, value), = data.items()
+        if isinstance(value, dict):
+            name, seed = (key if isinstance(key, str) else ""), value
+
+    if not isinstance(seed, dict):
+        raise ValueError("Not a RYOS theme file.")
+    problems = validate_seed(seed)
+    if problems:
+        raise ValueError("Invalid theme — " + "; ".join(problems))
+    return name, seed
+
+
 def _builtin_palette(name: str) -> dict:
     """Light/Dark keep their hand-tuned REFERENCE verbatim (identical look);
     every other built-in is derived from its seed by build_palette."""
