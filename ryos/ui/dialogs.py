@@ -14,8 +14,12 @@ from ..settings import (
 )
 from ..startup import _set_startup, _startup_enabled
 from ..quickrun import _is_inside
-from ..themes import THEME_LABELS, THEME_ORDER
-from .theme import C, THEMES, _apply_snap_corner, _flat_button
+from ..themes import SEEDS, THEME_LABELS, save_custom_themes
+from .theme import (
+    C, THEMES, _apply_snap_corner, _flat_button,
+    available_themes, custom_themes, set_custom_themes,
+)
+from .theme_editor import ThemeEditorDialog
 
 
 def _try_unlink(path) -> bool:
@@ -774,7 +778,13 @@ class AdvancedOptionsDialog(tk.Toplevel):
         }
 
     def _current_accent_hex(self) -> str:
-        return self._accent if self._accent else THEMES[self._theme.get()]["accent"]
+        if self._accent:
+            return self._accent
+        tid = self._theme.get()
+        customs = custom_themes()
+        if tid in customs:
+            return customs[tid]["accent"]
+        return THEMES.get(tid, THEMES["light"])["accent"]
 
     def _refresh_swatch(self) -> None:
         self._swatch.configure(bg=self._current_accent_hex())
@@ -808,6 +818,67 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._accent = None
         self._refresh_swatch()
         self._live_appearance(retheme=True)
+
+    # ------------------------------------------------------------------
+    # Custom themes
+    # ------------------------------------------------------------------
+
+    def _current_seed(self) -> dict:
+        """The seed to pre-fill the editor with (the selected theme's seed)."""
+        tid = self._theme.get()
+        customs = custom_themes()
+        if tid in customs:
+            return dict(customs[tid])
+        if tid in SEEDS:
+            return dict(SEEDS[tid])
+        return dict(SEEDS["light"])
+
+    def _taken_names(self, exclude: str | None = None) -> set:
+        """Names a new/edited theme may not use: built-in labels + other customs."""
+        names = set(THEME_LABELS.values()) | set(custom_themes())
+        if exclude:
+            names.discard(exclude)
+        return names
+
+    def _create_theme(self) -> None:
+        ThemeEditorDialog(self, seed=self._current_seed(), name="",
+                          taken_names=self._taken_names(),
+                          on_save=self._save_custom_theme)
+
+    def _edit_theme(self) -> None:
+        tid = self._theme.get()
+        customs = custom_themes()
+        if tid not in customs:
+            return
+        ThemeEditorDialog(
+            self, seed=customs[tid], name=tid,
+            taken_names=self._taken_names(exclude=tid),
+            on_save=lambda name, seed: self._save_custom_theme(name, seed, replacing=tid))
+
+    def _save_custom_theme(self, name: str, seed: dict, replacing: str | None = None) -> None:
+        customs = custom_themes()
+        if replacing and replacing != name:
+            customs.pop(replacing, None)
+        customs[name] = seed
+        set_custom_themes(customs)
+        save_custom_themes(customs)
+        if self._theme.get() == name:
+            self._live_appearance(retheme=True)  # same id: force re-apply + rebuild
+        else:
+            self._theme.set(name)                 # new id: trace re-applies + rebuilds
+
+    def _delete_theme(self) -> None:
+        tid = self._theme.get()
+        customs = custom_themes()
+        if tid not in customs:
+            return
+        if not messagebox.askyesno("Delete theme",
+                                   f"Delete the “{tid}” theme?", parent=self):
+            return
+        customs.pop(tid, None)
+        set_custom_themes(customs)
+        save_custom_themes(customs)
+        self._theme.set("light")  # switch off the now-deleted theme
 
     def _cancel(self) -> None:
         # Revert any live preview to the appearance we opened with.
@@ -901,14 +972,16 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      anchor="w").pack(fill="x", padx=16, pady=(10, 0))
 
         f = self._section(tab, "THEME")
-        # Dropdown of all built-in themes. The combobox shows labels; selecting
-        # one writes the theme slug into self._theme, whose trace drives the
-        # live preview (set up in __init__).
+        # Dropdown of every selectable theme (built-ins + custom). The combobox
+        # shows labels; picking one writes the theme id into self._theme, whose
+        # trace drives the live preview (set up in __init__).
+        choices = available_themes()  # [(id, label), ...]
+        id_to_label = {tid: lab for tid, lab in choices}
         self._theme_label = tk.StringVar(
-            value=THEME_LABELS.get(self._theme.get(), THEME_LABELS["light"]))
+            value=id_to_label.get(self._theme.get(), id_to_label.get("light", "Light")))
         theme_combo = ttk.Combobox(
             f, textvariable=self._theme_label, state="readonly",
-            values=[THEME_LABELS[s] for s in THEME_ORDER],
+            values=[lab for _tid, lab in choices],
             style="Card.TCombobox", font=("Segoe UI", 9))
         theme_combo.pack(fill="x", pady=(2, 6))
         if self._jobs_running:
@@ -916,11 +989,31 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         def _on_theme_pick(_e=None):
             picked = self._theme_label.get()
-            for slug in THEME_ORDER:
-                if THEME_LABELS[slug] == picked:
-                    self._theme.set(slug)
+            for tid, lab in choices:
+                if lab == picked:
+                    self._theme.set(tid)
                     break
         theme_combo.bind("<<ComboboxSelected>>", _on_theme_pick)
+
+        # Custom-theme actions. Edit/Delete apply only to a selected custom theme.
+        is_custom = self._theme.get() in custom_themes()
+        actions = tk.Frame(f, bg=C["bg"])
+        actions.pack(fill="x", pady=(0, 2))
+        create_btn = _flat_button(actions, "Create…", C["btn_dark_bg"],
+                                  C["btn_dark_hover"], self._create_theme, width=8)
+        create_btn.pack(side="left")
+        edit_btn = _flat_button(actions, "Edit…", C["btn_dark_bg"],
+                                C["btn_dark_hover"], self._edit_theme, width=6)
+        edit_btn.pack(side="left", padx=4)
+        del_btn = _flat_button(actions, "Delete", C["btn_dark_bg"],
+                               C["btn_dark_hover"], self._delete_theme, width=7)
+        del_btn.pack(side="left")
+        if self._jobs_running:
+            for b in (create_btn, edit_btn, del_btn):
+                b.configure(state="disabled", cursor="")
+        elif not is_custom:
+            edit_btn.configure(state="disabled", cursor="")
+            del_btn.configure(state="disabled", cursor="")
 
         f = self._section(tab, "ACCENT COLOR")
         swatch_row = tk.Frame(f, bg=C["bg"])
@@ -1147,94 +1240,4 @@ class AdvancedOptionsDialog(tk.Toplevel):
             else:
                 subprocess.Popen(["xdg-open", str(LOG_PATH)])
 
-        def _open_folder():
-            if sys.platform == "win32":
-                os.startfile(str(LOG_DIR))
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(LOG_DIR)])
-            else:
-                subprocess.Popen(["xdg-open", str(LOG_DIR)])
-
-        def _clear_log_file():
-            if not LOG_PATH.exists():
-                messagebox.showinfo("Clear log", "No log file found.", parent=self)
-                return
-            if messagebox.askyesno("Clear log file",
-                                   "Truncate the log file? This cannot be undone.",
-                                   parent=self):
-                LOG_PATH.write_text("", encoding="utf-8")
-
-        tk.Label(f, text=str(LOG_PATH), bg=C["bg"], fg=C["path_fg"],
-                 font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(10, 2))
-        btn_row = tk.Frame(f, bg=C["bg"])
-        btn_row.pack(fill="x", pady=(2, 0))
-        _flat_button(btn_row, "View log",     C["btn_dark_bg"], C["btn_dark_hover"],
-                     _open_file,   width=10).pack(side="left", padx=(0, 6))
-        _flat_button(btn_row, "Open folder",  C["btn_dark_bg"], C["btn_dark_hover"],
-                     _open_folder, width=12).pack(side="left")
-        _flat_button(f, "Clear log file", C["btn_dark_bg"], C["btn_dark_hover"],
-                     _clear_log_file, width=14).pack(anchor="w", pady=(6, 0))
-
-    def _save(self):
-        try:
-            max_lines = max(100, int(self._max_lines.get() or 100))
-        except ValueError:
-            max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
-        try:
-            max_parallel = max(0, int(self._max_parallel.get() or 0))
-        except ValueError:
-            max_parallel = _SETTINGS_DEFAULTS["max_parallel_jobs"]
-        try:
-            win_w = max(400, int(self._win_width.get()  or 540))
-            win_h = max(300, int(self._win_height.get() or 640))
-        except ValueError:
-            win_w, win_h = 540, 640
-        try:
-            qr_max_files = max(0, int(self._qr_index_max_files.get() or 0))
-        except ValueError:
-            qr_max_files = _SETTINGS_DEFAULTS["quick_run_index_max_files"]
-        # Fold in any extension left typed-but-not-added so it isn't lost.
-        self._qr_add()
-        qr_exts = list(self._qr_exts)  # already normalized; blank = index everything
-        self._settings.update({
-            "theme":                    self._theme.get(),
-            "accent_color":             self._accent,
-            "compact_mode":             self._compact.get(),
-            "card_size":                self._card_size.get(),
-            "always_on_top":            self._always_on_top.get(),
-            "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
-            "window_width":             win_w,
-            "window_height":            win_h,
-            "remember_last_group":      self._remember_group.get(),
-            "start_minimized":          self._start_minimized.get(),
-            "remember_window_geometry": self._remember_geometry.get(),
-            "open_on_cursor_monitor":   self._open_on_cursor.get(),
-            "max_output_lines":         max_lines,
-            "max_parallel_jobs":        max_parallel,
-            "auto_clear_output":        self._auto_clear.get(),
-            "auto_scroll_output":       self._auto_scroll.get(),
-            "notify_on_complete":       self._notify_on_complete.get(),
-            "quick_run_enabled":        self._quick_run_enabled.get(),
-            "quick_run_autocomplete":   self._quick_run_autocomplete.get(),
-            "quick_run_index_extensions": qr_exts,
-            "quick_run_index_max_files":  qr_max_files,
-            "auto_check_update":        self._auto_check_update.get(),
-            "logging_enabled":          self._logging_enabled.get(),
-            "log_level":                self._log_level.get(),
-            "log_runs_output":          self._log_runs_output.get(),
-        })
-        try:
-            _set_startup(self._start_with_windows.get())
-        except OSError as e:
-            # winreg raises OSError on registry failure; show it. An unexpected
-            # (non-OSError) error is a bug and should surface, not be masked.
-            messagebox.showerror("Startup Error",
-                                 f"Could not update Windows startup entry:\n{e}",
-                                 parent=self)
-            return
-        self._on_save(self._settings)
-        # Apply theme / card changes and rebuild the UI (on_save already
-        # persisted them, so don't write to disk again). Skipped while jobs run.
-        if self._on_appearance is not None and not self._jobs_running:
-            self._on_appearance(self._appearance_subset(), persist=False)
-        self.destroy()
+        def _open_

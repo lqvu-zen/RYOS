@@ -39,7 +39,11 @@ from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
 from .pipeline import PipelineEditorDialog
-from .theme import C, _apply_snap_corner, _configure_ttk_styles, _flat_button, apply_theme
+from ..themes import load_custom_themes
+from .theme import (
+    C, _apply_snap_corner, _configure_ttk_styles, _flat_button, apply_theme,
+    set_custom_themes,
+)
 from .widgets import Tooltip
 
 _log = get_logger("app")
@@ -122,6 +126,7 @@ class RYOSApp(_BaseWindow):
         self._settings: dict = _load_settings()
         # Apply the saved theme before building any widgets so that C is
         # already populated with the correct palette when _build_ui() runs.
+        set_custom_themes(load_custom_themes())
         apply_theme(self._settings.get("theme", "light"), self._settings.get("accent_color"))
         from ryos.ui import cards as _cards_mod
         _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
@@ -2554,6 +2559,4 @@ class RYOSApp(_BaseWindow):
                 except OSError:
                     pass  # process may have already exited
         if self._settings["remember_window_geometry"]:
-            self._settings["window_geometry"] = self.geometry()
-        _save_settings(self._settings)
-        self.destroy()
+      

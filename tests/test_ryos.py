@@ -32,7 +32,8 @@ from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     BUILTIN_THEMES, REFERENCE, SEEDS, THEME_LABELS, THEME_MODES, THEME_ORDER,
-    build_palette, contrast_ratio,
+    build_palette, contrast_ratio, contrast_warnings, is_hex_color,
+    load_custom_themes, save_custom_themes, validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -613,6 +614,59 @@ class TestThemeEngine(unittest.TestCase):
             self.assertGreaterEqual(contrast_ratio(s["text"], s["bg"]), 4.5, name)
             self.assertGreaterEqual(contrast_ratio(s["text"], s["surface"]), 4.5, name)
             self.assertGreaterEqual(contrast_ratio(s["text_muted"], s["bg"]), 3.0, name)
+
+
+# ---------------------------------------------------------------------------
+# Custom themes (validation + persistence)
+# ---------------------------------------------------------------------------
+
+class TestCustomThemes(unittest.TestCase):
+    GOOD = {"mode": "dark", "bg": "#2e3440", "surface": "#3b4252", "border": "#434c5e",
+            "accent": "#88c0d0", "text": "#eceff4", "text_muted": "#aab1c0",
+            "header_bg": "#272c36"}
+
+    def test_is_hex_color(self):
+        self.assertTrue(is_hex_color("#aabbcc"))
+        self.assertFalse(is_hex_color("#abc"))
+        self.assertFalse(is_hex_color("red"))
+        self.assertFalse(is_hex_color(123))
+
+    def test_valid_seed_has_no_problems(self):
+        self.assertEqual(validate_seed(self.GOOD), [])
+
+    def test_validate_flags_bad_mode_and_hex(self):
+        self.assertIn("mode must be 'light' or 'dark'",
+                      validate_seed({**self.GOOD, "mode": "x"}))
+        self.assertTrue(any("bg" in p for p in validate_seed({**self.GOOD, "bg": "red"})))
+
+    def test_validate_non_dict(self):
+        self.assertEqual(validate_seed("nope"), ["theme must be an object"])
+
+    def test_contrast_warnings(self):
+        self.assertEqual(contrast_warnings(self.GOOD), [])
+        low = {**self.GOOD, "text": "#3b4252"}
+        self.assertTrue(contrast_warnings(low))
+
+    def test_persistence_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "themes.json"
+            self.assertEqual(load_custom_themes(p), {})
+            save_custom_themes({"My Theme": self.GOOD}, p)
+            self.assertEqual(load_custom_themes(p), {"My Theme": self.GOOD})
+
+    def test_corrupt_file_returns_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "themes.json"
+            p.write_text("{ not json", encoding="utf-8")
+            self.assertEqual(load_custom_themes(p), {})
+
+    def test_invalid_entry_dropped_on_load(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "themes.json"
+            save_custom_themes({"ok": self.GOOD, "bad": {"mode": "dark"}}, p)
+            loaded = load_custom_themes(p)
+            self.assertIn("ok", loaded)
+            self.assertNotIn("bad", loaded)
 
 
 # ---------------------------------------------------------------------------
@@ -1885,96 +1939,4 @@ class TestComputeInsertion(unittest.TestCase):
     CARDS = [(10, 0, 20), (20, 20, 20), (30, 40, 20)]
 
     def test_empty_returns_none_none(self):
-        self.assertEqual(compute_insertion(5, []), (None, None))
-
-    def test_drop_above_first_mid_lands_before_first(self):
-        self.assertEqual(compute_insertion(5, self.CARDS), (10, 0))
-
-    def test_boundary_at_mid_is_inclusive(self):
-        self.assertEqual(compute_insertion(10, self.CARDS), (10, 0))
-
-    def test_drop_in_middle_lands_before_that_card(self):
-        self.assertEqual(compute_insertion(25, self.CARDS), (20, 20))
-
-    def test_drop_below_all_mids_appends(self):
-        self.assertEqual(compute_insertion(100, self.CARDS), (None, 60))
-
-
-class TestFirstRectAt(unittest.TestCase):
-    RECTS = [("a", 0, 0, 10, 10), ("b", 20, 0, 10, 10)]
-
-    def test_point_inside_returns_key(self):
-        self.assertEqual(first_rect_at(5, 5, self.RECTS), "a")
-        self.assertEqual(first_rect_at(25, 5, self.RECTS), "b")
-
-    def test_point_in_gap_returns_none(self):
-        self.assertIsNone(first_rect_at(15, 5, self.RECTS))
-
-    def test_edge_is_inclusive(self):
-        self.assertEqual(first_rect_at(0, 0, self.RECTS), "a")
-        self.assertEqual(first_rect_at(10, 10, self.RECTS), "a")
-
-    def test_first_match_wins_on_overlap(self):
-        rects = [("a", 0, 0, 100, 100), ("b", 0, 0, 10, 10)]
-        self.assertEqual(first_rect_at(5, 5, rects), "a")
-
-    def test_empty_returns_none(self):
-        self.assertIsNone(first_rect_at(5, 5, []))
-
-
-from ryos.screens import center_in_work_area, geometry_origin  # noqa: E402
-
-
-class TestGeometryOrigin(unittest.TestCase):
-    def test_positive_origin(self):
-        self.assertEqual(geometry_origin("540x640+100+200"), (100, 200))
-
-    def test_negative_origin(self):
-        self.assertEqual(geometry_origin("540x640+-1920+0"), (-1920, 0))
-
-    def test_unparseable_returns_zero(self):
-        self.assertEqual(geometry_origin(""), (0, 0))
-        self.assertEqual(geometry_origin("garbage"), (0, 0))
-        self.assertEqual(geometry_origin(None), (0, 0))
-
-
-class TestCenterInWorkArea(unittest.TestCase):
-    def test_centers_on_primary(self):
-        self.assertEqual(center_in_work_area(540, 640, (0, 0, 1920, 1080)),
-                         "540x640+690+220")
-
-    def test_centers_in_offset_work_area(self):
-        self.assertEqual(center_in_work_area(540, 640, (100, 50, 800, 600)),
-                         "540x640+230+50")
-
-    def test_window_larger_than_area_clamps_to_origin(self):
-        self.assertEqual(center_in_work_area(2000, 2000, (10, 20, 800, 600)),
-                         "2000x2000+10+20")
-
-
-from ryos.grouping import bucket_by_group  # noqa: E402
-
-
-class TestBucketByGroup(unittest.TestCase):
-    @staticmethod
-    def _key(r):
-        return r[1]
-
-    def test_named_groups_always_present_even_if_empty(self):
-        self.assertEqual(bucket_by_group([], ["A", "B"], self._key),
-                         {"A": [], "B": [], "": []})
-
-    def test_ungrouped_key_always_present(self):
-        self.assertEqual(bucket_by_group([], [], self._key), {"": []})
-
-    def test_records_bucketed_and_order_preserved(self):
-        recs = [(1, "A"), (2, ""), (3, "A"), (4, "B")]
-        out = bucket_by_group(recs, ["A", "B"], self._key)
-        self.assertEqual(out["A"], [(1, "A"), (3, "A")])
-        self.assertEqual(out["B"], [(4, "B")])
-        self.assertEqual(out[""], [(2, "")])
-
-    def test_unknown_group_bucket_created_on_demand(self):
-        out = bucket_by_group([(1, "Z")], ["A"], self._key)
-        self.assertEqual(out["Z"], [(1, "Z")])
-        self.assertEqual(out["A"], [])
+        self.assertE

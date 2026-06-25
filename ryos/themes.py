@@ -12,9 +12,18 @@ KeyError), then overlays the seed-derived colours. Built-in Light/Dark use their
 hand-tuned REFERENCE palettes verbatim so the app looks identical; new presets
 and user themes are produced by `build_palette`.
 """
+import json
+import re
+from pathlib import Path
+
+from .settings import DATA_DIR
 
 # The 7 curated colours a seed carries (besides "mode").
 SEED_KEYS = ("bg", "surface", "border", "accent", "text", "text_muted", "header_bg")
+
+# User-created themes persist here, separate from settings.json (keeps each file
+# small, mirroring the QR-index split).
+CUSTOM_THEMES_PATH = DATA_DIR / "themes.json"
 
 # Hand-tuned authoritative palettes for the two built-in themes. Every colour
 # key the UI reads lives here; build_palette guarantees these keys on any output.
@@ -239,61 +248,4 @@ def contrast_ratio(c1: str, c2: str) -> float:
 
 
 def build_palette(seed: dict, overrides: dict | None = None) -> dict:
-    """Expand a 7-colour seed into the full palette the UI consumes.
-
-    Starts from the mode's REFERENCE palette (so every key is present and the
-    not-user-edited colours — semantic badges, the terminal output panel, menus,
-    tooltips, the signature bolt gold — get sensible mode defaults), then
-    overlays the seed colours and the values derived from them. `overrides` pins
-    exact values last (used by presets that want to hand-tune a few keys)."""
-    mode = seed.get("mode", "light")
-    light = mode != "dark"
-    base = dict(REFERENCE["light" if light else "dark"])
-
-    bg = seed["bg"]
-    surface = seed["surface"]
-    border = seed["border"]
-    accent = seed["accent"]
-    text = seed["text"]
-    muted = seed["text_muted"]
-    header = seed["header_bg"]
-    accent2 = _shade(accent, -0.15)
-
-    base.update({
-        "bg":          bg,
-        "card_bg":     surface,
-        "border":      border,
-        "header_bg":   header,
-        "accent":      accent,
-        "name_fg":     text,
-        "path_fg":     muted,
-        "tab_fg":      text,
-        "card_hover":  _shade(surface, -0.03 if light else 0.10),
-        "status_bg":   _shade(bg, -0.05 if light else 0.05),
-        "accent2":     accent2,
-        "accent_wash": _shade(accent, 0.86 if light else -0.55),
-        "btn_mod_bg":        accent,
-        "btn_mod_hover":     accent2,
-        "btn_create_bg":     accent,
-        "btn_create_hover":  accent2,
-        "btn_neutral_bg":    _shade(surface, -0.06 if light else 0.08),
-        "btn_neutral_hover": _shade(surface, -0.12 if light else 0.14),
-        "btn_neutral_fg":    muted,
-        "tab_inactive_bg":    _shade(bg, -0.05 if light else 0.06),
-        "tab_inactive_hover": _shade(bg, -0.10 if light else 0.11),
-    })
-    if overrides:
-        base.update(overrides)
-    return base
-
-
-def _builtin_palette(name: str) -> dict:
-    """Light/Dark keep their hand-tuned REFERENCE verbatim (identical look);
-    every other built-in is derived from its seed by build_palette."""
-    if name in ("light", "dark"):
-        return dict(REFERENCE[name])
-    return build_palette(SEEDS[name])
-
-
-# Built-in theme palettes the UI selects among, keyed by slug.
-BUILTIN_THEMES: dict[str, dict] = {name: _builtin_palette(name) for name in THEME_ORDER}
+    """Expand a 7-colour seed into the 
