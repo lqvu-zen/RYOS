@@ -154,4 +154,35 @@ def _configure_ttk_styles() -> None:
     )
     style.map(
         "Card.TNotebook.Tab",
-        background=[("selected", C["card_bg"]), ("active", C["card_hover"])
+        background=[("selected", C["card_bg"]), ("active", C["card_hover"])],
+        foreground=[("selected", C["accent"]), ("active", C["name_fg"])],
+    )
+    # Remove the dotted grip marks from the PanedWindow sash.
+    style.configure("Sash", gripcount=0, sashthickness=4, sashpad=0,
+                    background=C["border"])
+
+
+def _apply_snap_corner(window, corner: str, margin: int = 10, work_area=None) -> None:
+    window.update_idletasks()
+    w = window.winfo_width()
+    h = window.winfo_height()
+    # Prefer an explicit target monitor work area (multi-monitor); otherwise use
+    # the primary monitor's work area on Windows, full screen elsewhere.
+    if work_area is not None:
+        ax, ay, aw, ah = work_area
+    elif sys.platform == "win32":
+        try:
+            import ctypes.wintypes
+            wa = ctypes.wintypes.RECT()
+            ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(wa), 0)
+            ax, ay = wa.left, wa.top
+            aw, ah = wa.right - wa.left, wa.bottom - wa.top
+        except Exception:
+            ax, ay = 0, 0
+            aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
+    else:
+        ax, ay = 0, 0
+        aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
+    x = ax + margin if "left" in corner else ax + aw - w - margin
+    y = ay + margin if "top"  in corner else ay + ah - h - margin
+    window.geometry(f"+{x}+{y}")
