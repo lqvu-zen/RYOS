@@ -158,7 +158,51 @@ SEEDS: dict[str, dict] = {
         "text_muted": REFERENCE["dark"]["path_fg"],
         "header_bg":  REFERENCE["dark"]["header_bg"],
     },
+    # Preset themes. Each is just the 7-color seed; build_palette derives the
+    # rest. Text/surface colours are tuned to clear the contrast thresholds the
+    # tests enforce (primary text >= 4.5:1, muted >= 3.0:1).
+    "nord": {
+        "mode": "dark", "bg": "#2e3440", "surface": "#3b4252", "border": "#434c5e",
+        "accent": "#88c0d0", "text": "#eceff4", "text_muted": "#aab1c0",
+        "header_bg": "#272c36",
+    },
+    "solarized-light": {
+        "mode": "light", "bg": "#eee8d5", "surface": "#fdf6e3", "border": "#ddd6c1",
+        "accent": "#1f7ac0", "text": "#4d646b", "text_muted": "#5d7077",
+        "header_bg": "#073642",
+    },
+    "solarized-dark": {
+        "mode": "dark", "bg": "#002b36", "surface": "#073642", "border": "#0f4a59",
+        "accent": "#268bd2", "text": "#93a1a1", "text_muted": "#839496",
+        "header_bg": "#001f27",
+    },
+    "high-contrast": {
+        "mode": "dark", "bg": "#000000", "surface": "#121212", "border": "#5a5a5a",
+        "accent": "#4aa3ff", "text": "#ffffff", "text_muted": "#d0d0d0",
+        "header_bg": "#000000",
+    },
+    "sepia": {
+        "mode": "light", "bg": "#f4ecd8", "surface": "#fbf5e6", "border": "#e3d9bf",
+        "accent": "#9a5b2e", "text": "#4b3a2a", "text_muted": "#6f5b45",
+        "header_bg": "#3a2c1d",
+    },
 }
+
+# Display order and labels for the theme selector, and each theme's base mode.
+THEME_ORDER: list[str] = [
+    "light", "dark", "nord", "solarized-light", "solarized-dark",
+    "high-contrast", "sepia",
+]
+THEME_LABELS: dict[str, str] = {
+    "light": "Light",
+    "dark": "Dark",
+    "nord": "Nord",
+    "solarized-light": "Solarized Light",
+    "solarized-dark": "Solarized Dark",
+    "high-contrast": "High Contrast",
+    "sepia": "Sepia",
+}
+THEME_MODES: dict[str, str] = {name: SEEDS[name]["mode"] for name in THEME_ORDER}
 
 
 def _shade(hex_str: str, factor: float) -> str:
@@ -243,9 +287,13 @@ def build_palette(seed: dict, overrides: dict | None = None) -> dict:
     return base
 
 
-# Built-in theme palettes the UI selects among. Light/Dark use their hand-tuned
-# REFERENCE verbatim (identical look); presets are added here in a later phase.
-BUILTIN_THEMES: dict[str, dict] = {
-    "light": dict(REFERENCE["light"]),
-    "dark":  dict(REFERENCE["dark"]),
-}
+def _builtin_palette(name: str) -> dict:
+    """Light/Dark keep their hand-tuned REFERENCE verbatim (identical look);
+    every other built-in is derived from its seed by build_palette."""
+    if name in ("light", "dark"):
+        return dict(REFERENCE[name])
+    return build_palette(SEEDS[name])
+
+
+# Built-in theme palettes the UI selects among, keyed by slug.
+BUILTIN_THEMES: dict[str, dict] = {name: _builtin_palette(name) for name in THEME_ORDER}

@@ -14,6 +14,7 @@ from ..settings import (
 )
 from ..startup import _set_startup, _startup_enabled
 from ..quickrun import _is_inside
+from ..themes import THEME_LABELS, THEME_ORDER
 from .theme import C, THEMES, _apply_snap_corner, _flat_button
 
 
@@ -900,8 +901,26 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      anchor="w").pack(fill="x", padx=16, pady=(10, 0))
 
         f = self._section(tab, "THEME")
-        self._rb(f, "☀  Light", self._theme, "light", state)
-        self._rb(f, "🌙  Dark",  self._theme, "dark",  state)
+        # Dropdown of all built-in themes. The combobox shows labels; selecting
+        # one writes the theme slug into self._theme, whose trace drives the
+        # live preview (set up in __init__).
+        self._theme_label = tk.StringVar(
+            value=THEME_LABELS.get(self._theme.get(), THEME_LABELS["light"]))
+        theme_combo = ttk.Combobox(
+            f, textvariable=self._theme_label, state="readonly",
+            values=[THEME_LABELS[s] for s in THEME_ORDER],
+            style="Card.TCombobox", font=("Segoe UI", 9))
+        theme_combo.pack(fill="x", pady=(2, 6))
+        if self._jobs_running:
+            theme_combo.configure(state="disabled")
+
+        def _on_theme_pick(_e=None):
+            picked = self._theme_label.get()
+            for slug in THEME_ORDER:
+                if THEME_LABELS[slug] == picked:
+                    self._theme.set(slug)
+                    break
+        theme_combo.bind("<<ComboboxSelected>>", _on_theme_pick)
 
         f = self._section(tab, "ACCENT COLOR")
         swatch_row = tk.Frame(f, bg=C["bg"])

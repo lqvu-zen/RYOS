@@ -8,7 +8,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 
-from ..themes import BUILTIN_THEMES, SEEDS, _shade, build_palette
+from ..themes import BUILTIN_THEMES, SEEDS, THEME_MODES, _shade, build_palette
 
 # Named theme palettes, sourced from the engine. Kept here so existing
 # `from .theme import THEMES` / `C` references keep working unchanged.
@@ -43,7 +43,7 @@ def apply_theme(theme_name: str, accent: str | None = None) -> None:
         C["btn_create_bg"]    = accent
         C["btn_mod_hover"]    = C["accent2"]
         C["btn_create_hover"] = C["accent2"]
-        wash_factor = 0.86 if theme_name == "light" else -0.55
+        wash_factor = 0.86 if THEME_MODES.get(theme_name, "light") == "light" else -0.55
         C["accent_wash"]      = _shade(accent, wash_factor)
     _configure_ttk_styles()
 

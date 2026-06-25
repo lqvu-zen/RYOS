@@ -31,7 +31,8 @@ from ryos.db import ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
-    BUILTIN_THEMES, REFERENCE, SEEDS, build_palette, contrast_ratio,
+    BUILTIN_THEMES, REFERENCE, SEEDS, THEME_LABELS, THEME_MODES, THEME_ORDER,
+    build_palette, contrast_ratio,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -591,6 +592,27 @@ class TestThemeEngine(unittest.TestCase):
     def test_contrast_ratio_known_values(self):
         self.assertAlmostEqual(contrast_ratio("#000000", "#ffffff"), 21.0, places=1)
         self.assertEqual(contrast_ratio("#ffffff", "#ffffff"), 1.0)
+
+    def test_theme_registry_consistent(self):
+        self.assertEqual(set(BUILTIN_THEMES), set(THEME_ORDER))
+        for name in THEME_ORDER:
+            self.assertIn(name, THEME_LABELS, f"{name} missing label")
+            self.assertIn(name, THEME_MODES, f"{name} missing mode")
+            self.assertIn(name, SEEDS, f"{name} missing seed")
+
+    def test_every_builtin_palette_complete_and_valid(self):
+        for name in THEME_ORDER:
+            p = BUILTIN_THEMES[name]
+            self.assertEqual(set(p), self.REF_KEYS, f"{name} key parity")
+            bad = [k for k, v in p.items() if not self.HEX.match(v)]
+            self.assertEqual(bad, [], f"{name} non-hex: {bad}")
+
+    def test_every_theme_meets_contrast(self):
+        for name in THEME_ORDER:
+            s = SEEDS[name]
+            self.assertGreaterEqual(contrast_ratio(s["text"], s["bg"]), 4.5, name)
+            self.assertGreaterEqual(contrast_ratio(s["text"], s["surface"]), 4.5, name)
+            self.assertGreaterEqual(contrast_ratio(s["text_muted"], s["bg"]), 3.0, name)
 
 
 # ---------------------------------------------------------------------------
@@ -1955,4 +1977,4 @@ class TestBucketByGroup(unittest.TestCase):
     def test_unknown_group_bucket_created_on_demand(self):
         out = bucket_by_group([(1, "Z")], ["A"], self._key)
         self.assertEqual(out["Z"], [(1, "Z")])
-        self.assertEqual(out[
+        self.assertEqual(out["A"], [])
