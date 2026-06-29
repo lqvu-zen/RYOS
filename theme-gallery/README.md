@@ -11,5 +11,9 @@ Extra themes for RYOS that are **not** bundled with the app — only **Light** a
 
 Available: Nord, Solarized Light, Solarized Dark, High Contrast, Sepia.
 
+`light.json` and `dark.json` are the built-in themes' seeds, included as a
+starting **template** — import one, then Edit it to build your own theme from a
+familiar base.
+
 Each file is a normal RYOS theme export (a `name` + 7-colour `seed`), so anything
 you create and **Export…** from the app can live here too — contributions welcome.

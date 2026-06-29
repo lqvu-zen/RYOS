@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "dark",
+  "name": "Dark",
+  "seed": {
+    "mode": "dark",
+    "bg": "#14181f",
+    "surface": "#1d232d",
+    "border": "#2c3440",
+    "accent": "#5b8bd0",
+    "text": "#e8ebf0",
+    "text_muted": "#9aa3b2",
+    "header_bg": "#0f141b"
+  }
+}

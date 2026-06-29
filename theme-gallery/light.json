@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "light",
+  "name": "Light",
+  "seed": {
+    "mode": "light",
+    "bg": "#f0f2f5",
+    "surface": "#ffffff",
+    "border": "#dde2ea",
+    "accent": "#4a6fa5",
+    "text": "#1a1a2e",
+    "text_muted": "#626975",
+    "header_bg": "#1e2a3a"
+  }
+}

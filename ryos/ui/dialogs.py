@@ -1389,37 +1389,4 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
             "window_width":             win_w,
             "window_height":            win_h,
-            "remember_last_group":      self._remember_group.get(),
-            "start_minimized":          self._start_minimized.get(),
-            "remember_window_geometry": self._remember_geometry.get(),
-            "open_on_cursor_monitor":   self._open_on_cursor.get(),
-            "themes_dir":               self._settings.get("themes_dir", ""),
-            "max_output_lines":         max_lines,
-            "max_parallel_jobs":        max_parallel,
-            "auto_clear_output":        self._auto_clear.get(),
-            "auto_scroll_output":       self._auto_scroll.get(),
-            "notify_on_complete":       self._notify_on_complete.get(),
-            "quick_run_enabled":        self._quick_run_enabled.get(),
-            "quick_run_autocomplete":   self._quick_run_autocomplete.get(),
-            "quick_run_index_extensions": qr_exts,
-            "quick_run_index_max_files":  qr_max_files,
-            "auto_check_update":        self._auto_check_update.get(),
-            "logging_enabled":          self._logging_enabled.get(),
-            "log_level":                self._log_level.get(),
-            "log_runs_output":          self._log_runs_output.get(),
-        })
-        try:
-            _set_startup(self._start_with_windows.get())
-        except OSError as e:
-            # winreg raises OSError on registry failure; show it. An unexpected
-            # (non-OSError) error is a bug and should surface, not be masked.
-            messagebox.showerror("Startup Error",
-                                 f"Could not update Windows startup entry:\n{e}",
-                                 parent=self)
-            return
-        self._on_save(self._settings)
-        # Apply theme / card changes and rebuild the UI (on_save already
-        # persisted them, so don't write to disk again). Skipped while jobs run.
-        if self._on_appearance is not None and not self._jobs_running:
-            self._on_appearance(self._appearance_subset(), persist=False)
-        self.destroy()
+            "remember_last_
