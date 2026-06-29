@@ -33,10 +33,10 @@ from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
     THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _shade, build_palette,
-    contrast_ratio, contrast_warnings, delete_user_theme, export_theme,
-    import_theme, is_hex_color, load_base_themes, load_custom_themes,
-    load_presets, load_user_themes, resolve_user_themes_dir, save_custom_themes,
-    save_user_theme, validate_seed,
+    contrast_ratio, contrast_warnings, delete_user_theme,
+    disambiguate_custom_labels, export_theme, import_theme, is_hex_color,
+    load_base_themes, load_custom_themes, load_presets, load_user_themes,
+    resolve_user_themes_dir, save_custom_themes, save_user_theme, validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -656,33 +656,58 @@ class TestThemeEngine(unittest.TestCase):
 # Bundled preset themes (loaded from JSON)
 # ---------------------------------------------------------------------------
 
-class TestPresetThemes(unittest.TestCase):
-    EXPECTED_IDS = {"nord", "solarized-light", "solarized-dark",
-                    "high-contrast", "sepia"}
+class TestBundledThemes(unittest.TestCase):
+    """Only Light and Dark ship with the app; extra themes live in the gallery
+    and are imported by the user."""
 
-    def test_load_presets_returns_all_valid(self):
-        presets = load_presets()
-        ids = {pid for pid, _label, _seed in presets}
-        self.assertEqual(ids, self.EXPECTED_IDS)
-        for pid, label, seed in presets:
-            self.assertTrue(label, f"{pid} has no label")
-            self.assertEqual(validate_seed(seed), [], f"{pid} invalid seed")
+    def test_only_light_dark_bundled(self):
+        self.assertEqual(THEME_ORDER, ["light", "dark"])
+        self.assertEqual(set(BUILTIN_THEMES), {"light", "dark"})
 
-    def test_presets_exclude_base_themes(self):
-        ids = {pid for pid, _l, _s in load_presets()}
-        self.assertNotIn("light", ids)
-        self.assertNotIn("dark", ids)
-
-    def test_presets_in_registry_after_light_dark(self):
-        self.assertEqual(THEME_ORDER[:2], ["light", "dark"])
-        self.assertEqual(set(THEME_ORDER[2:]), self.EXPECTED_IDS)
-        for pid in self.EXPECTED_IDS:
-            self.assertIn(pid, SEEDS)
-            self.assertIn(pid, BUILTIN_THEMES)
+    def test_no_bundled_presets(self):
+        self.assertEqual(load_presets(), [])
 
     def test_load_presets_missing_dir_is_empty(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(load_presets(Path(d)), [])
+
+
+class TestThemeGallery(unittest.TestCase):
+    GALLERY = Path(__file__).resolve().parents[1] / "theme-gallery"
+    EXPECTED = {"nord", "solarized-light", "solarized-dark", "high-contrast", "sepia"}
+
+    def test_gallery_files_present(self):
+        names = {p.stem for p in self.GALLERY.glob("*.json")}
+        self.assertEqual(names, self.EXPECTED)
+
+    def test_gallery_themes_importable(self):
+        for fp in self.GALLERY.glob("*.json"):
+            name, seed = import_theme(fp)  # raises if invalid
+            self.assertTrue(name, f"{fp.name} has no name")
+            self.assertEqual(validate_seed(seed), [], f"{fp.name} invalid seed")
+
+
+class TestDisambiguateLabels(unittest.TestCase):
+    IDS = ["light", "dark"]
+    LABELS = ["Light", "Dark"]
+
+    def test_no_collision_keeps_name(self):
+        out = disambiguate_custom_labels(["Ocean"], self.IDS, self.LABELS)
+        self.assertEqual(out, [("Ocean", "Ocean")])
+
+    def test_collision_with_builtin_label_suffixed(self):
+        out = dict(disambiguate_custom_labels(["Light", "Dark"], self.IDS, self.LABELS))
+        self.assertEqual(out["Light"], "Light (custom)")
+        self.assertEqual(out["Dark"], "Dark (custom)")
+
+    def test_collision_with_builtin_id_suffixed(self):
+        # 'dark' (id form) collides too.
+        out = dict(disambiguate_custom_labels(["dark"], self.IDS, self.LABELS))
+        self.assertEqual(out["dark"], "dark (custom)")
+
+    def test_name_unchanged_only_label_suffixed(self):
+        out = disambiguate_custom_labels(["Light"], self.IDS, self.LABELS)
+        self.assertEqual(out[0][0], "Light")  # id/name preserved
 
 
 class TestBaseThemes(unittest.TestCase):

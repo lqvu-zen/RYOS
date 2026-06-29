@@ -7,7 +7,7 @@ Open **⚙ → Advanced options…** from the header. The settings are organised
 ![The Appearance tab with Theme (Light/Dark), Accent color, and Display options](images/09-appearance.png)
 *Screenshot pending — capture the **Appearance** tab.*
 
-- **Theme** — pick from the dropdown: the built-ins **Light**, **Dark**, **Nord**, **Solarized Light**, **Solarized Dark**, **High Contrast**, and **Sepia**, plus any custom themes you've made. The window re-themes live as you select.
+- **Theme** — pick from the dropdown. **Light** and **Dark** ship with the app; more (Nord, Solarized, High Contrast, Sepia, …) live in the [theme gallery](../../theme-gallery/) — download and **Import…** them — and any custom themes you've made appear here too. The window re-themes live as you select.
 - **Accent color** — pick a highlight colour with **Choose…**, or **Reset** to the default.
 - **Compact cards** — a denser layout that fits more cards on screen.
 - **Card size** — **Small**, **Medium**, or **Large**.

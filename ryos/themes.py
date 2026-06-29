@@ -512,6 +512,26 @@ def migrate_legacy_custom_themes(directory) -> int:
     return migrated
 
 
+def disambiguate_custom_labels(custom_names, builtin_ids, builtin_labels) -> list[tuple[str, str]]:
+    """Return (name, label) for custom themes (sorted by name). A custom whose
+    name would collide with a built-in id/label — or another custom's label —
+    gets a ' (custom)' suffix so the selector never shows duplicates. The name
+    (registry key / settings value / filename) is left untouched."""
+    used = {s.lower() for s in builtin_labels} | {s.lower() for s in builtin_ids}
+    out = []
+    for name in sorted(custom_names):
+        label = name
+        if label.lower() in used:
+            base = f"{name} (custom)"
+            label, n = base, 2
+            while label.lower() in used:
+                label = f"{base} ({n})"
+                n += 1
+        used.add(label.lower())
+        out.append((name, label))
+    return out
+
+
 def _read_theme_files(directory=None) -> list[dict]:
     """Parsed theme JSON dicts (each with a string `id`), sorted by filename.
     Unreadable or id-less files are skipped (logged)."""

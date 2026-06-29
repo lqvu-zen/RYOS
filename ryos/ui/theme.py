@@ -10,7 +10,7 @@ from tkinter import ttk
 
 from ..themes import (
     BUILTIN_THEMES, SEEDS, THEME_LABELS, THEME_MODES, THEME_ORDER,
-    _shade, build_palette,
+    _shade, build_palette, disambiguate_custom_labels,
 )
 
 # Named theme palettes, sourced from the engine. Kept here so existing
@@ -39,10 +39,13 @@ def custom_themes() -> dict:
 
 
 def available_themes() -> list[tuple[str, str]]:
-    """(id, label) for every selectable theme: built-ins first (in order),
-    then custom themes alphabetically. The id is what settings['theme'] stores."""
+    """(id, label) for every selectable theme: built-ins first (in order), then
+    custom themes. A custom whose name collides with a built-in (or another
+    custom) gets a ' (custom)' suffix on its label so the list has no duplicates;
+    its id (settings value / filename) is unchanged."""
     items = [(slug, THEME_LABELS[slug]) for slug in THEME_ORDER]
-    items += [(name, name) for name in sorted(_custom_seeds)]
+    items += disambiguate_custom_labels(
+        _custom_seeds.keys(), THEME_ORDER, THEME_LABELS.values())
     return items
 
 
