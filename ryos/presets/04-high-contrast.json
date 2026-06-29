@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "high-contrast",
+  "name": "High Contrast",
+  "seed": {
+    "mode": "dark",
+    "bg": "#000000",
+    "surface": "#121212",
+    "border": "#5a5a5a",
+    "accent": "#4aa3ff",
+    "text": "#ffffff",
+    "text_muted": "#d0d0d0",
+    "header_bg": "#000000"
+  }
+}

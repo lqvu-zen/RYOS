@@ -31,10 +31,10 @@ from ryos.db import ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
-    ADVANCED_KEYS, BUILTIN_THEMES, REFERENCE, SEEDS, THEME_LABELS, THEME_MODES,
-    THEME_ORDER, _shade, build_palette, contrast_ratio, contrast_warnings,
-    export_theme, import_theme, is_hex_color, load_custom_themes,
-    save_custom_themes, validate_seed,
+    ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
+    THEME_MODES, THEME_ORDER, _shade, build_palette, contrast_ratio,
+    contrast_warnings, export_theme, import_theme, is_hex_color,
+    load_custom_themes, load_presets, save_custom_themes, validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -648,6 +648,39 @@ class TestThemeEngine(unittest.TestCase):
         good = SEEDS["dark"]
         self.assertEqual(validate_seed({**good, "out_bg": "#101010"}), [])
         self.assertTrue(any("out_bg" in p for p in validate_seed({**good, "out_bg": "x"})))
+
+
+# ---------------------------------------------------------------------------
+# Bundled preset themes (loaded from JSON)
+# ---------------------------------------------------------------------------
+
+class TestPresetThemes(unittest.TestCase):
+    EXPECTED_IDS = {"nord", "solarized-light", "solarized-dark",
+                    "high-contrast", "sepia"}
+
+    def test_preset_files_present(self):
+        files = list(PRESETS_DIR.glob("*.json"))
+        self.assertEqual(len(files), len(self.EXPECTED_IDS),
+                         f"found {[f.name for f in files]}")
+
+    def test_load_presets_returns_all_valid(self):
+        presets = load_presets()
+        ids = {pid for pid, _label, _seed in presets}
+        self.assertEqual(ids, self.EXPECTED_IDS)
+        for pid, label, seed in presets:
+            self.assertTrue(label, f"{pid} has no label")
+            self.assertEqual(validate_seed(seed), [], f"{pid} invalid seed")
+
+    def test_presets_in_registry_after_light_dark(self):
+        self.assertEqual(THEME_ORDER[:2], ["light", "dark"])
+        self.assertEqual(set(THEME_ORDER[2:]), self.EXPECTED_IDS)
+        for pid in self.EXPECTED_IDS:
+            self.assertIn(pid, SEEDS)
+            self.assertIn(pid, BUILTIN_THEMES)
+
+    def test_load_presets_missing_dir_is_empty(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(load_presets(Path(d)), [])
 
 
 # ---------------------------------------------------------------------------

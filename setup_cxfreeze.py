@@ -9,7 +9,13 @@ from cx_Freeze import Executable, setup
 
 build_options = {
     "packages": ["ryos", "tkinterdnd2", "sqlite3"],
-    "include_files": [("icon.ico", "icon.ico")],
+    "include_files": [
+        ("icon.ico", "icon.ico"),
+        # Bundled preset themes are data files, not modules, so cx_Freeze won't
+        # pick them up via "packages"; copy them next to the frozen package so
+        # themes.PRESETS_DIR (Path(__file__).parent / "presets") resolves.
+        ("ryos/presets", "lib/ryos/presets"),
+    ],
     "excludes": [
         "unittest", "pydoc", "doctest", "difflib",
         "ftplib", "imaplib", "mailbox", "nntplib", "poplib",

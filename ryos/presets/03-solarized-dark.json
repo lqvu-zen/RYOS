@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "solarized-dark",
+  "name": "Solarized Dark",
+  "seed": {
+    "mode": "dark",
+    "bg": "#002b36",
+    "surface": "#073642",
+    "border": "#0f4a59",
+    "accent": "#268bd2",
+    "text": "#93a1a1",
+    "text_muted": "#839496",
+    "header_bg": "#001f27"
+  }
+}

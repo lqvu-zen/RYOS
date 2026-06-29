@@ -13,10 +13,13 @@ hand-tuned REFERENCE palettes verbatim so the app looks identical; new presets
 and user themes are produced by `build_palette`.
 """
 import json
+import logging
 import re
 from pathlib import Path
 
 from .settings import DATA_DIR
+
+_log = logging.getLogger("ryos.themes")
 
 # The 7 curated colours a seed carries (besides "mode").
 SEED_KEYS = ("bg", "surface", "border", "accent", "text", "text_muted", "header_bg")
@@ -164,9 +167,12 @@ REFERENCE: dict[str, dict] = {
     },
 }
 
-# 7-colour seeds for the built-ins, pulled from REFERENCE. These feed the
-# "create a custom theme from the current one" pre-fill and exercise the engine.
-SEEDS: dict[str, dict] = {
+# 7-colour seeds for the two hard-coded built-ins, pulled from REFERENCE. The
+# preset themes live as JSON under ryos/presets/ (one file per theme, same
+# envelope as Export) and are loaded at import — see the registry build at the
+# bottom of this module. SEEDS / THEME_ORDER / THEME_LABELS / THEME_MODES are
+# assembled there from these base seeds plus the loaded presets.
+_BASE_SEEDS: dict[str, dict] = {
     "light": {
         "mode": "light",
         "bg":         REFERENCE["light"]["bg"],
@@ -187,51 +193,11 @@ SEEDS: dict[str, dict] = {
         "text_muted": REFERENCE["dark"]["path_fg"],
         "header_bg":  REFERENCE["dark"]["header_bg"],
     },
-    # Preset themes. Each is just the 7-color seed; build_palette derives the
-    # rest. Text/surface colours are tuned to clear the contrast thresholds the
-    # tests enforce (primary text >= 4.5:1, muted >= 3.0:1).
-    "nord": {
-        "mode": "dark", "bg": "#2e3440", "surface": "#3b4252", "border": "#434c5e",
-        "accent": "#88c0d0", "text": "#eceff4", "text_muted": "#aab1c0",
-        "header_bg": "#272c36",
-    },
-    "solarized-light": {
-        "mode": "light", "bg": "#eee8d5", "surface": "#fdf6e3", "border": "#ddd6c1",
-        "accent": "#1f7ac0", "text": "#4d646b", "text_muted": "#5d7077",
-        "header_bg": "#073642",
-    },
-    "solarized-dark": {
-        "mode": "dark", "bg": "#002b36", "surface": "#073642", "border": "#0f4a59",
-        "accent": "#268bd2", "text": "#93a1a1", "text_muted": "#839496",
-        "header_bg": "#001f27",
-    },
-    "high-contrast": {
-        "mode": "dark", "bg": "#000000", "surface": "#121212", "border": "#5a5a5a",
-        "accent": "#4aa3ff", "text": "#ffffff", "text_muted": "#d0d0d0",
-        "header_bg": "#000000",
-    },
-    "sepia": {
-        "mode": "light", "bg": "#f4ecd8", "surface": "#fbf5e6", "border": "#e3d9bf",
-        "accent": "#9a5b2e", "text": "#4b3a2a", "text_muted": "#6f5b45",
-        "header_bg": "#3a2c1d",
-    },
 }
 
-# Display order and labels for the theme selector, and each theme's base mode.
-THEME_ORDER: list[str] = [
-    "light", "dark", "nord", "solarized-light", "solarized-dark",
-    "high-contrast", "sepia",
-]
-THEME_LABELS: dict[str, str] = {
-    "light": "Light",
-    "dark": "Dark",
-    "nord": "Nord",
-    "solarized-light": "Solarized Light",
-    "solarized-dark": "Solarized Dark",
-    "high-contrast": "High Contrast",
-    "sepia": "Sepia",
-}
-THEME_MODES: dict[str, str] = {name: SEEDS[name]["mode"] for name in THEME_ORDER}
+# Folder of bundled preset theme files (one JSON per theme). Sits next to this
+# module so it ships with the package; setup_cxfreeze.py bundles it into builds.
+PRESETS_DIR = Path(__file__).resolve().parent / "presets"
 
 
 def _shade(hex_str: str, factor: float) -> str:
@@ -437,6 +403,36 @@ def import_theme(path) -> tuple[str, dict]:
     return name, seed
 
 
+def load_presets(directory=None) -> list[tuple[str, str, dict]]:
+    """Load bundled preset themes as ordered (id, label, seed) tuples, sorted by
+    filename. Each file is the Export envelope plus a stable `id`. Missing dir or
+    invalid files are skipped (logged), so the app still starts with light/dark."""
+    d = Path(directory) if directory is not None else PRESETS_DIR
+    out: list[tuple[str, str, dict]] = []
+    try:
+        files = sorted(d.glob("*.json"))
+    except OSError:
+        return out
+    for fp in files:
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            _log.warning("Skipping preset %s: %s", fp.name, exc)
+            continue
+        pid = data.get("id") if isinstance(data, dict) else None
+        seed = data.get("seed") if isinstance(data, dict) else None
+        label = data.get("name") if isinstance(data, dict) else None
+        if not (isinstance(pid, str) and isinstance(seed, dict)):
+            _log.warning("Skipping preset %s: missing id or seed", fp.name)
+            continue
+        problems = validate_seed(seed)
+        if problems:
+            _log.warning("Skipping preset %s: %s", fp.name, "; ".join(problems))
+            continue
+        out.append((pid, label if isinstance(label, str) and label else pid, seed))
+    return out
+
+
 def _builtin_palette(name: str) -> dict:
     """Light/Dark keep their hand-tuned REFERENCE verbatim (identical look);
     every other built-in is derived from its seed by build_palette."""
@@ -445,5 +441,19 @@ def _builtin_palette(name: str) -> dict:
     return build_palette(SEEDS[name])
 
 
-# Built-in theme palettes the UI selects among, keyed by slug.
+# Assemble the built-in registry from the two base seeds plus the JSON presets.
+SEEDS: dict[str, dict] = dict(_BASE_SEEDS)
+_PRESETS = load_presets()
+for _pid, _label, _seed in _PRESETS:
+    SEEDS[_pid] = _seed
+
+# Display order and labels for the theme selector, and each theme's base mode.
+THEME_ORDER: list[str] = ["light", "dark", *[pid for pid, _, _ in _PRESETS]]
+THEME_LABELS: dict[str, str] = {
+    "light": "Light", "dark": "Dark",
+    **{pid: label for pid, label, _ in _PRESETS},
+}
+THEME_MODES: dict[str, str] = {name: SEEDS[name]["mode"] for name in THEME_ORDER}
+
+# Built-in theme palettes the UI selects among, keyed by id.
 BUILTIN_THEMES: dict[str, dict] = {name: _builtin_palette(name) for name in THEME_ORDER}

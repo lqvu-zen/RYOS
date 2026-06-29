@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "sepia",
+  "name": "Sepia",
+  "seed": {
+    "mode": "light",
+    "bg": "#f4ecd8",
+    "surface": "#fbf5e6",
+    "border": "#e3d9bf",
+    "accent": "#9a5b2e",
+    "text": "#4b3a2a",
+    "text_muted": "#6f5b45",
+    "header_bg": "#3a2c1d"
+  }
+}

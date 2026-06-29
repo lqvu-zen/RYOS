@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "nord",
+  "name": "Nord",
+  "seed": {
+    "mode": "dark",
+    "bg": "#2e3440",
+    "surface": "#3b4252",
+    "border": "#434c5e",
+    "accent": "#88c0d0",
+    "text": "#eceff4",
+    "text_muted": "#aab1c0",
+    "header_bg": "#272c36"
+  }
+}

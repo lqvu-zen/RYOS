@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "solarized-light",
+  "name": "Solarized Light",
+  "seed": {
+    "mode": "light",
+    "bg": "#eee8d5",
+    "surface": "#fdf6e3",
+    "border": "#ddd6c1",
+    "accent": "#1f7ac0",
+    "text": "#4d646b",
+    "text_muted": "#5d7077",
+    "header_bg": "#073642"
+  }
+}
