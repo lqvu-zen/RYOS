@@ -39,7 +39,9 @@ from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
 from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
 from .pipeline import PipelineEditorDialog
-from ..themes import load_custom_themes
+from ..themes import (
+    load_user_themes, migrate_legacy_custom_themes, resolve_user_themes_dir,
+)
 from .theme import (
     C, _apply_snap_corner, _configure_ttk_styles, _flat_button, apply_theme,
     set_custom_themes,
@@ -126,7 +128,9 @@ class RYOSApp(_BaseWindow):
         self._settings: dict = _load_settings()
         # Apply the saved theme before building any widgets so that C is
         # already populated with the correct palette when _build_ui() runs.
-        set_custom_themes(load_custom_themes())
+        _themes_dir = resolve_user_themes_dir(self._settings.get("themes_dir"))
+        migrate_legacy_custom_themes(_themes_dir)
+        set_custom_themes(load_user_themes(_themes_dir))
         apply_theme(self._settings.get("theme", "light"), self._settings.get("accent_color"))
         from ryos.ui import cards as _cards_mod
         _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))

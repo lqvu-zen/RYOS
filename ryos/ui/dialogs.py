@@ -15,7 +15,8 @@ from ..settings import (
 from ..startup import _set_startup, _startup_enabled
 from ..quickrun import _is_inside
 from ..themes import (
-    SEEDS, THEME_LABELS, export_theme, import_theme, save_custom_themes,
+    SEEDS, THEME_LABELS, delete_user_theme, export_theme, import_theme,
+    load_user_themes, resolve_user_themes_dir, save_user_theme,
 )
 from .theme import (
     C, THEMES, _apply_snap_corner, _flat_button,
@@ -857,13 +858,15 @@ class AdvancedOptionsDialog(tk.Toplevel):
             taken_names=self._taken_names(exclude=tid),
             on_save=lambda name, seed: self._save_custom_theme(name, seed, replacing=tid))
 
+    def _themes_dir(self):
+        return resolve_user_themes_dir(self._settings.get("themes_dir"))
+
     def _save_custom_theme(self, name: str, seed: dict, replacing: str | None = None) -> None:
-        customs = custom_themes()
+        d = self._themes_dir()
         if replacing and replacing != name:
-            customs.pop(replacing, None)
-        customs[name] = seed
-        set_custom_themes(customs)
-        save_custom_themes(customs)
+            delete_user_theme(d, replacing)
+        save_user_theme(d, name, seed)
+        set_custom_themes(load_user_themes(d))
         if self._theme.get() == name:
             self._live_appearance(retheme=True)  # same id: force re-apply + rebuild
         else:
@@ -877,10 +880,25 @@ class AdvancedOptionsDialog(tk.Toplevel):
         if not messagebox.askyesno("Delete theme",
                                    f"Delete the “{tid}” theme?", parent=self):
             return
-        customs.pop(tid, None)
-        set_custom_themes(customs)
-        save_custom_themes(customs)
+        d = self._themes_dir()
+        delete_user_theme(d, tid)
+        set_custom_themes(load_user_themes(d))
         self._theme.set("light")  # switch off the now-deleted theme
+
+    def _browse_themes_dir(self) -> None:
+        chosen = filedialog.askdirectory(
+            parent=self, title="Themes folder", initialdir=str(self._themes_dir()))
+        if not chosen:
+            return
+        self._settings["themes_dir"] = chosen
+        set_custom_themes(load_user_themes(resolve_user_themes_dir(chosen)))
+        self._live_appearance(retheme=True)
+
+    def _open_themes_dir(self) -> None:
+        try:
+            os.startfile(str(self._themes_dir()))  # noqa: S606 (Windows reveal)
+        except (OSError, AttributeError):
+            pass
 
     def _export_theme(self) -> None:
         tid = self._theme.get()
@@ -1068,6 +1086,25 @@ class AdvancedOptionsDialog(tk.Toplevel):
             edit_btn.configure(state="disabled", cursor="")
             del_btn.configure(state="disabled", cursor="")
             export_btn.configure(state="disabled", cursor="")
+
+        # Themes folder: auto-scanned for custom theme files; drop a .json in to
+        # add a theme. Configurable so users can point it anywhere.
+        tk.Label(f, text="Themes folder (drop .json files here)", bg=C["bg"],
+                 fg=C["path_fg"], font=("Segoe UI", 8), anchor="w").pack(
+            fill="x", pady=(8, 0))
+        folder_row = tk.Frame(f, bg=C["bg"])
+        folder_row.pack(fill="x", pady=(2, 2))
+        tk.Label(folder_row, text=str(self._themes_dir()), bg=C["card_bg"],
+                 fg=C["name_fg"], font=("Segoe UI", 8), anchor="w", relief="flat",
+                 padx=6, pady=3).pack(side="left", fill="x", expand=True)
+        browse_btn = _flat_button(folder_row, "Browse…", C["btn_dark_bg"],
+                                  C["btn_dark_hover"], self._browse_themes_dir, width=8)
+        browse_btn.pack(side="left", padx=(6, 0))
+        open_btn = _flat_button(folder_row, "Open", C["btn_dark_bg"],
+                                C["btn_dark_hover"], self._open_themes_dir, width=6)
+        open_btn.pack(side="left", padx=(4, 0))
+        if self._jobs_running:
+            browse_btn.configure(state="disabled", cursor="")
 
         f = self._section(tab, "ACCENT COLOR")
         swatch_row = tk.Frame(f, bg=C["bg"])
@@ -1356,6 +1393,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "start_minimized":          self._start_minimized.get(),
             "remember_window_geometry": self._remember_geometry.get(),
             "open_on_cursor_monitor":   self._open_on_cursor.get(),
+            "themes_dir":               self._settings.get("themes_dir", ""),
             "max_output_lines":         max_lines,
             "max_parallel_jobs":        max_parallel,
             "auto_clear_output":        self._auto_clear.get(),

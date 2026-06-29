@@ -33,9 +33,10 @@ from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
     THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _shade, build_palette,
-    contrast_ratio, contrast_warnings, export_theme, import_theme, is_hex_color,
-    load_base_themes, load_custom_themes, load_presets, save_custom_themes,
-    validate_seed,
+    contrast_ratio, contrast_warnings, delete_user_theme, export_theme,
+    import_theme, is_hex_color, load_base_themes, load_custom_themes,
+    load_presets, load_user_themes, resolve_user_themes_dir, save_custom_themes,
+    save_user_theme, validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -712,6 +713,49 @@ class TestBaseThemes(unittest.TestCase):
     def test_missing_dir_falls_back(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(load_base_themes(Path(d)), [])
+
+
+# ---------------------------------------------------------------------------
+# User theme folder (per-file, auto-scanned, configurable)
+# ---------------------------------------------------------------------------
+
+class TestUserThemeFolder(unittest.TestCase):
+    GOOD = {"mode": "dark", "bg": "#2e3440", "surface": "#3b4252", "border": "#434c5e",
+            "accent": "#88c0d0", "text": "#eceff4", "text_muted": "#aab1c0",
+            "header_bg": "#272c36"}
+
+    def test_resolve_default_when_unset(self):
+        self.assertEqual(resolve_user_themes_dir("").name, "themes")
+        self.assertEqual(resolve_user_themes_dir(None).name, "themes")
+
+    def test_resolve_uses_configured_path(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(resolve_user_themes_dir(d), Path(d))
+
+    def test_save_load_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(load_user_themes(d), {})
+            p = save_user_theme(d, "My Theme", self.GOOD)
+            self.assertEqual(p.name, "my-theme.json")
+            self.assertEqual(load_user_themes(d), {"My Theme": self.GOOD})
+
+    def test_dropped_bare_seed_uses_filename(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "dropped.json").write_text(json.dumps(self.GOOD), encoding="utf-8")
+            self.assertEqual(load_user_themes(d), {"dropped": self.GOOD})
+
+    def test_invalid_file_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "bad.json").write_text(json.dumps({"seed": {"mode": "dark"}}),
+                                              encoding="utf-8")
+            self.assertEqual(load_user_themes(d), {})
+
+    def test_delete_by_name(self):
+        with tempfile.TemporaryDirectory() as d:
+            save_user_theme(d, "My Theme", self.GOOD)
+            delete_user_theme(d, "My Theme")
+            self.assertFalse((Path(d) / "my-theme.json").exists())
+            self.assertEqual(load_user_themes(d), {})
 
 
 # ---------------------------------------------------------------------------

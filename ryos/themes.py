@@ -378,6 +378,22 @@ def export_theme(name: str, seed: dict, path) -> None:
     Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _parse_theme_payload(data, default_name: str = "") -> tuple[str, dict | None]:
+    """Pull (name, seed) out of parsed theme JSON. Accepts the export envelope
+    ({name, seed}), a bare seed (has "mode"), or a single {name: seed} mapping.
+    Returns (name, None) when nothing seed-like is found."""
+    if isinstance(data, dict) and isinstance(data.get("seed"), dict):
+        name = data["name"] if isinstance(data.get("name"), str) and data["name"] else default_name
+        return name, data["seed"]
+    if isinstance(data, dict) and "mode" in data:
+        return default_name, data
+    if isinstance(data, dict) and len(data) == 1:
+        (key, value), = data.items()
+        if isinstance(value, dict):
+            return (key if isinstance(key, str) else default_name), value
+    return default_name, None
+
+
 def import_theme(path) -> tuple[str, dict]:
     """Read a theme JSON file and return (name, seed). Accepts the export
     envelope, a bare seed, or a single {name: seed} mapping. Raises ValueError
@@ -386,24 +402,114 @@ def import_theme(path) -> tuple[str, dict]:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise ValueError(f"Could not read theme file: {exc}")
-
-    name, seed = "", None
-    if isinstance(data, dict) and isinstance(data.get("seed"), dict):
-        name = data["name"] if isinstance(data.get("name"), str) else ""
-        seed = data["seed"]
-    elif isinstance(data, dict) and "mode" in data:
-        seed = data
-    elif isinstance(data, dict) and len(data) == 1:
-        (key, value), = data.items()
-        if isinstance(value, dict):
-            name, seed = (key if isinstance(key, str) else ""), value
-
+    name, seed = _parse_theme_payload(data)
     if not isinstance(seed, dict):
         raise ValueError("Not a RYOS theme file.")
     problems = validate_seed(seed)
     if problems:
         raise ValueError("Invalid theme — " + "; ".join(problems))
     return name, seed
+
+
+# ---------------------------------------------------------------------------
+# User theme folder: per-file custom themes, auto-scanned at startup
+# ---------------------------------------------------------------------------
+
+# Default location when the user hasn't set a custom folder in settings.
+USER_THEMES_DIR_DEFAULT = DATA_DIR / "themes"
+
+
+def resolve_user_themes_dir(setting: str | None) -> Path:
+    """The folder to scan for user themes: the configured path, else the default
+    under the app data dir. Created if missing (best-effort)."""
+    d = Path(setting) if setting else USER_THEMES_DIR_DEFAULT
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    return d
+
+
+def _theme_filename(name: str) -> str:
+    """Filesystem-safe '<slug>.json' for a theme name."""
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", name.strip()).strip("-").lower()
+    return f"{slug or 'theme'}.json"
+
+
+def load_user_themes(directory) -> dict:
+    """Scan a folder and return {name: seed} for every valid theme file. The
+    name comes from the file's envelope, falling back to the filename stem.
+    Invalid or unreadable files are skipped (logged)."""
+    out: dict[str, dict] = {}
+    try:
+        files = sorted(Path(directory).glob("*.json"))
+    except OSError:
+        return out
+    for fp in files:
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            _log.warning("Skipping user theme %s: %s", fp.name, exc)
+            continue
+        name, seed = _parse_theme_payload(data, default_name=fp.stem)
+        if not isinstance(seed, dict) or validate_seed(seed):
+            _log.warning("Skipping user theme %s: invalid seed", fp.name)
+            continue
+        out[name] = seed
+    return out
+
+
+def save_user_theme(directory, name: str, seed: dict) -> Path:
+    """Write one custom theme as a JSON file in the folder. Returns its path."""
+    d = Path(directory)
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / _theme_filename(name)
+    payload = {"ryos_theme": THEME_FILE_VERSION, "name": name, "seed": dict(seed)}
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def delete_user_theme(directory, name: str) -> None:
+    """Remove the file(s) backing a named theme (matched by envelope name, else
+    by slug filename). Best-effort; never raises."""
+    d = Path(directory)
+    target_slug = _theme_filename(name)
+    try:
+        files = list(d.glob("*.json"))
+    except OSError:
+        return
+    for fp in files:
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        fname, _seed = _parse_theme_payload(data, default_name=fp.stem) if data else (fp.stem, None)
+        if fname == name or fp.name == target_slug:
+            try:
+                fp.unlink()
+            except OSError:
+                pass
+
+
+def migrate_legacy_custom_themes(directory) -> int:
+    """One-time move of themes.json (the old single-file {name: seed} map) into
+    per-file themes in the folder. Only writes files that don't already exist.
+    Returns how many were migrated."""
+    legacy = load_custom_themes()  # reads CUSTOM_THEMES_PATH (themes.json)
+    if not legacy:
+        return 0
+    d = Path(directory)
+    migrated = 0
+    for name, seed in legacy.items():
+        dest = d / _theme_filename(name)
+        if dest.exists():
+            continue
+        try:
+            save_user_theme(directory, name, seed)
+            migrated += 1
+        except OSError:
+            pass
+    return migrated
 
 
 def _read_theme_files(directory=None) -> list[dict]:
