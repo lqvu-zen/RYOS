@@ -7,10 +7,19 @@ Open **⚙ → Advanced options…** from the header. The settings are organised
 ![The Appearance tab with Theme (Light/Dark), Accent color, and Display options](images/09-appearance.png)
 *Screenshot pending — capture the **Appearance** tab.*
 
-- **Theme** — **Light** or **Dark**.
+- **Theme** — pick from the dropdown: the built-ins **Light**, **Dark**, **Nord**, **Solarized Light**, **Solarized Dark**, **High Contrast**, and **Sepia**, plus any custom themes you've made. The window re-themes live as you select.
 - **Accent color** — pick a highlight colour with **Choose…**, or **Reset** to the default.
 - **Compact cards** — a denser layout that fits more cards on screen.
 - **Card size** — **Small**, **Medium**, or **Large**.
+
+### Custom themes
+
+Below the theme dropdown:
+
+- **Create…** opens the theme editor, pre-filled from the current theme. Choose a light or dark **base**, then set the seven core colours (background, cards, borders, header, accent, primary and secondary text). A live **preview** and inline **contrast warnings** help you keep text readable; everything else is derived automatically. Give it a name and **Save**.
+- **Advanced (optional)** in the editor exposes ~12 more colours (Run button, error, the terminal panel, neutral buttons, tabs, pipeline accent, and more). Each shows its auto-derived value until you override it; the **↺** button resets one back to auto.
+- **Edit…** and **Delete** apply to the selected custom theme (built-ins can't be changed).
+- **Export…** saves the selected custom theme to a `.json` file; **Import…** loads one back (name clashes are resolved automatically), so themes are easy to share. Custom themes are stored in `themes.json` in the app's data folder.
 
 ## Startup
 

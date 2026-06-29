@@ -197,7 +197,9 @@ Click **⚙** → **Advanced options…**. Settings are split across five tabs.
 ### Appearance
 | Setting | Description |
 |---|---|
-| **Theme** | Light or dark colour scheme |
+| **Theme** | Choose a built-in (Light, Dark, Nord, Solarized Light/Dark, High Contrast, Sepia) or a custom theme; re-themes live |
+| **Create / Edit / Delete theme** | Build a custom theme in the editor — pick a light/dark base + 7 core colours (with live preview and contrast warnings), plus an optional Advanced section for ~12 more; edit or delete your own themes |
+| **Export / Import theme** | Save a custom theme to a `.json` file or load one back, for sharing |
 | **Accent colour** | Pick a custom highlight colour, or reset to the default |
 | **Compact cards** | Tighter spacing to fit more cards on screen |
 | **Card size** | Small / Medium / Large card rows |
