@@ -2561,4 +2561,8 @@ class RYOSApp(_BaseWindow):
                     if job.current_process is not None:
                         job.current_process.terminate()
                 except OSError:
-                    pass  # process may 
+                    pass  # process may have already exited
+        if self._settings["remember_window_geometry"]:
+            self._settings["window_geometry"] = self.geometry()
+        _save_settings(self._settings)
+        self.destroy()

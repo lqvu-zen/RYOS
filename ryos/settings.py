@@ -106,4 +106,6 @@ def _load_settings() -> dict:
 
 def _save_settings(settings: dict) -> None:
     try:
-        _SETTINGS_PATH.write_text(json.dumps(settings, indent=2), en
+        _SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    except OSError as e:
+        _log.warning("Could not save settings to %s: %s", _SETTINGS_PATH, e)

@@ -18,4 +18,5 @@ Available: Nord, Solarized Light, Solarized Dark, High Contrast, Sepia.
 starting **template** — import one, then Edit it to build your own theme from a
 familiar base.
 
-Each file is a normal RYOS theme export (a `name` + 7-colour `seed`), so an
+Each file is a normal RYOS theme export (a `name` + 7-colour `seed`), so anything
+you create and **Export…** from the app can live here too — contributions welcome.

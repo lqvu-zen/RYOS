@@ -185,4 +185,7 @@ def _apply_snap_corner(window, corner: str, margin: int = 10, work_area=None) ->
             aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
     else:
         ax, ay = 0, 0
-        aw, ah = window.winfo
+        aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
+    x = ax + margin if "left" in corner else ax + aw - w - margin
+    y = ay + margin if "top"  in corner else ay + ah - h - margin
+    window.geometry(f"+{x}+{y}")
