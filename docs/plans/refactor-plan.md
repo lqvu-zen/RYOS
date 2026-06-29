@@ -2,6 +2,38 @@
 
 _Companion to `docs/tech-debt-2026-06-24.md`. Last updated 2026-06-24._
 
+## Update — 2026-06-25: Theme Factory landed (plan additions)
+
+The theming feature (`docs/plans/theme-factory.md`) shipped since this plan was
+written: it added `ryos/themes.py` (634 lines, pure, well-tested), added
+`ryos/ui/theme_editor.py` (248 lines, widget UI), and grew `dialogs.py`
+1,219 → 1,425 lines. Tests are now 288. New refactor items:
+
+1. **`ryos/themes.py` → mypy scope** *(Priority 20 · effort trivial).* A large,
+   central, **mypy-clean** pure module that is **not** in the `[tool.mypy]`
+   `files` list — a one-line gap against this plan's "fold clean modules into
+   mypy" rule. Add it now.
+2. **`ryos/ui/theme_editor.py` — untested widget file** *(deferred tail).* Push
+   any remaining pure preview/validation logic into `themes.py`
+   (`validate_seed` / `contrast_warnings` already live there) and lean on those
+   tests; the dialog shell stays UI-bound.
+3. **`dialogs.py` is getting worse** *(Priority 12, rising).* The Appearance-tab
+   theme selector + editor entry were bolted on (+206 lines) rather than
+   extracted — exactly the tail this plan warned about. The **next** touch of
+   `dialogs.py` should extract the Appearance-tab logic, not add to it.
+4. **`gui-smoke`: add a theme-switch scenario.** Live re-theming now runs
+   `apply_theme()` → `_rebuild_ui()` across seven presets + custom themes — a
+   full UI teardown/rebuild path with no live test. Switch theme in the smoke and
+   assert the app survives and cards still render.
+
+> **Active incident — mount corruption.** At this review the working tree had
+> **four committed files truncated** by the `D:\Projects\RYOS` mount
+> (`settings.py`, `themes.py`, `dialogs.py`, `tests/test_ryos.py` — all fail to
+> parse; the HEAD versions are intact). Recover with
+> `git restore <files>` (or `git checkout -- <files>`). The recurring corruption
+> is no longer hypothetical — migrating to a non-mounted local clone is now the
+> top operational priority.
+
 ## What's done
 
 The job lifecycle and a layer of pure UI logic have been pulled out of the
