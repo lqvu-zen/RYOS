@@ -564,18 +564,20 @@ def load_base_themes(directory=None) -> list[tuple[str, str, dict, dict]]:
     """(id, label, palette, seed) for theme files carrying a full palette — the
     base themes (light/dark). The palette is used verbatim; the seed feeds the
     editor's "create from current" pre-fill."""
-    out = []
+    out: list[tuple[str, str, dict, dict]] = []
     for data in _read_theme_files(directory):
         pal = data.get("palette")
-        if not _is_full_palette(pal):
+        if not isinstance(pal, dict) or not _is_full_palette(pal):
             continue
-        pid = data["id"]
+        pid = str(data["id"])
         seed = data.get("seed")
         if not (isinstance(seed, dict) and not validate_seed(seed)):
             seed = _BASE_SEEDS.get(pid)
+        if not isinstance(seed, dict):
+            continue  # a full-palette theme without a usable seed — skip
         label = data.get("name")
-        out.append((pid, label if isinstance(label, str) and label else pid.capitalize(),
-                    pal, seed))
+        label = label if isinstance(label, str) and label else pid.capitalize()
+        out.append((pid, label, dict(pal), seed))
     return out
 
 
