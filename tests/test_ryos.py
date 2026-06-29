@@ -674,12 +674,14 @@ class TestBundledThemes(unittest.TestCase):
 
 class TestThemeGallery(unittest.TestCase):
     GALLERY = Path(__file__).resolve().parents[1] / "theme-gallery"
+    # Core themes that must always be in the gallery; more may be added freely.
     EXPECTED = {"light", "dark", "nord", "solarized-light", "solarized-dark",
                 "high-contrast", "sepia"}
 
-    def test_gallery_files_present(self):
+    def test_core_gallery_files_present(self):
         names = {p.stem for p in self.GALLERY.glob("*.json")}
-        self.assertEqual(names, self.EXPECTED)
+        missing = self.EXPECTED - names
+        self.assertEqual(missing, set(), f"missing gallery themes: {missing}")
 
     def test_gallery_themes_importable(self):
         for fp in self.GALLERY.glob("*.json"):
