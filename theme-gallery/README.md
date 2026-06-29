@@ -12,7 +12,9 @@ Download any `.json` here and add it to your themes:
   "Themes folder" in Appearance; default `%APPDATA%\RYOS\themes\`). It loads on
   next launch.
 
-Available: Nord, Solarized Light, Solarized Dark, High Contrast, Sepia.
+Available: Nord, Solarized Light, Solarized Dark, High Contrast, Sepia, Ocean
+Depths, Sunset Boulevard, Forest Canopy, Midnight Galaxy, Tech Innovation, and
+Golden Hour. (Several are adapted from the Anthropic theme-factory palettes.)
 
 `light.json` and `dark.json` are the built-in themes' seeds, included as a
 starting **template** — import one, then Edit it to build your own theme from a

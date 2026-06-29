@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "midnight-galaxy",
+  "name": "Midnight Galaxy",
+  "seed": {
+    "mode": "dark",
+    "bg": "#2b1e3e",
+    "surface": "#382a4f",
+    "border": "#473a5f",
+    "accent": "#9a82d8",
+    "text": "#e6e6fa",
+    "text_muted": "#bcaed8",
+    "header_bg": "#1f1530"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "tech-innovation",
+  "name": "Tech Innovation",
+  "seed": {
+    "mode": "dark",
+    "bg": "#1e1e1e",
+    "surface": "#2a2a2a",
+    "border": "#3a3a3a",
+    "accent": "#0a84ff",
+    "text": "#ffffff",
+    "text_muted": "#b0b0b0",
+    "header_bg": "#141414"
+  }
+}

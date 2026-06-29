@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "forest-canopy",
+  "name": "Forest Canopy",
+  "seed": {
+    "mode": "light",
+    "bg": "#faf9f6",
+    "surface": "#ffffff",
+    "border": "#e3e1d8",
+    "accent": "#3a6b38",
+    "text": "#26301f",
+    "text_muted": "#566049",
+    "header_bg": "#2d4a2b"
+  }
+}

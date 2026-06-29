@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "ocean-depths",
+  "name": "Ocean Depths",
+  "seed": {
+    "mode": "dark",
+    "bg": "#1a2332",
+    "surface": "#243047",
+    "border": "#33415c",
+    "accent": "#2c8f8f",
+    "text": "#f1faee",
+    "text_muted": "#a8dadc",
+    "header_bg": "#121a26"
+  }
+}

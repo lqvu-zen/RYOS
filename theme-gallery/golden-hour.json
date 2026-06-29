@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "golden-hour",
+  "name": "Golden Hour",
+  "seed": {
+    "mode": "light",
+    "bg": "#efe3d2",
+    "surface": "#f8f1e6",
+    "border": "#ddcbb1",
+    "accent": "#b3545a",
+    "text": "#4a403a",
+    "text_muted": "#6e6056",
+    "header_bg": "#4a403a"
+  }
+}

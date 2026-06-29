@@ -1,0 +1,15 @@
+{
+  "ryos_theme": 1,
+  "id": "sunset-boulevard",
+  "name": "Sunset Boulevard",
+  "seed": {
+    "mode": "dark",
+    "bg": "#264653",
+    "surface": "#2f5563",
+    "border": "#3c6675",
+    "accent": "#e76f51",
+    "text": "#f6ede2",
+    "text_muted": "#e9c46a",
+    "header_bg": "#1c333d"
+  }
+}
