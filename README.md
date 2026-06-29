@@ -36,6 +36,7 @@ Built with Python + Tkinter. Ships as a single standalone `.exe` (no Python requ
 - **Auto-update check** — checks GitHub for new releases on startup (or on demand).
 - **Runs at login** — optionally start with Windows, minimized, always-on-top, snapped to a screen corner.
 - **Multi-monitor aware** — opens on the monitor where your cursor is when you launch it; when started with Windows, it reopens on the last screen you used.
+- **Themes** — Light and Dark built in, plus a theme creator (7 curated colours + live preview) and import/export. Browse and download more from the [theme gallery](theme-gallery/GALLERY.md).
 - **Logging** — built-in log viewer and a one-click "open log folder" for troubleshooting.
 
 ## Getting Started
@@ -181,7 +182,5 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 
 - [Illustrated user guide](docs/tutorial/README.md) — a 10-page walkthrough with real screenshots of every screen.
 - [Tutorial](TUTORIAL.md) — single-page step-by-step reference.
-- [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
-- [Module reference](docs/API_REFERENCE.md) — public API of the core modules.
-- [Contributing](docs/CONTRIBUTING.md) — dev setup, conventions, build steps.
-- [Tech debt](TECH_DEBT.md) — known rough edges.
+- [Theme gallery](theme-gallery/GALLERY.md) — preview and download extra themes.
+- [Architecture](
