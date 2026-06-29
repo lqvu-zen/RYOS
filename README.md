@@ -183,4 +183,7 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 - [Illustrated user guide](docs/tutorial/README.md) — a 10-page walkthrough with real screenshots of every screen.
 - [Tutorial](TUTORIAL.md) — single-page step-by-step reference.
 - [Theme gallery](theme-gallery/GALLERY.md) — preview and download extra themes.
-- [Architecture](
+- [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
+- [Module reference](docs/API_REFERENCE.md) — public API of the core modules.
+- [Contributing](docs/CONTRIBUTING.md) — dev setup, conventions, build steps.
+- [Tech debt](TECH_DEBT.md) — known rough edges.
