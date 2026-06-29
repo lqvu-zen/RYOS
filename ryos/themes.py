@@ -48,9 +48,11 @@ _ADVANCED_SET = frozenset(k for k, _ in ADVANCED_KEYS)
 # small, mirroring the QR-index split).
 CUSTOM_THEMES_PATH = DATA_DIR / "themes.json"
 
-# Hand-tuned authoritative palettes for the two built-in themes. Every colour
-# key the UI reads lives here; build_palette guarantees these keys on any output.
-REFERENCE: dict[str, dict] = {
+# Hardcoded fallback palettes for the two base themes. The live REFERENCE used
+# everywhere is built at the bottom of this module: it starts from this fallback
+# and is overridden by light.json / dark.json when those load. Keeping the
+# fallback in code means the app still themes correctly if the JSON is missing.
+_REFERENCE_FALLBACK: dict[str, dict] = {
     "light": {
         "bg":          "#f0f2f5",
         "card_bg":     "#ffffff",
@@ -175,25 +177,26 @@ REFERENCE: dict[str, dict] = {
 _BASE_SEEDS: dict[str, dict] = {
     "light": {
         "mode": "light",
-        "bg":         REFERENCE["light"]["bg"],
-        "surface":    REFERENCE["light"]["card_bg"],
-        "border":     REFERENCE["light"]["border"],
-        "accent":     REFERENCE["light"]["accent"],
-        "text":       REFERENCE["light"]["name_fg"],
-        "text_muted": REFERENCE["light"]["path_fg"],
-        "header_bg":  REFERENCE["light"]["header_bg"],
+        "bg":         _REFERENCE_FALLBACK["light"]["bg"],
+        "surface":    _REFERENCE_FALLBACK["light"]["card_bg"],
+        "border":     _REFERENCE_FALLBACK["light"]["border"],
+        "accent":     _REFERENCE_FALLBACK["light"]["accent"],
+        "text":       _REFERENCE_FALLBACK["light"]["name_fg"],
+        "text_muted": _REFERENCE_FALLBACK["light"]["path_fg"],
+        "header_bg":  _REFERENCE_FALLBACK["light"]["header_bg"],
     },
     "dark": {
         "mode": "dark",
-        "bg":         REFERENCE["dark"]["bg"],
-        "surface":    REFERENCE["dark"]["card_bg"],
-        "border":     REFERENCE["dark"]["border"],
-        "accent":     REFERENCE["dark"]["accent"],
-        "text":       REFERENCE["dark"]["name_fg"],
-        "text_muted": REFERENCE["dark"]["path_fg"],
-        "header_bg":  REFERENCE["dark"]["header_bg"],
+        "bg":         _REFERENCE_FALLBACK["dark"]["bg"],
+        "surface":    _REFERENCE_FALLBACK["dark"]["card_bg"],
+        "border":     _REFERENCE_FALLBACK["dark"]["border"],
+        "accent":     _REFERENCE_FALLBACK["dark"]["accent"],
+        "text":       _REFERENCE_FALLBACK["dark"]["name_fg"],
+        "text_muted": _REFERENCE_FALLBACK["dark"]["path_fg"],
+        "header_bg":  _REFERENCE_FALLBACK["dark"]["header_bg"],
     },
 }
+_REF_KEYS = frozenset(_REFERENCE_FALLBACK["light"])
 
 # Folder of bundled preset theme files (one JSON per theme). Sits next to this
 # module so it ships with the package; setup_cxfreeze.py bundles it into builds.
@@ -403,12 +406,11 @@ def import_theme(path) -> tuple[str, dict]:
     return name, seed
 
 
-def load_presets(directory=None) -> list[tuple[str, str, dict]]:
-    """Load bundled preset themes as ordered (id, label, seed) tuples, sorted by
-    filename. Each file is the Export envelope plus a stable `id`. Missing dir or
-    invalid files are skipped (logged), so the app still starts with light/dark."""
+def _read_theme_files(directory=None) -> list[dict]:
+    """Parsed theme JSON dicts (each with a string `id`), sorted by filename.
+    Unreadable or id-less files are skipped (logged)."""
     d = Path(directory) if directory is not None else PRESETS_DIR
-    out: list[tuple[str, str, dict]] = []
+    out: list[dict] = []
     try:
         files = sorted(d.glob("*.json"))
     except OSError:
@@ -417,42 +419,87 @@ def load_presets(directory=None) -> list[tuple[str, str, dict]]:
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            _log.warning("Skipping preset %s: %s", fp.name, exc)
+            _log.warning("Skipping theme %s: %s", fp.name, exc)
             continue
-        pid = data.get("id") if isinstance(data, dict) else None
-        seed = data.get("seed") if isinstance(data, dict) else None
-        label = data.get("name") if isinstance(data, dict) else None
-        if not (isinstance(pid, str) and isinstance(seed, dict)):
-            _log.warning("Skipping preset %s: missing id or seed", fp.name)
+        if not isinstance(data, dict) or not isinstance(data.get("id"), str):
+            _log.warning("Skipping theme %s: missing id", fp.name)
             continue
-        problems = validate_seed(seed)
-        if problems:
-            _log.warning("Skipping preset %s: %s", fp.name, "; ".join(problems))
+        out.append(data)
+    return out
+
+
+def _is_full_palette(palette) -> bool:
+    """True if `palette` is a complete, valid colour dict (every reference key)."""
+    return (isinstance(palette, dict) and _REF_KEYS <= set(palette)
+            and all(is_hex_color(palette[k]) for k in _REF_KEYS))
+
+
+def load_base_themes(directory=None) -> list[tuple[str, str, dict, dict]]:
+    """(id, label, palette, seed) for theme files carrying a full palette — the
+    base themes (light/dark). The palette is used verbatim; the seed feeds the
+    editor's "create from current" pre-fill."""
+    out = []
+    for data in _read_theme_files(directory):
+        pal = data.get("palette")
+        if not _is_full_palette(pal):
             continue
+        pid = data["id"]
+        seed = data.get("seed")
+        if not (isinstance(seed, dict) and not validate_seed(seed)):
+            seed = _BASE_SEEDS.get(pid)
+        label = data.get("name")
+        out.append((pid, label if isinstance(label, str) and label else pid.capitalize(),
+                    pal, seed))
+    return out
+
+
+def load_presets(directory=None) -> list[tuple[str, str, dict]]:
+    """(id, label, seed) for seed-only theme files (the presets — anything that
+    isn't a base theme). Invalid files are skipped (logged)."""
+    out = []
+    for data in _read_theme_files(directory):
+        pid = data["id"]
+        if pid in ("light", "dark") or _is_full_palette(data.get("palette")):
+            continue  # a base theme, handled by load_base_themes
+        seed = data.get("seed")
+        if not isinstance(seed, dict) or validate_seed(seed):
+            _log.warning("Skipping preset %s: invalid seed", pid)
+            continue
+        label = data.get("name")
         out.append((pid, label if isinstance(label, str) and label else pid, seed))
     return out
 
 
 def _builtin_palette(name: str) -> dict:
-    """Light/Dark keep their hand-tuned REFERENCE verbatim (identical look);
-    every other built-in is derived from its seed by build_palette."""
-    if name in ("light", "dark"):
+    """Base themes (light/dark) use their full REFERENCE palette verbatim
+    (identical look); every other built-in is derived from its seed."""
+    if name in _FIXED_IDS:
         return dict(REFERENCE[name])
     return build_palette(SEEDS[name])
 
 
-# Assemble the built-in registry from the two base seeds plus the JSON presets.
+# ---- Assemble the live registry from the bundled JSON, with code fallbacks ----
+# REFERENCE starts from the hardcoded fallback and is overridden by light.json /
+# dark.json when they load, so the app themes correctly even if the JSON is gone.
+REFERENCE: dict[str, dict] = {k: dict(v) for k, v in _REFERENCE_FALLBACK.items()}
 SEEDS: dict[str, dict] = dict(_BASE_SEEDS)
-_PRESETS = load_presets()
-for _pid, _label, _seed in _PRESETS:
-    SEEDS[_pid] = _seed
+THEME_LABELS: dict[str, str] = {"light": "Light", "dark": "Dark"}
+_FIXED_IDS: set[str] = {"light", "dark"}
 
-# Display order and labels for the theme selector, and each theme's base mode.
+for _bid, _blabel, _bpalette, _bseed in load_base_themes():
+    REFERENCE[_bid] = _bpalette
+    if _bseed:
+        SEEDS[_bid] = _bseed
+    THEME_LABELS[_bid] = _blabel
+    _FIXED_IDS.add(_bid)
+
+_PRESETS = load_presets()
+for _pid, _plabel, _pseed in _PRESETS:
+    SEEDS[_pid] = _pseed
+    THEME_LABELS[_pid] = _plabel
+
+# light/dark first, then presets in file order.
 THEME_ORDER: list[str] = ["light", "dark", *[pid for pid, _, _ in _PRESETS]]
-THEME_LABELS: dict[str, str] = {
-    "light": "Light", "dark": "Dark",
-    **{pid: label for pid, label, _ in _PRESETS},
-}
 THEME_MODES: dict[str, str] = {name: SEEDS[name]["mode"] for name in THEME_ORDER}
 
 # Built-in theme palettes the UI selects among, keyed by id.

@@ -32,9 +32,10 @@ from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
-    THEME_MODES, THEME_ORDER, _shade, build_palette, contrast_ratio,
-    contrast_warnings, export_theme, import_theme, is_hex_color,
-    load_custom_themes, load_presets, save_custom_themes, validate_seed,
+    THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _shade, build_palette,
+    contrast_ratio, contrast_warnings, export_theme, import_theme, is_hex_color,
+    load_base_themes, load_custom_themes, load_presets, save_custom_themes,
+    validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -658,11 +659,6 @@ class TestPresetThemes(unittest.TestCase):
     EXPECTED_IDS = {"nord", "solarized-light", "solarized-dark",
                     "high-contrast", "sepia"}
 
-    def test_preset_files_present(self):
-        files = list(PRESETS_DIR.glob("*.json"))
-        self.assertEqual(len(files), len(self.EXPECTED_IDS),
-                         f"found {[f.name for f in files]}")
-
     def test_load_presets_returns_all_valid(self):
         presets = load_presets()
         ids = {pid for pid, _label, _seed in presets}
@@ -670,6 +666,11 @@ class TestPresetThemes(unittest.TestCase):
         for pid, label, seed in presets:
             self.assertTrue(label, f"{pid} has no label")
             self.assertEqual(validate_seed(seed), [], f"{pid} invalid seed")
+
+    def test_presets_exclude_base_themes(self):
+        ids = {pid for pid, _l, _s in load_presets()}
+        self.assertNotIn("light", ids)
+        self.assertNotIn("dark", ids)
 
     def test_presets_in_registry_after_light_dark(self):
         self.assertEqual(THEME_ORDER[:2], ["light", "dark"])
@@ -681,6 +682,36 @@ class TestPresetThemes(unittest.TestCase):
     def test_load_presets_missing_dir_is_empty(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(load_presets(Path(d)), [])
+
+
+class TestBaseThemes(unittest.TestCase):
+    """light/dark are full-palette JSON files loaded into REFERENCE, with a
+    hardcoded fallback so the look never changes."""
+
+    def test_base_theme_files_present(self):
+        self.assertTrue((PRESETS_DIR / "light.json").exists())
+        self.assertTrue((PRESETS_DIR / "dark.json").exists())
+
+    def test_load_base_themes_full_palettes(self):
+        bases = {bid: (label, pal, seed)
+                 for bid, label, pal, seed in load_base_themes()}
+        self.assertEqual(set(bases), {"light", "dark"})
+        for bid, (_label, pal, seed) in bases.items():
+            self.assertEqual(set(pal), set(_REFERENCE_FALLBACK[bid]))
+            self.assertEqual(validate_seed(seed), [], f"{bid} seed invalid")
+
+    def test_json_matches_hardcoded_fallback(self):
+        # Guard against the JSON drifting from the in-code fallback.
+        self.assertEqual(REFERENCE["light"], _REFERENCE_FALLBACK["light"])
+        self.assertEqual(REFERENCE["dark"], _REFERENCE_FALLBACK["dark"])
+
+    def test_builtins_used_verbatim(self):
+        self.assertEqual(BUILTIN_THEMES["light"], REFERENCE["light"])
+        self.assertEqual(BUILTIN_THEMES["dark"], REFERENCE["dark"])
+
+    def test_missing_dir_falls_back(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(load_base_themes(Path(d)), [])
 
 
 # ---------------------------------------------------------------------------
