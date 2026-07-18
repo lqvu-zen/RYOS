@@ -1196,7 +1196,7 @@ class RYOSApp(_BaseWindow):
             """Pack/pack_forget each card child based on whether it matches query.
             Always pack_forget ALL cards before re-packing matching ones so that
             re-shown cards are appended in creation order, not moved to the end."""
-            card_children = [c for c in content.winfo_children() if hasattr(c, "_name")]
+            card_children = [c for c in content.winfo_children() if isinstance(c, (ScriptCard, PipelineCard))]
             for child in card_children:
                 child.pack_forget()
             for child in card_children:
@@ -1273,7 +1273,7 @@ class RYOSApp(_BaseWindow):
         query_active = not is_ph and bool(self._search_var.get().strip())
 
         def _any_visible(content: tk.Frame) -> bool:
-            card_children = [c for c in content.winfo_children() if hasattr(c, "_name")]
+            card_children = [c for c in content.winfo_children() if isinstance(c, (ScriptCard, PipelineCard))]
             # Sections with no real cards (only empty-state placeholders) always show.
             if not card_children:
                 return True
@@ -1330,7 +1330,7 @@ class RYOSApp(_BaseWindow):
         wrappers = getattr(self, "_group_wrappers", [])
         if wrappers and query_active:
             def _has_match(content: tk.Frame) -> bool:
-                card_ch = [c for c in content.winfo_children() if hasattr(c, "_name")]
+                card_ch = [c for c in content.winfo_children() if isinstance(c, (ScriptCard, PipelineCard))]
                 return bool(card_ch) and any(c.winfo_manager() == "pack" for c in card_ch)
 
             to_show = []

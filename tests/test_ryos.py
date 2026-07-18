@@ -2140,6 +2140,117 @@ class TestComputeHint(unittest.TestCase):
         self.assertEqual(hint.links, [HintLink("Other", None, 2)])
 
 
+# ---------------------------------------------------------------------------
+# Search filter — real-Tk pack-visibility integration test.
+#
+# The rest of this module runs headless with tkinter mocked (see the top of
+# the file), which cannot exercise real pack()/pack_forget()/winfo_manager().
+# This test therefore runs the reproduction in a *subprocess* with a fresh,
+# unmocked interpreter so real widgets are created. It builds real ScriptCards
+# plus an empty-favorites section whose only child is an empty-state placeholder
+# label, then drives the real RYOSApp._apply_search_filter /
+# _update_section_visibility bound methods and asserts pack visibility.
+#
+# Regression target: cards/placeholders are selected with hasattr(c, "_name"),
+# but EVERY Tk widget has an internal "_name" (its widget path, e.g. "!label"),
+# so empty-state placeholder labels are wrongly treated as cards and matched by
+# substring against that path name. As a result an empty section's placeholder
+# and header flip visibility depending on whether the query text happens to be a
+# substring of "!label" (e.g. "la", "e", "l" keep them; "deploy"/"zzqzz" hide
+# them). The fix identifies cards by isinstance(ScriptCard/PipelineCard).
+# ---------------------------------------------------------------------------
+
+_SEARCH_FILTER_DRIVER = r'''
+import sys, tempfile
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+try:
+    import tkinter as tk
+    _probe = tk.Tk(); _probe.destroy()
+except Exception:
+    sys.exit(77)   # no display / Tk unavailable -> caller skips
+
+import ryos.ui.app as appmod
+from ryos.db import ScriptDB
+
+tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); tmp.close()
+seed = ScriptDB(Path(tmp.name))
+seed.create_group("Alpha")
+seed.create_group("Beta")
+seed.add("Deploy Prod", "deploy.py", "", "", "Alpha")  # matches "deploy"
+seed.add("Runner",      "run.py",    "", "", "Beta")   # does NOT match "deploy"/"la"
+
+appmod.ScriptDB = lambda *a, **k: ScriptDB(Path(tmp.name))
+_real_load = appmod._load_settings
+appmod._load_settings = lambda: {**_real_load(), "auto_check_update": False,
+                                 "start_minimized": False, "remember_last_group": False}
+
+app = appmod.RYOSApp()
+app.withdraw()
+app._active_group = None          # "All" view: every group is rendered
+app._refresh_cards()
+app.update()
+
+def run_query(text):
+    app._search_ph[0] = False
+    app._search_var.set(text)
+    app.update_idletasks()
+
+def wrapper_visible(gname):
+    for w in app._group_wrappers:
+        if getattr(w, "_grp_name", None) == gname:
+            return w.winfo_manager() == "pack"
+    return None
+
+def visible_script_names():
+    return sorted(c._name for c in app._cards if c.winfo_manager() == "pack")
+
+ok = True
+
+# 1) Real cards + their group blocks filter live: query "deploy" keeps only the
+#    Alpha group (and its Deploy Prod card); Beta must hide entirely.
+run_query("deploy")
+if visible_script_names() != ["Deploy Prod"]:
+    ok = False
+if wrapper_visible("Alpha") is not True or wrapper_visible("Beta") is not False:
+    ok = False
+
+# 2) Regression: "la" matches no real card. Beta must STILL hide. The bug is that
+#    "la" is a substring of the internal Tk widget name "!label" of the empty
+#    Favorites/Pipelines placeholder labels, which are mis-detected as cards, so
+#    Beta's group block wrongly stays visible.
+run_query("la")
+if visible_script_names() != []:
+    ok = False
+if wrapper_visible("Alpha") is not False or wrapper_visible("Beta") is not False:
+    ok = False
+
+app.destroy()
+sys.exit(0 if ok else 1)
+'''
+
+
+class TestSearchFilterRefreshRealTk(unittest.TestCase):
+    """Real-Tk pack-visibility of the search filter, run in a subprocess so the
+    module-level tkinter mock does not apply. Skips when Tk cannot initialise."""
+
+    def test_non_matching_group_hides_regardless_of_query_text(self):
+        repo_root = str(Path(__file__).resolve().parents[1])
+        proc = subprocess.run(
+            [sys.executable, "-c", _SEARCH_FILTER_DRIVER, repo_root],
+            capture_output=True, text=True,
+        )
+        if proc.returncode == 77:
+            self.skipTest("Tk not available for real-widget test")
+        self.assertEqual(
+            proc.returncode, 0,
+            msg=("search filter mis-detects empty-state placeholder labels as "
+                 "cards (hasattr(_name)); a group with no real match stays "
+                 f"visible for queries like 'la'. stdout={proc.stdout!r} "
+                 f"stderr={proc.stderr!r}"),
+        )
+
+
 from ryos.dragdrop import compute_insertion, first_rect_at  # noqa: E402
 
 
