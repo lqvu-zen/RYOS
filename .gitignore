@@ -36,3 +36,4 @@ __pycache__/
 .claude/discarded/
 /eval_tmp
 /.mypy_cache
+/.claude/worktrees
