@@ -951,6 +951,8 @@ class RYOSApp(_BaseWindow):
             w.destroy()
         self._cards = []
         self._pipeline_cards = []
+        self._fav_cards = []
+        self._fav_pipeline_cards = []
         # Content frames for Favorites/Pipelines/Scripts so _apply_search_filter
         # can pack/pack_forget cards and hide empty sections.
         self._fav_contents: list[tk.Frame] = []
@@ -1032,6 +1034,8 @@ class RYOSApp(_BaseWindow):
                 on_toggle_favorite=make_fav_toggle_pipeline(p_id),
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+            self._bind_pipeline_drag(pc)
+            self._fav_pipeline_cards.append(pc)
         # Reorder within Favorites moves relative to the other favorites,
         # adjusting the shared script order (same model as the Scripts list).
         fav_ids = [r[0] for r in fav_scripts]
@@ -1053,6 +1057,8 @@ class RYOSApp(_BaseWindow):
                 on_toggle_favorite=make_fav_toggle_script(sid),
             )
             card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
+            self._bind_card_drag(card)
+            self._fav_cards.append(card)
 
     def _render_pipelines_section(self, parent: tk.Frame, gname: str):
         pipe_content = self._make_section_header(parent, gname, "pipelines", "Pipelines")
@@ -1599,8 +1605,15 @@ class RYOSApp(_BaseWindow):
 
     def _update_insertion_indicator(self, event):
         is_pipeline_drag = isinstance(self._drag_card, PipelineCard)
-        active_list = self._pipeline_cards if is_pipeline_drag else self._cards
-        if self._active_group is None or not active_list:
+        fav_pool = self._fav_pipeline_cards if is_pipeline_drag else self._fav_cards
+        in_favs = self._drag_card in fav_pool
+        if in_favs:
+            # Favorites reorder within the dragged card's own group (any view).
+            g = self._drag_card._group_name
+            active_list = [c for c in fav_pool if c._group_name == g]
+        else:
+            active_list = self._pipeline_cards if is_pipeline_drag else self._cards
+        if (self._active_group is None and not in_favs) or not active_list:
             if self._drag_indicator:
                 self._drag_indicator.place_forget()
             return
@@ -1649,6 +1662,15 @@ class RYOSApp(_BaseWindow):
                                     f"Warning: script moved to '{self._drag_target_group}' but its path is outside the group's base directory."
                                 )
                     self._refresh()
+            elif card in (self._fav_pipeline_cards if is_pipeline else self._fav_cards):
+                # Favorites reorder: within the card's own group's shared order.
+                if is_pipeline:
+                    self.db.reorder_pipeline(card.pipeline_id, card._group_name,
+                                             self._drag_insert_before)
+                else:
+                    self.db.reorder_script(card.script_id, card._group_name,
+                                           self._drag_insert_before)
+                self._refresh_cards()
             elif self._active_group is not None:
                 if is_pipeline:
                     self.db.reorder_pipeline(card.pipeline_id, self._active_group,

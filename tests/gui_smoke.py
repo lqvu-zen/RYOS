@@ -169,6 +169,48 @@ def check_favorites_reorder(app):
         app._refresh_cards()
 
 
+def check_favorites_drag_reorder(app):
+    """A favorites drag-drop release reorders within the group's shared order.
+
+    Regression guard: favorite cards were never drag-bound, so drag reorder in
+    Favorites did nothing. Simulates the drop directly (motion is hard to fake)."""
+    import tkinter as tk
+    pa = _write_script("print('da')\n")
+    pb = _write_script("print('db')\n")
+    a = app.db.add("fdrag-A", pa, "", sys.executable)
+    b = app.db.add("fdrag-B", pb, "", sys.executable)
+    app.db.set_favorite_script(a, True)
+    app.db.set_favorite_script(b, True)
+    ghost = None
+    try:
+        app._active_group = None
+        app._refresh_cards()
+        app.update_idletasks()
+        app.update()
+        fav = {c.script_id: c for c in app._fav_cards if c.script_id in (a, b)}
+        assert a in fav and b in fav, f"favorite cards not drag-bound: {list(fav)}"
+        order = [r[0] for r in app.db.list_all()]
+        assert order.index(a) < order.index(b), "precondition: A before B"
+        # Simulate dropping B before A (not over a tab).
+        ghost = tk.Toplevel(app)
+        app._drag_card = fav[b]
+        app._drag_ghost = ghost           # truthy so release acts
+        app._drag_target_group = None
+        app._drag_insert_before = a
+        app._card_drag_release(None)
+        app.update_idletasks()
+        app.update()
+        order2 = [r[0] for r in app.db.list_all()]
+        assert order2.index(b) < order2.index(a), "favorites drag did not reorder"
+        print("  [ok] favorites-drag: drop reordered within favorites")
+    finally:
+        app.db.delete(a)
+        app.db.delete(b)
+        os.unlink(pa)
+        os.unlink(pb)
+        app._refresh_cards()
+
+
 def main():
     print("RYOS GUI smoke starting...")
     app = RYOSApp()
@@ -177,6 +219,7 @@ def main():
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)
         check_favorites_reorder(app)
+        check_favorites_drag_reorder(app)
         check_run_to_completion(app)
         check_stop_running_job(app)
     finally:
