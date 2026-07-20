@@ -1924,6 +1924,20 @@ class RYOSApp(_BaseWindow):
         if content and content.winfo_exists():
             self._add_running_row(content, job)
         self._launch(job, cmd, name, script_id)
+        if self.db.is_detached(script_id):
+            secs = self._settings.get("launcher_release_seconds", 3)
+            self.after(max(0, int(secs)) * 1000,
+                       lambda j=job: self._auto_release_launcher(j))
+
+    def _auto_release_launcher(self, job: "_Job") -> None:
+        """Drop a launcher job from the Running list once it has launched,
+        leaving its process running (its output tab stays)."""
+        if self._jobreg.get(job.job_id) is None:
+            return  # already finished (quick exit / error surfaced normally)
+        self._append_output("\n[Launched — released from Running]\n",
+                            tag="info", tab_key=job.tab_key)
+        self.status_var.set(f"Launched: {job.name}")
+        self._finish_job(job)
 
     def _quick_run_get_index(self, base_dir: str) -> list | None:
         import time

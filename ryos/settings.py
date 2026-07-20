@@ -84,6 +84,9 @@ _SETTINGS_DEFAULTS: dict = {
     "log_level":              "INFO",
     "log_runs_output":        False,
     "max_parallel_jobs":      10,
+    # Seconds a "launcher" script (marked don't-keep-in-Running) stays visible
+    # in the Running list before being auto-released; 0 releases immediately.
+    "launcher_release_seconds": 3,
     "theme":                  "light",
     "accent_color":           None,
     "compact_mode":           False,

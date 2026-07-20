@@ -173,6 +173,7 @@ class ScriptDialog(tk.Toplevel):
                 self.e_interp.set(interp)
                 self.e_group.set(grp or "")
                 self.temp_param_var.set(bool(temp_param))
+                self.launcher_var.set(bool(db.is_detached(script_id)))
             for _, label, pparams in db.list_param_presets(script_id):
                 self._presets.append([label, pparams])
                 self._preset_listbox.insert(tk.END, label)
@@ -279,11 +280,17 @@ class ScriptDialog(tk.Toplevel):
             text="Ask for a temporary parameter on each run (not saved)",
         ).grid(row=7, column=1, columnspan=2, sticky="w", **pad)
 
+        self.launcher_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame, variable=self.launcher_var,
+            text="Launcher — opens an app/project; don't keep in Running",
+        ).grid(row=8, column=1, columnspan=2, sticky="w", **pad)
+
         sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=8, column=0, columnspan=3, sticky="ew", pady=8)
+        sep.grid(row=9, column=0, columnspan=3, sticky="ew", pady=8)
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=9, column=0, columnspan=3, sticky="ew")
+        btn_row.grid(row=10, column=0, columnspan=3, sticky="ew")
         ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
         ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
 
@@ -479,10 +486,11 @@ class ScriptDialog(tk.Toplevel):
                 return
 
         temp_param = int(self.temp_param_var.get())
+        detached = int(self.launcher_var.get())
         if self.script_id:
-            self.db.update(self.script_id, name, path, params, interp, group_name, temp_param)
+            self.db.update(self.script_id, name, path, params, interp, group_name, temp_param, detached)
         else:
-            self.script_id = self.db.add(name, path, params, interp, group_name, temp_param)
+            self.script_id = self.db.add(name, path, params, interp, group_name, temp_param, detached)
 
         self.db.replace_param_presets(self.script_id, [(l, p) for l, p in self._presets])
 
@@ -737,6 +745,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._win_height        = tk.StringVar(value=str(self._settings.get("window_height", 640)))
         self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
         self._max_parallel      = tk.StringVar(value=str(self._settings.get("max_parallel_jobs", 10)))
+        self._launcher_release  = tk.StringVar(value=str(self._settings.get("launcher_release_seconds", 3)))
         self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
         self._auto_check_update = tk.BooleanVar(value=self._settings.get("auto_check_update", True))
@@ -1200,6 +1209,17 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
+        row3 = tk.Frame(f, bg=C["bg"])
+        row3.pack(fill="x", pady=4)
+        tk.Label(row3, text="Release launchers from Running after (seconds):",
+                 bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9)).pack(side="left")
+        tk.Spinbox(row3, from_=0, to=60, increment=1,
+                   textvariable=self._launcher_release, width=7,
+                   validate="key", validatecommand=vcmd,
+                   bg=C["card_bg"], fg=C["name_fg"],
+                   buttonbackground=C["card_bg"],
+                   font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
+
     @staticmethod
     def _normalize_ext(token: str) -> str:
         """Lowercase, dot-prefixed extension; '' for blank input."""
@@ -1369,6 +1389,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
         except ValueError:
             max_parallel = _SETTINGS_DEFAULTS["max_parallel_jobs"]
         try:
+            launcher_release = max(0, int(self._launcher_release.get() or 0))
+        except ValueError:
+            launcher_release = _SETTINGS_DEFAULTS["launcher_release_seconds"]
+        try:
             win_w = max(400, int(self._win_width.get()  or 540))
             win_h = max(300, int(self._win_height.get() or 640))
         except ValueError:
@@ -1396,6 +1420,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "themes_dir":               self._settings.get("themes_dir", ""),
             "max_output_lines":         max_lines,
             "max_parallel_jobs":        max_parallel,
+            "launcher_release_seconds": launcher_release,
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
             "notify_on_complete":       self._notify_on_complete.get(),

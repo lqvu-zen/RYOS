@@ -2352,3 +2352,34 @@ class TestBucketByGroup(unittest.TestCase):
         out = bucket_by_group([(1, "Z")], ["A"], self._key)
         self.assertEqual(out["Z"], [(1, "Z")])
         self.assertEqual(out["A"], [])
+
+
+class TestScriptDBDetached(unittest.TestCase):
+    """The per-script 'launcher' (detached) flag: add/update/is_detached."""
+
+    def setUp(self):
+        self.db = _make_db()
+
+    def test_default_is_not_detached(self):
+        sid = self.db.add("s", "/tmp/s.py", "", "")
+        self.assertFalse(self.db.is_detached(sid))
+
+    def test_add_detached(self):
+        sid = self.db.add("s", "/tmp/s.py", "", "", detached=1)
+        self.assertTrue(self.db.is_detached(sid))
+
+    def test_update_sets_and_clears_detached(self):
+        sid = self.db.add("s", "/tmp/s.py", "", "")
+        self.db.update(sid, "s", "/tmp/s.py", "", "", detached=1)
+        self.assertTrue(self.db.is_detached(sid))
+        self.db.update(sid, "s", "/tmp/s.py", "", "", detached=0)
+        self.assertFalse(self.db.is_detached(sid))
+
+    def test_update_none_leaves_detached_untouched(self):
+        sid = self.db.add("s", "/tmp/s.py", "", "", detached=1)
+        # A plain edit (no detached arg) must not clear the flag.
+        self.db.update(sid, "renamed", "/tmp/s.py", "", "")
+        self.assertTrue(self.db.is_detached(sid))
+
+    def test_is_detached_unknown_script_is_false(self):
+        self.assertFalse(self.db.is_detached(9999))

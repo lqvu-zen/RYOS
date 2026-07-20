@@ -211,6 +211,32 @@ def check_favorites_drag_reorder(app):
         app._refresh_cards()
 
 
+def check_launcher_auto_release(app):
+    """A launcher (detached) script is auto-released from Running, leaving its
+    process alive. Regression guard for the launcher run path."""
+    slow = _write_script("import time\nfor _ in range(600):\n    time.sleep(0.5)\n")
+    sid = app.db.add("smoke-launcher", slow, "", sys.executable, detached=1)
+    app._settings["launcher_release_seconds"] = 0
+    job = None
+    try:
+        assert app.db.is_detached(sid)
+        app._run_script(sid, "smoke-launcher", slow, "", sys.executable)
+        assert len(app._jobreg) == 1, "launcher job not registered on launch"
+        job = app._jobreg.all()[0]
+        released = pump_until(app, lambda: len(app._jobreg) == 0, timeout=10)
+        assert released, "launcher was not auto-released from Running"
+        print("  [ok] launcher-auto-release: detached script left no running job")
+    finally:
+        if job is not None and job.current_process is not None:
+            try:
+                job.current_process.terminate()
+            except OSError:
+                pass
+        app.db.delete(sid)
+        os.unlink(slow)
+        app._refresh_cards()
+
+
 def main():
     print("RYOS GUI smoke starting...")
     app = RYOSApp()
@@ -220,6 +246,7 @@ def main():
         check_card_rendering(app)
         check_favorites_reorder(app)
         check_favorites_drag_reorder(app)
+        check_launcher_auto_release(app)
         check_run_to_completion(app)
         check_stop_running_job(app)
     finally:

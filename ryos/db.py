@@ -106,6 +106,8 @@ class ScriptDB:
             conn.execute("ALTER TABLE scripts ADD COLUMN temp_param INTEGER DEFAULT 0")
         if "is_favorite" not in cols:
             conn.execute("ALTER TABLE scripts ADD COLUMN is_favorite INTEGER DEFAULT 0")
+        if "detached" not in cols:
+            conn.execute("ALTER TABLE scripts ADD COLUMN detached INTEGER DEFAULT 0")
         # populate groups table from existing script group_name values
         existing_groups = {r[0] for r in conn.execute("SELECT name FROM groups")}
         named = conn.execute(
@@ -153,21 +155,22 @@ class ScriptDB:
         if "params_override" not in pscols:
             conn.execute("ALTER TABLE pipeline_steps ADD COLUMN params_override TEXT DEFAULT NULL")
     def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "",
-            temp_param: int = 0) -> int:
+            temp_param: int = 0, detached: int = 0) -> int:
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(order_index), 0) FROM scripts").fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name, temp_param) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name, temp_param, detached) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds"),
-                 max_order + 1, group_name, int(temp_param)),
+                 max_order + 1, group_name, int(temp_param), int(detached)),
             )
             conn.commit()
             return cur.lastrowid
 
     def update(self, script_id: int, name: str, path: str, params: str, interpreter: str,
-               group_name: str = "", temp_param: int | None = None):
-        """Update a script. temp_param=None leaves the existing flag untouched."""
+               group_name: str = "", temp_param: int | None = None,
+               detached: int | None = None):
+        """Update a script. temp_param/detached=None leaves that flag untouched."""
         with self._connect() as conn:
             if temp_param is None:
                 conn.execute(
@@ -179,7 +182,17 @@ class ScriptDB:
                     "UPDATE scripts SET name=?, path=?, params=?, interpreter=?, group_name=?, temp_param=? WHERE id=?",
                     (name, path, params, interpreter, group_name, int(temp_param), script_id),
                 )
+            if detached is not None:
+                conn.execute("UPDATE scripts SET detached=? WHERE id=?",
+                             (int(detached), script_id))
             conn.commit()
+
+    def is_detached(self, script_id: int) -> bool:
+        """True if the script is a launcher (fire-and-forget; not kept in Running)."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT COALESCE(detached, 0) FROM scripts WHERE id=?",
+                               (script_id,)).fetchone()
+            return bool(row[0]) if row else False
 
     def delete(self, script_id: int):
         with self._connect() as conn:
