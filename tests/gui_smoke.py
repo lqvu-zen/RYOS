@@ -130,6 +130,45 @@ def check_card_rendering(app):
         app._refresh_cards()
 
 
+def check_favorites_reorder(app):
+    """Move Up on a favorite reorders the shared script order.
+
+    Regression guard: the Favorites move actions were wired to no-ops, so
+    reorder silently did nothing there."""
+    pa = _write_script("print('fa')\n")
+    pb = _write_script("print('fb')\n")
+    a = app.db.add("fav-A", pa, "", sys.executable)
+    b = app.db.add("fav-B", pb, "", sys.executable)   # b gets the higher order_index
+    app.db.set_favorite_script(a, True)
+    app.db.set_favorite_script(b, True)
+    try:
+        app._active_group = None
+        app._refresh_cards()
+        app.update_idletasks()
+        app.update()
+        by_id = {}
+        for content in app._fav_contents:
+            for w in content.winfo_children():
+                sid = getattr(w, "script_id", None)
+                if sid in (a, b):
+                    by_id[sid] = w
+        assert a in by_id and b in by_id, f"favorite cards not found: {list(by_id)}"
+        order = [r[0] for r in app.db.list_all()]
+        assert order.index(a) < order.index(b), "precondition: A should precede B"
+        by_id[b]._on_move_up()   # would be a no-op before the fix
+        app.update_idletasks()
+        app.update()
+        order2 = [r[0] for r in app.db.list_all()]
+        assert order2.index(b) < order2.index(a), "favorite Move Up did not reorder"
+        print("  [ok] favorites-reorder: Move Up swapped the order")
+    finally:
+        app.db.delete(a)
+        app.db.delete(b)
+        os.unlink(pa)
+        os.unlink(pb)
+        app._refresh_cards()
+
+
 def main():
     print("RYOS GUI smoke starting...")
     app = RYOSApp()
@@ -137,6 +176,7 @@ def main():
     try:
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)
+        check_favorites_reorder(app)
         check_run_to_completion(app)
         check_stop_running_job(app)
     finally:

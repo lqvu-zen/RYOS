@@ -1032,7 +1032,13 @@ class RYOSApp(_BaseWindow):
                 on_toggle_favorite=make_fav_toggle_pipeline(p_id),
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
-        for r in fav_scripts:
+        # Reorder within Favorites moves relative to the other favorites,
+        # adjusting the shared script order (same model as the Scripts list).
+        fav_ids = [r[0] for r in fav_scripts]
+        for fi, r in enumerate(fav_scripts):
+            sid = r[0]
+            up_id   = fav_ids[fi - 1] if fi > 0 else None
+            down_id = fav_ids[fi + 1] if fi < len(fav_ids) - 1 else None
             def make_fav_toggle_script(sid):
                 def _toggle(sid2, fav):
                     self.db.set_favorite_script(sid2, fav)
@@ -1040,9 +1046,11 @@ class RYOSApp(_BaseWindow):
                 return lambda sid2, fav: _toggle(sid2, fav)
             card = ScriptCard(
                 fav_content, r, self.db, self._run_script, self._refresh_cards,
-                lambda: None, lambda: None, lambda: None,
+                on_move_up   = self._make_move_cb(sid, up_id)   if up_id   else lambda: None,
+                on_move_down = self._make_move_cb(sid, down_id) if down_id else lambda: None,
+                on_move_top  = self._make_top_cb(sid)           if up_id   else lambda: None,
                 group_base_dir=group_base_dir,
-                on_toggle_favorite=make_fav_toggle_script(r[0]),
+                on_toggle_favorite=make_fav_toggle_script(sid),
             )
             card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
 
