@@ -1407,6 +1407,22 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(loaded["close_to_tray"], _SETTINGS_DEFAULTS["close_to_tray"])
         self.assertFalse(loaded["close_to_tray"])
 
+    def test_prompt_close_to_tray_defaults_true_for_old_settings_file(self):
+        # An old settings.json written before this feature existed simply
+        # lacks the key; the merge with _SETTINGS_DEFAULTS must fill it in.
+        _settings_mod._SETTINGS_PATH.write_text(
+            json.dumps({"theme": "dark"}), encoding="utf-8")
+        loaded = _load_settings()
+        self.assertEqual(loaded["prompt_close_to_tray"], _SETTINGS_DEFAULTS["prompt_close_to_tray"])
+        self.assertTrue(loaded["prompt_close_to_tray"])
+
+    def test_prompt_close_to_tray_roundtrips(self):
+        d = dict(_SETTINGS_DEFAULTS)
+        d["prompt_close_to_tray"] = False
+        _save_settings(d)
+        loaded = _load_settings()
+        self.assertFalse(loaded["prompt_close_to_tray"])
+
 
 # ---------------------------------------------------------------------------
 # single_instance — mutex + localhost socket handshake guard

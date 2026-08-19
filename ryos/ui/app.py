@@ -38,7 +38,10 @@ from ..quickrun import (
 from ..job_controller import JobController
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard
-from .dialogs import AdvancedOptionsDialog, GroupBaseDirDialog, NewGroupDialog, ScriptDialog
+from .dialogs import (
+    AdvancedOptionsDialog, CloseToTrayPromptDialog, GroupBaseDirDialog,
+    NewGroupDialog, ScriptDialog,
+)
 from .pipeline import PipelineEditorDialog
 from ..themes import (
     load_user_themes, migrate_legacy_custom_themes, resolve_user_themes_dir,
@@ -2670,6 +2673,24 @@ class RYOSApp(_BaseWindow):
         if self._settings["close_to_tray"] and self._tray is not None and self._tray.available:
             self._hide_to_tray()
             return
+        if (self._settings.get("prompt_close_to_tray", True)
+                and self._tray is not None and self._tray.available):
+            dlg = CloseToTrayPromptDialog(self)
+            self.wait_window(dlg)
+            if dlg.dont_ask:
+                self._settings["prompt_close_to_tray"] = False
+            if dlg.result == "tray":
+                self._settings["close_to_tray"] = True
+                self._settings["prompt_close_to_tray"] = False
+                _save_settings(self._settings)
+                self._hide_to_tray()
+                return
+            if dlg.result == "quit":
+                if dlg.dont_ask:
+                    _save_settings(self._settings)
+                self._quit_app()
+                return
+            return  # "cancel" -- Escape/X on the prompt itself: do nothing
         self._quit_app()
 
     def _quit_app(self):

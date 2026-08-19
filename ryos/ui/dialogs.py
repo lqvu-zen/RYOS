@@ -571,6 +571,71 @@ class NewGroupDialog(tk.Toplevel):
         self.destroy()
 
 
+class CloseToTrayPromptDialog(tk.Toplevel):
+    """Shown on X-close, offering to switch on close-to-tray, until the user
+    enables it or ticks "don't ask again" to opt out."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        # Set before any widget exists so every destroy path (Escape, WM
+        # delete, a grab conflict) leaves both attributes defined.
+        self.result: str = "cancel"
+        self.dont_ask: bool = False
+        self._dont_ask_var = tk.BooleanVar(value=False)
+
+        self.title("Close RYOS")
+        self.resizable(False, False)
+        self.grab_set()
+        self.configure(bg=C["bg"])
+
+        title_strip = tk.Frame(self, bg=C["card_bg"])
+        title_strip.pack(fill="x")
+        tk.Label(title_strip, text="Minimize to tray instead?",
+                 bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"),
+                 anchor="w", padx=16, pady=12).pack(fill="x")
+        tk.Frame(title_strip, bg=C["border"], height=1).pack(fill="x")
+
+        body = tk.Frame(self, bg=C["bg"])
+        body.pack(fill="both", expand=True, padx=16, pady=16)
+
+        tk.Label(body,
+                 text="RYOS can keep running in the system tray instead of "
+                      "exiting when you click X. You can always change this "
+                      "later in Advanced Options → Startup.",
+                 bg=C["bg"], fg=C["name_fg"], font=("Segoe UI", 9),
+                 justify="left", wraplength=320).pack(fill="x", anchor="w")
+
+        tk.Checkbutton(body, text="Don't ask me again", variable=self._dont_ask_var,
+                       bg=C["bg"], fg=C["name_fg"],
+                       selectcolor=C["card_bg"],
+                       activebackground=C["bg"], activeforeground=C["name_fg"],
+                       font=("Segoe UI", 9), anchor="w").pack(fill="x", pady=(12, 0))
+
+        btn_row = tk.Frame(self, bg=C["bg"])
+        btn_row.pack(fill="x", padx=16, pady=(0, 16))
+        tray_btn = _flat_button(btn_row, "Minimize to tray", C["accent"], C["accent2"],
+                                lambda: self._choose("tray"), width=17)
+        tray_btn.pack(side="right")
+        _flat_button(btn_row, "Exit", C["btn_dark_bg"], C["btn_dark_hover"],
+                     lambda: self._choose("quit"), width=6).pack(side="right", padx=(0, 6))
+
+        self.bind("<Return>", lambda _e: self._choose("tray"))
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
+        self.transient(parent)
+        self.update_idletasks()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        tray_btn.focus_set()
+
+    def _choose(self, outcome: str):
+        self.result = outcome
+        self.dont_ask = self._dont_ask_var.get()
+        self.destroy()
+
+
 class GroupBaseDirDialog(tk.Toplevel):
     """Popup to view, change, or clear a group's base directory."""
 

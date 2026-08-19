@@ -50,6 +50,7 @@ _SETTINGS_DEFAULTS: dict = {
     "last_group":             None,
     "start_minimized":        False,
     "close_to_tray":          False,
+    "prompt_close_to_tray":   True,
     "remember_window_geometry": True,
     "window_geometry":        None,
     # Folder scanned for user theme JSON files (empty = default: <appdata>/themes).
