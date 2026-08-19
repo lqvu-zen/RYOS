@@ -739,6 +739,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._snap_corner.trace_add("write", self._on_corner_change)
         self._remember_group    = tk.BooleanVar(value=self._settings["remember_last_group"])
         self._start_minimized   = tk.BooleanVar(value=self._settings["start_minimized"])
+        self._close_to_tray     = tk.BooleanVar(value=self._settings["close_to_tray"])
         self._remember_geometry = tk.BooleanVar(value=self._settings["remember_window_geometry"])
         self._open_on_cursor    = tk.BooleanVar(value=self._settings.get("open_on_cursor_monitor", True))
         self._win_width         = tk.StringVar(value=str(self._settings.get("window_width",  540)))
@@ -1147,6 +1148,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._chk(f, "Always on top",                     self._always_on_top)
         self._chk(f, "Remember last active group",        self._remember_group)
         self._chk(f, "Start minimized",                  self._start_minimized)
+        self._chk(f, "Close button minimizes to tray",   self._close_to_tray)
         self._chk(f, "Check for updates on startup",      self._auto_check_update)
         self._chk(f, "Remember window size and position", self._remember_geometry)
         self._chk(f, "Open on the screen where the cursor is", self._open_on_cursor)
@@ -1415,6 +1417,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "window_height":            win_h,
             "remember_last_group":      self._remember_group.get(),
             "start_minimized":          self._start_minimized.get(),
+            "close_to_tray":            self._close_to_tray.get(),
             "remember_window_geometry": self._remember_geometry.get(),
             "open_on_cursor_monitor":   self._open_on_cursor.get(),
             "themes_dir":               self._settings.get("themes_dir", ""),

@@ -2,6 +2,7 @@
 import logging
 import sys
 
+from . import single_instance
 from .logger import install_excepthook, setup_logging
 from .settings import _load_settings
 from .startup import _sync_startup_command
@@ -19,8 +20,19 @@ def main():
     _sync_startup_command()  # upgrade an older registry entry in place
     from . import __version__
     log = logging.getLogger("ryos")
+
+    # A --startup launch stays silent if something's already running (no
+    # window pop); a manual launch signals the existing instance to restore.
+    lock = single_instance.acquire(
+        restore_existing=not launched_at_startup,
+        verb="RESTORE_CURSOR" if settings.get("open_on_cursor_monitor") else "RESTORE",
+    )
+    if lock is None:
+        log.info("Another RYOS instance is already running; exiting")
+        return
+
     log.info("RYOS %s starting (startup=%s)", __version__, launched_at_startup)
-    app = RYOSApp(launched_at_startup=launched_at_startup)
+    app = RYOSApp(launched_at_startup=launched_at_startup, instance_lock=lock)
     try:
         app.mainloop()
     except Exception:

@@ -7,6 +7,7 @@ Run with:  uv run python -m pytest tests/test_ryos.py -v
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -1389,6 +1390,57 @@ class TestSettings(unittest.TestCase):
         loaded = _load_settings()
         self.assertEqual(loaded["theme"], "dark")
         self.assertEqual(loaded["window_height"], 720)
+
+    def test_close_to_tray_roundtrips(self):
+        d = dict(_SETTINGS_DEFAULTS)
+        d["close_to_tray"] = True
+        _save_settings(d)
+        loaded = _load_settings()
+        self.assertTrue(loaded["close_to_tray"])
+
+    def test_close_to_tray_defaults_false_for_old_settings_file(self):
+        # An old settings.json written before this feature existed simply
+        # lacks the key; the merge with _SETTINGS_DEFAULTS must fill it in.
+        _settings_mod._SETTINGS_PATH.write_text(
+            json.dumps({"theme": "dark"}), encoding="utf-8")
+        loaded = _load_settings()
+        self.assertEqual(loaded["close_to_tray"], _SETTINGS_DEFAULTS["close_to_tray"])
+        self.assertFalse(loaded["close_to_tray"])
+
+
+# ---------------------------------------------------------------------------
+# single_instance — mutex + localhost socket handshake guard
+# ---------------------------------------------------------------------------
+
+import ryos.single_instance as _single_instance_mod  # noqa: E402
+
+
+class TestSignalExisting(unittest.TestCase):
+    """_signal_existing() must never raise, only return False, on any bad input."""
+
+    def setUp(self):
+        self._orig_lock_path = _single_instance_mod._LOCK_PATH
+        self._dir = tempfile.mkdtemp()
+        _single_instance_mod._LOCK_PATH = Path(self._dir) / "instance.lock"
+
+    def tearDown(self):
+        _single_instance_mod._LOCK_PATH = self._orig_lock_path
+
+    def test_missing_lock_file(self):
+        self.assertFalse(_single_instance_mod._signal_existing("RESTORE"))
+
+    def test_truncated_invalid_json(self):
+        _single_instance_mod._LOCK_PATH.write_text("{ not valid json", encoding="utf-8")
+        self.assertFalse(_single_instance_mod._signal_existing("RESTORE"))
+
+    def test_unreachable_closed_port(self):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+        probe.close()  # port is now closed; nothing is listening on it
+        _single_instance_mod._LOCK_PATH.write_text(
+            json.dumps({"port": closed_port, "token": "tok", "pid": 1}), encoding="utf-8")
+        self.assertFalse(_single_instance_mod._signal_existing("RESTORE"))
 
 
 # ---------------------------------------------------------------------------

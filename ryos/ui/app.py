@@ -30,6 +30,7 @@ from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
 from ..search import compute_hint, matches, normalize_query
 from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
+from ..tray import TrayIcon
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
     rank_suggestions, resolve, serialize_index, should_index,
@@ -104,9 +105,10 @@ def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> No
 
 
 class RYOSApp(_BaseWindow):
-    def __init__(self, launched_at_startup: bool = False):
+    def __init__(self, launched_at_startup: bool = False, instance_lock=None):
         super().__init__()
         self._launched_at_startup = launched_at_startup
+        self._instance_lock = instance_lock
         _configure_ttk_styles()
         self.report_callback_exception = self._log_tk_exception
         if sys.platform == "win32":
@@ -201,6 +203,28 @@ class RYOSApp(_BaseWindow):
         self.after(80, self._drain_output_queue)
         self.after(0,  self._setup_file_drop)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self._hidden_to_tray = False
+        self._last_normal_geometry: str | None = None
+        self._tray: TrayIcon | None = None
+        try:
+            _tray = TrayIcon(
+                on_show=lambda: self.after(0, self._restore_from_tray),
+                on_exit=lambda: self.after(0, self._quit_app),
+                icon_path=_icon,
+            )
+            _tray.start()
+            self._tray = _tray
+        except Exception:
+            # Tray support is best-effort; startup must never abort over it.
+            _log.debug("Could not initialize system tray icon", exc_info=True)
+            self._tray = None
+        self.bind("<Unmap>", self._on_unmap)
+        self.bind("<Configure>", self._on_root_configure)
+
+        if self._instance_lock is not None:
+            self.after(500, self._poll_instance_signals)
+
         if self._settings.get("auto_check_update", True):
             threading.Thread(target=self._check_for_update, daemon=True).start()
         self.attributes("-topmost", self._settings["always_on_top"])
@@ -209,7 +233,10 @@ class RYOSApp(_BaseWindow):
             self.after(0, lambda c=corner: _apply_snap_corner(
                 self, c, work_area=self._target_monitor))
         if self._settings["start_minimized"]:
-            self.after(0, self.iconify)
+            if self._tray is not None and self._tray.available:
+                self.after(0, self._hide_to_tray)
+            else:
+                self.after(0, self.iconify)
 
     def _apply_initial_placement(self, w: int, h: int):
         """Decide where the window opens and return the target monitor work area
@@ -2591,10 +2618,71 @@ class RYOSApp(_BaseWindow):
                               on_clear_qr_cache=self._quick_run_index_cache.clear,
                               jobs_running=bool(self._jobreg))
 
+    def _on_unmap(self, event):
+        # Child widgets calling pack_forget() elsewhere also fire <Unmap> and
+        # it bubbles up through the root's bindtags; without this guard the
+        # tray-hide would misfire constantly on ordinary widget changes.
+        if event.widget is not self:
+            return
+        if self.state() != "iconic":
+            return
+        if self._tray is None or not self._tray.available or self._hidden_to_tray:
+            return
+        self._hide_to_tray()
+
+    def _on_root_configure(self, event):
+        if event.widget is not self:
+            return
+        if self.state() == "normal":
+            self._last_normal_geometry = self.geometry()
+
+    def _hide_to_tray(self):
+        self._hidden_to_tray = True
+        self.withdraw()
+
+    def _restore_from_tray(self, follow_cursor: bool = False):
+        if follow_cursor and self._settings.get("open_on_cursor_monitor"):
+            target = cursor_work_area()
+            if target is not None:
+                # self.geometry() is unreliable while withdrawn/iconic (Windows
+                # reports -32000,-32000); use the last known-normal geometry.
+                saved = self._last_normal_geometry or self.geometry()
+                src = work_area_at_point(*geometry_origin(saved)) or target
+                self.geometry(relocate_geometry(saved, src, target))
+        self.deiconify()
+        self.state("normal")
+        self.lift()
+        self.focus_force()
+        # Windows can drop the topmost attribute across a withdraw/deiconify.
+        self.attributes("-topmost", self._settings["always_on_top"])
+        self._hidden_to_tray = False
+
+    def _poll_instance_signals(self):
+        try:
+            while True:
+                verb = self._instance_lock.signals.get_nowait()
+                self._restore_from_tray(follow_cursor=(verb == "RESTORE_CURSOR"))
+        except queue.Empty:
+            pass
+        self.after(500, self._poll_instance_signals)
+
     def _on_close(self):
+        if self._settings["close_to_tray"] and self._tray is not None and self._tray.available:
+            self._hide_to_tray()
+            return
+        self._quit_app()
+
+    def _quit_app(self):
         alive = [j for j in self._jobreg.all()
                  if j.current_process is not None and j.current_process.poll() is None]
         if alive:
+            if self.state() != "normal":
+                # Only surface the window when there's a confirmation dialog
+                # to show it for -- a clean tray-Exit shouldn't flash the
+                # window on screen just to immediately destroy it.
+                self.deiconify()
+                self.state("normal")
+                self.lift()
             n = len(alive)
             label = "jobs are" if n > 1 else "job is"
             if not messagebox.askyesno("Still Running",
@@ -2607,6 +2695,13 @@ class RYOSApp(_BaseWindow):
                 except OSError:
                     pass  # process may have already exited
         if self._settings["remember_window_geometry"]:
-            self._settings["window_geometry"] = self.geometry()
+            if self.state() == "normal":
+                self._settings["window_geometry"] = self.geometry()
+            elif self._last_normal_geometry is not None:
+                self._settings["window_geometry"] = self._last_normal_geometry
         _save_settings(self._settings)
+        if self._tray is not None:
+            self._tray.stop()
+        if self._instance_lock is not None:
+            self._instance_lock.release()
         self.destroy()

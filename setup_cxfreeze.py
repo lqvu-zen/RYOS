@@ -8,7 +8,10 @@ Output: dist/cxfreeze/RYOS.exe  (plus supporting DLLs in the same folder)
 from cx_Freeze import Executable, setup
 
 build_options = {
-    "packages": ["ryos", "tkinterdnd2", "sqlite3"],
+    # pystray and PIL resolve backends/plugins dynamically at import time,
+    # which cx_Freeze's static import finder can't follow, so they must be
+    # named explicitly -- otherwise the frozen exe would be silently broken.
+    "packages": ["ryos", "tkinterdnd2", "sqlite3", "pystray", "PIL"],
     "include_files": [
         ("icon.ico", "icon.ico"),
         # Bundled preset themes are data files, not modules, so cx_Freeze won't
