@@ -93,6 +93,7 @@ _SETTINGS_DEFAULTS: dict = {
     "accent_color":           None,
     "compact_mode":           False,
     "card_size":              "medium",
+    "hover_preview":          True,
 }
 
 

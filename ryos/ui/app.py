@@ -139,6 +139,7 @@ class RYOSApp(_BaseWindow):
         apply_theme(self._settings.get("theme", "light"), self._settings.get("accent_color"))
         from ryos.ui import cards as _cards_mod
         _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
+        _cards_mod.set_hover_preview(self._settings.get("hover_preview", True))
         _cards_mod.set_card_size(self._settings.get("card_size", "medium"))
         self.configure(bg=C["bg"])
 
@@ -954,6 +955,7 @@ class RYOSApp(_BaseWindow):
         )
         from ryos.ui import cards as _cards_mod
         _cards_mod.set_compact_mode(self._settings.get("compact_mode", False))
+        _cards_mod.set_hover_preview(self._settings.get("hover_preview", True))
         _cards_mod.set_card_size(self._settings.get("card_size", "medium"))
         if persist:
             _save_settings(self._settings)

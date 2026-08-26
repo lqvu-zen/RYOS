@@ -795,6 +795,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._accent    = self._settings.get("accent_color")
         self._compact   = tk.BooleanVar(value=self._settings.get("compact_mode", False))
         self._card_size = tk.StringVar(value=self._settings.get("card_size", "medium"))
+        self._hover_preview = tk.BooleanVar(value=self._settings.get("hover_preview", True))
         self._original_appearance = self._appearance_subset()
 
         self._start_with_windows = tk.BooleanVar(value=_startup_enabled())
@@ -841,6 +842,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             self._theme.trace_add("write", lambda *_: self._live_appearance(retheme=True))
             self._compact.trace_add("write", lambda *_: self._live_appearance())
             self._card_size.trace_add("write", lambda *_: self._live_appearance())
+            self._hover_preview.trace_add("write", lambda *_: self._live_appearance())
         self.protocol("WM_DELETE_WINDOW", self._cancel)
 
     # ------------------------------------------------------------------
@@ -849,10 +851,11 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
     def _appearance_subset(self) -> dict:
         return {
-            "theme":        self._theme.get(),
-            "accent_color": self._accent,
-            "compact_mode": self._compact.get(),
-            "card_size":    self._card_size.get(),
+            "theme":         self._theme.get(),
+            "accent_color":  self._accent,
+            "compact_mode":  self._compact.get(),
+            "card_size":     self._card_size.get(),
+            "hover_preview": self._hover_preview.get(),
         }
 
     def _current_accent_hex(self) -> str:
@@ -1200,6 +1203,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         f = self._section(tab, "DISPLAY")
         self._chk(f, "Compact cards (denser layout)", self._compact, state)
+        self._chk(f, "Preview details on hover (compact cards)", self._hover_preview, state)
         tk.Label(f, text="Card size", bg=C["bg"], fg=C["path_fg"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(8, 2))
         self._rb(f, "Small",  self._card_size, "small",  state)
@@ -1476,6 +1480,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "accent_color":             self._accent,
             "compact_mode":             self._compact.get(),
             "card_size":                self._card_size.get(),
+            "hover_preview":            self._hover_preview.get(),
             "always_on_top":            self._always_on_top.get(),
             "snap_corner":              _CORNER_LABEL_TO_VAL.get(self._snap_corner.get(), "none"),
             "window_width":             win_w,

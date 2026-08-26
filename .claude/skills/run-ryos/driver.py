@@ -601,6 +601,163 @@ def _search_hint(app: RYOSApp):
     app.after(900, _do)
 
 
+def _hover_preview(app: RYOSApp):
+    """Enable compact mode + hover_preview, force-show/hide the HoverPreview popups
+    (script + pipeline) without relying on real OS mouse movement, verify the
+    click-popup still works, then verify the setting/compact-mode gating.
+
+    Popup content is verified by walking its widget tree and printing label
+    text (not by screen-grabbing it): the popup's on-screen position tracks
+    the real OS pointer, which in an automated/headless run can land anywhere
+    on the physical desktop, so a pixel capture there risks landing on and
+    exposing whatever unrelated window happens to be under the real cursor.
+    """
+    from ryos.ui import cards as _cards_mod
+    from ryos.ui.widgets import HoverPreview as _RealHoverPreview
+
+    captured = {"instances": []}
+
+    class _TrackedHoverPreview(_RealHoverPreview):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            captured["instances"].append(self)
+
+    _cards_mod.HoverPreview = _TrackedHoverPreview
+
+    def _dump_popup_text(popup, name):
+        lines = []
+
+        def _walk(w):
+            try:
+                if hasattr(w, "cget") and str(w.cget("text")).strip():
+                    lines.append(str(w.cget("text")).strip())
+            except Exception:
+                pass
+            for ch in w.winfo_children():
+                _walk(ch)
+
+        _walk(popup)
+        # PowerShell's console codepage (cp1252) can't encode the ✓/✕ glyphs
+        # used in the preview, so print an ASCII-safe form.
+        safe = [l.encode("ascii", "replace").decode("ascii") for l in lines]
+        print(f"  [{name}] popup text content: {safe}")
+        return lines
+
+    def _do():
+        print("hover-preview: enabling compact mode + hover_preview")
+        app._settings["compact_mode"] = True
+        app._settings["hover_preview"] = True
+        _cards_mod.set_compact_mode(True)
+        _cards_mod.set_hover_preview(True)
+        app._rebuild_ui()
+        app.after(400, _after_compact)
+
+    def _after_compact():
+        _shot(app, "hp_01_compact")
+        print(f"  captured {len(captured['instances'])} HoverPreview instances in compact mode")
+        if not captured["instances"]:
+            print("FAIL: no HoverPreview instances created in compact mode")
+            app.after(300, app.destroy)
+            return
+        hp = captured["instances"][0]
+        print(f"  forcing _show() on instance 0 (card type: {type(hp._card).__name__})")
+        hp._show()
+        app.after(300, lambda: _show_screenshot(hp))
+
+    def _show_screenshot(hp):
+        popup_exists = bool(hp._popup) and hp._popup.winfo_exists()
+        print(f"  popup exists after _show(): {popup_exists}")
+        if popup_exists:
+            text = _dump_popup_text(hp._popup, "script preview")
+            expect = ["Path", "Working dir", "Interpreter", "Params"]
+            missing = [e for e in expect if not any(e in t for t in text)]
+            print(f"  {'PASS' if not missing else 'FAIL'}: expected labels present (missing: {missing})")
+        print("  forcing _hide()")
+        hp._hide()
+        app.after(200, lambda: _hide_screenshot(hp))
+
+    def _hide_screenshot(hp):
+        popup_gone = hp._popup is None
+        print(f"  {'PASS' if popup_gone else 'FAIL'}: popup gone after _hide(): {popup_gone}")
+        _shot(app, "hp_03_after_hide")
+
+        pipeline_hps = [h for h in captured["instances"]
+                        if type(h._card).__name__ == "PipelineCard"]
+        if pipeline_hps:
+            app.after(200, lambda: _pipeline_preview(pipeline_hps[0]))
+        else:
+            print("  no PipelineCard HoverPreview captured (no pipeline cards in DB?)")
+            app.after(200, _click_popup_check)
+
+    def _pipeline_preview(phv):
+        print("  forcing pipeline HoverPreview _show()")
+        phv._show()
+        app.after(300, lambda: _pipeline_screenshot(phv))
+
+    def _pipeline_screenshot(phv):
+        popup_exists = bool(phv._popup) and phv._popup.winfo_exists()
+        print(f"  pipeline popup exists after _show(): {popup_exists}")
+        if popup_exists:
+            _dump_popup_text(phv._popup, "pipeline preview")
+        phv._hide()
+        app.after(200, _click_popup_check)
+
+    def _click_popup_check():
+        pipeline_cards = app._pipeline_cards
+        if not pipeline_cards:
+            print("  no pipeline cards, skipping click-popup check")
+            app.after(200, _disable_setting)
+            return
+        pc = pipeline_cards[0]
+        print(f"  clicking pipeline card name to open click-popup: {pc._name!r}")
+        pc._show_steps_popup()
+        app.after(300, lambda: _after_click_popup(pc))
+
+    def _after_click_popup(pc):
+        popup = getattr(pc, "_steps_popup", None)
+        ok = bool(popup) and popup.winfo_exists()
+        print(f"  {'PASS' if ok else 'FAIL'}: click-popup opened: {ok}")
+        _shot(app, "hp_05_click_popup")
+        if popup:
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+            pc._steps_popup = None
+        app.after(200, _disable_setting)
+
+    def _disable_setting():
+        print("hover-preview: disabling hover_preview setting (compact stays on)")
+        captured["instances"].clear()
+        app._settings["hover_preview"] = False
+        _cards_mod.set_hover_preview(False)
+        app._rebuild_ui()
+        app.after(400, _after_disable)
+
+    def _after_disable():
+        n = len(captured["instances"])
+        print(f"  {'PASS' if n == 0 else 'FAIL'}: HoverPreview instances with setting off: {n}")
+        app.after(200, _restore_noncompact)
+
+    def _restore_noncompact():
+        print("hover-preview: turning off compact mode (hover_preview back on)")
+        captured["instances"].clear()
+        app._settings["compact_mode"] = False
+        app._settings["hover_preview"] = True
+        _cards_mod.set_compact_mode(False)
+        _cards_mod.set_hover_preview(True)
+        app._rebuild_ui()
+        app.after(400, _after_noncompact)
+
+    def _after_noncompact():
+        _shot(app, "hp_06_noncompact")
+        n = len(captured["instances"])
+        print(f"  {'PASS' if n == 0 else 'FAIL'}: HoverPreview instances in non-compact mode: {n}")
+        app.after(300, app.destroy)
+
+    app.after(900, _do)
+
+
 def main():
     import ryos.settings as _s
     _s._SETTINGS_DEFAULTS["auto_check_update"] = False
@@ -640,6 +797,8 @@ def main():
         _search_bar(app)
     elif scenario == "search-hint":
         _search_hint(app)
+    elif scenario == "hover-preview":
+        _hover_preview(app)
     else:
         print(f"unknown scenario: {scenario!r}. Use: smoke | quick-run-bar | run-first | autocomplete | adhoc-run | close-all-verify | debug-run-py | running-row-check | compact-running | advanced-options-tabs")
         app.after(0, app.destroy)
