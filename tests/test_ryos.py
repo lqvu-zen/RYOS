@@ -4,6 +4,7 @@ Unit tests for RYOS non-UI layers: ScriptDB, detect_interpreter, build_command.
 Run with:  uv run python -m pytest tests/test_ryos.py -v
        or: uv run python -m unittest discover -s tests -v
 """
+import ast
 import json
 import os
 import re
@@ -689,6 +690,108 @@ class TestThemeGallery(unittest.TestCase):
             name, seed = import_theme(fp)  # raises if invalid
             self.assertTrue(name, f"{fp.name} has no name")
             self.assertEqual(validate_seed(seed), [], f"{fp.name} invalid seed")
+
+
+# ---------------------------------------------------------------------------
+# Pipeline editor theming (regression: hardcoded hex vs the live palette)
+# ---------------------------------------------------------------------------
+
+class TestPipelineEditorTheming(unittest.TestCase):
+    """The pipeline editor once paired hardcoded near-white backgrounds with a
+    theme-aware fg, so its list and buttons were invisible in dark themes. These
+    read the widget colours straight out of the module source, so they fail if
+    anyone reintroduces a literal colour or picks an unreadable palette key."""
+
+    SRC_PATH = Path(__file__).resolve().parents[1] / "ryos" / "ui" / "pipeline.py"
+    GALLERY = Path(__file__).resolve().parents[1] / "theme-gallery"
+    HEX_RE = re.compile(r"#[0-9a-fA-F]{6}")
+    # White-on-accent is an app-wide brand convention owned by the theme engine,
+    # not by this dialog, so those pairs are out of scope here.
+    SKIP_FG_KEYS = {"fg_on_dark", "btn_fg"}
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = cls.SRC_PATH.read_text(encoding="utf-8")
+        cls.pairs = cls._extract_pairs(cls.source)
+        cls.gallery = {}
+        for fp in sorted(cls.GALLERY.glob("*.json")):
+            name, seed = import_theme(fp)
+            cls.gallery[fp.stem] = build_palette(seed)
+
+    @staticmethod
+    def _color_expr(node):
+        """('key', name) for C["name"], ('hex', value) for a literal, else None."""
+        if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
+                and node.value.id == "C" and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)):
+            return ("key", node.slice.value)
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and re.fullmatch(r"#[0-9a-fA-F]{6}", node.value)):
+            return ("hex", node.value)
+        return None
+
+    @classmethod
+    def _extract_pairs(cls, source):
+        """(line, widget, fg, bg, role) for every tk.* widget setting both a
+        statically resolvable foreground and background."""
+        out = []
+        for node in ast.walk(ast.parse(source)):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "tk"):
+                continue
+            kw = {k.arg: k.value for k in node.keywords if k.arg}
+            fg = cls._color_expr(kw["fg"]) if "fg" in kw else None
+            if fg is None:
+                continue
+            for arg, role in (("bg", "idle"), ("activebackground", "hover")):
+                bg = cls._color_expr(kw[arg]) if arg in kw else None
+                if bg is not None:
+                    out.append((node.lineno, node.func.attr, fg, bg, role))
+        return out
+
+    @staticmethod
+    def _resolve(expr, palette):
+        kind, value = expr
+        return palette[value] if kind == "key" else value
+
+    def test_no_hardcoded_hex_colors(self):
+        # Catches the Cancel button, whose own fg/bg pair is legible but frozen
+        # to the light palette — a defect contrast alone cannot express.
+        hits = [(i, line.strip())
+                for i, line in enumerate(self.source.splitlines(), 1)
+                if self.HEX_RE.search(line)]
+        self.assertEqual(hits, [], f"colours must come from C[...]: {hits}")
+
+    def test_scan_finds_widget_pairs(self):
+        # Guard: an AST scan that matches nothing would make the rest vacuous.
+        self.assertGreaterEqual(len(self.pairs), 10, "AST scan found too few widgets")
+
+    def test_builtin_themes_meet_contrast(self):
+        for name in THEME_ORDER:
+            palette = BUILTIN_THEMES[name]
+            for line, widget, fg, bg, role in self.pairs:
+                if fg[0] == "key" and fg[1] in self.SKIP_FG_KEYS:
+                    continue
+                f, b = self._resolve(fg, palette), self._resolve(bg, palette)
+                with self.subTest(theme=name, line=line, widget=widget, role=role):
+                    self.assertGreaterEqual(
+                        contrast_ratio(f, b), 4.5,
+                        f"{name}: tk.{widget} line {line} ({role}) {f} on {b}")
+
+    def test_gallery_themes_stay_legible(self):
+        # Gallery themes are user content: hold idle states to a 3.0 floor.
+        # Hover pairs are excluded (btn_neutral_hover bottoms out at 2.7 there).
+        for name, palette in self.gallery.items():
+            for line, widget, fg, bg, role in self.pairs:
+                if role != "idle" or (fg[0] == "key" and fg[1] in self.SKIP_FG_KEYS):
+                    continue
+                f, b = self._resolve(fg, palette), self._resolve(bg, palette)
+                with self.subTest(theme=name, line=line, widget=widget):
+                    self.assertGreaterEqual(
+                        contrast_ratio(f, b), 3.0,
+                        f"{name}: tk.{widget} line {line} {f} on {b}")
 
 
 class TestDisambiguateLabels(unittest.TestCase):

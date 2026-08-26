@@ -33,6 +33,9 @@ class PipelineEditorDialog(tk.Toplevel):
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
         self._name_var = tk.StringVar(value=pipeline_name)
         tk.Entry(nf, textvariable=self._name_var,
+                 bg=C["card_bg"], fg=C["name_fg"], insertbackground=C["name_fg"],
+                 relief="flat", bd=4, highlightthickness=1,
+                 highlightbackground=C["border"],
                  font=("Segoe UI", 10)).pack(fill="x", pady=(4, 0))
 
         tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
@@ -50,7 +53,7 @@ class PipelineEditorDialog(tk.Toplevel):
             list_frame, yscrollcommand=sb.set,
             selectmode="single", font=("Segoe UI", 10),
             exportselection=False,
-            bg="#f8f9fc", fg=C["name_fg"],
+            bg=C["card_bg"], fg=C["name_fg"],
             selectbackground=C["accent"], selectforeground=C["fg_on_dark"],
             relief="flat", highlightthickness=1,
             highlightbackground=C["border"], activestyle="none",
@@ -63,8 +66,9 @@ class PipelineEditorDialog(tk.Toplevel):
         for label, cmd in (("▲ Up", self._move_up), ("▼ Down", self._move_down),
                            ("✕ Remove", self._remove_selected)):
             tk.Button(ctrl, text=label, command=cmd,
-                      bg="#e8eaf0", fg=C["name_fg"],
-                      activebackground=C["card_hover"], relief="flat",
+                      bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"],
+                      activebackground=C["btn_neutral_hover"],
+                      activeforeground=C["btn_neutral_fg"], relief="flat",
                       bd=0, padx=10, pady=4, cursor="hand2",
                       font=("Segoe UI", 9)).pack(side="left", padx=2)
 
@@ -119,8 +123,9 @@ class PipelineEditorDialog(tk.Toplevel):
                   relief="flat", padx=16, pady=6, cursor="hand2",
                   font=("Segoe UI", 9, "bold")).pack(side="right")
         tk.Button(br, text="Cancel", command=self.destroy,
-                  bg="#e0e0e0", fg="#333333",
-                  activebackground="#d0d0d0", relief="flat",
+                  bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"],
+                  activebackground=C["btn_neutral_hover"],
+                  activeforeground=C["btn_neutral_fg"], relief="flat",
                   padx=16, pady=6, cursor="hand2",
                   font=("Segoe UI", 9)).pack(side="right", padx=(0, 8))
 
