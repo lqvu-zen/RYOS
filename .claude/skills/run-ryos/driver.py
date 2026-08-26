@@ -669,7 +669,7 @@ def _hover_preview(app: RYOSApp):
         print(f"  popup exists after _show(): {popup_exists}")
         if popup_exists:
             text = _dump_popup_text(hp._popup, "script preview")
-            expect = ["Path", "Working dir", "Interpreter", "Params"]
+            expect = ["Path", "Params"]
             missing = [e for e in expect if not any(e in t for t in text)]
             print(f"  {'PASS' if not missing else 'FAIL'}: expected labels present (missing: {missing})")
         print("  forcing _hide()")

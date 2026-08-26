@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from ..db import ScriptDB
-from ..interpreter import _script_tag, detect_interpreter
+from ..interpreter import _script_tag
 from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
 from .theme import C
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
@@ -88,16 +88,6 @@ class ScriptCard(tk.Frame):
         self._name = name
         self._path = path
         self._params = params
-        self._last_run = last_run
-        self._last_run_status = last_run_status
-        self._temp_param = temp_param
-        if interp:
-            self._interp_display = interp
-        else:
-            try:
-                self._interp_display = f"(auto) {detect_interpreter(path)}"
-            except Exception:
-                self._interp_display = "(auto)"
         self._group_name = _group or ""
         self.db = db
         self.runner = runner
@@ -247,29 +237,8 @@ class ScriptCard(tk.Frame):
                      font=("Segoe UI", 8), anchor="w").pack(side="left")
 
         _row("Path", self._path or "—")
-        _row("Working dir", os.path.dirname(self._path) if self._path else "—")
-        _row("Interpreter", self._interp_display)
         _row("Params", self._params if self._params else "—",
              value_fg=C["name_fg"] if self._params else C["path_fg"])
-
-        if self._last_run and self._last_run != "-":
-            row = tk.Frame(inner, bg=C["card_bg"])
-            row.pack(fill="x", pady=1)
-            tk.Label(row, text="Last run", bg=C["card_bg"], fg=C["path_fg"],
-                     font=("Segoe UI", 8), anchor="w", width=10).pack(side="left")
-            tk.Label(row, text=self._last_run, bg=C["card_bg"], fg=C["name_fg"],
-                     font=("Segoe UI", 8), anchor="w").pack(side="left")
-            if self._last_run_status == "error":
-                tk.Label(row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
-                         font=("Segoe UI", 7, "bold"), padx=4, pady=0).pack(side="left", padx=(6, 0))
-            elif self._last_run_status == "ok":
-                tk.Label(row, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
-                         font=("Segoe UI", 7, "bold"), padx=4, pady=0).pack(side="left", padx=(6, 0))
-
-        if self._temp_param:
-            tk.Label(inner, text="⏱ Asks for a temporary parameter each run",
-                     bg=C["card_bg"], fg=C["accent"], font=("Segoe UI", 8),
-                     anchor="w").pack(fill="x", pady=(4, 0))
 
     def show_checkbox(self, command=None):
         self._chk.config(command=command)
