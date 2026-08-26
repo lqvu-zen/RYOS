@@ -29,7 +29,7 @@ from ..grouping import bucket_by_group
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
 from ..search import compute_hint, matches, normalize_query
-from ..settings import QR_INDEX_DIR, _BASE, _load_settings, _save_settings
+from ..settings import QR_INDEX_DIR, _BASE, _PACKAGED, _load_settings, _save_settings
 from ..tray import TrayIcon
 from ..quickrun import (
     _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
@@ -211,18 +211,21 @@ class RYOSApp(_BaseWindow):
         self._hidden_to_tray = False
         self._last_normal_geometry: str | None = None
         self._tray: TrayIcon | None = None
-        try:
-            _tray = TrayIcon(
-                on_show=lambda: self.after(0, self._restore_from_tray),
-                on_exit=lambda: self.after(0, self._quit_app),
-                icon_path=_icon,
-            )
-            _tray.start()
-            self._tray = _tray
-        except Exception:
-            # Tray support is best-effort; startup must never abort over it.
-            _log.debug("Could not initialize system tray icon", exc_info=True)
-            self._tray = None
+        if _PACKAGED:
+            # Dev/source runs skip the tray entirely: a stray pystray thread
+            # and its icon outlive reloads and interfere with debugging.
+            try:
+                _tray = TrayIcon(
+                    on_show=lambda: self.after(0, self._restore_from_tray),
+                    on_exit=lambda: self.after(0, self._quit_app),
+                    icon_path=_icon,
+                )
+                _tray.start()
+                self._tray = _tray
+            except Exception:
+                # Tray support is best-effort; startup must never abort over it.
+                _log.debug("Could not initialize system tray icon", exc_info=True)
+                self._tray = None
         self.bind("<Unmap>", self._on_unmap)
         self.bind("<Configure>", self._on_root_configure)
 
