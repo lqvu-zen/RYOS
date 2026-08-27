@@ -9,6 +9,9 @@ Queue protocol (each item is a tuple keyed by its first element):
     ("stderr", job_id, line)                              launch failure detail
     ("done",     job_id, script_id, "error", message)     launch failed, no process
     ("done_tag", job_id, script_id, status, tag, footer)  process finished (status ok/error)
+Every shape above may carry one extra trailing element, a step_token, appended
+only when the producer supplies one (concurrent pipeline steps); untagged
+callers keep the shorter tuple unchanged.
 """
 import subprocess
 import sys
@@ -21,12 +24,21 @@ from .logger import get_logger
 _log = get_logger("runner")
 
 
-def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False):
+def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False, step_token=None):
     """Launch cmd, stream stdout to output_queue, and post a completion item.
 
-    Sets job.current_process so the UI can terminate it. Never raises: launch
-    failures are reported on the queue as a "done"/"error" item.
+    Sets job.current_process (and job.processes[step_token]) so the UI can
+    terminate it. Never raises: launch failures are reported on the queue as
+    a "done"/"error" item.
     """
+    def _put(item):
+        # Token is appended only when one is supplied, so the tuple shape for
+        # ad-hoc script runs (step_token=None) stays byte-identical to before
+        # this feature — existing exact-tuple-equality tests keep passing.
+        if step_token is not None:
+            item = item + (step_token,)
+        output_queue.put(item)
+
     try:
         proc = subprocess.Popen(
             cmd,
@@ -38,20 +50,21 @@ def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False):
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         job.current_process = proc
+        job.processes[step_token] = proc
     except FileNotFoundError as e:
         _log.error("Interpreter/file not found for %s: %s", name, e)
-        output_queue.put(("stderr", job.job_id, f"[ERROR] {e}\n"))
-        output_queue.put(("done", job.job_id, script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
+        _put(("stderr", job.job_id, f"[ERROR] {e}\n"))
+        _put(("done", job.job_id, script_id, "error", f"❌ Interpreter/file not found: {name}\n"))
         return
     except Exception as e:
         _log.error("Failed to launch %s: %s", name, e)
-        output_queue.put(("stderr", job.job_id, f"[ERROR] {e}\n"))
-        output_queue.put(("done", job.job_id, script_id, "error", f"❌ Error: {name}\n"))
+        _put(("stderr", job.job_id, f"[ERROR] {e}\n"))
+        _put(("done", job.job_id, script_id, "error", f"❌ Error: {name}\n"))
         return
 
     assert proc.stdout is not None
     for line in proc.stdout:
-        output_queue.put(("stdout", job.job_id, line))
+        _put(("stdout", job.job_id, line))
         if log_output:
             _log.debug("[%s] %s", name, line.rstrip())
 
@@ -63,7 +76,7 @@ def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False):
         _log.info("Done: %s | exit=%s", name, rc)
     else:
         _log.error("Done: %s | exit=%s", name, rc)
-    output_queue.put((
+    _put((
         "done_tag", job.job_id, script_id, status, tag,
         f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
     ))
@@ -83,15 +96,25 @@ class OutputAction:
     status: str | None       # last_run_status to record (None = not a completion)
     sid: int | None          # script id for a completion (None otherwise)
     step_done: bool          # whether this item completes a run step
+    token: object = None     # step_token, when the producer supplied one
 
 
 def decode_output_item(item: tuple) -> OutputAction:
-    """Translate one output-queue item into an OutputAction (see run_subprocess)."""
+    """Translate one output-queue item into an OutputAction (see run_subprocess).
+
+    A trailing step_token is optional on every shape (omitted for ad-hoc
+    script runs), so its presence is detected from the tuple's length rather
+    than a fixed index.
+    """
     kind = item[0]
     if kind == "done":
-        return OutputAction(text=item[4], tag="info", status=item[3], sid=item[2], step_done=True)
+        token = item[5] if len(item) > 5 else None
+        return OutputAction(text=item[4], tag="info", status=item[3], sid=item[2], step_done=True, token=token)
     if kind == "done_tag":
-        return OutputAction(text=item[5], tag=item[4], status=item[3], sid=item[2], step_done=True)
+        token = item[6] if len(item) > 6 else None
+        return OutputAction(text=item[5], tag=item[4], status=item[3], sid=item[2], step_done=True, token=token)
     if kind == "stderr":
-        return OutputAction(text=item[2], tag="stderr", status=None, sid=None, step_done=False)
-    return OutputAction(text=item[2], tag=None, status=None, sid=None, step_done=False)
+        token = item[3] if len(item) > 3 else None
+        return OutputAction(text=item[2], tag="stderr", status=None, sid=None, step_done=False, token=token)
+    token = item[3] if len(item) > 3 else None
+    return OutputAction(text=item[2], tag=None, status=None, sid=None, step_done=False, token=token)

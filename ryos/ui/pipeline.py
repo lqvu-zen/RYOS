@@ -3,7 +3,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from ..db import ScriptDB
+from ..db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB
 from .theme import C
 
 
@@ -71,6 +71,19 @@ class PipelineEditorDialog(tk.Toplevel):
                       activeforeground=C["btn_neutral_fg"], relief="flat",
                       bd=0, padx=10, pady=4, cursor="hand2",
                       font=("Segoe UI", 9)).pack(side="left", padx=2)
+        self._trigger_btn = tk.Button(
+            ctrl, text="∥ With Prev", command=self._toggle_trigger, state="disabled",
+            bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"],
+            activebackground=C["btn_neutral_hover"],
+            activeforeground=C["btn_neutral_fg"], relief="flat",
+            bd=0, padx=10, pady=4, cursor="hand2",
+            font=("Segoe UI", 9))
+        self._trigger_btn.pack(side="left", padx=2)
+
+        legend = tk.Frame(self, bg=C["card_bg"], padx=12)
+        legend.pack(fill="x")
+        tk.Label(legend, text="∥ = starts together with the step above",
+                 bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 4))
 
         pf = tk.Frame(self, bg=C["card_bg"], padx=12, pady=6)
         pf.pack(fill="x")
@@ -137,11 +150,12 @@ class PipelineEditorDialog(tk.Toplevel):
         if self._reloading or self._preset_changing:
             return
         idx = self._selected_index()
+        self._trigger_btn.configure(state="disabled" if idx in (None, 0) else "normal")
         if idx is None:
             self._step_preset_combo.configure(state="disabled", values=[])
             self._step_preset_var.set("")
             return
-        step_id, sid, name, path, params, interp, params_override = self._steps[idx]
+        step_id, sid, name, path, params, interp, params_override, trigger_mode = self._steps[idx]
         presets = self.db.list_param_presets(sid)
         values = ["(Script default)"] + [p[2] for p in presets]
         self._step_preset_combo.configure(
@@ -162,7 +176,8 @@ class PipelineEditorDialog(tk.Toplevel):
             step = list(self._steps[idx])
             step[6] = override
             self._steps[idx] = tuple(step)
-            label = f"  {idx + 1}.  {name}"
+            prefix = "∥ " if step[7] == TRIGGER_WITH else "  "
+            label = f"{prefix}{idx + 1}.  {name}"
             if override is not None:
                 label += f"  [{override}]"
             self._listbox.delete(idx)
@@ -175,8 +190,9 @@ class PipelineEditorDialog(tk.Toplevel):
         self._reloading = True
         self._steps = list(self.db.list_pipeline_steps(self.pipeline_id))
         self._listbox.delete(0, tk.END)
-        for i, (step_id, sid, name, path, params, interp, params_override) in enumerate(self._steps):
-            label = f"  {i + 1}.  {name}"
+        for i, (step_id, sid, name, path, params, interp, params_override, trigger_mode) in enumerate(self._steps):
+            prefix = "∥ " if trigger_mode == TRIGGER_WITH else "  "
+            label = f"{prefix}{i + 1}.  {name}"
             if params_override is not None:
                 label += f"  [{params_override}]"
             self._listbox.insert(tk.END, label)
@@ -202,6 +218,17 @@ class PipelineEditorDialog(tk.Toplevel):
         step_id = self._steps[idx][0]
         self.db.remove_pipeline_step(step_id)
         self._reload_steps()
+
+    def _toggle_trigger(self):
+        idx = self._selected_index()
+        if idx is None or idx == 0:
+            return                      # step 1 has no previous step
+        cur = self._steps[idx][7]
+        self.db.set_step_trigger_mode(self._steps[idx][0],
+                                      TRIGGER_AFTER if cur == TRIGGER_WITH else TRIGGER_WITH)
+        self._reload_steps()
+        self._listbox.selection_set(idx)
+        self._on_step_select()
 
     def _move_up(self):
         idx = self._selected_index()

@@ -29,7 +29,7 @@ sys.modules.setdefault("tkinter.messagebox", mock.MagicMock())
 sys.modules.setdefault("tkinter.scrolledtext", mock.MagicMock())
 sys.modules.setdefault("tkinter.simpledialog", mock.MagicMock())
 
-from ryos.db import ScriptDB  # noqa: E402
+from ryos.db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
@@ -1213,6 +1213,19 @@ class TestSchemaVersioning(unittest.TestCase):
         ScriptDB(db.db_path)  # re-init should bring it up and stamp it
         self.assertEqual(_user_version(db.db_path), SCHEMA_VERSION)
 
+    def test_trigger_mode_migration_is_idempotent(self):
+        # Opening an already-migrated database a second (or third) time must
+        # not re-run the ALTER TABLE (which would error on a duplicate column).
+        db = _make_db()
+        cols = [r[1] for r in sqlite3.connect(db.db_path).execute(
+            "PRAGMA table_info(pipeline_steps)")]
+        self.assertIn("trigger_mode", cols)
+        ScriptDB(db.db_path)
+        ScriptDB(db.db_path)
+        cols_again = [r[1] for r in sqlite3.connect(db.db_path).execute(
+            "PRAGMA table_info(pipeline_steps)")]
+        self.assertEqual(cols_again.count("trigger_mode"), 1)
+
 
 class TestRunMigrations(unittest.TestCase):
     """The migration runner advances user_version, runs each step once, in order."""
@@ -1397,6 +1410,21 @@ class TestJob(unittest.TestCase):
         b = Job(2, "s", 2, None, "b", "t", "g")
         a.pipeline_queue.append("step")
         self.assertEqual(b.pipeline_queue, [])
+
+    def test_active_processes_filters_exited_and_none(self):
+        class _FakeProc:
+            def __init__(self, exit_code):
+                self._exit_code = exit_code
+
+            def poll(self):
+                return self._exit_code
+
+        running1 = _FakeProc(None)
+        running2 = _FakeProc(None)
+        exited = _FakeProc(0)
+        j = Job(1, "pipeline", None, 9, "P", "t", "g")
+        j.processes = {None: None, "a": running1, "b": exited, "c": running2}
+        self.assertEqual(set(j.active_processes()), {running1, running2})
 
 # ---------------------------------------------------------------------------
 # resolve_interpreter + _script_tag (ryos.interpreter)
@@ -1740,6 +1768,49 @@ class TestScriptDBPipelines(unittest.TestCase):
         self.db.reorder_pipeline_steps(pid, [st2, st1])
         self.assertEqual([s[0] for s in self.db.list_pipeline_steps(pid)], [st2, st1])
 
+    def test_new_step_defaults_to_after(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.s1)
+        self.assertEqual(self.db.list_pipeline_steps(pid)[0][7], TRIGGER_AFTER)
+
+    def test_set_step_trigger_mode(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.s1)
+        st2 = self.db.add_pipeline_step(pid, self.s2)
+        self.db.set_step_trigger_mode(st2, TRIGGER_WITH)
+        self.assertEqual(self.db.list_pipeline_steps(pid)[1][7], TRIGGER_WITH)
+
+    def test_set_step_trigger_mode_normalizes_first_step(self):
+        # A step can never be 'with' once it lands in position 1: reordering,
+        # removal, or a direct toggle can all promote a step there.
+        pid = self.db.create_pipeline("P", "G")
+        st1 = self.db.add_pipeline_step(pid, self.s1)
+        st2 = self.db.add_pipeline_step(pid, self.s2)
+        self.db.set_step_trigger_mode(st2, TRIGGER_WITH)
+        # Directly toggling step 1 itself must always stay 'after'.
+        self.db.set_step_trigger_mode(st1, TRIGGER_WITH)
+        self.assertEqual(self.db.list_pipeline_steps(pid)[0][7], TRIGGER_AFTER)
+
+    def test_reorder_normalizes_promoted_first_step(self):
+        pid = self.db.create_pipeline("P", "G")
+        st1 = self.db.add_pipeline_step(pid, self.s1)
+        st2 = self.db.add_pipeline_step(pid, self.s2)
+        self.db.set_step_trigger_mode(st2, TRIGGER_WITH)
+        self.db.reorder_pipeline_steps(pid, [st2, st1])  # promotes st2 to position 1
+        steps = self.db.list_pipeline_steps(pid)
+        self.assertEqual(steps[0][0], st2)
+        self.assertEqual(steps[0][7], TRIGGER_AFTER)
+
+    def test_remove_normalizes_promoted_first_step(self):
+        pid = self.db.create_pipeline("P", "G")
+        st1 = self.db.add_pipeline_step(pid, self.s1)
+        st2 = self.db.add_pipeline_step(pid, self.s2)
+        self.db.set_step_trigger_mode(st2, TRIGGER_WITH)
+        self.db.remove_pipeline_step(st1)  # promotes st2 to position 1
+        steps = self.db.list_pipeline_steps(pid)
+        self.assertEqual(steps[0][0], st2)
+        self.assertEqual(steps[0][7], TRIGGER_AFTER)
+
     def test_delete_pipeline_cascades_steps(self):
         pid = self.db.create_pipeline("P", "G")
         self.db.add_pipeline_step(pid, self.s1)
@@ -2019,6 +2090,26 @@ class TestDecodeOutputItem(unittest.TestCase):
         self.assertEqual((a.text, a.tag, a.status, a.sid, a.step_done),
                          ("footer", "ok", "ok", 9, True))
 
+    def test_no_token_decodes_none(self):
+        a = decode_output_item(("stdout", 5, "line\n"))
+        self.assertIsNone(a.token)
+
+    def test_stdout_with_token(self):
+        a = decode_output_item(("stdout", 5, "line\n", "tok"))
+        self.assertEqual((a.text, a.tag, a.token), ("line\n", None, "tok"))
+
+    def test_stderr_with_token(self):
+        a = decode_output_item(("stderr", 5, "boom\n", "tok"))
+        self.assertEqual((a.text, a.tag, a.token), ("boom\n", "stderr", "tok"))
+
+    def test_done_with_token(self):
+        a = decode_output_item(("done", 5, 9, "error", "msg", "tok"))
+        self.assertEqual((a.status, a.sid, a.step_done, a.token), ("error", 9, True, "tok"))
+
+    def test_done_tag_with_token(self):
+        a = decode_output_item(("done_tag", 5, 9, "ok", "ok", "footer", "tok"))
+        self.assertEqual((a.status, a.sid, a.step_done, a.token), ("ok", 9, True, "tok"))
+
     def test_round_trip_with_runner(self):
         # An item produced by run_subprocess decodes to a completed step.
         q = _queue.Queue()
@@ -2065,7 +2156,7 @@ class TestJobController(unittest.TestCase):
             on_started=lambda job: self.rec["started"].append(job.job_id),
             on_finish=lambda job: self.rec["finish"].append(job.job_id),
             on_rename=lambda job: self.rec["rename"].append(job.name),
-            launch=lambda job, cmd, name, sid: self.rec["launch"].append((cmd, name, sid)),
+            launch=lambda job, cmd, name, sid, token=None: self.rec["launch"].append((cmd, name, sid, token)),
             now=lambda: _dt(2020, 1, 1, 12, 0, 0),
         )
         self._tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
@@ -2075,8 +2166,8 @@ class TestJobController(unittest.TestCase):
     def tearDown(self):
         os.unlink(self._tmp.name)
 
-    def _step(self, sid=1, name="s1", params="", override=None):
-        return (sid, sid, name, self._tmp.name, params, "", override)
+    def _step(self, sid=1, name="s1", params="", override=None, trigger_mode=TRIGGER_AFTER):
+        return (sid, sid, name, self._tmp.name, params, "", override, trigger_mode)
 
     def _job(self, kind="script", queue=None, total=0):
         job = Job(1, kind, 1, None, "n", "job:1", "g",
@@ -2139,7 +2230,7 @@ class TestJobController(unittest.TestCase):
         self.assertEqual(self.rec["launch"], [])
 
     def test_run_next_missing_file_posts_error_no_launch(self):
-        bad = (1, 1, "gone", "/no/such/file.py", "", "", None)
+        bad = (1, 1, "gone", "/no/such/file.py", "", "", None, TRIGGER_AFTER)
         job = self._job("pipeline", queue=[bad], total=1)
         self.ctl.run_next_pipeline_step(job)
         self.assertEqual(self.rec["launch"], [])
@@ -2221,6 +2312,103 @@ class TestJobController(unittest.TestCase):
         self.assertTrue(self.ctl.at_capacity(2))
         self.assertFalse(self.ctl.at_capacity(0))   # still unlimited
         self.assertFalse(self.ctl.at_capacity(3))
+
+    # --- concurrent ("with previous") groups ---
+
+    def test_group_detection_absorbs_consecutive_with_steps(self):
+        # Leader (a, its own mode irrelevant) + b,c marked "with" form one
+        # group; d (mode "after") stays queued for the next call.
+        queue = [
+            self._step(1, "a"),
+            self._step(2, "b", trigger_mode=TRIGGER_WITH),
+            self._step(3, "c", trigger_mode=TRIGGER_WITH),
+            self._step(4, "d", trigger_mode=TRIGGER_AFTER),
+        ]
+        job = self._job("pipeline", queue=queue, total=4)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(job.group_size, 3)
+        self.assertEqual(len(self.rec["launch"]), 3)
+        self.assertEqual(len(job.pipeline_queue), 1)
+        self.assertEqual(job.pipeline_queue[0][2], "d")
+
+    def test_group_launch_failure_does_not_block_siblings(self):
+        # One member's launch failure (missing file) must not stop the other
+        # concurrent-group members from still launching -- `continue`, not
+        # `return`, in the per-member launch loop.
+        bad = (1, 1, "gone", "/no/such/file.py", "", "", None, TRIGGER_AFTER)
+        good = self._step(2, "b", trigger_mode=TRIGGER_WITH)
+        job = self._job("pipeline", queue=[bad, good], total=2)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(job.group_size, 2)
+        self.assertEqual(len(self.rec["launch"]), 1)
+        self.assertEqual(self.rec["launch"][0][2], 2)  # sid of the good sibling, still launched
+
+    def test_group_advances_only_after_last_member_done(self):
+        queue = [self._step(1, "a"), self._step(2, "b", trigger_mode=TRIGGER_WITH),
+                 self._step(3, "c")]
+        job = self._job("pipeline", queue=queue, total=3)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(len(self.rec["launch"]), 2)   # group of 2 launched together
+
+        # First member finishes: the group must NOT advance while b is pending.
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        self.assertEqual(len(self.rec["launch"]), 2)
+        self.assertEqual(self.rec["finish"], [])
+
+        # Last member finishes: only now does the pipeline advance to step c.
+        self.ctl.handle_step_done(job, 2, "ok", token=2)
+        self.assertEqual(len(self.rec["launch"]), 3)
+        self.assertEqual(self.rec["launch"][2][2], 3)  # sid of step c
+        self.assertEqual(self.rec["finish"], [])
+
+    def test_group_mid_failure_waits_for_sibling_without_terminating_it(self):
+        queue = [self._step(1, "a"), self._step(2, "b", trigger_mode=TRIGGER_WITH)]
+        job = self._job("pipeline", queue=queue, total=2)
+        self.ctl.run_next_pipeline_step(job)
+
+        # a fails while b is still running: pipeline must not advance/finish,
+        # and b's token must remain pending (the controller never terminates
+        # siblings — that's the app layer's job, but it must not even try by
+        # treating the group as settled early).
+        self.ctl.handle_step_done(job, 1, "error", token=1)
+        self.assertEqual(self.rec["finish"], [])
+        self.assertEqual(self.rec["notify"], [])
+        self.assertIn(2, job.group_pending)
+        self.assertTrue(job.group_failed)
+        self.assertEqual(job.group_failed_at, 1)
+
+    def test_group_settles_failed_when_last_sibling_succeeds(self):
+        queue = [self._step(1, "a"), self._step(2, "b", trigger_mode=TRIGGER_WITH)]
+        job = self._job("pipeline", queue=queue, total=2)
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "error", token=1)  # a fails first
+        self.ctl.handle_step_done(job, 2, "ok", token=2)     # b succeeds last
+
+        # The group as a whole is a failure even though the last-reporting
+        # member succeeded, and the pipeline stops instead of advancing.
+        self.assertEqual(job.pipeline_queue, [])
+        self.assertEqual(self.rec["finish"], [job.job_id])
+        self.assertIn("Pipeline failed", self.rec["notify"][0][0])
+
+    def test_group_failure_notification_names_actual_failing_step(self):
+        # Token 1 (step 1) fails; token 2 (step 2, launched in the same
+        # group) is the one whose "done" happens to settle the group. The
+        # notification must still name step 1 as the failure, not step 2.
+        queue = [self._step(1, "a"), self._step(2, "b", trigger_mode=TRIGGER_WITH)]
+        job = self._job("pipeline", queue=queue, total=2)
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "error", token=1)
+        self.ctl.handle_step_done(job, 2, "ok", token=2)
+        self.assertIn("step 1/2", self.rec["notify"][0][1])
+
+    def test_single_step_group_is_unaffected(self):
+        # Group size 1 must behave exactly like the pre-existing sequential
+        # path: byte-identical header/status text and no group interception.
+        job = self._job("pipeline", queue=[self._step(7, "build")], total=1)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(job.group_size, 1)
+        self.assertEqual(self.rec["output"][0][1], f"{'─' * 40}\nStep 1/1:  build\n{'─' * 40}\n")
+        self.assertEqual(self.rec["status"], ["Pipeline step 1/1: build"])
 
 
 class TestSourceIntegrity(unittest.TestCase):

@@ -11,12 +11,34 @@ from .settings import DB_PATH
 
 _log = get_logger("db")
 
+# Per-step pipeline trigger mode: 'after' (default; sequential, unchanged
+# behavior) or 'with' (starts concurrently alongside the previous step).
+TRIGGER_AFTER = "after"
+TRIGGER_WITH = "with"
+
 
 # --- Schema versioning -------------------------------------------------------
 # _ensure_baseline() brings any database up to the v1 schema; numbered
 # migrations beyond that run once each, gated by SQLite's PRAGMA user_version.
 _BASELINE_VERSION = 1
-_MIGRATIONS: dict = {}  # {2: lambda conn: conn.execute("ALTER ..."), ...}
+
+
+def _migrate_step_trigger_mode(conn):
+    """Per-step start rule; 'after' preserves the original sequential model.
+
+    Guarded like _ensure_baseline's column checks (not just the user_version
+    gate) so replaying this migration on a db that already has the column —
+    e.g. a version-0 reset over an otherwise-current schema — is a no-op
+    rather than a duplicate-column error.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(pipeline_steps)")]
+    if "trigger_mode" not in cols:
+        conn.execute(
+            "ALTER TABLE pipeline_steps ADD COLUMN trigger_mode TEXT NOT NULL DEFAULT 'after'"
+        )
+
+
+_MIGRATIONS: dict = {2: _migrate_step_trigger_mode}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -559,16 +581,16 @@ class ScriptDB:
                 )
                 new_pipe_id = cur.lastrowid
                 steps = conn.execute(
-                    "SELECT script_id, step_order, params_override FROM pipeline_steps "
+                    "SELECT script_id, step_order, params_override, trigger_mode FROM pipeline_steps "
                     "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
                     (old_pipe_id,),
                 ).fetchall()
-                for script_id, step_order, params_override in steps:
+                for script_id, step_order, params_override, trigger_mode in steps:
                     new_script_id = id_map.get(script_id, script_id)
                     conn.execute(
-                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, params_override) "
-                        "VALUES (?, ?, ?, ?)",
-                        (new_pipe_id, new_script_id, step_order, params_override),
+                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, params_override, trigger_mode) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (new_pipe_id, new_script_id, step_order, params_override, trigger_mode),
                     )
             conn.commit()
             return len(source_scripts), len(source_pipelines)
@@ -623,15 +645,15 @@ class ScriptDB:
             )
             new_id = cur.lastrowid
             steps = conn.execute(
-                "SELECT script_id, step_order FROM pipeline_steps "
+                "SELECT script_id, step_order, trigger_mode FROM pipeline_steps "
                 "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
                 (pipeline_id,),
             ).fetchall()
-            for script_id, step_order in steps:
+            for script_id, step_order, trigger_mode in steps:
                 conn.execute(
-                    "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) "
-                    "VALUES (?, ?, ?)",
-                    (new_id, script_id, step_order),
+                    "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, trigger_mode) "
+                    "VALUES (?, ?, ?, ?)",
+                    (new_id, script_id, step_order, trigger_mode),
                 )
             conn.commit()
             return new_id
@@ -689,14 +711,38 @@ class ScriptDB:
         return [g for g, _ in self.group_match_counts(query)]
 
     def list_pipeline_steps(self, pipeline_id: int) -> list:
-        """Returns list of (step_id, script_id, name, path, params, interpreter, params_override)."""
+        """Returns (step_id, script_id, name, path, params, interpreter,
+        params_override, trigger_mode)."""
         with self._connect() as conn:
             return conn.execute(
-                "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter, ps.params_override "
+                "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter, "
+                "ps.params_override, ps.trigger_mode "
                 "FROM pipeline_steps ps JOIN scripts s ON s.id = ps.script_id "
                 "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
                 (pipeline_id,),
             ).fetchall()
+
+    def set_step_trigger_mode(self, step_id: int, mode: str):
+        """Set one step's start rule; the pipeline's first step is always 'after'."""
+        with self._connect() as conn:
+            conn.execute("UPDATE pipeline_steps SET trigger_mode=? WHERE id=?",
+                         (mode if mode == TRIGGER_WITH else TRIGGER_AFTER, step_id))
+            row = conn.execute("SELECT pipeline_id FROM pipeline_steps WHERE id=?",
+                               (step_id,)).fetchone()
+            if row:
+                self._normalize_first_step(conn, row[0])
+            conn.commit()
+
+    def _normalize_first_step(self, conn, pipeline_id: int):
+        """A step at position 1 can never be 'with' — there's no previous step
+        to run alongside. Called wherever a step could be promoted into
+        position 1: trigger-mode changes, removal, and reordering."""
+        conn.execute(
+            "UPDATE pipeline_steps SET trigger_mode='after' WHERE id = ("
+            "  SELECT id FROM pipeline_steps WHERE pipeline_id=? "
+            "  ORDER BY step_order ASC, id ASC LIMIT 1)",
+            (pipeline_id,),
+        )
 
     def update_pipeline_step_params(self, step_id: int, params_override):
         with self._connect() as conn:
@@ -719,13 +765,18 @@ class ScriptDB:
 
     def remove_pipeline_step(self, step_id: int):
         with self._connect() as conn:
+            row = conn.execute("SELECT pipeline_id FROM pipeline_steps WHERE id=?",
+                               (step_id,)).fetchone()
             conn.execute("DELETE FROM pipeline_steps WHERE id=?", (step_id,))
+            if row:
+                self._normalize_first_step(conn, row[0])
             conn.commit()
 
     def reorder_pipeline_steps(self, pipeline_id: int, ordered_step_ids: list[int]):
         with self._connect() as conn:
             for i, sid in enumerate(ordered_step_ids):
                 conn.execute("UPDATE pipeline_steps SET step_order=? WHERE id=?", (i * 10, sid))
+            self._normalize_first_step(conn, pipeline_id)
             conn.commit()
 
     def swap_order(self, id_a: int, id_b: int):

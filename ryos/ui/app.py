@@ -616,14 +616,17 @@ class RYOSApp(_BaseWindow):
         job.time_var = time_var
 
     def _stop_job(self, job: "_Job"):
-        """Stop one specific job."""
+        """Stop one specific job, including every step of a concurrent group."""
         job.stopped = True
         job.pipeline_queue.clear()
-        if job.current_process is not None and job.current_process.poll() is None:
+        job.group_pending.clear()
+        live = job.active_processes()
+        for proc in live:
             try:
-                job.current_process.terminate()
+                proc.terminate()
             except OSError:
                 pass  # process may have already exited
+        if live:
             self._append_output("\n[STOPPED by user]\n", tag="stderr", tab_key=job.tab_key)
         self.status_var.set("Stopped.")
         self._finish_job(job)
@@ -1909,7 +1912,7 @@ class RYOSApp(_BaseWindow):
             _log.error("Import failed: %s", e)
             messagebox.showerror("Import Failed", str(e))
 
-    def _launch(self, job: "_Job", cmd, name, script_id) -> None:
+    def _launch(self, job: "_Job", cmd, name, script_id, step_token=None) -> None:
         """Mark the script as run and start its worker thread.
 
         Single entry point for both ad-hoc script runs and pipeline steps, so
@@ -1917,7 +1920,7 @@ class RYOSApp(_BaseWindow):
         """
         self.db.mark_run(script_id)
         threading.Thread(
-            target=self._run_subprocess, args=(job, cmd, name, script_id), daemon=True,
+            target=self._run_subprocess, args=(job, cmd, name, script_id, step_token), daemon=True,
         ).start()
 
     def _run_script(self, script_id, name, path, params, interpreter):
@@ -2345,9 +2348,10 @@ class RYOSApp(_BaseWindow):
 
         self._run_script(script_id, display, abs_path, params, interpreter)
 
-    def _run_subprocess(self, job: "_Job", cmd, name, script_id):
+    def _run_subprocess(self, job: "_Job", cmd, name, script_id, step_token=None):
         run_subprocess(self.output_queue, job, cmd, name, script_id,
-                       log_output=self._settings.get("log_runs_output", False))
+                       log_output=self._settings.get("log_runs_output", False),
+                       step_token=step_token)
 
     def _init_all_tab(self):
         text = scrolledtext.ScrolledText(
@@ -2699,8 +2703,7 @@ class RYOSApp(_BaseWindow):
         self._quit_app()
 
     def _quit_app(self):
-        alive = [j for j in self._jobreg.all()
-                 if j.current_process is not None and j.current_process.poll() is None]
+        alive = [j for j in self._jobreg.all() if j.active_processes()]
         if alive:
             if self.state() != "normal":
                 # Only surface the window when there's a confirmation dialog
@@ -2715,11 +2718,11 @@ class RYOSApp(_BaseWindow):
                                        f"{n} script {label} still running. Exit anyway?"):
                 return
             for job in list(self._jobreg.all()):
-                try:
-                    if job.current_process is not None:
-                        job.current_process.terminate()
-                except OSError:
-                    pass  # process may have already exited
+                for proc in job.active_processes():
+                    try:
+                        proc.terminate()
+                    except OSError:
+                        pass  # process may have already exited
         if self._settings["remember_window_geometry"]:
             if self.state() == "normal":
                 self._settings["window_geometry"] = self.geometry()

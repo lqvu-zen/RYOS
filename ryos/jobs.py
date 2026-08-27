@@ -29,14 +29,27 @@ class Job:
         self.group = group
         self.start_time: datetime = datetime.now()
         self.current_process = None
+        self.processes: dict = {}          # step_token -> Popen; None key for non-pipeline scripts
         self.stopped: bool = False
         self.pipeline_name = pipeline_name
         self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
         self.pipeline_step_idx: int = 0
         self.pipeline_total: int = pipeline_total
+        # Concurrent-group bookkeeping (main-thread-owned); empty/falsy means
+        # no group is active, i.e. the legacy single-step path.
+        self.group_pending: set = set()
+        self.group_failed: bool = False
+        self.group_failed_at: int | None = None
+        self.group_labels: dict = {}       # token -> step name, for output prefixing
+        self.group_size: int = 0
         self.name_var: tk.StringVar | None = None
         self.time_var: tk.StringVar | None = None
         self.running_row: tk.Frame | None = None
+
+    def active_processes(self) -> list:
+        """Live handles for every in-flight step of this job (snapshot)."""
+        return [p for p in list(self.processes.values())
+                if p is not None and p.poll() is None]
 
 
 def format_elapsed(start_time: datetime, now: datetime) -> str:

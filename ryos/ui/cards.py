@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from ..db import ScriptDB
+from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
 from .theme import C
@@ -500,7 +500,8 @@ class PipelineCard(tk.Frame):
             for i, step in enumerate(steps, 1):
                 row = tk.Frame(inner, bg=C["card_bg"])
                 row.pack(fill="x", pady=2)
-                tk.Label(row, text=f"{i}.", bg=C["card_bg"], fg=C["path_fg"],
+                idx_text = "∥" if len(step) > 7 and step[7] == TRIGGER_WITH else f"{i}."
+                tk.Label(row, text=idx_text, bg=C["card_bg"], fg=C["path_fg"],
                          font=("Segoe UI", 8), width=3, anchor="e").pack(side="left")
                 tk.Label(row, text=step[2], bg=C["card_bg"], fg=C["name_fg"],
                          font=("Segoe UI", 8, "bold"), anchor="w").pack(side="left", padx=(6, 0))
