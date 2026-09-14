@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
-from .theme import C
+from .theme import C, HIGHLIGHT_LABELS, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
 
 _COMPACT: bool = False
@@ -68,6 +68,32 @@ def row_metrics() -> tuple[int, int, int, int]:
     return _ROW_METRICS.get((_COMPACT, _CARD_SIZE), _ROW_METRICS[(_COMPACT, "medium")])
 
 
+def _add_highlight_menu(menu: tk.Menu, current, on_pick) -> tk.Menu:
+    """Attach the colour-picker submenu shared by the script and pipeline cards.
+
+    Swatch colours are resolved against the *menu* background, not the card's,
+    so the entries stay readable in the dark popup menu even when the cards
+    behind it are light.
+    """
+    sub = tk.Menu(menu, tearoff=0,
+                  bg=C["menu_bg"], fg=C["fg_on_dark"],
+                  activebackground=C["accent"], activeforeground=C["fg_on_dark"],
+                  font=("Segoe UI", 10))
+
+    def _mark(key):
+        return "●  " if (current or None) == key else "○  "
+
+    sub.add_command(label=f"{_mark(None)}None", command=lambda: on_pick(None))
+    sub.add_separator()
+    for key, label in HIGHLIGHT_LABELS.items():
+        sub.add_command(label=f"{_mark(key)}{label}",
+                        foreground=highlight_fg(key, C["menu_bg"]),
+                        activeforeground=C["fg_on_dark"],
+                        command=lambda k=key: on_pick(k))
+    menu.add_cascade(label="🎨  Highlight", menu=sub)
+    return sub
+
+
 class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
@@ -82,6 +108,8 @@ class ScriptCard(tk.Frame):
         sid, name, path, params, interp, _created, last_run, last_run_status, _group, temp_param = record[:10]
         is_favorite = record[10] if len(record) > 10 else 0
         self._is_favorite = bool(is_favorite)
+        self._label_color = record[11] if len(record) > 11 else None
+        name_fg = highlight_fg(self._label_color) or C["name_fg"]
         self._sid = sid
         self._on_toggle_favorite = on_toggle_favorite
         self.script_id = sid
@@ -147,9 +175,9 @@ class ScriptCard(tk.Frame):
                                       padx=5, pady=1)
                 temp_badge.pack(side="left", padx=(0, 6))
                 Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
-            ScrollingLabel(name_row, name, C["name_fg"], C["card_bg"]).pack(side="left", fill="both", expand=True)
+            ScrollingLabel(name_row, name, name_fg, C["card_bg"]).pack(side="left", fill="both", expand=True)
         else:
-            ScrollingLabel(text_area, name, C["name_fg"], C["card_bg"]).pack(fill="x")
+            ScrollingLabel(text_area, name, name_fg, C["card_bg"]).pack(fill="x")
         if not _COMPACT:
             display_path = path
             if group_base_dir and path:
@@ -224,7 +252,8 @@ class ScriptCard(tk.Frame):
     def _build_preview(self, inner):
         inner.configure(padx=14, pady=10)
 
-        tk.Label(inner, text=self._name, bg=C["card_bg"], fg=C["name_fg"],
+        tk.Label(inner, text=self._name, bg=C["card_bg"],
+                 fg=highlight_fg(self._label_color) or C["name_fg"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(0, 6))
         tk.Frame(inner, bg=C["border"], height=1).pack(fill="x", pady=(0, 6))
 
@@ -275,6 +304,7 @@ class ScriptCard(tk.Frame):
                        font=("Segoe UI", 10))
         fav_label = "☆ Remove from Favorites" if self._is_favorite else "★ Add to Favorites"
         menu.add_command(label=fav_label, command=self._toggle_favorite)
+        self._hl_menu = _add_highlight_menu(menu, self._label_color, self._set_label_color)
         menu.add_separator()
         menu.add_command(label="⤒  Move to Top", command=self._on_move_top)
         menu.add_command(label="▲  Move Up",     command=self._on_move_up)
@@ -303,6 +333,10 @@ class ScriptCard(tk.Frame):
         if messagebox.askyesno("Delete", f"Delete '{self._name}'?", parent=self):
             self.db.delete(self.script_id)
             self.on_refresh()
+
+    def _set_label_color(self, key):
+        self.db.set_script_color(self.script_id, key)
+        self.on_refresh()
 
     def _toggle_favorite(self):
         if self._on_toggle_favorite:
@@ -367,7 +401,8 @@ class PipelineCard(tk.Frame):
 
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
                  group_name: str, on_run, on_edit, on_refresh,
-                 is_favorite: bool = False, on_toggle_favorite=None):
+                 is_favorite: bool = False, on_toggle_favorite=None,
+                 label_color: str | None = None):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -379,6 +414,8 @@ class PipelineCard(tk.Frame):
         self.on_refresh = on_refresh
         self._is_favorite = is_favorite
         self._on_toggle_favorite = on_toggle_favorite
+        self._label_color = label_color
+        name_fg = highlight_fg(label_color) or C["name_fg"]
 
         steps = db.list_pipeline_steps(pipeline_id)
 
@@ -437,10 +474,10 @@ class PipelineCard(tk.Frame):
             name_row.pack(fill="x")
             tk.Label(name_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
                      font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(0, 6))
-            name_label = ScrollingLabel(name_row, name, C["name_fg"], C["card_bg"])
+            name_label = ScrollingLabel(name_row, name, name_fg, C["card_bg"])
             name_label.pack(side="left", fill="both", expand=True)
         else:
-            name_label = ScrollingLabel(content, name, C["name_fg"], C["card_bg"])
+            name_label = ScrollingLabel(content, name, name_fg, C["card_bg"])
             name_label.pack(fill="x")
 
         n = len(steps)
@@ -489,7 +526,8 @@ class PipelineCard(tk.Frame):
         and the hover preview so both always show the current step list."""
         steps = self.db.list_pipeline_steps(self.pipeline_id)
 
-        tk.Label(inner, text=self._name, bg=C["card_bg"], fg=C["name_fg"],
+        tk.Label(inner, text=self._name, bg=C["card_bg"],
+                 fg=highlight_fg(self._label_color) or C["name_fg"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(fill="x", pady=(0, 6))
         tk.Frame(inner, bg=C["border"], height=1).pack(fill="x", pady=(0, 6))
 
@@ -566,6 +604,10 @@ class PipelineCard(tk.Frame):
         for ch in widget.winfo_children():
             self._set_bg(ch, color)
 
+    def _set_label_color(self, key):
+        self.db.set_pipeline_color(self.pipeline_id, key)
+        self.on_refresh()
+
     def _toggle_favorite(self):
         if self._on_toggle_favorite:
             self._on_toggle_favorite(self.pipeline_id, not self._is_favorite)
@@ -579,6 +621,7 @@ class PipelineCard(tk.Frame):
                        font=("Segoe UI", 10))
         pipe_fav_label = "☆ Remove from Favorites" if self._is_favorite else "★ Add to Favorites"
         menu.add_command(label=pipe_fav_label, command=self._toggle_favorite)
+        self._hl_menu = _add_highlight_menu(menu, self._label_color, self._set_label_color)
         menu.add_separator()
         menu.add_command(label="⚙  Edit",
                          command=lambda: self.on_edit(self.pipeline_id, self._name))

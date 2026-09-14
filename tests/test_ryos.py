@@ -1226,6 +1226,27 @@ class TestSchemaVersioning(unittest.TestCase):
             "PRAGMA table_info(pipeline_steps)")]
         self.assertEqual(cols_again.count("trigger_mode"), 1)
 
+    def test_label_color_migration_adds_both_tables(self):
+        db = _make_db()
+        for table in ("scripts", "pipelines"):
+            cols = [r[1] for r in sqlite3.connect(db.db_path).execute(
+                f"PRAGMA table_info({table})")]
+            self.assertIn("label_color", cols, table)
+
+    def test_label_color_migration_is_idempotent(self):
+        # Replaying it (a version-0 reset over a current schema) must not raise
+        # a duplicate-column error or add the column twice.
+        db = _make_db()
+        conn = sqlite3.connect(db.db_path)
+        conn.execute("PRAGMA user_version = 0")
+        conn.commit()
+        conn.close()
+        ScriptDB(db.db_path)
+        for table in ("scripts", "pipelines"):
+            cols = [r[1] for r in sqlite3.connect(db.db_path).execute(
+                f"PRAGMA table_info({table})")]
+            self.assertEqual(cols.count("label_color"), 1, table)
+
 
 class TestRunMigrations(unittest.TestCase):
     """The migration runner advances user_version, runs each step once, in order."""
@@ -1736,7 +1757,7 @@ class TestScriptDBPipelines(unittest.TestCase):
 
     def test_create_and_list(self):
         pid = self.db.create_pipeline("Deploy", "G")
-        self.assertEqual(self.db.list_pipelines("G"), [(pid, "Deploy", 0)])
+        self.assertEqual(self.db.list_pipelines("G"), [(pid, "Deploy", 0, None)])
 
     def test_add_and_list_steps_join_script_fields(self):
         pid = self.db.create_pipeline("P", "G")
@@ -1821,7 +1842,7 @@ class TestScriptDBPipelines(unittest.TestCase):
     def test_rename_pipeline(self):
         pid = self.db.create_pipeline("Old", "G")
         self.db.rename_pipeline(pid, "New")
-        self.assertEqual(self.db.list_pipelines("G"), [(pid, "New", 0)])
+        self.assertEqual(self.db.list_pipelines("G"), [(pid, "New", 0, None)])
 
     def test_clone_pipeline_copies_steps(self):
         pid = self.db.create_pipeline("P", "G")
@@ -2742,3 +2763,134 @@ class TestScriptDBDetached(unittest.TestCase):
 
     def test_is_detached_unknown_script_is_false(self):
         self.assertFalse(self.db.is_detached(9999))
+
+
+# ---------------------------------------------------------------------------
+# Per-item highlight colours (card label tint)
+# ---------------------------------------------------------------------------
+from ryos.ui.theme import (  # noqa: E402
+    HIGHLIGHT_LABELS, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, highlight_fg,
+)
+
+
+class TestLabelColorDB(unittest.TestCase):
+    """label_color is an optional palette key, defaulting to NULL everywhere."""
+
+    def setUp(self):
+        self.db = _make_db()
+        self.sid = self.db.add("s", "/tmp/s.py", "", "", "G")
+        self.pid = self.db.create_pipeline("P", "G")
+
+    def _script_row(self):
+        return [r for r in self.db.list_all() if r[0] == self.sid][0]
+
+    def test_script_default_is_none(self):
+        self.assertIsNone(self._script_row()[11])
+
+    def test_pipeline_default_is_none(self):
+        self.assertIsNone(self.db.list_pipelines("G")[0][3])
+
+    def test_set_and_read_script_color(self):
+        self.db.set_script_color(self.sid, "teal")
+        self.assertEqual(self._script_row()[11], "teal")
+
+    def test_set_and_read_pipeline_color(self):
+        self.db.set_pipeline_color(self.pid, "purple")
+        self.assertEqual(self.db.list_pipelines("G")[0][3], "purple")
+
+    def test_clear_script_color(self):
+        self.db.set_script_color(self.sid, "red")
+        self.db.set_script_color(self.sid, None)
+        self.assertIsNone(self._script_row()[11])
+
+    def test_empty_string_is_stored_as_null(self):
+        # "" and NULL must not both mean "no highlight" in the database, or
+        # every read site would need to normalise it.
+        self.db.set_script_color(self.sid, "")
+        self.db.set_pipeline_color(self.pid, "")
+        self.assertIsNone(self._script_row()[11])
+        self.assertIsNone(self.db.list_pipelines("G")[0][3])
+
+    def test_color_does_not_disturb_earlier_columns(self):
+        # The column is appended, so existing index-based readers are unmoved.
+        before = self._script_row()[:11]
+        self.db.set_script_color(self.sid, "green")
+        self.assertEqual(self._script_row()[:11], before)
+
+    def test_setting_unknown_id_is_a_noop(self):
+        self.db.set_script_color(99999, "red")
+        self.db.set_pipeline_color(99999, "red")
+        self.assertIsNone(self._script_row()[11])
+
+
+class TestHighlightPalette(unittest.TestCase):
+    """Every highlight seed must stay readable on every shipped palette.
+
+    The seeds are deliberately *not* final colours: highlight_fg shades them
+    until they clear AA, so this is the test that certifies the shading
+    actually converges rather than silently returning an unreadable value.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.palettes = dict(BUILTIN_THEMES)
+        gallery = Path(__file__).resolve().parents[1] / "theme-gallery"
+        for fp in sorted(gallery.glob("*.json")):
+            _name, seed = import_theme(fp)
+            cls.palettes[fp.stem] = build_palette(seed)
+
+    def test_gallery_palettes_were_loaded(self):
+        # Guards against the loop below passing vacuously if the gallery moves.
+        self.assertGreater(len(self.palettes), len(BUILTIN_THEMES))
+
+    def test_seeds_clear_aa_on_card_surfaces(self):
+        for theme, P in self.palettes.items():
+            for key in HIGHLIGHT_SEEDS:
+                with self.subTest(theme=theme, color=key):
+                    fg = highlight_fg(key, P["card_bg"], P["card_hover"])
+                    for surface in ("card_bg", "card_hover"):
+                        self.assertGreaterEqual(
+                            contrast_ratio(fg, P[surface]), HIGHLIGHT_MIN_RATIO,
+                            f"{key} on {theme}.{surface}")
+
+    def test_seeds_clear_aa_on_menu_surface(self):
+        # The context-menu swatches are drawn on menu_bg, not on a card.
+        for theme, P in self.palettes.items():
+            for key in HIGHLIGHT_SEEDS:
+                with self.subTest(theme=theme, color=key):
+                    fg = highlight_fg(key, P["menu_bg"])
+                    self.assertGreaterEqual(
+                        contrast_ratio(fg, P["menu_bg"]), HIGHLIGHT_MIN_RATIO,
+                        f"{key} on {theme}.menu_bg")
+
+    def test_unset_returns_none(self):
+        self.assertIsNone(highlight_fg(None))
+        self.assertIsNone(highlight_fg(""))
+
+    def test_unknown_key_returns_none(self):
+        # A key written by a future/other build must fall back to the normal
+        # label colour, never render as an invalid Tk colour.
+        self.assertIsNone(highlight_fg("chartreuse"))
+
+    def test_labels_cover_every_seed(self):
+        self.assertEqual(set(HIGHLIGHT_LABELS), set(HIGHLIGHT_SEEDS))
+
+    def test_seeds_are_valid_hex(self):
+        for key, value in HIGHLIGHT_SEEDS.items():
+            with self.subTest(color=key):
+                self.assertTrue(is_hex_color(value))
+
+    def test_result_tracks_the_surface_not_a_stale_cache(self):
+        # The cache is keyed by surface, so switching theme must re-resolve.
+        light = highlight_fg("red", BUILTIN_THEMES["light"]["card_bg"])
+        dark = highlight_fg("red", BUILTIN_THEMES["dark"]["card_bg"])
+        self.assertNotEqual(light, dark)
+
+    def test_seeds_stay_distinguishable_from_each_other(self):
+        # A palette that collapsed to seven near-identical pastels would still
+        # pass the contrast tests but be useless for telling cards apart.
+        for theme, P in self.palettes.items():
+            resolved = [highlight_fg(k, P["card_bg"], P["card_hover"])
+                        for k in HIGHLIGHT_SEEDS]
+            with self.subTest(theme=theme):
+                self.assertEqual(len(set(resolved)), len(HIGHLIGHT_SEEDS))

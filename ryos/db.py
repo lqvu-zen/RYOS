@@ -38,7 +38,21 @@ def _migrate_step_trigger_mode(conn):
         )
 
 
-_MIGRATIONS: dict = {2: _migrate_step_trigger_mode}
+def _migrate_label_color(conn):
+    """Optional per-item highlight colour for script and pipeline card labels.
+
+    NULL means "no highlight" and is the default, so every existing row keeps
+    rendering with the theme's normal label colour. Stored as a palette *key*
+    ("red", "teal", ...) rather than a hex value so the tint re-resolves for
+    whatever theme is active instead of being frozen at the moment it was set.
+    """
+    for table in ("scripts", "pipelines"):
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        if "label_color" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN label_color TEXT DEFAULT NULL")
+
+
+_MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -440,11 +454,25 @@ class ScriptDB:
         with self._connect() as conn:
             conn.execute("UPDATE pipelines SET is_favorite=? WHERE id=?", (1 if fav else 0, pipeline_id))
 
+    def set_script_color(self, script_id: int, color: str | None) -> None:
+        """Set (or clear, with None) a script's card-label highlight key."""
+        with self._connect() as conn:
+            conn.execute("UPDATE scripts SET label_color=? WHERE id=?",
+                         (color or None, script_id))
+            conn.commit()
+
+    def set_pipeline_color(self, pipeline_id: int, color: str | None) -> None:
+        """Set (or clear, with None) a pipeline's card-label highlight key."""
+        with self._connect() as conn:
+            conn.execute("UPDATE pipelines SET label_color=? WHERE id=?",
+                         (color or None, pipeline_id))
+            conn.commit()
+
     def list_all(self):
         with self._connect() as conn:
             cur = conn.execute(
                 "SELECT id, name, path, params, interpreter, created_at, last_run_at, last_run_status, group_name, "
-                "COALESCE(temp_param, 0), COALESCE(is_favorite, 0) "
+                "COALESCE(temp_param, 0), COALESCE(is_favorite, 0), label_color "
                 "FROM scripts "
                 "ORDER BY CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
                 "group_name ASC, order_index ASC, id ASC"
@@ -672,7 +700,8 @@ class ScriptDB:
     def list_pipelines(self, group_name: str) -> list:
         with self._connect() as conn:
             return conn.execute(
-                "SELECT id, name, COALESCE(is_favorite, 0) FROM pipelines WHERE group_name=? ORDER BY sort_order ASC, id ASC",
+                "SELECT id, name, COALESCE(is_favorite, 0), label_color FROM pipelines "
+                "WHERE group_name=? ORDER BY sort_order ASC, id ASC",
                 (group_name,),
             ).fetchall()
 

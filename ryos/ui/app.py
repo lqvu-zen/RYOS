@@ -1048,7 +1048,8 @@ class RYOSApp(_BaseWindow):
         fav_content = self._make_section_header(parent, gname, "favorites", "★  Favorites")
         self._fav_contents.append(fav_content)
         fav_scripts = [r for r in scripts if r[10]]
-        fav_pipelines = [(p_id, p_name) for p_id, p_name, p_fav in self.db.list_pipelines(gname) if p_fav]
+        fav_pipelines = [(p_id, p_name, p_color)
+                         for p_id, p_name, p_fav, p_color in self.db.list_pipelines(gname) if p_fav]
         if not fav_scripts and not fav_pipelines:
             tk.Label(fav_content, text="No favorites yet — click ☆ on a script or pipeline.",
                      bg=C["bg"], fg=C["path_fg"],
@@ -1056,7 +1057,7 @@ class RYOSApp(_BaseWindow):
             return
         from ryos.ui import cards as _cards_mod
         _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
-        for p_id, p_name in fav_pipelines:
+        for p_id, p_name, p_color in fav_pipelines:
             def make_fav_toggle_pipeline(pid):
                 def _toggle(pid2, fav):
                     self.db.set_favorite_pipeline(pid2, fav)
@@ -1070,6 +1071,7 @@ class RYOSApp(_BaseWindow):
                 on_refresh=self._refresh_cards,
                 is_favorite=True,
                 on_toggle_favorite=make_fav_toggle_pipeline(p_id),
+                label_color=p_color,
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_pipeline_drag(pc)
@@ -1109,7 +1111,7 @@ class RYOSApp(_BaseWindow):
             return
         from ryos.ui import cards as _cards_mod
         _pad_y, _ipad_y = _cards_mod.row_metrics()[:2]
-        for p_id, p_name, p_fav in pipelines:
+        for p_id, p_name, p_fav, p_color in pipelines:
             def make_toggle_fav_pipeline(pid):
                 def _toggle(pid2, fav):
                     self.db.set_favorite_pipeline(pid2, fav)
@@ -1123,6 +1125,7 @@ class RYOSApp(_BaseWindow):
                 on_refresh=self._refresh_cards,
                 is_favorite=bool(p_fav),
                 on_toggle_favorite=make_toggle_fav_pipeline(p_id),
+                label_color=p_color,
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_pipeline_drag(pc)
@@ -1785,7 +1788,7 @@ class RYOSApp(_BaseWindow):
         # Resolve group for this pipeline
         group = self._active_group or ""
         for gname in self._running_slots:
-            if any(p_id == pipeline_id for p_id, _, _fav in self.db.list_pipelines(gname)):
+            if any(p_id == pipeline_id for p_id, *_ in self.db.list_pipelines(gname)):
                 group = gname
                 break
         job = self._jobctl.new_job(
