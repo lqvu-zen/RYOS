@@ -249,7 +249,9 @@ class ScriptDB:
         with self._connect() as conn:
             if group_name is not None:
                 scripts = conn.execute(
-                    "SELECT id, name, path, params, interpreter, order_index, group_name "
+                    "SELECT id, name, path, params, interpreter, order_index, group_name, "
+                    "COALESCE(temp_param, 0), COALESCE(detached, 0), "
+                    "COALESCE(is_favorite, 0), label_color "
                     "FROM scripts WHERE COALESCE(group_name,'')=? "
                     "ORDER BY order_index ASC, id ASC",
                     (group_name,),
@@ -265,7 +267,9 @@ class ScriptDB:
                 ).fetchall()
             else:
                 scripts = conn.execute(
-                    "SELECT id, name, path, params, interpreter, order_index, group_name "
+                    "SELECT id, name, path, params, interpreter, order_index, group_name, "
+                    "COALESCE(temp_param, 0), COALESCE(detached, 0), "
+                    "COALESCE(is_favorite, 0), label_color "
                     "FROM scripts ORDER BY "
                     "CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
                     "group_name ASC, order_index ASC, id ASC"
@@ -290,13 +294,16 @@ class ScriptDB:
                     "name": s[1], "path": s[2], "params": s[3],
                     "interpreter": s[4], "order_index": s[5],
                     "group_name": s[6] or "",
+                    "temp_param": s[7], "detached": s[8],
+                    "is_favorite": s[9], "label_color": s[10],
                     "presets": [{"label": lbl, "params": prm} for lbl, prm in presets],
                 })
 
             pipeline_data = []
             for p_id, p_name, p_group, p_order in pipelines:
                 steps = conn.execute(
-                    "SELECT s.path FROM pipeline_steps ps "
+                    "SELECT s.path, ps.params_override, ps.trigger_mode "
+                    "FROM pipeline_steps ps "
                     "JOIN scripts s ON s.id=ps.script_id "
                     "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
                     (p_id,),
@@ -305,11 +312,18 @@ class ScriptDB:
                     "name": p_name,
                     "group_name": p_group,
                     "sort_order": p_order,
-                    "steps": [{"script_path": row[0]} for row in steps],
+                    "steps": [{"script_path": path,
+                               "params_override": override,
+                               "trigger_mode": mode}
+                              for path, override, mode in steps],
                 })
 
         data = {
-            "version": 3,
+            # v4 added the per-script flags (temp_param / detached /
+            # is_favorite / label_color) and the per-step params_override and
+            # trigger_mode. Every one of them is defaulted on read, so a v3
+            # file still imports exactly as it did before.
+            "version": 4,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
             "groups": [{"name": g[0], "sort_order": g[1], "base_dir": g[2]} for g in groups],
             "scripts": script_data,
@@ -383,11 +397,20 @@ class ScriptDB:
                 _ensure_group(s.get("group_name", ""))
                 cur = conn.execute(
                     "INSERT INTO scripts "
-                    "(name, path, params, interpreter, created_at, order_index, group_name) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "(name, path, params, interpreter, created_at, order_index, "
+                    " group_name, temp_param, detached, is_favorite, label_color) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (s["name"], spath, s.get("params", ""),
                      s.get("interpreter", ""), now,
-                     s.get("order_index", 0), s.get("group_name", "")),
+                     s.get("order_index", 0), s.get("group_name", ""),
+                     int(s.get("temp_param", 0) or 0),
+                     int(s.get("detached", 0) or 0),
+                     int(s.get("is_favorite", 0) or 0),
+                     # An unrecognised highlight key is left as-is rather than
+                     # validated here: db.py must not import from ryos.ui, and
+                     # the card layer already falls back to the normal label
+                     # colour for any key it doesn't know.
+                     s.get("label_color") or None),
                 )
                 new_sid = cur.lastrowid
                 path_to_id[spath] = new_sid
@@ -421,11 +444,21 @@ class ScriptDB:
                 for i, step in enumerate(p.get("steps", [])):
                     sid = path_to_id.get(step.get("script_path"))
                     if sid:
+                        # Anything but the one known alternative becomes 'after'.
+                        # trigger_mode is NOT NULL, and a stray value would make
+                        # the step neither sequential nor concurrent at runtime.
+                        mode = (TRIGGER_WITH if step.get("trigger_mode") == TRIGGER_WITH
+                                else TRIGGER_AFTER)
                         conn.execute(
-                            "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order) "
-                            "VALUES (?, ?, ?)",
-                            (p_id, sid, i * 10),
+                            "INSERT INTO pipeline_steps "
+                            "(pipeline_id, script_id, step_order, params_override, trigger_mode) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (p_id, sid, i * 10,
+                             step.get("params_override"), mode),
                         )
+                # A hand-edited or reordered file could leave a leading 'with',
+                # which has no previous step to run alongside.
+                self._normalize_first_step(conn, p_id)
 
             conn.commit()
         return added, skipped

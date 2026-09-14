@@ -258,7 +258,7 @@ class TestScriptDBExportImport(unittest.TestCase):
             path = f.name
         self.db.export_to_file(path)
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 3)
+        self.assertEqual(data["version"], 4)
         self.assertIn("exported_at", data)
         self.assertEqual(len(data["scripts"]), 2)
         names = [s["name"] for s in data["scripts"]]
@@ -3210,3 +3210,214 @@ class TestPlacementCallSites(unittest.TestCase):
             src = (self.ROOT / rel).read_text(encoding="utf-8")
             with self.subTest(file=rel):
                 self.assertIn("winfo_screen", src)
+
+
+# ---------------------------------------------------------------------------
+# Export / import fidelity (payload v4)
+# ---------------------------------------------------------------------------
+
+class TestExportImportFidelity(unittest.TestCase):
+    """Everything a script or step carries must survive a round trip.
+
+    Before v4 the exporter wrote a pipeline step as {"script_path": ...} and
+    nothing else, so params_override and trigger_mode were silently dropped --
+    a pipeline with concurrent steps came back fully sequential. The per-script
+    flags went the same way. These lock the whole payload down.
+    """
+
+    def _tmp_json(self) -> str:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            return f.name
+
+    def _populated_db(self):
+        """A group exercising every field the payload is supposed to carry."""
+        db = _make_db()
+        a = db.add("Alpha", "/alpha.py", "--a", "python", "G", temp_param=1)
+        b = db.add("Beta", "/beta.js", "--b", "node", "G", detached=1)
+        c = db.add("Gamma", "/gamma.ps1", "", "", "G")
+        db.set_favorite_script(a, True)
+        db.set_script_color(a, "teal")
+        db.set_script_color(b, "purple")
+        db.replace_param_presets(a, [("fast", "--fast"), ("slow", "--slow")])
+        pid = db.create_pipeline("Deploy", "G")
+        db.set_favorite_pipeline(pid, True)
+        for sid in (a, b, c):
+            db.add_pipeline_step(pid, sid)
+        steps = db.list_pipeline_steps(pid)
+        db.update_pipeline_step_params(steps[1][0], "--override")
+        db.set_step_trigger_mode(steps[1][0], TRIGGER_WITH)
+        return db, pid
+
+    def _round_trip(self):
+        src, pid = self._populated_db()
+        path = self._tmp_json()
+        src.export_to_file(path)
+        dst = _make_db()
+        dst.import_from_file(path)
+        return src, dst, path
+
+    # ---- scripts ----------------------------------------------------------
+
+    def test_script_flags_survive(self):
+        _src, dst, _ = self._round_trip()
+        by_name = {r[1]: r for r in dst.list_all()}
+        self.assertEqual(by_name["Alpha"][9], 1, "temp_param lost")
+        self.assertEqual(by_name["Alpha"][10], 1, "is_favorite lost")
+        self.assertEqual(by_name["Alpha"][11], "teal", "label_color lost")
+        self.assertEqual(by_name["Beta"][11], "purple")
+
+    def test_detached_survives(self):
+        _src, dst, _ = self._round_trip()
+        beta = next(r for r in dst.list_all() if r[1] == "Beta")
+        self.assertTrue(dst.is_detached(beta[0]), "detached lost")
+
+    def test_unset_colour_stays_none(self):
+        _src, dst, _ = self._round_trip()
+        gamma = next(r for r in dst.list_all() if r[1] == "Gamma")
+        self.assertIsNone(gamma[11])
+
+    def test_presets_still_survive(self):
+        _src, dst, _ = self._round_trip()
+        alpha = next(r for r in dst.list_all() if r[1] == "Alpha")
+        self.assertEqual([p[2] for p in dst.list_param_presets(alpha[0])],
+                         ["--fast", "--slow"])
+
+    # ---- pipeline steps ---------------------------------------------------
+
+    def test_step_trigger_mode_survives(self):
+        # The headline regression: a concurrent step came back sequential.
+        _src, dst, _ = self._round_trip()
+        pid = dst.list_pipelines("G")[0][0]
+        modes = [st[7] for st in dst.list_pipeline_steps(pid)]
+        self.assertEqual(modes, [TRIGGER_AFTER, TRIGGER_WITH, TRIGGER_AFTER])
+
+    def test_step_params_override_survives(self):
+        _src, dst, _ = self._round_trip()
+        pid = dst.list_pipelines("G")[0][0]
+        overrides = [st[6] for st in dst.list_pipeline_steps(pid)]
+        self.assertEqual(overrides, [None, "--override", None])
+
+    def test_step_order_survives(self):
+        _src, dst, _ = self._round_trip()
+        pid = dst.list_pipelines("G")[0][0]
+        self.assertEqual([st[2] for st in dst.list_pipeline_steps(pid)],
+                         ["Alpha", "Beta", "Gamma"])
+
+    def test_pipeline_name_and_group_survive(self):
+        _src, dst, _ = self._round_trip()
+        pipes = dst.list_pipelines("G")
+        self.assertEqual(len(pipes), 1)
+        self.assertEqual(pipes[0][1], "Deploy")
+
+    # ---- payload shape ----------------------------------------------------
+
+    def test_payload_declares_v4(self):
+        src, _pid = self._populated_db()
+        path = self._tmp_json()
+        src.export_to_file(path)
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.assertEqual(data["version"], 4)
+
+    def test_payload_carries_the_new_step_fields(self):
+        src, _pid = self._populated_db()
+        path = self._tmp_json()
+        src.export_to_file(path)
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        step = data["pipelines"][0]["steps"][1]
+        self.assertEqual(step["params_override"], "--override")
+        self.assertEqual(step["trigger_mode"], TRIGGER_WITH)
+
+    # ---- backward compatibility ------------------------------------------
+
+    def _write(self, payload) -> str:
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w",
+                                         delete=False, encoding="utf-8") as f:
+            json.dump(payload, f)
+            return f.name
+
+    def _v3_payload(self):
+        """A file exactly as the previous exporter wrote it."""
+        return {
+            "version": 3,
+            "groups": [{"name": "G", "sort_order": 0, "base_dir": ""}],
+            "scripts": [
+                {"name": "Alpha", "path": "/alpha.py", "params": "",
+                 "interpreter": "", "order_index": 0, "group_name": "G",
+                 "presets": []},
+                {"name": "Beta", "path": "/beta.py", "params": "",
+                 "interpreter": "", "order_index": 1, "group_name": "G",
+                 "presets": []},
+            ],
+            "pipelines": [{
+                "name": "P", "group_name": "G", "sort_order": 0,
+                "steps": [{"script_path": "/alpha.py"},
+                          {"script_path": "/beta.py"}],
+            }],
+        }
+
+    def test_v3_file_still_imports(self):
+        db = _make_db()
+        added, _skipped = db.import_from_file(self._write(self._v3_payload()))
+        self.assertEqual(added, 2)
+        pid = db.list_pipelines("G")[0][0]
+        self.assertEqual(len(db.list_pipeline_steps(pid)), 2)
+
+    def test_v3_file_gets_the_new_defaults(self):
+        db = _make_db()
+        db.import_from_file(self._write(self._v3_payload()))
+        alpha = next(r for r in db.list_all() if r[1] == "Alpha")
+        self.assertEqual(alpha[9], 0)       # temp_param
+        self.assertEqual(alpha[10], 0)      # is_favorite
+        self.assertIsNone(alpha[11])        # label_color
+        pid = db.list_pipelines("G")[0][0]
+        self.assertEqual([st[7] for st in db.list_pipeline_steps(pid)],
+                         [TRIGGER_AFTER, TRIGGER_AFTER])
+
+    # ---- hostile input ----------------------------------------------------
+
+    def test_unknown_trigger_mode_falls_back(self):
+        # trigger_mode is NOT NULL; a stray value would leave the step neither
+        # sequential nor concurrent at runtime.
+        payload = self._v3_payload()
+        payload["version"] = 4
+        payload["pipelines"][0]["steps"][1]["trigger_mode"] = "whenever"
+        db = _make_db()
+        db.import_from_file(self._write(payload))
+        pid = db.list_pipelines("G")[0][0]
+        self.assertEqual(db.list_pipeline_steps(pid)[1][7], TRIGGER_AFTER)
+
+    def test_leading_with_is_normalised(self):
+        # A first step has no previous step to run alongside.
+        payload = self._v3_payload()
+        payload["version"] = 4
+        payload["pipelines"][0]["steps"][0]["trigger_mode"] = TRIGGER_WITH
+        db = _make_db()
+        db.import_from_file(self._write(payload))
+        pid = db.list_pipelines("G")[0][0]
+        self.assertEqual(db.list_pipeline_steps(pid)[0][7], TRIGGER_AFTER)
+
+    def test_empty_colour_string_becomes_null(self):
+        payload = self._v3_payload()
+        payload["scripts"][0]["label_color"] = ""
+        db = _make_db()
+        db.import_from_file(self._write(payload))
+        alpha = next(r for r in db.list_all() if r[1] == "Alpha")
+        self.assertIsNone(alpha[11])
+
+    def test_unknown_colour_key_is_kept_not_rejected(self):
+        # db.py can't import the UI palette to validate; the card layer already
+        # falls back for any key it doesn't recognise.
+        payload = self._v3_payload()
+        payload["scripts"][0]["label_color"] = "chartreuse"
+        db = _make_db()
+        db.import_from_file(self._write(payload))
+        alpha = next(r for r in db.list_all() if r[1] == "Alpha")
+        self.assertEqual(alpha[11], "chartreuse")
+
+    def test_step_with_missing_script_is_skipped_not_fatal(self):
+        payload = self._v3_payload()
+        payload["pipelines"][0]["steps"].append({"script_path": "/nope.py"})
+        db = _make_db()
+        db.import_from_file(self._write(payload))
+        pid = db.list_pipelines("G")[0][0]
+        self.assertEqual(len(db.list_pipeline_steps(pid)), 2)
