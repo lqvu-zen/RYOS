@@ -4,10 +4,10 @@ The palette data and the seed -> palette derivation live in the pure, tkinter-fr
 ``ryos.themes`` module; this module keeps the live ``C`` palette, applies themes,
 and owns the tkinter-facing helpers (ttk styles, flat buttons, window snapping).
 """
-import sys
 import tkinter as tk
 from tkinter import ttk
 
+from ..screens import work_area_at_point
 from ..themes import (
     BUILTIN_THEMES, SEEDS, THEME_LABELS, THEME_MODES, THEME_ORDER,
     _rel_luminance, _shade, build_palette, contrast_ratio,
@@ -240,20 +240,15 @@ def _apply_snap_corner(window, corner: str, margin: int = 10, work_area=None) ->
     window.update_idletasks()
     w = window.winfo_width()
     h = window.winfo_height()
-    # Prefer an explicit target monitor work area (multi-monitor); otherwise use
-    # the primary monitor's work area on Windows, full screen elsewhere.
+    # Prefer an explicit target monitor work area (multi-monitor); otherwise
+    # snap within the monitor the window is currently on. The old fallback here
+    # was SPI_GETWORKAREA, which reports the PRIMARY monitor's work area and so
+    # yanked a window on any other display back to the first one.
+    if work_area is None:
+        work_area = work_area_at_point(window.winfo_rootx() + w // 2,
+                                       window.winfo_rooty() + h // 2)
     if work_area is not None:
         ax, ay, aw, ah = work_area
-    elif sys.platform == "win32":
-        try:
-            import ctypes.wintypes
-            wa = ctypes.wintypes.RECT()
-            ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(wa), 0)
-            ax, ay = wa.left, wa.top
-            aw, ah = wa.right - wa.left, wa.bottom - wa.top
-        except Exception:
-            ax, ay = 0, 0
-            aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
     else:
         ax, ay = 0, 0
         aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()

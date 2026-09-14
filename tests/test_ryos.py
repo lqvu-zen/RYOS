@@ -3046,3 +3046,167 @@ class TestTrayMenuLabels(unittest.TestCase):
     def test_long_job_labels_are_clamped(self):
         self.assertLessEqual(len(_ellipsize("Z" * 300, MENU_LABEL_MAX)),
                              MENU_LABEL_MAX)
+
+
+# ---------------------------------------------------------------------------
+# Multi-monitor popup / dialog placement
+# ---------------------------------------------------------------------------
+from ryos.screens import (  # noqa: E402
+    anchored_position, center_on_rect, clamp_to_work_area,
+)
+
+
+class _MultiMonitor(unittest.TestCase):
+    """Work areas for the layouts that actually break naive placement.
+
+    BELOW reproduces the reported setup: a second monitor stacked underneath
+    the primary, so every y beyond 1040 lies outside what Tk's
+    winfo_screenheight() reports.
+    """
+
+    PRIMARY = (0, 0, 1920, 1040)
+    RIGHT   = (1920, 0, 1920, 1040)
+    LEFT    = (-1920, 0, 1920, 1040)     # negative origin: left of primary
+    BELOW   = (0, 1080, 1536, 824)       # smaller monitor underneath
+
+
+class TestClampToWorkArea(_MultiMonitor):
+
+    def test_inside_is_untouched(self):
+        self.assertEqual(clamp_to_work_area(100, 200, 400, 300, self.PRIMARY),
+                         (100, 200))
+
+    def test_overflow_right_is_pulled_back(self):
+        x, _ = clamp_to_work_area(1800, 0, 400, 300, self.PRIMARY)
+        self.assertEqual(x, 1920 - 400)
+
+    def test_clamps_into_the_given_monitor_not_the_primary(self):
+        # The whole bug in one assertion: a point on the lower monitor must
+        # stay there rather than being dragged up onto the primary.
+        _, y = clamp_to_work_area(0, 1900, 400, 300, self.BELOW)
+        self.assertGreaterEqual(y, 1080)
+        self.assertLessEqual(y + 300, 1080 + 824)
+
+    def test_negative_coordinates_are_left_alone(self):
+        # A max(0, ...) style clamp would drag this onto the primary monitor.
+        x, _ = clamp_to_work_area(-1900, 100, 400, 300, self.LEFT)
+        self.assertEqual(x, -1900)
+
+    def test_overflow_past_a_negative_origin_clamps_to_that_origin(self):
+        x, _ = clamp_to_work_area(-2000, 100, 400, 300, self.LEFT)
+        self.assertEqual(x, -1920)
+
+    def test_oversized_pins_to_origin(self):
+        # Too big to fit: keep the top-left reachable rather than pushing the
+        # title bar off the opposite edge.
+        self.assertEqual(clamp_to_work_area(500, 500, 4000, 4000, self.BELOW),
+                         (0, 1080))
+
+
+class TestCenterOnRect(_MultiMonitor):
+
+    def test_centers_on_the_parent(self):
+        parent = (100, 100, 800, 600)
+        self.assertEqual(center_on_rect(parent, 400, 300, self.PRIMARY),
+                         (100 + 200, 100 + 150))
+
+    def test_dialog_follows_its_parent_to_the_second_monitor(self):
+        # The reported bug: opening a dialog from a window on the lower
+        # monitor put the dialog on the primary one.
+        parent = (200, 1200, 900, 700)
+        _x, y = center_on_rect(parent, 440, 520, self.BELOW)
+        self.assertGreaterEqual(y, 1080)
+
+    def test_parent_near_an_edge_does_not_push_the_dialog_off(self):
+        parent = (1800, 900, 400, 300)          # hanging off the bottom-right
+        x, y = center_on_rect(parent, 600, 500, self.PRIMARY)
+        self.assertLessEqual(x + 600, 1920)
+        self.assertLessEqual(y + 500, 1040)
+
+    def test_result_is_always_inside_the_work_area(self):
+        for area in (self.PRIMARY, self.RIGHT, self.LEFT, self.BELOW):
+            left, top, aw, ah = area
+            for px in range(left, left + aw, 311):
+                for py in range(top, top + ah, 211):
+                    with self.subTest(area=area, px=px, py=py):
+                        x, y = center_on_rect((px, py, 500, 400), 440, 520, area)
+                        self.assertGreaterEqual(x, left)
+                        self.assertGreaterEqual(y, top)
+                        self.assertLessEqual(x + 440, left + aw)
+                        self.assertLessEqual(y + 520, top + ah)
+
+
+class TestAnchoredPosition(_MultiMonitor):
+
+    def test_default_is_below_right_of_the_anchor(self):
+        self.assertEqual(anchored_position(100, 100, 200, 150, self.PRIMARY, 12, 12),
+                         (112, 112))
+
+    def test_flips_instead_of_clamping_at_the_right_edge(self):
+        # Clamping here would slide the popup back under the pointer, which
+        # re-triggers <Leave> on the card and flickers it open/closed.
+        x, _ = anchored_position(1900, 100, 200, 150, self.PRIMARY, 12, 12)
+        self.assertLess(x + 200, 1900)
+
+    def test_flips_at_the_bottom_edge(self):
+        _, y = anchored_position(100, 1030, 200, 150, self.PRIMARY, 12, 12)
+        self.assertLess(y + 150, 1030)
+
+    def test_popup_on_the_lower_monitor_stays_there(self):
+        # A naive min(y, screenheight - h) would land this on the primary.
+        _, y = anchored_position(400, 1500, 200, 150, self.BELOW, 12, 12)
+        self.assertGreaterEqual(y, 1080)
+
+    def test_popup_on_a_negative_origin_monitor_stays_there(self):
+        x, _ = anchored_position(-1000, 100, 200, 150, self.LEFT, 12, 12)
+        self.assertLess(x + 200, 0)
+
+    def test_never_leaves_the_work_area(self):
+        for area in (self.PRIMARY, self.RIGHT, self.LEFT, self.BELOW):
+            left, top, aw, ah = area
+            for ax in range(left, left + aw, 197):
+                for ay in range(top, top + ah, 143):
+                    with self.subTest(area=area, ax=ax, ay=ay):
+                        x, y = anchored_position(ax, ay, 260, 180, area, 16, 20)
+                        self.assertGreaterEqual(x, left)
+                        self.assertGreaterEqual(y, top)
+                        self.assertLessEqual(x + 260, left + aw)
+                        self.assertLessEqual(y + 180, top + ah)
+
+    def test_oversized_popup_still_lands_on_the_right_monitor(self):
+        x, y = anchored_position(400, 1500, 4000, 4000, self.BELOW, 12, 12)
+        self.assertEqual((x, y), (0, 1080))
+
+
+class TestPlacementCallSites(unittest.TestCase):
+    """No placement path may go back to Tk's primary-monitor screen metrics.
+
+    winfo_screenwidth()/winfo_screenheight() are what caused dialogs to open on
+    the wrong display, so their few remaining uses are pinned here: an
+    unreviewed new one should fail this test rather than ship the bug again.
+    """
+
+    ROOT = Path(__file__).resolve().parents[1] / "ryos"
+    # file -> why this use is legitimate
+    ALLOWED = {
+        "ui/app.py": "provisional pre-settings size, refined by _apply_initial_placement",
+        "ui/placement.py": "the documented non-Windows fallback",
+        "ui/theme.py": "the documented non-Windows fallback in _apply_snap_corner",
+    }
+
+    def test_no_unreviewed_screen_metric_uses(self):
+        offenders = {}
+        for path in sorted(self.ROOT.rglob("*.py")):
+            rel = path.relative_to(self.ROOT).as_posix()
+            src = path.read_text(encoding="utf-8")
+            if "winfo_screenwidth" in src or "winfo_screenheight" in src:
+                if rel not in self.ALLOWED:
+                    offenders[rel] = src.count("winfo_screen")
+        self.assertEqual(offenders, {},
+                         "use ryos.ui.placement instead of Tk screen metrics")
+
+    def test_allowlist_has_no_stale_entries(self):
+        for rel in self.ALLOWED:
+            src = (self.ROOT / rel).read_text(encoding="utf-8")
+            with self.subTest(file=rel):
+                self.assertIn("winfo_screen", src)

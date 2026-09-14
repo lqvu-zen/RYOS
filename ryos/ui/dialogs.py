@@ -22,6 +22,7 @@ from .theme import (
     C, THEMES, _apply_snap_corner, _flat_button,
     available_themes, custom_themes, set_custom_themes,
 )
+from .placement import center_over_parent, offset_from_parent
 from .theme_editor import ThemeEditorDialog
 
 
@@ -73,10 +74,7 @@ class _PresetEntryDialog(tk.Toplevel):
         self.bind("<Return>", lambda _: self._ok())
         self.bind("<Escape>", lambda _: self.destroy())
         self.transient(parent)
-        self.update_idletasks()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
         self._e_params.focus_set()
 
     def _ok(self):
@@ -126,10 +124,7 @@ class _TempParamDialog(tk.Toplevel):
         self.bind("<Return>", lambda _: self._ok())
         self.bind("<Escape>", lambda _: self.destroy())
         self.transient(parent)
-        self.update_idletasks()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
         self._e_params.focus_set()
 
     def _ok(self):
@@ -183,12 +178,7 @@ class ScriptDialog(tk.Toplevel):
             self._refresh_path_inputs()
 
         self.transient(parent)
-        self.update_idletasks()
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-        w = self.winfo_reqwidth()
-        h = self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
         self.wait_visibility()
         self.focus_set()
 
@@ -550,10 +540,7 @@ class NewGroupDialog(tk.Toplevel):
         self.bind("<Return>", lambda _: self._ok())
         self.bind("<Escape>", lambda _: self.destroy())
         self.transient(parent)
-        self.update_idletasks()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
         self._e_name.focus_set()
 
     def _browse(self):
@@ -624,10 +611,7 @@ class CloseToTrayPromptDialog(tk.Toplevel):
         self.bind("<Escape>", lambda _e: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.transient(parent)
-        self.update_idletasks()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
         tray_btn.focus_set()
 
     def _choose(self, outcome: str):
@@ -679,10 +663,7 @@ class GroupBaseDirDialog(tk.Toplevel):
         self.bind("<Return>", lambda _: self._ok())
         self.bind("<Escape>", lambda _: self.destroy())
         self.transient(parent)
-        self.update_idletasks()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
         self._e_dir.focus_set()
 
     def _browse(self):
@@ -751,10 +732,7 @@ class ParamPickerDialog(tk.Toplevel):
         self.bind("<Return>", lambda _: self._run())
         self.bind("<Escape>", lambda _: self.destroy())
         self.transient(parent)
-        self.update_idletasks()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-        self.geometry(f"+{(sw - w) // 2}+{(sh - h) // 2}")
+        center_over_parent(self, parent)
 
     def _run(self):
         self.result = self._params_map[self._choice.get()]
@@ -831,9 +809,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._log_runs_output = tk.BooleanVar(value=self._settings.get("log_runs_output", False))
 
         self._build()
-        self.update_idletasks()
-        pw, ph = parent.winfo_rootx(), parent.winfo_rooty()
-        self.geometry(f"+{pw + 60}+{ph + 60}")
+        offset_from_parent(self, parent, 60, 60)
 
         # Live-preview appearance changes (skipped while jobs run — see __init__).
         # A theme switch changes the palette, so the dialog re-themes itself too;

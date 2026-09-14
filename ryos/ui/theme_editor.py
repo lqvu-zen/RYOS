@@ -15,6 +15,7 @@ from ..themes import (
     ADVANCED_KEYS, SEED_KEYS, build_palette, contrast_warnings, is_hex_color,
     validate_seed,
 )
+from .placement import offset_from_parent
 from .theme import C, _flat_button
 
 # Human labels for each required seed colour, in display order.
@@ -58,9 +59,7 @@ class ThemeEditorDialog(tk.Toplevel):
         self._warn_var = tk.StringVar(value="")
 
         self._build()
-        self.update_idletasks()
-        px, py = parent.winfo_rootx(), parent.winfo_rooty()
-        self.geometry(f"+{px + 40}+{py + 30}")
+        offset_from_parent(self, parent, 40, 30)
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self.bind("<Escape>", lambda _e: self.destroy())
 

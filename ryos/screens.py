@@ -34,6 +34,45 @@ def relocate_geometry(geometry: str, src_work, dst_work) -> str:
     return f"{w}x{h}+{nx}+{ny}"
 
 
+def clamp_to_work_area(x: int, y: int, w: int, h: int, work_area) -> tuple[int, int]:
+    """Nudge a w x h rect so it sits fully inside `work_area`.
+
+    A rect too large to fit is pinned to the area origin, so its top-left stays
+    reachable rather than being pushed off the opposite edge.
+    """
+    left, top, aw, ah = work_area
+    nx = max(left, min(x, left + aw - w)) if w <= aw else left
+    ny = max(top, min(y, top + ah - h)) if h <= ah else top
+    return nx, ny
+
+
+def center_on_rect(parent_rect, w: int, h: int, work_area) -> tuple[int, int]:
+    """Top-left for a w x h window centred on `parent_rect` (x, y, width, height).
+
+    Centring on the parent rather than on a screen is what keeps a dialog on
+    the same monitor as the window that opened it; the clamp then stops it
+    hanging off an edge when the parent sits near one.
+    """
+    px, py, pw, ph = parent_rect
+    return clamp_to_work_area(px + (pw - w) // 2, py + (ph - h) // 2, w, h, work_area)
+
+
+def anchored_position(ax: int, ay: int, w: int, h: int, work_area,
+                      dx: int = 12, dy: int = 12) -> tuple[int, int]:
+    """Top-left for a w x h popup placed near anchor point (ax, ay).
+
+    Overflow flips the popup to the opposite side of the anchor instead of
+    clamping it: clamping would slide the popup back underneath the pointer,
+    which for a hover-triggered popup means <Leave> fires on the card and the
+    popup flickers open/closed. Anything still outside after the flip is
+    clamped, so the popup can never leave the monitor.
+    """
+    left, top, aw, ah = work_area
+    x = ax + dx if ax + dx + w <= left + aw else ax - dx - w
+    y = ay + dy if ay + dy + h <= top + ah else ay - dy - h
+    return clamp_to_work_area(x, y, w, h, work_area)
+
+
 def _work_area_from_monitor(hmon):
     import ctypes
     from ctypes import wintypes

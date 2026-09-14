@@ -4,6 +4,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 
 from ..db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB
+from .placement import center_over_parent
 from .theme import C
 
 
@@ -21,11 +22,9 @@ class PipelineEditorDialog(tk.Toplevel):
         self.resizable(True, True)
         self.configure(bg=C["card_bg"])
         self.grab_set()
-        self.geometry("440x520")
-        self.update_idletasks()
-        x = parent.winfo_rootx() + (parent.winfo_width() - 440) // 2
-        y = parent.winfo_rooty() + (parent.winfo_height() - 520) // 2
-        self.geometry(f"440x520+{x}+{y}")
+        # Centred on the parent (so it opens on the same monitor) and clamped
+        # to that monitor's work area, which the raw offset above did not do.
+        center_over_parent(self, parent, 440, 520)
 
         nf = tk.Frame(self, bg=C["card_bg"], padx=16, pady=12)
         nf.pack(fill="x")

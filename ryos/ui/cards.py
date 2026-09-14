@@ -6,6 +6,7 @@ from tkinter import messagebox, ttk
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
+from .placement import place_near
 from .theme import C, HIGHLIGHT_LABELS, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
 
@@ -573,12 +574,11 @@ class PipelineCard(tk.Frame):
 
         self._render_steps_into(inner)
 
-        popup.update_idletasks()
-        pw, ph = popup.winfo_reqwidth(), popup.winfo_reqheight()
-        sw, sh = popup.winfo_screenwidth(), popup.winfo_screenheight()
-        x = min((event.x_root + 12) if event else self.winfo_rootx(), sw - pw - 8)
-        y = min((event.y_root + 12) if event else self.winfo_rooty(), sh - ph - 8)
-        popup.geometry(f"+{x}+{y}")
+        # Anchored to the click (or the card, when opened without one) and
+        # bounded by that point's monitor, not the primary one.
+        ax = event.x_root if event else self.winfo_rootx()
+        ay = event.y_root if event else self.winfo_rooty()
+        place_near(popup, ax, ay, 12, 12)
 
         popup.bind("<Escape>", lambda e: popup.destroy())
         popup.bind("<FocusOut>", lambda e: popup.destroy())

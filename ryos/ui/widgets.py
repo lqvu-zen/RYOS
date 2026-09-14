@@ -2,6 +2,7 @@
 import tkinter as tk
 import tkinter.font as tkfont
 
+from .placement import place_near
 from .theme import C
 
 
@@ -46,7 +47,6 @@ class Tooltip:
             x, y = self._widget.winfo_pointerxy()
             self._tip = tk.Toplevel(self._widget)
             self._tip.wm_overrideredirect(True)
-            self._tip.wm_geometry(f"+{x + 12}+{y + 18}")
             lbl = tk.Label(
                 self._tip, text=self._text,
                 bg=C["tooltip_bg"], fg=C["fg_on_dark"],
@@ -56,6 +56,9 @@ class Tooltip:
                 highlightbackground=C["tooltip_border"], highlightthickness=1,
             )
             lbl.pack()
+            # After packing, so the label's requested size is known and the
+            # tooltip can be kept on the pointer's own monitor.
+            place_near(self._tip, x, y, 12, 18)
         except tk.TclError:
             self._tip = None
 
@@ -176,16 +179,11 @@ class HoverPreview:
             inner.pack(padx=1, pady=1)
             self._builder(inner)
 
-            popup.update_idletasks()
-            pw, ph = popup.winfo_reqwidth(), popup.winfo_reqheight()
-            sw, sh = popup.winfo_screenwidth(), popup.winfo_screenheight()
-            # Flip to the other side of the pointer near a screen edge rather
-            # than clamping in place — clamping can leave the popup sitting
-            # under the pointer, which triggers <Leave> on the card and a
-            # show/hide flicker loop.
-            px = x + 16 if x + 16 + pw <= sw else x - pw - 16
-            py = y + 20 if y + 20 + ph <= sh else y - ph - 20
-            popup.geometry(f"+{max(0, px)}+{max(0, py)}")
+            # Flips to the other side of the pointer near an edge rather than
+            # clamping in place — clamping can leave the popup sitting under
+            # the pointer, which triggers <Leave> on the card and a show/hide
+            # flicker loop. Bounds come from the pointer's own monitor.
+            place_near(popup, x, y, 16, 20)
             self._popup = popup
         except tk.TclError:
             self._popup = None
