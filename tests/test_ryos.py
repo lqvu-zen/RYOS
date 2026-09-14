@@ -2923,7 +2923,35 @@ class TestHighlightPalette(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Tray status (live tooltip + running-job menu)
 # ---------------------------------------------------------------------------
+import ryos.tray as tray_mod  # noqa: E402
 from ryos.tray import MENU_LABEL_MAX, TIP_MAX, TrayIcon, _ellipsize, tray_title  # noqa: E402
+
+
+class _StubPystray:
+    """Minimal stand-in for the pystray module.
+
+    CI installs no project dependencies, so pystray is genuinely absent there.
+    Without this stub _build_menu() raises, TrayIcon's best-effort guard
+    swallows it, and every menu assertion below quietly passes on a developer
+    machine while failing on a clean runner. Stubbing makes the menu path
+    exercise the same code everywhere; TestTrayWithoutPystray covers the
+    absent-package behaviour explicitly.
+    """
+
+    class Menu:
+        SEPARATOR = "---"
+
+        def __init__(self, *items):
+            self.items = list(items)
+
+        def __iter__(self):
+            return iter(self.items)
+
+    class MenuItem:
+        def __init__(self, text, action=None, default=False):
+            self.text = text
+            self.action = action
+            self.default = default
 
 
 class TestTrayTitle(unittest.TestCase):
@@ -2998,12 +3026,24 @@ class TestTrayJobSnapshot(unittest.TestCase):
     """set_jobs() is the only thing that crosses the UI/pystray boundary."""
 
     def setUp(self):
+        patcher = mock.patch.object(tray_mod, "pystray", _StubPystray)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.tray = TrayIcon(on_show=lambda: None, on_exit=lambda: None,
                              icon_path=Path("icon.ico"), title="RYOS v9.9.9",
                              on_job=lambda jid: self.clicked.append(jid))
         self.clicked = []
         self.icon = _FakeIcon()
         self.tray._icon = self.icon
+
+    def test_menu_lists_jobs_above_the_standing_entries(self):
+        # Guards the stub itself: if the menu never gets built, the write
+        # assertions elsewhere in this class would pass vacuously.
+        self.tray.set_jobs([(1, "build"), (2, "test")])
+        labels = [getattr(i, "text", i) for i in self.icon.menu]
+        self.assertEqual(labels[:2], ["build", "test"])
+        self.assertIn("Show RYOS", labels)
+        self.assertIn("Exit", labels)
 
     def test_first_snapshot_updates_tooltip_and_menu(self):
         self.tray.set_jobs([(1, "build")])
@@ -3070,6 +3110,44 @@ class TestTrayMenuLabels(unittest.TestCase):
     def test_long_job_labels_are_clamped(self):
         self.assertLessEqual(len(_ellipsize("Z" * 300, MENU_LABEL_MAX)),
                              MENU_LABEL_MAX)
+
+
+class TestTrayWithoutPystray(unittest.TestCase):
+    """pystray is an optional dependency; nothing may break when it is absent.
+
+    This is the environment CI actually runs in -- no project dependencies are
+    installed -- so the degraded path deserves to be pinned rather than left to
+    a swallowed exception nobody sees.
+    """
+
+    def setUp(self):
+        for attr, value in (("pystray", None), ("_AVAILABLE", False)):
+            patcher = mock.patch.object(tray_mod, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.tray = TrayIcon(on_show=lambda: None, on_exit=lambda: None,
+                             icon_path=Path("icon.ico"), title="RYOS v9.9.9")
+
+    def test_not_available(self):
+        self.assertFalse(self.tray.available)
+
+    def test_start_is_a_noop(self):
+        self.tray.start()
+        self.assertIsNone(self.tray._icon)
+
+    def test_set_jobs_does_not_raise(self):
+        self.tray.set_jobs([(1, "build")])
+        self.assertEqual(self.tray._jobs, [(1, "build")])
+
+    def test_tooltip_is_still_computed(self):
+        # The tooltip needs no pystray, so the snapshot stays correct even
+        # when the menu cannot be built.
+        self.tray.set_jobs([(1, "build")])
+        self.assertIn("build", self.tray._title)
+
+    def test_stop_is_a_noop(self):
+        self.tray.stop()
+        self.assertEqual(self.tray._jobs, [])
 
 
 # ---------------------------------------------------------------------------
