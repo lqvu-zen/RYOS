@@ -29,7 +29,7 @@ build_options = {
 
 setup(
     name="RYOS",
-    version="1.9.0",
+    version="1.10.0",
     description="RYOS - Run Your Own Scripts",
     options={"build_exe": build_options},
     executables=[
