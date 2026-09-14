@@ -36,8 +36,7 @@ RUN_SCRIPT = "script"       # an ad-hoc script run
 RUN_STEP = "step"           # one step of a pipeline
 RUN_PIPELINE = "pipeline"   # a pipeline run as a whole
 
-# runs.trigger_source — what started it. SCHEDULE is reserved for the
-# scheduler; nothing writes it yet.
+# runs.trigger_source — what started it.
 SOURCE_MANUAL = "manual"
 SOURCE_PIPELINE = "pipeline"
 SOURCE_SCHEDULE = "schedule"
@@ -135,8 +134,42 @@ def _migrate_run_history(conn):
                  "ON runs(pipeline_id, started_at DESC)")
 
 
+def _migrate_schedules(conn):
+    """Recurring runs for a script or a pipeline.
+
+    next_run_at is stored rather than derived, so the timer tick is a cheap
+    indexed lookup instead of re-deriving every schedule every few seconds. It
+    is always recomputed from the current time after a fire -- never by adding
+    a delta to the previous value, which would drift across a DST boundary.
+
+    enabled defaults to 0: a schedule that started running the moment it was
+    created, before its owner had looked at the preview, would be a nasty
+    surprise.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schedules (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind        TEXT NOT NULL,
+            script_id   INTEGER,
+            pipeline_id INTEGER,
+            spec_type   TEXT NOT NULL,
+            spec        TEXT NOT NULL,
+            enabled     INTEGER NOT NULL DEFAULT 0,
+            catch_up    TEXT NOT NULL DEFAULT 'once',
+            next_run_at TEXT,
+            last_run_at TEXT,
+            created_at  TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_schedules_due "
+                 "ON schedules(enabled, next_run_at)")
+
+
 _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
-                     4: _migrate_script_env, 5: _migrate_run_history}
+                     4: _migrate_script_env, 5: _migrate_run_history,
+                     6: _migrate_schedules}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -588,6 +621,115 @@ class ScriptDB:
     def set_favorite_pipeline(self, pipeline_id: int, fav: bool) -> None:
         with self._connect() as conn:
             conn.execute("UPDATE pipelines SET is_favorite=? WHERE id=?", (1 if fav else 0, pipeline_id))
+
+    # ---- schedules -------------------------------------------------------
+
+    def add_schedule(self, kind: str, *, script_id: int | None = None,
+                     pipeline_id: int | None = None, spec_type: str,
+                     spec: str, catch_up: str = "once",
+                     enabled: bool = False, next_run_at=None) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO schedules (kind, script_id, pipeline_id, spec_type, "
+                "spec, enabled, catch_up, next_run_at, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (kind, script_id, pipeline_id, spec_type, spec,
+                 1 if enabled else 0, catch_up, _iso(next_run_at),
+                 datetime.now().isoformat(timespec="seconds")),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def update_schedule(self, schedule_id: int, *, spec_type: str, spec: str,
+                        catch_up: str, enabled: bool, next_run_at=None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE schedules SET spec_type=?, spec=?, catch_up=?, enabled=?, "
+                "next_run_at=? WHERE id=?",
+                (spec_type, spec, catch_up, 1 if enabled else 0,
+                 _iso(next_run_at), schedule_id),
+            )
+            conn.commit()
+
+    def delete_schedule(self, schedule_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM schedules WHERE id=?", (schedule_id,))
+            conn.commit()
+
+    def get_schedule(self, *, script_id: int | None = None,
+                     pipeline_id: int | None = None):
+        """The schedule for one item, or None. An item carries at most one."""
+        rows = self.list_schedules(script_id=script_id, pipeline_id=pipeline_id)
+        return rows[0] if rows else None
+
+    def list_schedules(self, *, script_id: int | None = None,
+                       pipeline_id: int | None = None,
+                       enabled_only: bool = False) -> list:
+        """(id, kind, script_id, pipeline_id, spec_type, spec, enabled,
+        catch_up, next_run_at, last_run_at, created_at)."""
+        sql = ("SELECT id, kind, script_id, pipeline_id, spec_type, spec, "
+               "enabled, catch_up, next_run_at, last_run_at, created_at "
+               "FROM schedules")
+        where, args = [], []
+        if script_id is not None:
+            where.append("script_id=?")
+            args.append(script_id)
+        if pipeline_id is not None:
+            where.append("pipeline_id=?")
+            args.append(pipeline_id)
+        if enabled_only:
+            where.append("enabled=1")
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id ASC"
+        with self._connect() as conn:
+            return conn.execute(sql, args).fetchall()
+
+    def due_schedules(self, now) -> list:
+        """Enabled schedules whose next_run_at has passed, or is unset.
+
+        A NULL next_run_at is included so a schedule enabled without one gets
+        scheduled on the next tick rather than sitting inert forever.
+        """
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT id, kind, script_id, pipeline_id, spec_type, spec, "
+                "enabled, catch_up, next_run_at, last_run_at, created_at "
+                "FROM schedules WHERE enabled=1 AND "
+                "(next_run_at IS NULL OR next_run_at <= ?) ORDER BY id ASC",
+                (_iso(now),),
+            ).fetchall()
+
+    def mark_schedule_fired(self, schedule_id: int, next_run_at,
+                            last_run_at=None) -> None:
+        with self._connect() as conn:
+            if last_run_at is None:
+                conn.execute("UPDATE schedules SET next_run_at=? WHERE id=?",
+                             (_iso(next_run_at), schedule_id))
+            else:
+                conn.execute(
+                    "UPDATE schedules SET next_run_at=?, last_run_at=? WHERE id=?",
+                    (_iso(next_run_at), _iso(last_run_at), schedule_id))
+            conn.commit()
+
+    def set_schedule_enabled(self, schedule_id: int, enabled: bool) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE schedules SET enabled=? WHERE id=?",
+                         (1 if enabled else 0, schedule_id))
+            conn.commit()
+
+    def scheduled_ids(self) -> tuple:
+        """(script_ids, pipeline_ids) carrying an enabled schedule.
+
+        Fetched once per card refresh, so the badge costs one query for the
+        whole list rather than one per card.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT script_id, pipeline_id FROM schedules WHERE enabled=1"
+            ).fetchall()
+        return ({r[0] for r in rows if r[0] is not None},
+                {r[1] for r in rows if r[1] is not None})
 
     # ---- run history -----------------------------------------------------
 

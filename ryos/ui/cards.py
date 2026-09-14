@@ -5,8 +5,8 @@ from tkinter import messagebox, ttk
 
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
-from .dialogs import (RunHistoryDialog, ScriptDialog, _PresetEntryDialog,
-                      _TempParamDialog)
+from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
+                      _PresetEntryDialog, _TempParamDialog)
 from .placement import place_near
 from .theme import C, HIGHLIGHT_LABELS, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
@@ -104,13 +104,15 @@ class ScriptCard(tk.Frame):
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
                  on_move_up, on_move_down, on_move_top, *,
-                 group_base_dir: str = "", on_toggle_favorite=None):
+                 group_base_dir: str = "", on_toggle_favorite=None,
+                 scheduled: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         sid, name, path, params, interp, _created, last_run, last_run_status, _group, temp_param = record[:10]
         is_favorite = record[10] if len(record) > 10 else 0
         self._is_favorite = bool(is_favorite)
         self._label_color = record[11] if len(record) > 11 else None
+        self._scheduled = scheduled
         name_fg = highlight_fg(self._label_color) or C["name_fg"]
         self._sid = sid
         self._on_toggle_favorite = on_toggle_favorite
@@ -177,6 +179,12 @@ class ScriptCard(tk.Frame):
                                       padx=5, pady=1)
                 temp_badge.pack(side="left", padx=(0, 6))
                 Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
+            if scheduled:
+                sched_badge = tk.Label(name_row, text="🕒 SCHEDULED",
+                                       bg=C["pipe_accent"], fg=C["fg_on_dark"],
+                                       font=("Segoe UI", 8, "bold"), padx=5, pady=1)
+                sched_badge.pack(side="left", padx=(0, 6))
+                Tooltip(sched_badge, "Runs on a schedule — right-click to edit")
             ScrollingLabel(name_row, name, name_fg, C["card_bg"]).pack(side="left", fill="both", expand=True)
         else:
             ScrollingLabel(text_area, name, name_fg, C["card_bg"]).pack(fill="x")
@@ -312,6 +320,7 @@ class ScriptCard(tk.Frame):
         menu.add_command(label="▲  Move Up",     command=self._on_move_up)
         menu.add_command(label="▼  Move Down",   command=self._on_move_down)
         menu.add_separator()
+        menu.add_command(label="🕒  Schedule…", command=self._show_schedule)
         menu.add_command(label="🕘  Run History…", command=self._show_history)
         menu.add_command(label="⧉  Clone",       command=self._clone)
         menu.add_separator()
@@ -340,6 +349,10 @@ class ScriptCard(tk.Frame):
     def _show_history(self):
         RunHistoryDialog(self.winfo_toplevel(), self.db,
                          script_id=self.script_id, title=self._name)
+
+    def _show_schedule(self):
+        ScheduleDialog(self.winfo_toplevel(), self.db, script_id=self.script_id,
+                       title=self._name, on_save=self.on_refresh)
 
     def _set_label_color(self, key):
         self.db.set_script_color(self.script_id, key)
@@ -409,7 +422,7 @@ class PipelineCard(tk.Frame):
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
                  group_name: str, on_run, on_edit, on_refresh,
                  is_favorite: bool = False, on_toggle_favorite=None,
-                 label_color: str | None = None):
+                 label_color: str | None = None, scheduled: bool = False):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -422,6 +435,7 @@ class PipelineCard(tk.Frame):
         self._is_favorite = is_favorite
         self._on_toggle_favorite = on_toggle_favorite
         self._label_color = label_color
+        self._scheduled = scheduled
         name_fg = highlight_fg(label_color) or C["name_fg"]
 
         steps = db.list_pipeline_steps(pipeline_id)
@@ -481,6 +495,12 @@ class PipelineCard(tk.Frame):
             name_row.pack(fill="x")
             tk.Label(name_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
                      font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(0, 6))
+            if scheduled:
+                pipe_sched = tk.Label(name_row, text="🕒", bg=C["accent"],
+                                      fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
+                                      padx=5, pady=1)
+                pipe_sched.pack(side="left", padx=(0, 6))
+                Tooltip(pipe_sched, "Runs on a schedule — right-click to edit")
             name_label = ScrollingLabel(name_row, name, name_fg, C["card_bg"])
             name_label.pack(side="left", fill="both", expand=True)
         else:
@@ -614,6 +634,10 @@ class PipelineCard(tk.Frame):
         RunHistoryDialog(self.winfo_toplevel(), self.db,
                          pipeline_id=self.pipeline_id, title=self._name)
 
+    def _show_schedule(self):
+        ScheduleDialog(self.winfo_toplevel(), self.db, pipeline_id=self.pipeline_id,
+                       title=self._name, on_save=self.on_refresh)
+
     def _set_label_color(self, key):
         self.db.set_pipeline_color(self.pipeline_id, key)
         self.on_refresh()
@@ -635,6 +659,7 @@ class PipelineCard(tk.Frame):
         menu.add_separator()
         menu.add_command(label="⚙  Edit",
                          command=lambda: self.on_edit(self.pipeline_id, self._name))
+        menu.add_command(label="🕒  Schedule…", command=self._show_schedule)
         menu.add_command(label="🕘  Run History…", command=self._show_history)
         menu.add_command(label="⧉  Clone", command=self._clone)
         menu.add_separator()

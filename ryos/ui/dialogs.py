@@ -3,11 +3,15 @@ import json
 import os
 import sys
 import tkinter as tk
+from datetime import datetime
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from ..db import ScriptDB
 from ..history import format_run_row, header_row, summarize
+from ..scheduling import (CATCH_UP_ALL, CATCH_UP_ONCE, CATCH_UP_SKIP, DAILY,
+                          INTERVAL, SPEC_TYPES, WEEKLY, next_occurrence,
+                          normalize_spec, preview)
 from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
@@ -1637,3 +1641,221 @@ class RunHistoryDialog(tk.Toplevel):
             return
         self.db.clear_runs(script_id=self._script_id, pipeline_id=self._pipeline_id)
         self._reload()
+
+
+class ScheduleDialog(tk.Toplevel):
+    """Create, edit or remove the recurring schedule for one script or pipeline.
+
+    The next-runs list is the point of this dialog as much as the fields are:
+    it is computed with the same function the tick uses, so what it shows is
+    what will actually happen. Nothing fires at a time the user has not already
+    seen written down.
+    """
+
+    _CATCH_UP_LABELS = {
+        CATCH_UP_ONCE: "Run once",
+        CATCH_UP_SKIP: "Skip them",
+        CATCH_UP_ALL: "Run every missed one",
+    }
+
+    def __init__(self, parent, db: ScriptDB, *, script_id: int | None = None,
+                 pipeline_id: int | None = None, title: str = "", on_save=None):
+        super().__init__(parent)
+        self.db = db
+        self._script_id = script_id
+        self._pipeline_id = pipeline_id
+        self._on_save = on_save
+        self._existing = db.get_schedule(script_id=script_id, pipeline_id=pipeline_id)
+
+        self.title(f"Schedule — {title}" if title else "Schedule")
+        self.resizable(False, False)
+        self.configure(bg=C["card_bg"])
+        self.grab_set()
+
+        strip = tk.Frame(self, bg=C["card_bg"])
+        strip.pack(fill="x")
+        tk.Label(strip, text=title or "Schedule", bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"), anchor="w",
+                 padx=16, pady=12).pack(fill="x")
+        tk.Frame(strip, bg=C["border"], height=1).pack(fill="x")
+
+        frame = ttk.Frame(self, padding=16)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(1, weight=1)
+        pad = {"padx": 8, "pady": 4}
+
+        self._enabled = tk.BooleanVar(value=bool(self._existing[6]) if self._existing else False)
+        ttk.Checkbutton(frame, variable=self._enabled,
+                        text="Run this on a schedule").grid(
+            row=0, column=0, columnspan=3, sticky="w", **pad)
+
+        self._mode = tk.StringVar(value=INTERVAL)
+        self._minutes = tk.StringVar(value="30")
+        self._at = tk.StringVar(value="09:00")
+        self._days = {d: tk.BooleanVar(value=(d == 0)) for d in range(7)}
+
+        ttk.Radiobutton(frame, text="Every", variable=self._mode,
+                        value=INTERVAL).grid(row=1, column=0, sticky="w", **pad)
+        iv = ttk.Frame(frame)
+        iv.grid(row=1, column=1, columnspan=2, sticky="w", **pad)
+        ttk.Entry(iv, textvariable=self._minutes, width=6).pack(side="left")
+        ttk.Label(iv, text="minutes").pack(side="left", padx=(6, 0))
+
+        ttk.Radiobutton(frame, text="Daily at", variable=self._mode,
+                        value=DAILY).grid(row=2, column=0, sticky="w", **pad)
+        ttk.Entry(frame, textvariable=self._at, width=8).grid(
+            row=2, column=1, sticky="w", **pad)
+
+        ttk.Radiobutton(frame, text="Weekly on", variable=self._mode,
+                        value=WEEKLY).grid(row=3, column=0, sticky="nw", **pad)
+        days_row = ttk.Frame(frame)
+        days_row.grid(row=3, column=1, columnspan=2, sticky="w", **pad)
+        for d, label in enumerate(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")):
+            ttk.Checkbutton(days_row, text=label, variable=self._days[d]).pack(side="left")
+
+        ttk.Label(frame, text="If missed:").grid(row=4, column=0, sticky="w", **pad)
+        self._catch_up = tk.StringVar(value=self._CATCH_UP_LABELS[CATCH_UP_ONCE])
+        ttk.Combobox(frame, textvariable=self._catch_up, state="readonly", width=22,
+                     values=list(self._CATCH_UP_LABELS.values())).grid(
+            row=4, column=1, columnspan=2, sticky="w", **pad)
+        ttk.Label(frame, text="RYOS only fires schedules while it is open",
+                  foreground="#888").grid(row=5, column=1, columnspan=2,
+                                          sticky="w", padx=8)
+
+        ttk.Separator(frame, orient="horizontal").grid(
+            row=6, column=0, columnspan=3, sticky="ew", pady=10)
+
+        ttk.Label(frame, text="Next runs:").grid(row=7, column=0, sticky="nw", **pad)
+        self._preview = tk.Label(frame, text="", justify="left", anchor="nw",
+                                 bg=C["card_bg"], fg=C["path_fg"],
+                                 font=("Consolas", 9))
+        self._preview.grid(row=7, column=1, columnspan=2, sticky="w", **pad)
+
+        btn_row = ttk.Frame(frame)
+        btn_row.grid(row=8, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
+        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
+        if self._existing:
+            ttk.Button(btn_row, text="Remove", command=self._remove).pack(side="left", padx=4)
+
+        self._load_existing()
+        for var in (self._mode, self._minutes, self._at, *self._days.values()):
+            var.trace_add("write", lambda *_: self._refresh_preview())
+        self._refresh_preview()
+
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.transient(parent)
+        center_over_parent(self, parent)
+
+    # ------------------------------------------------------------------ state
+
+    def _load_existing(self) -> None:
+        if not self._existing:
+            return
+        spec_type, raw, catch_up = self._existing[4], self._existing[5], self._existing[7]
+        try:
+            spec = json.loads(raw)
+        except (TypeError, ValueError):
+            spec = {}
+        if spec_type in SPEC_TYPES:
+            self._mode.set(spec_type)
+        if spec_type == INTERVAL:
+            self._minutes.set(str(spec.get("minutes", 30)))
+        else:
+            self._at.set(str(spec.get("at", "09:00")))
+            if spec_type == WEEKLY:
+                chosen = set(spec.get("days") or [])
+                for d, var in self._days.items():
+                    var.set(d in chosen)
+        self._catch_up.set(self._CATCH_UP_LABELS.get(catch_up,
+                                                     self._CATCH_UP_LABELS[CATCH_UP_ONCE]))
+
+    def _current_spec(self):
+        """(spec_type, normalized_spec) for the form, or (type, None) if invalid."""
+        mode = self._mode.get()
+        if mode == INTERVAL:
+            raw = {"minutes": self._minutes.get().strip()}
+        elif mode == DAILY:
+            raw = {"at": self._at.get().strip()}
+        else:
+            raw = {"at": self._at.get().strip(),
+                   "days": [d for d, v in self._days.items() if v.get()]}
+        return mode, normalize_spec(mode, raw)
+
+    def _current_catch_up(self) -> str:
+        label = self._catch_up.get()
+        for key, text in self._CATCH_UP_LABELS.items():
+            if text == label:
+                return key
+        return CATCH_UP_ONCE
+
+    # ---------------------------------------------------------------- actions
+
+    def _refresh_preview(self) -> None:
+        spec_type, spec = self._current_spec()
+        if spec is None:
+            self._preview.config(text="—  check the values above")
+            return
+        runs = preview(spec_type, spec, datetime.now(), 5)
+        self._preview.config(
+            text="\n".join(r.strftime("%a %d %b  %H:%M") for r in runs) or "—")
+
+    def _save(self) -> None:
+        spec_type, spec = self._current_spec()
+        if spec is None:
+            messagebox.showwarning(
+                "Check the schedule",
+                "That schedule can't run.\n\n"
+                "Interval needs at least 1 minute, times look like 09:00, "
+                "and a weekly schedule needs at least one day.",
+                parent=self)
+            return
+        enabled = bool(self._enabled.get())
+        raw = json.dumps(spec)
+        next_at = next_occurrence(spec_type, spec, datetime.now())
+        catch_up = self._current_catch_up()
+        if self._existing:
+            self.db.update_schedule(self._existing[0], spec_type=spec_type, spec=raw,
+                                    catch_up=catch_up, enabled=enabled,
+                                    next_run_at=next_at)
+        else:
+            self.db.add_schedule(
+                "pipeline" if self._pipeline_id is not None else "script",
+                script_id=self._script_id, pipeline_id=self._pipeline_id,
+                spec_type=spec_type, spec=raw, catch_up=catch_up,
+                enabled=enabled, next_run_at=next_at)
+        if enabled:
+            self._offer_run_at_login()
+        if self._on_save:
+            self._on_save()
+        self.destroy()
+
+    def _offer_run_at_login(self) -> None:
+        """A schedule only fires while RYOS is open, so offer to start it at login.
+
+        Asked once, when a schedule is first switched on and the setting is off;
+        declining is remembered by simply never asking again unless run-at-login
+        is still off and another schedule is enabled.
+        """
+        if sys.platform != "win32" or _startup_enabled():
+            return
+        if messagebox.askyesno(
+                "Start RYOS at login?",
+                "Schedules only run while RYOS is open.\n\n"
+                "Start RYOS automatically when you log in?",
+                parent=self):
+            try:
+                _set_startup(True)
+            except OSError:
+                messagebox.showwarning("Could not change startup",
+                                       "RYOS could not update the startup setting.",
+                                       parent=self)
+
+    def _remove(self) -> None:
+        if not messagebox.askyesno("Remove Schedule",
+                                   "Stop running this on a schedule?", parent=self):
+            return
+        self.db.delete_schedule(self._existing[0])
+        if self._on_save:
+            self._on_save()
+        self.destroy()

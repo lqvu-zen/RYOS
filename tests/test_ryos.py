@@ -4189,3 +4189,347 @@ class TestControllerWritesHistory(unittest.TestCase):
         with mock.patch.object(self.db, "record_run", side_effect=RuntimeError("boom")):
             self.ctl.handle_step_done(job, 7, "ok")
         self.assertEqual(len(self.finished), 1)
+
+
+# ---------------------------------------------------------------------------
+# Scheduling — the date maths, then the storage
+# ---------------------------------------------------------------------------
+from ryos.scheduling import (  # noqa: E402
+    CATCH_UP_ALL, CATCH_UP_ONCE, CATCH_UP_SKIP, DAILY, INTERVAL, MAX_CATCH_UP,
+    WEEKLY, describe_spec, next_occurrence, normalize_spec,
+    parse_time_of_day,
+    preview, resolve_due,
+)
+
+MON = datetime.datetime(2026, 9, 14, 8, 30)   # a Monday morning
+
+
+class TestNormalizeSpec(unittest.TestCase):
+    """A corrupt or hand-edited row must disable its schedule, never raise."""
+
+    def test_interval_minutes(self):
+        self.assertEqual(normalize_spec(INTERVAL, {"minutes": 30}), {"minutes": 30})
+
+    def test_interval_accepts_a_numeric_string(self):
+        # The dialog hands over whatever was typed into the entry.
+        self.assertEqual(normalize_spec(INTERVAL, {"minutes": "45"}), {"minutes": 45})
+
+    def test_interval_below_one_minute_is_rejected(self):
+        # Anything under the tick interval would fire faster than it is serviced.
+        for bad in (0, -5):
+            with self.subTest(minutes=bad):
+                self.assertIsNone(normalize_spec(INTERVAL, {"minutes": bad}))
+
+    def test_interval_garbage_is_rejected(self):
+        for bad in ({"minutes": "soon"}, {"minutes": None}, {}, None, "nope"):
+            with self.subTest(spec=bad):
+                self.assertIsNone(normalize_spec(INTERVAL, bad))
+
+    def test_daily_time_is_padded(self):
+        self.assertEqual(normalize_spec(DAILY, {"at": "9:5"}), {"at": "09:05"})
+
+    def test_daily_out_of_range_is_rejected(self):
+        for bad in ("24:00", "12:60", "-1:00", "noon", ""):
+            with self.subTest(at=bad):
+                self.assertIsNone(normalize_spec(DAILY, {"at": bad}))
+
+    def test_weekly_days_are_deduped_and_sorted(self):
+        self.assertEqual(normalize_spec(WEEKLY, {"at": "09:00", "days": [4, 0, 4]}),
+                         {"at": "09:00", "days": [0, 4]})
+
+    def test_weekly_out_of_range_days_are_dropped(self):
+        self.assertEqual(normalize_spec(WEEKLY, {"at": "09:00", "days": [1, 9, -2]}),
+                         {"at": "09:00", "days": [1]})
+
+    def test_weekly_with_no_days_is_rejected(self):
+        # It would never fire, so it must not be storable as enabled.
+        self.assertIsNone(normalize_spec(WEEKLY, {"at": "09:00", "days": []}))
+        self.assertIsNone(normalize_spec(WEEKLY, {"at": "09:00", "days": "mon"}))
+
+    def test_unknown_spec_type_is_rejected(self):
+        self.assertIsNone(normalize_spec("cron", {"expr": "* * * * *"}))
+
+    def test_parse_time_of_day_passes_through_a_time(self):
+        t = datetime.time(7, 30)
+        self.assertEqual(parse_time_of_day(t), t)
+
+
+class TestNextOccurrence(unittest.TestCase):
+
+    def test_interval_adds_the_delta(self):
+        self.assertEqual(next_occurrence(INTERVAL, {"minutes": 30}, MON),
+                         MON + datetime.timedelta(minutes=30))
+
+    def test_daily_later_today(self):
+        self.assertEqual(next_occurrence(DAILY, {"at": "09:00"}, MON),
+                         datetime.datetime(2026, 9, 14, 9, 0))
+
+    def test_daily_already_passed_rolls_to_tomorrow(self):
+        self.assertEqual(next_occurrence(DAILY, {"at": "08:00"}, MON),
+                         datetime.datetime(2026, 9, 15, 8, 0))
+
+    def test_exactly_now_still_advances(self):
+        # Strictly-after, or a just-fired schedule would hand back the same
+        # moment and fire again on the next tick forever.
+        at_nine = datetime.datetime(2026, 9, 14, 9, 0)
+        self.assertEqual(next_occurrence(DAILY, {"at": "09:00"}, at_nine),
+                         datetime.datetime(2026, 9, 15, 9, 0))
+
+    def test_weekly_picks_today_when_it_is_still_ahead(self):
+        self.assertEqual(next_occurrence(WEEKLY, {"at": "18:30", "days": [0]}, MON),
+                         datetime.datetime(2026, 9, 14, 18, 30))
+
+    def test_weekly_wraps_to_next_week(self):
+        # Monday 08:30 asking for Mondays at 08:00 -> next Monday.
+        self.assertEqual(next_occurrence(WEEKLY, {"at": "08:00", "days": [0]}, MON),
+                         datetime.datetime(2026, 9, 21, 8, 0))
+
+    def test_weekly_finds_the_nearest_of_several_days(self):
+        nxt = next_occurrence(WEEKLY, {"at": "09:00", "days": [0, 2, 4]}, MON)
+        self.assertEqual(nxt, datetime.datetime(2026, 9, 14, 9, 0))
+
+    def test_month_rollover(self):
+        eve = datetime.datetime(2026, 9, 30, 23, 0)
+        self.assertEqual(next_occurrence(DAILY, {"at": "09:00"}, eve),
+                         datetime.datetime(2026, 10, 1, 9, 0))
+
+    def test_year_rollover(self):
+        eve = datetime.datetime(2026, 12, 31, 23, 0)
+        self.assertEqual(next_occurrence(DAILY, {"at": "09:00"}, eve),
+                         datetime.datetime(2027, 1, 1, 9, 0))
+
+    def test_leap_day(self):
+        eve = datetime.datetime(2028, 2, 28, 23, 0)
+        self.assertEqual(next_occurrence(DAILY, {"at": "09:00"}, eve),
+                         datetime.datetime(2028, 2, 29, 9, 0))
+
+    def test_unusable_spec_yields_none(self):
+        self.assertIsNone(next_occurrence(DAILY, {"at": "25:00"}, MON))
+        self.assertIsNone(next_occurrence("cron", {}, MON))
+
+
+class TestDaylightSaving(unittest.TestCase):
+    """'Daily at 09:00' means 09:00 on the wall clock, both sides of a change.
+
+    The maths is naive-local by design, and the next run is recomputed from a
+    real timestamp rather than by adding a fixed delta -- adding deltas is what
+    drifts by an hour twice a year.
+    """
+
+    def test_spring_forward_keeps_the_wall_clock_time(self):
+        # 2026-03-29 is the European spring-forward Sunday.
+        before = datetime.datetime(2026, 3, 28, 10, 0)
+        runs = preview(DAILY, {"at": "09:00"}, before, 3)
+        self.assertTrue(all(r.hour == 9 and r.minute == 0 for r in runs), runs)
+        self.assertEqual([r.date().isoformat() for r in runs],
+                         ["2026-03-29", "2026-03-30", "2026-03-31"])
+
+    def test_autumn_back_keeps_the_wall_clock_time(self):
+        before = datetime.datetime(2026, 10, 24, 10, 0)
+        runs = preview(DAILY, {"at": "09:00"}, before, 3)
+        self.assertTrue(all(r.hour == 9 for r in runs), runs)
+
+    def test_weekly_keeps_its_weekday_across_the_change(self):
+        runs = preview(WEEKLY, {"at": "09:00", "days": [6]},
+                       datetime.datetime(2026, 3, 20, 10, 0), 3)
+        self.assertTrue(all(r.weekday() == 6 for r in runs), runs)
+
+
+class TestPreview(unittest.TestCase):
+
+    def test_returns_the_requested_count_in_order(self):
+        runs = preview(INTERVAL, {"minutes": 15}, MON, 4)
+        self.assertEqual(len(runs), 4)
+        self.assertEqual(runs, sorted(runs))
+
+    def test_each_entry_is_strictly_later(self):
+        runs = preview(DAILY, {"at": "09:00"}, MON, 5)
+        self.assertTrue(all(b > a for a, b in zip(runs, runs[1:])))
+
+    def test_unusable_spec_previews_nothing(self):
+        self.assertEqual(preview(WEEKLY, {"at": "09:00", "days": []}, MON, 5), [])
+
+    def test_zero_count(self):
+        self.assertEqual(preview(DAILY, {"at": "09:00"}, MON, 0), [])
+
+
+class TestResolveDue(unittest.TestCase):
+    """What a schedule owes after RYOS has been closed."""
+
+    SPEC = (DAILY, {"at": "09:00"})
+
+    def test_not_due_yet_changes_nothing(self):
+        later = datetime.datetime(2026, 9, 15, 9, 0)
+        times, nxt = resolve_due(*self.SPEC, later, MON)
+        self.assertEqual((times, nxt), (0, later))
+
+    def test_never_scheduled_just_gets_a_next_time(self):
+        times, nxt = resolve_due(*self.SPEC, None, MON)
+        self.assertEqual(times, 0)
+        self.assertEqual(nxt, datetime.datetime(2026, 9, 14, 9, 0))
+
+    def test_skip_runs_nothing_but_moves_on(self):
+        missed = datetime.datetime(2026, 9, 12, 9, 0)
+        now = datetime.datetime(2026, 9, 14, 10, 0)
+        times, nxt = resolve_due(*self.SPEC, missed, now, CATCH_UP_SKIP)
+        self.assertEqual(times, 0)
+        self.assertGreater(nxt, now)
+
+    def test_once_runs_exactly_one_however_many_were_missed(self):
+        missed = datetime.datetime(2026, 8, 1, 9, 0)      # six weeks of misses
+        now = datetime.datetime(2026, 9, 14, 10, 0)
+        times, nxt = resolve_due(*self.SPEC, missed, now, CATCH_UP_ONCE)
+        self.assertEqual(times, 1)
+        self.assertGreater(nxt, now)
+
+    def test_all_runs_each_missed_occurrence(self):
+        missed = datetime.datetime(2026, 9, 12, 9, 0)
+        now = datetime.datetime(2026, 9, 14, 10, 0)
+        times, _ = resolve_due(*self.SPEC, missed, now, CATCH_UP_ALL)
+        self.assertEqual(times, 3)                        # 12th, 13th, 14th
+
+    def test_all_is_capped(self):
+        # A laptop closed for a fortnight must not come back to a stampede.
+        missed = datetime.datetime(2026, 9, 1, 0, 0)
+        now = datetime.datetime(2026, 9, 14, 0, 0)
+        times, _ = resolve_due(INTERVAL, {"minutes": 1}, missed, now, CATCH_UP_ALL)
+        self.assertEqual(times, MAX_CATCH_UP)
+
+    def test_next_is_always_in_the_future(self):
+        now = datetime.datetime(2026, 9, 14, 10, 0)
+        for mode in (CATCH_UP_SKIP, CATCH_UP_ONCE, CATCH_UP_ALL):
+            with self.subTest(mode=mode):
+                _times, nxt = resolve_due(*self.SPEC,
+                                          datetime.datetime(2026, 9, 1, 9, 0),
+                                          now, mode)
+                self.assertGreater(nxt, now)
+
+    def test_a_clock_jump_backwards_does_not_rewind_the_schedule(self):
+        # next_run_at is recomputed from `now`, never from the stale value.
+        stale = datetime.datetime(2026, 9, 20, 9, 0)
+        now = datetime.datetime(2026, 9, 14, 10, 0)
+        times, nxt = resolve_due(*self.SPEC, stale, now, CATCH_UP_ONCE)
+        self.assertEqual((times, nxt), (0, stale))
+
+    def test_unusable_spec_stops_scheduling(self):
+        times, nxt = resolve_due(WEEKLY, {"at": "09:00", "days": []}, MON, MON)
+        self.assertEqual(times, 0)
+        self.assertIsNone(nxt)
+
+
+class TestDescribe(unittest.TestCase):
+
+    def test_minutes(self):
+        self.assertEqual(describe_spec(INTERVAL, {"minutes": 30}), "Every 30 minutes")
+
+    def test_singular_minute(self):
+        self.assertEqual(describe_spec(INTERVAL, {"minutes": 1}), "Every 1 minute")
+
+    def test_whole_hours_read_as_hours(self):
+        self.assertEqual(describe_spec(INTERVAL, {"minutes": 120}), "Every 2 hours")
+
+    def test_daily(self):
+        self.assertEqual(describe_spec(DAILY, {"at": "09:00"}), "Daily at 09:00")
+
+    def test_weekly_names_its_days(self):
+        self.assertEqual(describe_spec(WEEKLY, {"at": "18:30", "days": [0, 2]}),
+                         "Mon, Wed at 18:30")
+
+    def test_invalid_says_so(self):
+        self.assertEqual(describe_spec(DAILY, {"at": "nope"}), "Invalid schedule")
+
+
+class TestScheduleStorage(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.sid = self.db.add("s", "/s.py", "", "", "G")
+        self.now = datetime.datetime(2026, 9, 14, 10, 0)
+
+    def _add(self, **kw):
+        opts = dict(script_id=self.sid, spec_type=DAILY,
+                    spec=json.dumps({"at": "09:00"}))
+        opts.update(kw)
+        return self.db.add_schedule("script", **opts)
+
+    def test_disabled_by_default(self):
+        # A schedule that started firing before its owner saw the preview
+        # would be a nasty surprise.
+        self._add()
+        self.assertEqual(self.db.get_schedule(script_id=self.sid)[6], 0)
+
+    def test_round_trip(self):
+        self._add(enabled=True, catch_up=CATCH_UP_SKIP,
+                  next_run_at=self.now)
+        row = self.db.get_schedule(script_id=self.sid)
+        self.assertEqual(row[4], DAILY)
+        self.assertEqual(json.loads(row[5]), {"at": "09:00"})
+        self.assertEqual(row[6], 1)
+        self.assertEqual(row[7], CATCH_UP_SKIP)
+
+    def test_due_when_next_run_has_passed(self):
+        self._add(enabled=True, next_run_at=self.now - datetime.timedelta(hours=1))
+        self.assertEqual(len(self.db.due_schedules(self.now)), 1)
+
+    def test_not_due_before_its_time(self):
+        self._add(enabled=True, next_run_at=self.now + datetime.timedelta(hours=1))
+        self.assertEqual(self.db.due_schedules(self.now), [])
+
+    def test_disabled_is_never_due(self):
+        self._add(enabled=False, next_run_at=self.now - datetime.timedelta(days=1))
+        self.assertEqual(self.db.due_schedules(self.now), [])
+
+    def test_null_next_run_is_due(self):
+        # Otherwise a schedule enabled without one would sit inert forever.
+        self._add(enabled=True, next_run_at=None)
+        self.assertEqual(len(self.db.due_schedules(self.now)), 1)
+
+    def test_marking_fired_advances_and_clears_due(self):
+        sched = self._add(enabled=True, next_run_at=self.now - datetime.timedelta(hours=1))
+        self.db.mark_schedule_fired(sched, self.now + datetime.timedelta(days=1), self.now)
+        self.assertEqual(self.db.due_schedules(self.now), [])
+        row = self.db.get_schedule(script_id=self.sid)
+        self.assertIsNotNone(row[9])            # last_run_at recorded
+
+    def test_marking_without_a_last_run_leaves_it_alone(self):
+        # A skipped run advances next_run_at but must not claim it ran.
+        sched = self._add(enabled=True, next_run_at=self.now)
+        self.db.mark_schedule_fired(sched, self.now + datetime.timedelta(days=1))
+        self.assertIsNone(self.db.get_schedule(script_id=self.sid)[9])
+
+    def test_scheduled_ids_only_lists_enabled(self):
+        self._add(enabled=True)
+        other = self.db.add("o", "/o.py", "", "", "G")
+        self.db.add_schedule("script", script_id=other, spec_type=DAILY,
+                             spec=json.dumps({"at": "09:00"}), enabled=False)
+        scripts, pipelines = self.db.scheduled_ids()
+        self.assertEqual(scripts, {self.sid})
+        self.assertEqual(pipelines, set())
+
+    def test_pipeline_schedules_are_separate(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_schedule("pipeline", pipeline_id=pid, spec_type=DAILY,
+                             spec=json.dumps({"at": "09:00"}), enabled=True)
+        scripts, pipelines = self.db.scheduled_ids()
+        self.assertEqual(pipelines, {pid})
+        self.assertEqual(scripts, set())
+        self.assertIsNotNone(self.db.get_schedule(pipeline_id=pid))
+
+    def test_delete(self):
+        sched = self._add()
+        self.db.delete_schedule(sched)
+        self.assertIsNone(self.db.get_schedule(script_id=self.sid))
+
+    def test_update_replaces_the_spec(self):
+        sched = self._add()
+        self.db.update_schedule(sched, spec_type=INTERVAL,
+                                spec=json.dumps({"minutes": 15}),
+                                catch_up=CATCH_UP_ALL, enabled=True,
+                                next_run_at=self.now)
+        row = self.db.get_schedule(script_id=self.sid)
+        self.assertEqual(row[4], INTERVAL)
+        self.assertEqual(row[7], CATCH_UP_ALL)
+        self.assertEqual(row[6], 1)
+
+    def test_no_schedule_reads_as_none(self):
+        self.assertIsNone(self.db.get_schedule(script_id=self.sid))

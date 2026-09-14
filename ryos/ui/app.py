@@ -1,6 +1,7 @@
 """Main RYOS window: header, tabs, card list, output panel, and run engine."""
 import ctypes
 import hashlib
+import json
 import os
 import queue
 import sys
@@ -20,6 +21,9 @@ except ImportError:
 
 from .. import __version__
 from ..db import ScriptDB
+from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE
+from ..scheduling import resolve_due
+from ..history import parse_stamp
 from ..interpreter import (build_command, build_run_spec, detect_interpreter,
                            resolve_interpreter)
 from ..logger import get_logger, setup_logging
@@ -65,6 +69,9 @@ _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 MAX_PARALLEL_JOBS = 10
 _QUICK_RUN_INDEX_TTL = 300.0  # fallback TTL (seconds) when the setting is missing
 _QR_INDEX_VERSION = 2  # on-disk index format; bump to invalidate older caches
+# How often due schedules are swept. 30s keeps a minute-granularity
+# schedule punctual without the tick itself becoming background load.
+SCHEDULE_TICK_MS = 30_000
 
 
 def _qr_index_path(base_dir: str) -> Path:
@@ -208,6 +215,8 @@ class RYOSApp(_BaseWindow):
 
         self._running_slots: dict = {}
         self._elapsed_timer_id: str | None = None
+        self._schedule_timer_id: str | None = None
+        self._sched_ids_cache: tuple | None = None
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
@@ -241,6 +250,9 @@ class RYOSApp(_BaseWindow):
             self.after(500, self._poll_instance_signals)
 
         self._prune_run_history()
+        # First sweep shortly after launch: this is where runs that came due
+        # while RYOS was closed get settled, per each schedule's catch_up.
+        self.after(2000, self._tick_schedules)
 
         if self._settings.get("auto_check_update", True):
             threading.Thread(target=self._check_for_update, daemon=True).start()
@@ -990,6 +1002,16 @@ class RYOSApp(_BaseWindow):
         self._refresh_tabs()
         self._refresh_cards()
 
+    def _scheduled_ids(self):
+        """Cached-per-refresh (script_ids, pipeline_ids) that carry a schedule."""
+        if self._sched_ids_cache is None:
+            try:
+                self._sched_ids_cache = self.db.scheduled_ids()
+            except Exception:
+                _log.warning("Could not read schedules for badges", exc_info=True)
+                self._sched_ids_cache = (set(), set())
+        return self._sched_ids_cache
+
     def _reset_cards_state(self):
         """Tear down existing card widgets and reset the per-render collections."""
         for gn in list(self._quick_run_bars):
@@ -1084,6 +1106,7 @@ class RYOSApp(_BaseWindow):
                 is_favorite=True,
                 on_toggle_favorite=make_fav_toggle_pipeline(p_id),
                 label_color=p_color,
+                scheduled=p_id in self._scheduled_ids()[1],
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_pipeline_drag(pc)
@@ -1107,6 +1130,7 @@ class RYOSApp(_BaseWindow):
                 on_move_top  = self._make_top_cb(sid)           if up_id   else lambda: None,
                 group_base_dir=group_base_dir,
                 on_toggle_favorite=make_fav_toggle_script(sid),
+                scheduled=sid in self._scheduled_ids()[0],
             )
             card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_card_drag(card)
@@ -1138,6 +1162,7 @@ class RYOSApp(_BaseWindow):
                 is_favorite=bool(p_fav),
                 on_toggle_favorite=make_toggle_fav_pipeline(p_id),
                 label_color=p_color,
+                scheduled=p_id in self._scheduled_ids()[1],
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_pipeline_drag(pc)
@@ -1171,6 +1196,7 @@ class RYOSApp(_BaseWindow):
                 on_move_top     = self._make_top_cb(sid)           if up_id   else lambda: None,
                 group_base_dir  = group_base_dir,
                 on_toggle_favorite = make_toggle_fav_script(sid),
+                scheduled       = sid in self._scheduled_ids()[0],
             )
             card.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_card_drag(card)
@@ -1185,6 +1211,7 @@ class RYOSApp(_BaseWindow):
         self._render_scripts_section(parent, gname, scripts, group_base_dir)
 
     def _refresh_cards(self):
+        self._sched_ids_cache = None   # one schedules query per refresh
         self._reset_cards_state()
         if self._active_group is None:
             all_scripts = self.db.list_all()
@@ -1783,7 +1810,8 @@ class RYOSApp(_BaseWindow):
         PipelineEditorDialog(self, self.db, pipeline_id, name,
                              self._active_group or "", self._refresh_cards)
 
-    def _run_pipeline(self, pipeline_id: int, pipeline_name: str):
+    def _run_pipeline(self, pipeline_id: int, pipeline_name: str,
+                      trigger=SOURCE_MANUAL):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
         if self._jobctl.at_capacity(max_jobs):
             messagebox.showinfo("Too many jobs",
@@ -1809,6 +1837,7 @@ class RYOSApp(_BaseWindow):
             pipeline_name=pipeline_name,
             pipeline_queue=list(steps),
             pipeline_total=len(steps),
+            trigger=trigger,
         )
         job.start_time = datetime.now()
         content = self._running_slots.get(group)
@@ -1834,6 +1863,84 @@ class RYOSApp(_BaseWindow):
         if job.name_var is not None:
             job.name_var.set(job.name)
         self._sync_tray()
+
+    def _schedule_is_running(self, row) -> bool:
+        """True when this schedule's script or pipeline is already in flight.
+
+        Overlap policy: skip and log rather than stacking a second copy on top
+        of one that has not finished. A five-minute job on a one-minute
+        schedule would otherwise fork-bomb the job table.
+        """
+        script_id, pipeline_id = row[2], row[3]
+        for job in self._jobreg.all():
+            if script_id is not None and job.script_id == script_id:
+                return True
+            if pipeline_id is not None and job.pipeline_id == pipeline_id:
+                return True
+        return False
+
+    def _launch_scheduled(self, row) -> bool:
+        """Start one scheduled run. False when it could not be started."""
+        script_id, pipeline_id = row[2], row[3]
+        if pipeline_id is not None:
+            pipes = [p for g in self.db.list_groups()
+                     for p in self.db.list_pipelines(g) if p[0] == pipeline_id]
+            if not pipes:
+                return False
+            self._run_pipeline(pipeline_id, pipes[0][1], trigger=SOURCE_SCHEDULE)
+            return True
+        rec = self.db.get(script_id)
+        if not rec:
+            return False
+        _, name, path, params, interp = rec[:5]
+        self._run_script(script_id, name, path, params, interp,
+                         trigger=SOURCE_SCHEDULE)
+        return True
+
+    def _tick_schedules(self) -> None:
+        """Fire whatever is due, then re-arm. Never lets one bad row stop the timer."""
+        try:
+            self._run_due_schedules()
+        except Exception:
+            _log.warning("Schedule tick failed", exc_info=True)
+        finally:
+            self._schedule_timer_id = self.after(SCHEDULE_TICK_MS, self._tick_schedules)
+
+    def _run_due_schedules(self) -> None:
+        now = datetime.now()
+        max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
+        for row in self.db.due_schedules(now):
+            sched_id, spec_type, spec_raw, catch_up = row[0], row[4], row[5], row[7]
+            try:
+                spec = json.loads(spec_raw)
+            except (TypeError, ValueError):
+                spec = None
+            times, next_at = resolve_due(spec_type, spec, parse_stamp(row[8]),
+                                         now, catch_up)
+            if next_at is None:
+                # An unusable spec would otherwise be retried every tick
+                # forever; disable it and say so.
+                _log.warning("Disabling schedule %s: unusable spec %r/%r",
+                             sched_id, spec_type, spec_raw)
+                self.db.set_schedule_enabled(sched_id, False)
+                continue
+            fired = 0
+            for _ in range(times):
+                if self._jobctl.at_capacity(max_jobs):
+                    _log.info("Schedule %s skipped: %d parallel jobs already running",
+                              sched_id, max_jobs)
+                    break
+                if self._schedule_is_running(row):
+                    _log.info("Schedule %s skipped: previous run still going", sched_id)
+                    break
+                if not self._launch_scheduled(row):
+                    _log.warning("Schedule %s targets a missing item; disabling", sched_id)
+                    self.db.set_schedule_enabled(sched_id, False)
+                    break
+                fired += 1
+            # next_run_at advances whether or not anything actually launched,
+            # so a skipped run never leaves the schedule permanently overdue.
+            self.db.mark_schedule_fired(sched_id, next_at, now if fired else None)
 
     def _prune_run_history(self) -> None:
         """Drop history past the retention window. Startup-only and best-effort:
@@ -1977,7 +2084,8 @@ class RYOSApp(_BaseWindow):
             target=self._run_subprocess, args=(job, spec, name, script_id, step_token), daemon=True,
         ).start()
 
-    def _run_script(self, script_id, name, path, params, interpreter):
+    def _run_script(self, script_id, name, path, params, interpreter,
+                    trigger=SOURCE_MANUAL):
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
         if self._jobctl.at_capacity(max_jobs):
             messagebox.showinfo("Too many jobs",
@@ -2002,7 +2110,7 @@ class RYOSApp(_BaseWindow):
                               work_dir=(rec[8] if rec else "") or "",
                               env_vars=rec[7] if rec else None)
         job = self._jobctl.new_job("script", script_id=script_id, pipeline_id=None,
-                            name=name, group=group)
+                            name=name, group=group, trigger=trigger)
         job.start_time = datetime.now()
 
         _log.info("Run: %s | cmd: %s", name, " ".join(cmd))

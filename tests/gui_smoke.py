@@ -178,6 +178,85 @@ def check_run_history(app):
         os.unlink(path)
 
 
+def check_schedule_fires(app):
+    """A due schedule launches its script, and the run is tagged as scheduled.
+
+    Drives the real tick against a schedule whose next_run_at is already in the
+    past -- the same path a run missed while RYOS was closed takes on startup.
+    """
+    import json
+    from datetime import datetime, timedelta
+
+    path = _write_script("print('scheduled')\n")
+    sid = app.db.add("smoke-sched", path, "", sys.executable)
+    sched = app.db.add_schedule(
+        "script", script_id=sid, spec_type="interval",
+        spec=json.dumps({"minutes": 60}), enabled=True,
+        next_run_at=datetime.now() - timedelta(minutes=5))
+    try:
+        app._run_due_schedules()
+        assert len(app._jobreg) == 1, "due schedule did not launch anything"
+        assert pump_until(app, lambda: len(app._jobreg) == 0), "scheduled job did not finish"
+
+        rows = app.db.list_runs(script_id=sid)
+        assert len(rows) == 1, f"expected one history row, got {len(rows)}"
+        assert rows[0][10] == "schedule", \
+            f"run should be tagged 'schedule', got {rows[0][10]!r}"
+
+        row = app.db.get_schedule(script_id=sid)
+        assert row[8] is not None, "next_run_at was not advanced"
+        assert datetime.fromisoformat(row[8]) > datetime.now(), \
+            "next_run_at must be in the future after firing"
+        assert not app.db.due_schedules(datetime.now()), "schedule is still due"
+
+        # A second sweep must not re-run it.
+        app._run_due_schedules()
+        assert len(app._jobreg) == 0, "schedule fired twice for one due time"
+        print("  [ok] schedule-fires: launched, tagged, and advanced")
+    finally:
+        app.db.delete_schedule(sched)
+        app.db.clear_runs(script_id=sid)
+        app.db.delete(sid)
+        os.unlink(path)
+
+
+def check_schedule_skips_while_running(app):
+    """A schedule must not stack a second run on top of one still going."""
+    import json
+    from datetime import datetime, timedelta
+
+    path = _write_script(
+        "import time\n"
+        "for i in range(600):\n"
+        "    print(i, flush=True)\n"
+        "    time.sleep(0.5)\n"
+    )
+    sid = app.db.add("smoke-sched-overlap", path, "", sys.executable)
+    sched = app.db.add_schedule(
+        "script", script_id=sid, spec_type="interval",
+        spec=json.dumps({"minutes": 1}), enabled=True,
+        next_run_at=datetime.now() - timedelta(minutes=5))
+    job = None
+    try:
+        app._run_due_schedules()
+        assert len(app._jobreg) == 1, "first scheduled run did not start"
+        job = app._jobreg.all()[0]
+        pump_until(app, lambda: job.current_process is not None, timeout=10)
+        # Force it due again while the first run is still going.
+        app.db.mark_schedule_fired(sched, datetime.now() - timedelta(minutes=1))
+        app._run_due_schedules()
+        assert len(app._jobreg) == 1, "schedule stacked a second run on a running job"
+        print("  [ok] schedule-overlap: second run skipped while the first is going")
+    finally:
+        if job is not None:
+            app._stop_job(job)
+            pump_until(app, lambda: len(app._jobreg) == 0)
+        app.db.delete_schedule(sched)
+        app.db.clear_runs(script_id=sid)
+        app.db.delete(sid)
+        os.unlink(path)
+
+
 def check_favorites_reorder(app):
     """Move Up on a favorite reorders the shared script order.
 
@@ -294,6 +373,8 @@ def main():
         check_card_rendering(app)
         check_card_run(app)
         check_run_history(app)
+        check_schedule_fires(app)
+        check_schedule_skips_while_running(app)
         check_favorites_reorder(app)
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)
