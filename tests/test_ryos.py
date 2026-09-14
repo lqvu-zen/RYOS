@@ -2894,3 +2894,155 @@ class TestHighlightPalette(unittest.TestCase):
                         for k in HIGHLIGHT_SEEDS]
             with self.subTest(theme=theme):
                 self.assertEqual(len(set(resolved)), len(HIGHLIGHT_SEEDS))
+
+
+# ---------------------------------------------------------------------------
+# Tray status (live tooltip + running-job menu)
+# ---------------------------------------------------------------------------
+from ryos.tray import MENU_LABEL_MAX, TIP_MAX, TrayIcon, _ellipsize, tray_title  # noqa: E402
+
+
+class TestTrayTitle(unittest.TestCase):
+    """The tooltip must always fit NOTIFYICONDATAW.szTip (WCHAR[128]).
+
+    ctypes raises on an over-long assignment rather than truncating, so a
+    tooltip that overflows would not be a cosmetic bug -- the update would
+    fail outright.
+    """
+
+    BASE = "RYOS v9.9.9"
+
+    def test_idle_is_just_the_base_title(self):
+        self.assertEqual(tray_title([], self.BASE), self.BASE)
+
+    def test_single_job_shows_its_full_label(self):
+        title = tray_title(["⚡ Deploy — Step 2/5: build"], self.BASE)
+        self.assertIn("Step 2/5: build", title)
+        self.assertTrue(title.startswith(self.BASE))
+
+    def test_several_jobs_collapse_to_a_count(self):
+        title = tray_title(["a", "b", "c"], self.BASE)
+        self.assertIn("3 running", title)
+        self.assertIn("a, b, c", title)
+
+    def test_long_label_is_clamped(self):
+        title = tray_title(["X" * 500], self.BASE)
+        self.assertLessEqual(len(title), TIP_MAX)
+        self.assertTrue(title.endswith("…"))
+
+    def test_many_jobs_are_clamped(self):
+        title = tray_title([f"job-number-{i}" for i in range(50)], self.BASE)
+        self.assertLessEqual(len(title), TIP_MAX)
+
+    def test_absurd_base_is_clamped(self):
+        # Even with no jobs at all the base has to survive the cap.
+        self.assertLessEqual(len(tray_title([], "R" * 500)), TIP_MAX)
+
+    def test_newlines_do_not_leak_into_the_tooltip(self):
+        # A tooltip is single-line; an embedded newline would render as a box.
+        title = tray_title(["one" + chr(10) + "two" + chr(9) + "three"], self.BASE)
+        self.assertNotIn(chr(10), title)
+        self.assertNotIn(chr(9), title)
+
+    def test_ellipsize_leaves_short_text_alone(self):
+        self.assertEqual(_ellipsize("short", 20), "short")
+
+    def test_ellipsize_never_exceeds_the_limit(self):
+        for n in range(1, 40):
+            with self.subTest(n=n):
+                self.assertLessEqual(len(_ellipsize("y" * 100, n)), n)
+
+
+class _FakeIcon:
+    """Stands in for pystray.Icon: records what the tray pushes at it."""
+
+    def __init__(self):
+        self.title = None
+        self.menu = None
+        self.menu_writes = 0
+        self.title_writes = 0
+
+    def __setattr__(self, name, value):
+        if name == "title" and "title" in self.__dict__:
+            self.__dict__["title_writes"] += 1
+        if name == "menu" and "menu" in self.__dict__:
+            self.__dict__["menu_writes"] += 1
+        self.__dict__[name] = value
+
+
+class TestTrayJobSnapshot(unittest.TestCase):
+    """set_jobs() is the only thing that crosses the UI/pystray boundary."""
+
+    def setUp(self):
+        self.tray = TrayIcon(on_show=lambda: None, on_exit=lambda: None,
+                             icon_path=Path("icon.ico"), title="RYOS v9.9.9",
+                             on_job=lambda jid: self.clicked.append(jid))
+        self.clicked = []
+        self.icon = _FakeIcon()
+        self.tray._icon = self.icon
+
+    def test_first_snapshot_updates_tooltip_and_menu(self):
+        self.tray.set_jobs([(1, "build")])
+        self.assertIn("build", self.icon.title)
+        self.assertEqual(self.icon.menu_writes, 1)
+
+    def test_identical_snapshot_is_skipped(self):
+        # Pipelines re-push on every step; an unchanged label must not turn
+        # into a stream of Win32 calls.
+        self.tray.set_jobs([(1, "build")])
+        before = (self.icon.menu_writes, self.icon.title_writes)
+        self.tray.set_jobs([(1, "build")])
+        self.tray.set_jobs([(1, "build")])
+        self.assertEqual((self.icon.menu_writes, self.icon.title_writes), before)
+
+    def test_changed_label_updates_again(self):
+        self.tray.set_jobs([(1, "Step 1/3")])
+        self.tray.set_jobs([(1, "Step 2/3")])
+        self.assertIn("Step 2/3", self.icon.title)
+
+    def test_clearing_jobs_restores_the_idle_title(self):
+        self.tray.set_jobs([(1, "build")])
+        self.tray.set_jobs([])
+        self.assertEqual(self.icon.title, "RYOS v9.9.9")
+
+    def test_snapshot_is_copied_not_aliased(self):
+        # The UI thread keeps mutating its own lists; the tray must not see it.
+        live = [(1, "build")]
+        self.tray.set_jobs(live)
+        live.append((2, "test"))
+        self.assertEqual(self.tray._jobs, [(1, "build")])
+
+    def test_job_handler_reports_the_right_id(self):
+        self.tray.set_jobs([(7, "build"), (9, "test")])
+        self.tray._job_handler(9)()
+        self.assertEqual(self.clicked, [9])
+
+    def test_menu_refresh_failure_is_swallowed(self):
+        # The tray is best-effort: a pystray error must never reach the UI.
+        class _Boom(_FakeIcon):
+            def __setattr__(self, name, value):
+                if name == "menu" and "menu" in self.__dict__:
+                    raise RuntimeError("pystray exploded")
+                super().__setattr__(name, value)
+        self.tray._icon = _Boom()
+        self.tray.set_jobs([(1, "build")])   # must not raise
+
+    def test_set_jobs_without_a_started_icon_is_safe(self):
+        self.tray._icon = None
+        self.tray.set_jobs([(1, "build")])
+        self.assertEqual(self.tray._jobs, [(1, "build")])
+
+    def test_stop_resets_the_snapshot(self):
+        self.tray.set_jobs([(1, "build")])
+        self.tray._icon = None              # mimic an already-stopped icon
+        self.tray.stop()
+        self.assertEqual(self.tray._jobs, [])
+        self.assertEqual(self.tray._title, "RYOS v9.9.9")
+
+
+class TestTrayMenuLabels(unittest.TestCase):
+    """Menu entries are built from the snapshot, not from live Job objects."""
+
+    def test_long_job_labels_are_clamped(self):
+        self.assertLessEqual(len(_ellipsize("Z" * 300, MENU_LABEL_MAX)),
+                             MENU_LABEL_MAX)

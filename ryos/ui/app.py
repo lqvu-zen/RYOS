@@ -52,6 +52,11 @@ from .theme import (
 )
 from .widgets import Tooltip
 
+# The tray is packaged-only by default (a stray pystray thread outlives reloads
+# and gets in the way of debugging), but it is the one feature that cannot be
+# exercised from source without an opt-in, so allow one explicitly.
+_TRAY_FORCED = os.environ.get("RYOS_TRAY", "").strip().lower() in ("1", "true", "yes")
+
 _log = get_logger("app")
 
 _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
@@ -211,14 +216,16 @@ class RYOSApp(_BaseWindow):
         self._hidden_to_tray = False
         self._last_normal_geometry: str | None = None
         self._tray: TrayIcon | None = None
-        if _PACKAGED:
+        if _PACKAGED or _TRAY_FORCED:
             # Dev/source runs skip the tray entirely: a stray pystray thread
             # and its icon outlive reloads and interfere with debugging.
+            # RYOS_TRAY=1 opts back in when the tray itself is what you're testing.
             try:
                 _tray = TrayIcon(
                     on_show=lambda: self.after(0, self._restore_from_tray),
                     on_exit=lambda: self.after(0, self._quit_app),
                     icon_path=_icon,
+                    on_job=lambda jid: self.after(0, self._show_job_from_tray, jid),
                 )
                 _tray.start()
                 self._tray = _tray
@@ -543,6 +550,7 @@ class RYOSApp(_BaseWindow):
         self._get_or_create_tab(job.tab_key, tab_name)
         if self._elapsed_timer_id is None:
             self._elapsed_timer_id = self.after(1000, self._tick_elapsed_timers)
+        self._sync_tray()
 
     def _tick_elapsed_timers(self):
         if not self._jobreg:
@@ -557,6 +565,7 @@ class RYOSApp(_BaseWindow):
     def _finish_job(self, job: "_Job"):
         """Remove job from registry, tear down its running row, update card states."""
         self._jobreg.remove(job.job_id)
+        self._sync_tray()
         if job.running_row is not None:
             try:
                 if job.running_row.winfo_exists():
@@ -1821,6 +1830,29 @@ class RYOSApp(_BaseWindow):
         """Refresh the running-row label after the controller renames a job."""
         if job.name_var is not None:
             job.name_var.set(job.name)
+        self._sync_tray()
+
+    def _sync_tray(self) -> None:
+        """Hand the tray a snapshot of what is running.
+
+        Driven by the job lifecycle hooks rather than the 80 ms output pump: a
+        job's label only changes when it starts, steps, or ends, and set_jobs()
+        drops anything that didn't actually change.
+        """
+        if self._tray is None or not self._tray.available:
+            return
+        self._tray.set_jobs([(j.job_id, j.name) for j in self._jobreg.all()])
+
+    def _show_job_from_tray(self, job_id: int) -> None:
+        """Restore the window and focus the output of a job picked in the tray menu."""
+        self._restore_from_tray()
+        job = self._jobreg.get(job_id)
+        if job is None:
+            return                      # finished between the click and the restore
+        if not self._out_expanded:
+            self._toggle_output()
+        if job.tab_key in self._output_tabs:
+            self._activate_tab(job.tab_key)
 
     def _toggle_select_mode(self):
         self._select_mode = not self._select_mode
