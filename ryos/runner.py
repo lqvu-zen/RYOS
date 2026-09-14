@@ -18,19 +18,26 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 
-from .interpreter import working_dir_for
+from .interpreter import RunSpec, working_dir_for
 from .logger import get_logger
 
 _log = get_logger("runner")
 
 
-def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False, step_token=None):
-    """Launch cmd, stream stdout to output_queue, and post a completion item.
+def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, step_token=None):
+    """Launch a run, stream stdout to output_queue, and post a completion item.
+
+    `spec` is a RunSpec. A bare command list is also accepted and given the
+    default working directory and an inherited environment — exactly what every
+    caller did before per-script environments existed.
 
     Sets job.current_process (and job.processes[step_token]) so the UI can
     terminate it. Never raises: launch failures are reported on the queue as
     a "done"/"error" item.
     """
+    if not isinstance(spec, RunSpec):
+        spec = RunSpec(cmd=list(spec), cwd=working_dir_for(spec), env=None)
+    cmd = spec.cmd
     def _put(item):
         # Token is appended only when one is supplied, so the tuple shape for
         # ad-hoc script runs (step_token=None) stays byte-identical to before
@@ -46,7 +53,10 @@ def run_subprocess(output_queue, job, cmd, name, script_id, log_output=False, st
             stderr=subprocess.STDOUT,
             bufsize=1,
             text=True,
-            cwd=working_dir_for(cmd),
+            cwd=spec.cwd,
+            # None inherits the parent environment, which is what Popen does by
+            # default — so a script with no overrides makes the identical call.
+            env=spec.env,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         job.current_process = proc

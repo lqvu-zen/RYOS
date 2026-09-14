@@ -1,4 +1,5 @@
 """Modal dialogs: Add/Edit script, preset entry, param picker, advanced options."""
+import json
 import os
 import sys
 import tkinter as tk
@@ -6,6 +7,7 @@ from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from ..db import ScriptDB
+from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
     _CORNER_LABEL_TO_VAL,
@@ -161,7 +163,7 @@ class ScriptDialog(tk.Toplevel):
         if script_id:
             rec = db.get(script_id)
             if rec:
-                _, name, path, params, interp, grp, temp_param = rec
+                _, name, path, params, interp, grp, temp_param, env_vars, work_dir = rec
                 self.e_name.insert(0, name)
                 self.e_path.insert(0, path)
                 self.e_params.insert(0, params)
@@ -169,6 +171,8 @@ class ScriptDialog(tk.Toplevel):
                 self.e_group.set(grp or "")
                 self.temp_param_var.set(bool(temp_param))
                 self.launcher_var.set(bool(db.is_detached(script_id)))
+                self.e_workdir.insert(0, work_dir or "")
+                self.t_env.insert("1.0", format_env_text(env_vars))
             for _, label, pparams in db.list_param_presets(script_id):
                 self._presets.append([label, pparams])
                 self._preset_listbox.insert(tk.END, label)
@@ -276,11 +280,38 @@ class ScriptDialog(tk.Toplevel):
             text="Launcher — opens an app/project; don't keep in Running",
         ).grid(row=8, column=1, columnspan=2, sticky="w", **pad)
 
+        ttk.Label(frame, text="Working dir:").grid(row=9, column=0, sticky="w", **pad)
+        self.e_workdir = ttk.Entry(frame, width=38)
+        self.e_workdir.grid(row=9, column=1, sticky="ew", **pad)
+        ttk.Button(frame, text="Browse", width=8,
+                   command=self._browse_workdir).grid(row=9, column=2, **pad)
+
+        ttk.Label(frame, text="Environment:").grid(row=10, column=0, sticky="nw", **pad)
+        env_frame = ttk.Frame(frame)
+        env_frame.grid(row=10, column=1, columnspan=2, sticky="ew", **pad)
+        env_frame.columnconfigure(0, weight=1)
+        # A plain KEY=value block rather than a row editor: it can be pasted
+        # straight out of a .env file or a shell, which is where these values
+        # actually come from.
+        self.t_env = tk.Text(
+            env_frame, height=4, wrap="none",
+            bg=C["out_bg"], fg="#cccccc", insertbackground="#cccccc",
+            relief="flat", highlightthickness=1,
+            highlightbackground=C["border"], font=("Consolas", 9),
+        )
+        _env_scroll = ttk.Scrollbar(env_frame, orient="vertical",
+                                    command=self.t_env.yview)
+        self.t_env.configure(yscrollcommand=_env_scroll.set)
+        self.t_env.grid(row=0, column=0, sticky="nsew")
+        _env_scroll.grid(row=0, column=1, sticky="ns")
+        ttk.Label(frame, text="One KEY=value per line; blank to inherit only the system environment",
+                  foreground="#888").grid(row=11, column=1, columnspan=2, sticky="w", padx=8)
+
         sep = ttk.Separator(frame, orient="horizontal")
-        sep.grid(row=9, column=0, columnspan=3, sticky="ew", pady=8)
+        sep.grid(row=12, column=0, columnspan=3, sticky="ew", pady=8)
 
         btn_row = ttk.Frame(frame)
-        btn_row.grid(row=10, column=0, columnspan=3, sticky="ew")
+        btn_row.grid(row=13, column=0, columnspan=3, sticky="ew")
         ttk.Button(btn_row, text="Save", command=self._save).pack(side="right", padx=4)
         ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="right", padx=4)
 
@@ -447,6 +478,13 @@ class ScriptDialog(tk.Toplevel):
             if not self.e_name.get().strip():
                 self.e_name.insert(0, Path(path).stem)
 
+    def _browse_workdir(self):
+        d = filedialog.askdirectory(
+            initialdir=self.e_workdir.get().strip() or str(Path.home()), parent=self)
+        if d:
+            self.e_workdir.delete(0, tk.END)
+            self.e_workdir.insert(0, os.path.normpath(d))
+
     def _save(self):
         name = self.e_name.get().strip()
         params = self.e_params.get().strip()
@@ -477,10 +515,18 @@ class ScriptDialog(tk.Toplevel):
 
         temp_param = int(self.temp_param_var.get())
         detached = int(self.launcher_var.get())
+        work_dir = self.e_workdir.get().strip()
+        env_pairs = parse_env_text(self.t_env.get("1.0", tk.END))
+        # "" rather than None: None means "leave untouched" on update, which
+        # would make clearing the field impossible.
+        env_vars = json.dumps(env_pairs) if env_pairs else ""
         if self.script_id:
-            self.db.update(self.script_id, name, path, params, interp, group_name, temp_param, detached)
+            self.db.update(self.script_id, name, path, params, interp, group_name,
+                           temp_param, detached, env_vars=env_vars, work_dir=work_dir)
         else:
-            self.script_id = self.db.add(name, path, params, interp, group_name, temp_param, detached)
+            self.script_id = self.db.add(name, path, params, interp, group_name,
+                                         temp_param, detached,
+                                         env_vars=env_vars or None, work_dir=work_dir)
 
         self.db.replace_param_presets(self.script_id, [(l, p) for l, p in self._presets])
 

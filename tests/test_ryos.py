@@ -258,7 +258,7 @@ class TestScriptDBExportImport(unittest.TestCase):
             path = f.name
         self.db.export_to_file(path)
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 4)
+        self.assertEqual(data["version"], 5)
         self.assertIn("exported_at", data)
         self.assertEqual(len(data["scripts"]), 2)
         names = [s["name"] for s in data["scripts"]]
@@ -2031,6 +2031,30 @@ class TestWorkingDirFor(unittest.TestCase):
         # Nothing exists on disk -> parent of cmd[0].
         self.assertEqual(working_dir_for(["python", "ghost.py"]), str(Path("python").parent))
 
+    def test_absolute_interpreter_does_not_win_over_the_script(self):
+        # Regression: the search used to start at argument 0, so a detected
+        # interpreter -- which is an absolute path to a real executable, e.g.
+        # sys.executable for .py -- matched first and every Python script ran
+        # in the Python install directory instead of its own folder.
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "run.py")
+            open(script, "w").close()
+            self.assertEqual(working_dir_for([sys.executable, script]), d)
+
+    def test_multi_token_interpreter_still_finds_the_script(self):
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "run.ps1")
+            open(script, "w").close()
+            self.assertEqual(working_dir_for(["powershell", "-File", script]), d)
+
+    def test_real_detected_command_runs_in_the_script_dir(self):
+        # Through the real detection path, not a hand-built command list.
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "run.py")
+            open(script, "w").close()
+            cmd = build_command(script, "", resolve_interpreter(script, ""))
+            self.assertEqual(working_dir_for(cmd), d)
+
 
 # ---------------------------------------------------------------------------
 # run_subprocess — the job execution worker (ryos.runner)
@@ -2263,7 +2287,7 @@ class TestJobController(unittest.TestCase):
         job = self._job("pipeline", queue=[self._step(3, "s", params="orig", override="NEW")],
                         total=1)
         self.ctl.run_next_pipeline_step(job)
-        cmd = self.rec["launch"][0][0]
+        cmd = self.rec["launch"][0][0].cmd
         self.assertIn("NEW", cmd)
         self.assertNotIn("orig", cmd)
 
@@ -3316,7 +3340,7 @@ class TestExportImportFidelity(unittest.TestCase):
         path = self._tmp_json()
         src.export_to_file(path)
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 4)
+        self.assertEqual(data["version"], 5)
 
     def test_payload_carries_the_new_step_fields(self):
         src, _pid = self._populated_db()
@@ -3421,3 +3445,310 @@ class TestExportImportFidelity(unittest.TestCase):
         db.import_from_file(self._write(payload))
         pid = db.list_pipelines("G")[0][0]
         self.assertEqual(len(db.list_pipeline_steps(pid)), 2)
+
+
+# ---------------------------------------------------------------------------
+# Per-script environment and working directory
+# ---------------------------------------------------------------------------
+from ryos.interpreter import (  # noqa: E402
+    RunSpec, build_run_spec, format_env_text, parse_env_text, parse_env_vars,
+)
+
+
+class TestParseEnvVars(unittest.TestCase):
+    """The stored blob sits on the run path, so nothing in it may raise."""
+
+    def test_none_and_empty_yield_nothing(self):
+        for raw in (None, "", "   ", 0):
+            with self.subTest(raw=raw):
+                self.assertEqual(parse_env_vars(raw), {})
+
+    def test_json_object_is_decoded(self):
+        self.assertEqual(parse_env_vars('{"A": "1", "B": "2"}'), {"A": "1", "B": "2"})
+
+    def test_a_dict_is_accepted_directly(self):
+        self.assertEqual(parse_env_vars({"A": "1"}), {"A": "1"})
+
+    def test_malformed_json_degrades_to_empty(self):
+        # A bad blob must not be able to stop a script from launching.
+        self.assertEqual(parse_env_vars("{not json"), {})
+
+    def test_non_object_json_degrades_to_empty(self):
+        self.assertEqual(parse_env_vars("[1, 2]"), {})
+        self.assertEqual(parse_env_vars('"a string"'), {})
+
+    def test_values_are_coerced_to_strings(self):
+        # Popen requires str values; a number from a hand-edited export would
+        # otherwise raise at launch time.
+        self.assertEqual(parse_env_vars('{"N": 1, "T": true}'), {"N": "1", "T": "True"})
+
+    def test_null_value_becomes_empty_string(self):
+        self.assertEqual(parse_env_vars('{"A": null}'), {"A": ""})
+
+    def test_blank_keys_are_dropped(self):
+        self.assertEqual(parse_env_vars('{"  ": "x", "A": "1"}'), {"A": "1"})
+
+
+class TestParseEnvText(unittest.TestCase):
+    """The dialog edits a KEY=value block in .env style."""
+
+    def test_basic_pairs(self):
+        self.assertEqual(parse_env_text("A=1\nB=2"), {"A": "1", "B": "2"})
+
+    def test_blank_lines_and_comments_are_ignored(self):
+        self.assertEqual(parse_env_text("\n# note\nA=1\n\n"), {"A": "1"})
+
+    def test_value_may_contain_equals(self):
+        # Connection strings and query params routinely do.
+        self.assertEqual(parse_env_text("DSN=postgres://h/db?x=1"),
+                         {"DSN": "postgres://h/db?x=1"})
+
+    def test_surrounding_whitespace_is_trimmed(self):
+        self.assertEqual(parse_env_text("  A  =  1  "), {"A": "1"})
+
+    def test_line_without_equals_is_skipped(self):
+        self.assertEqual(parse_env_text("novalue\nA=1"), {"A": "1"})
+
+    def test_orphan_equals_is_skipped(self):
+        # "=x" would otherwise become a variable with an empty name.
+        self.assertEqual(parse_env_text("=x\nA=1"), {"A": "1"})
+
+    def test_empty_value_is_kept(self):
+        self.assertEqual(parse_env_text("A="), {"A": ""})
+
+    def test_round_trips_through_format(self):
+        text = "A=1\nB=two words"
+        self.assertEqual(parse_env_text(format_env_text(json.dumps(parse_env_text(text)))),
+                         {"A": "1", "B": "two words"})
+
+    def test_format_of_nothing_is_empty(self):
+        self.assertEqual(format_env_text(None), "")
+
+
+class TestBuildRunSpec(unittest.TestCase):
+
+    BASE = {"PATH": "/usr/bin", "HOME": "/home/u"}
+    CMD = ["python", "/proj/run.py"]
+
+    def test_no_overrides_inherits_the_environment(self):
+        # env=None is what Popen already defaults to, so a script with no
+        # overrides produces the identical call this app made before.
+        spec = build_run_spec(self.CMD, base_env=self.BASE)
+        self.assertIsNone(spec.env)
+
+    def test_no_work_dir_falls_back_to_the_script_folder(self):
+        spec = build_run_spec(self.CMD, base_env=self.BASE)
+        self.assertEqual(spec.cwd, working_dir_for(self.CMD))
+
+    def test_work_dir_overrides_the_default(self):
+        spec = build_run_spec(self.CMD, work_dir="/elsewhere", base_env=self.BASE)
+        self.assertEqual(spec.cwd, "/elsewhere")
+
+    def test_blank_work_dir_is_treated_as_unset(self):
+        spec = build_run_spec(self.CMD, work_dir="   ", base_env=self.BASE)
+        self.assertEqual(spec.cwd, working_dir_for(self.CMD))
+
+    def test_overlay_preserves_the_parent_environment(self):
+        # A bare env has no PATH, which breaks the interpreter lookup on
+        # Windows -- the overlay must never replace, only add.
+        spec = build_run_spec(self.CMD, env_vars='{"API_KEY": "abc"}', base_env=self.BASE)
+        self.assertEqual(spec.env["PATH"], "/usr/bin")
+        self.assertEqual(spec.env["HOME"], "/home/u")
+        self.assertEqual(spec.env["API_KEY"], "abc")
+
+    def test_overlay_can_shadow_a_parent_variable(self):
+        spec = build_run_spec(self.CMD, env_vars='{"PATH": "/custom"}', base_env=self.BASE)
+        self.assertEqual(spec.env["PATH"], "/custom")
+
+    def test_malformed_blob_leaves_the_environment_inherited(self):
+        spec = build_run_spec(self.CMD, env_vars="{broken", base_env=self.BASE)
+        self.assertIsNone(spec.env)
+
+    def test_empty_object_leaves_the_environment_inherited(self):
+        spec = build_run_spec(self.CMD, env_vars="{}", base_env=self.BASE)
+        self.assertIsNone(spec.env)
+
+    def test_command_is_passed_through_untouched(self):
+        spec = build_run_spec(self.CMD, base_env=self.BASE)
+        self.assertEqual(spec.cmd, self.CMD)
+
+    def test_default_spec_matches_the_pre_feature_call(self):
+        # The safety property for this whole change: an unconfigured script must
+        # produce exactly the Popen arguments used before RunSpec existed.
+        spec = build_run_spec(self.CMD, base_env=self.BASE)
+        self.assertEqual((spec.cmd, spec.cwd, spec.env),
+                         (self.CMD, working_dir_for(self.CMD), None))
+
+
+class TestScriptEnvStorage(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+
+    def test_defaults_are_empty(self):
+        sid = self.db.add("s", "/s.py", "", "")
+        rec = self.db.get(sid)
+        self.assertIsNone(rec[7])       # env_vars
+        self.assertEqual(rec[8], "")    # work_dir
+
+    def test_add_stores_both(self):
+        sid = self.db.add("s", "/s.py", "", "", env_vars='{"A":"1"}', work_dir="/w")
+        rec = self.db.get(sid)
+        self.assertEqual(parse_env_vars(rec[7]), {"A": "1"})
+        self.assertEqual(rec[8], "/w")
+
+    def test_update_sets_both(self):
+        sid = self.db.add("s", "/s.py", "", "")
+        self.db.update(sid, "s", "/s.py", "", "", env_vars='{"A":"1"}', work_dir="/w")
+        rec = self.db.get(sid)
+        self.assertEqual(parse_env_vars(rec[7]), {"A": "1"})
+        self.assertEqual(rec[8], "/w")
+
+    def test_update_none_leaves_them_untouched(self):
+        # A caller that predates these fields must not be able to blank them.
+        sid = self.db.add("s", "/s.py", "", "", env_vars='{"A":"1"}', work_dir="/w")
+        self.db.update(sid, "renamed", "/s.py", "", "")
+        rec = self.db.get(sid)
+        self.assertEqual(parse_env_vars(rec[7]), {"A": "1"})
+        self.assertEqual(rec[8], "/w")
+
+    def test_update_empty_string_clears_them(self):
+        sid = self.db.add("s", "/s.py", "", "", env_vars='{"A":"1"}', work_dir="/w")
+        self.db.update(sid, "s", "/s.py", "", "", env_vars="", work_dir="")
+        rec = self.db.get(sid)
+        self.assertIsNone(rec[7])
+        self.assertEqual(rec[8], "")
+
+    def test_pipeline_step_inherits_from_its_script(self):
+        sid = self.db.add("s", "/s.py", "", "", "G", env_vars='{"A":"1"}', work_dir="/w")
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, sid)
+        step = self.db.list_pipeline_steps(pid)[0]
+        self.assertEqual(parse_env_vars(step[8]), {"A": "1"})
+        self.assertEqual(step[9], "/w")
+
+    def test_clone_group_carries_them(self):
+        self.db.create_group("Src")
+        self.db.add("s", "/s.py", "", "", "Src", env_vars='{"A":"1"}', work_dir="/w")
+        self.db.clone_group("Src", "Dst")
+        rec = [r for r in self.db.list_all() if r[8] == "Dst"][0]
+        full = self.db.get(rec[0])
+        self.assertEqual(parse_env_vars(full[7]), {"A": "1"})
+        self.assertEqual(full[8], "/w")
+
+    def test_export_import_round_trip(self):
+        self.db.add("s", "/s.py", "", "", "G", env_vars='{"A":"1"}', work_dir="/w")
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        self.db.export_to_file(path)
+        other = _make_db()
+        other.import_from_file(path)
+        sid = other.list_all()[0][0]
+        rec = other.get(sid)
+        self.assertEqual(parse_env_vars(rec[7]), {"A": "1"})
+        self.assertEqual(rec[8], "/w")
+
+
+class TestRunSpecReachesTheProcess(unittest.TestCase):
+    """End-to-end through the real runner and a real subprocess."""
+
+    def _job(self):
+        return Job(1, "script", 1, None, "t", "job:1", "g")
+
+    def _drain(self, q):
+        out = []
+        while not q.empty():
+            out.append(q.get_nowait())
+        return out
+
+    def test_env_override_is_visible_to_the_child(self):
+        q = _queue.Queue()
+        spec = build_run_spec(
+            [sys.executable, "-c", "import os; print(os.environ['RYOS_TEST_VAR'])"],
+            env_vars='{"RYOS_TEST_VAR": "reached"}')
+        run_subprocess(q, self._job(), spec, "t", 1)
+        text = "".join(i[2] for i in self._drain(q) if i[0] == "stdout")
+        self.assertIn("reached", text)
+
+    def test_path_still_reaches_the_child_alongside_an_override(self):
+        q = _queue.Queue()
+        spec = build_run_spec(
+            [sys.executable, "-c", "import os; print('PATH' in os.environ)"],
+            env_vars='{"RYOS_TEST_VAR": "x"}')
+        run_subprocess(q, self._job(), spec, "t", 1)
+        text = "".join(i[2] for i in self._drain(q) if i[0] == "stdout")
+        self.assertIn("True", text)
+
+    def test_work_dir_is_where_the_child_runs(self):
+        q = _queue.Queue()
+        target = os.path.realpath(tempfile.mkdtemp())
+        spec = build_run_spec([sys.executable, "-c", "import os; print(os.getcwd())"],
+                              work_dir=target)
+        run_subprocess(q, self._job(), spec, "t", 1)
+        text = "".join(i[2] for i in self._drain(q) if i[0] == "stdout")
+        self.assertEqual(os.path.realpath(text.strip()), target)
+
+    def test_a_bare_command_list_still_works(self):
+        # The runner accepts a plain list for callers predating RunSpec.
+        q = _queue.Queue()
+        run_subprocess(q, self._job(), [sys.executable, "-c", "print('plain')"], "t", 1)
+        text = "".join(i[2] for i in self._drain(q) if i[0] == "stdout")
+        self.assertIn("plain", text)
+
+
+class TestControllerBuildsRunSpec(unittest.TestCase):
+    """Pipeline steps must reach _launch as a RunSpec carrying their script's
+    environment -- the controller is the only place that assembles one for a step."""
+
+    def setUp(self):
+        self.rec = {"launch": []}
+        self.reg = JobRegistry()
+        self.q = _queue.Queue()
+        self.ctl = JobController(
+            self.reg, self.q, _make_db(),
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda *a: None, on_started=lambda *a: None,
+            on_finish=lambda *a: None, on_rename=lambda *a: None,
+            launch=lambda job, spec, name, sid, tok=None:
+                self.rec["launch"].append((spec, name, sid, tok)),
+        )
+
+    def _job(self, queue_):
+        job = Job(1, "pipeline", None, 1, "p", "job:1", "g",
+                  pipeline_name="p", pipeline_queue=queue_, pipeline_total=len(queue_))
+        self.reg.add(job)
+        return job
+
+    def _step(self, sid, name, path, env_vars=None, work_dir=""):
+        return (sid, sid, name, path, "", "", None, TRIGGER_AFTER, env_vars, work_dir)
+
+    def test_step_env_reaches_the_spec(self):
+        here = str(Path(__file__).resolve())
+        job = self._job([self._step(1, "s", here, env_vars='{"A":"1"}')])
+        self.ctl.run_next_pipeline_step(job)
+        spec = self.rec["launch"][0][0]
+        self.assertIsInstance(spec, RunSpec)
+        self.assertEqual(spec.env["A"], "1")
+
+    def test_step_work_dir_reaches_the_spec(self):
+        here = str(Path(__file__).resolve())
+        target = tempfile.mkdtemp()
+        job = self._job([self._step(1, "s", here, work_dir=target)])
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(self.rec["launch"][0][0].cwd, target)
+
+    def test_step_without_env_inherits(self):
+        here = str(Path(__file__).resolve())
+        job = self._job([self._step(1, "s", here)])
+        self.ctl.run_next_pipeline_step(job)
+        self.assertIsNone(self.rec["launch"][0][0].env)
+
+    def test_short_legacy_step_tuple_still_launches(self):
+        # 8-tuples predate these columns; they must yield the default spec
+        # rather than an IndexError on the run path.
+        here = str(Path(__file__).resolve())
+        job = self._job([(1, 1, "s", here, "", "", None, TRIGGER_AFTER)])
+        self.ctl.run_next_pipeline_step(job)
+        spec = self.rec["launch"][0][0]
+        self.assertIsNone(spec.env)
+        self.assertEqual(spec.cwd, working_dir_for([here]))

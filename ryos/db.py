@@ -52,7 +52,23 @@ def _migrate_label_color(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN label_color TEXT DEFAULT NULL")
 
 
-_MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color}
+def _migrate_script_env(conn):
+    """Per-script environment overrides and an explicit working directory.
+
+    env_vars holds a JSON object rather than living in its own table: it is
+    always read and written whole and never queried by key, so a table would
+    buy nothing and cost a join on every card render. NULL and '' mean "no
+    override", which is what every existing row gets.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
+    if "env_vars" not in cols:
+        conn.execute("ALTER TABLE scripts ADD COLUMN env_vars TEXT DEFAULT NULL")
+    if "work_dir" not in cols:
+        conn.execute("ALTER TABLE scripts ADD COLUMN work_dir TEXT DEFAULT ''")
+
+
+_MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
+                     4: _migrate_script_env}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -191,22 +207,28 @@ class ScriptDB:
         if "params_override" not in pscols:
             conn.execute("ALTER TABLE pipeline_steps ADD COLUMN params_override TEXT DEFAULT NULL")
     def add(self, name: str, path: str, params: str, interpreter: str, group_name: str = "",
-            temp_param: int = 0, detached: int = 0) -> int:
+            temp_param: int = 0, detached: int = 0,
+            env_vars: str | None = None, work_dir: str = "") -> int:
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(order_index), 0) FROM scripts").fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, group_name, temp_param, detached) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO scripts (name, path, params, interpreter, created_at, order_index, "
+                "group_name, temp_param, detached, env_vars, work_dir) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (name, path, params, interpreter, datetime.now().isoformat(timespec="seconds"),
-                 max_order + 1, group_name, int(temp_param), int(detached)),
+                 max_order + 1, group_name, int(temp_param), int(detached),
+                 env_vars or None, work_dir or ""),
             )
             conn.commit()
             return cur.lastrowid
 
     def update(self, script_id: int, name: str, path: str, params: str, interpreter: str,
                group_name: str = "", temp_param: int | None = None,
-               detached: int | None = None):
-        """Update a script. temp_param/detached=None leaves that flag untouched."""
+               detached: int | None = None,
+               env_vars: str | None = None, work_dir: str | None = None):
+        """Update a script. Any of temp_param/detached/env_vars/work_dir left as
+        None leaves that field untouched, so a caller that doesn't know about a
+        field can't blank it."""
         with self._connect() as conn:
             if temp_param is None:
                 conn.execute(
@@ -221,6 +243,12 @@ class ScriptDB:
             if detached is not None:
                 conn.execute("UPDATE scripts SET detached=? WHERE id=?",
                              (int(detached), script_id))
+            if env_vars is not None:
+                conn.execute("UPDATE scripts SET env_vars=? WHERE id=?",
+                             (env_vars or None, script_id))
+            if work_dir is not None:
+                conn.execute("UPDATE scripts SET work_dir=? WHERE id=?",
+                             (work_dir or "", script_id))
             conn.commit()
 
     def is_detached(self, script_id: int) -> bool:
@@ -251,7 +279,8 @@ class ScriptDB:
                 scripts = conn.execute(
                     "SELECT id, name, path, params, interpreter, order_index, group_name, "
                     "COALESCE(temp_param, 0), COALESCE(detached, 0), "
-                    "COALESCE(is_favorite, 0), label_color "
+                    "COALESCE(is_favorite, 0), label_color, "
+                    "env_vars, COALESCE(work_dir, '') "
                     "FROM scripts WHERE COALESCE(group_name,'')=? "
                     "ORDER BY order_index ASC, id ASC",
                     (group_name,),
@@ -269,7 +298,8 @@ class ScriptDB:
                 scripts = conn.execute(
                     "SELECT id, name, path, params, interpreter, order_index, group_name, "
                     "COALESCE(temp_param, 0), COALESCE(detached, 0), "
-                    "COALESCE(is_favorite, 0), label_color "
+                    "COALESCE(is_favorite, 0), label_color, "
+                    "env_vars, COALESCE(work_dir, '') "
                     "FROM scripts ORDER BY "
                     "CASE WHEN COALESCE(group_name,'')='' THEN 1 ELSE 0 END, "
                     "group_name ASC, order_index ASC, id ASC"
@@ -296,6 +326,7 @@ class ScriptDB:
                     "group_name": s[6] or "",
                     "temp_param": s[7], "detached": s[8],
                     "is_favorite": s[9], "label_color": s[10],
+                    "env_vars": s[11], "work_dir": s[12],
                     "presets": [{"label": lbl, "params": prm} for lbl, prm in presets],
                 })
 
@@ -321,9 +352,9 @@ class ScriptDB:
         data = {
             # v4 added the per-script flags (temp_param / detached /
             # is_favorite / label_color) and the per-step params_override and
-            # trigger_mode. Every one of them is defaulted on read, so a v3
-            # file still imports exactly as it did before.
-            "version": 4,
+            # trigger_mode; v5 added env_vars / work_dir. Every one of them is
+            # defaulted on read, so older files still import unchanged.
+            "version": 5,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
             "groups": [{"name": g[0], "sort_order": g[1], "base_dir": g[2]} for g in groups],
             "scripts": script_data,
@@ -398,8 +429,9 @@ class ScriptDB:
                 cur = conn.execute(
                     "INSERT INTO scripts "
                     "(name, path, params, interpreter, created_at, order_index, "
-                    " group_name, temp_param, detached, is_favorite, label_color) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " group_name, temp_param, detached, is_favorite, label_color, "
+                    " env_vars, work_dir) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (s["name"], spath, s.get("params", ""),
                      s.get("interpreter", ""), now,
                      s.get("order_index", 0), s.get("group_name", ""),
@@ -410,7 +442,9 @@ class ScriptDB:
                      # validated here: db.py must not import from ryos.ui, and
                      # the card layer already falls back to the normal label
                      # colour for any key it doesn't know.
-                     s.get("label_color") or None),
+                     s.get("label_color") or None,
+                     s.get("env_vars") or None,
+                     s.get("work_dir") or ""),
                 )
                 new_sid = cur.lastrowid
                 path_to_id[spath] = new_sid
@@ -606,17 +640,21 @@ class ScriptDB:
             )
             now = datetime.now().isoformat(timespec="seconds")
             source_scripts = conn.execute(
-                "SELECT id, name, path, params, interpreter, order_index, COALESCE(temp_param, 0) "
+                "SELECT id, name, path, params, interpreter, order_index, "
+                "COALESCE(temp_param, 0), env_vars, COALESCE(work_dir, '') "
                 "FROM scripts WHERE group_name=?",
                 (source,),
             ).fetchall()
             id_map: dict[int, int] = {}
-            for old_id, s_name, path, params, interpreter, order_index, temp_param in source_scripts:
+            for (old_id, s_name, path, params, interpreter, order_index,
+                 temp_param, env_vars, work_dir) in source_scripts:
                 cur = conn.execute(
                     "INSERT INTO scripts (name, path, params, interpreter, created_at, "
-                    "last_run_at, last_run_status, order_index, group_name, temp_param) "
-                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
-                    (s_name, path, params, interpreter, now, order_index, new_name, temp_param),
+                    "last_run_at, last_run_status, order_index, group_name, temp_param, "
+                    "env_vars, work_dir) "
+                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)",
+                    (s_name, path, params, interpreter, now, order_index, new_name,
+                     temp_param, env_vars, work_dir),
                 )
                 new_id = cur.lastrowid
                 id_map[old_id] = new_id
@@ -774,11 +812,15 @@ class ScriptDB:
 
     def list_pipeline_steps(self, pipeline_id: int) -> list:
         """Returns (step_id, script_id, name, path, params, interpreter,
-        params_override, trigger_mode)."""
+        params_override, trigger_mode, env_vars, work_dir).
+
+        env_vars/work_dir come from the script, not the step: a step inherits
+        its script's execution environment and has no override of its own."""
         with self._connect() as conn:
             return conn.execute(
                 "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter, "
-                "ps.params_override, ps.trigger_mode "
+                "ps.params_override, ps.trigger_mode, "
+                "s.env_vars, COALESCE(s.work_dir, '') "
                 "FROM pipeline_steps ps JOIN scripts s ON s.id = ps.script_id "
                 "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
                 (pipeline_id,),
@@ -923,7 +965,8 @@ class ScriptDB:
         with self._connect() as conn:
             cur = conn.execute(
                 "SELECT id, name, path, params, interpreter, group_name, "
-                "COALESCE(temp_param, 0) FROM scripts WHERE id=?",
+                "COALESCE(temp_param, 0), env_vars, COALESCE(work_dir, '') "
+                "FROM scripts WHERE id=?",
                 (script_id,),
             )
             return cur.fetchone()

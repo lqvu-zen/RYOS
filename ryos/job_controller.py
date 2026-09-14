@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from .db import TRIGGER_WITH
-from .interpreter import build_command, resolve_interpreter
+from .interpreter import build_command, build_run_spec, resolve_interpreter
 from .jobs import Job
 from .logger import get_logger
 from .runner import decode_output_item
@@ -61,7 +61,7 @@ class JobController:
         on_started: Callable[[Job], None],
         on_finish: Callable[[Job], None],
         on_rename: Callable[[Job], None],
-        launch: Callable[[Job, list, str, int, object], None],
+        launch: Callable[[Job, object, str, int, object], None],
         now: Callable[[], datetime] = datetime.now,
     ) -> None:
         self._registry = registry
@@ -73,7 +73,7 @@ class JobController:
         self._on_started = on_started    # (job) -> None; app builds tab + elapsed ticker
         self._on_finish = on_finish      # (job) -> None; widget teardown stays in the app
         self._on_rename = on_rename      # (job) -> None; running-row label refresh
-        self._launch = launch            # (job, cmd, name, script_id, step_token=None) -> None
+        self._launch = launch            # (job, run_spec, name, script_id, step_token=None) -> None
         self._now = now
 
     def at_capacity(self, max_jobs: int) -> bool:
@@ -183,7 +183,13 @@ class JobController:
         self._on_status(status_line)
         self._on_rename(job)
 
-        for token, (step_id, sid, name, path, params, interp, override, _mode) in prepared:
+        for token, step in prepared:
+            step_id, sid, name, path, params, interp, override, _mode = step[:8]
+            # A step inherits its script's environment and working directory.
+            # Shorter tuples (tests, and anything predating these columns) have
+            # neither, which yields the default spec.
+            env_vars = step[8] if len(step) > 8 else None
+            work_dir = step[9] if len(step) > 9 else ""
             if override is not None:
                 params = override
             if not Path(path).exists():
@@ -196,7 +202,8 @@ class JobController:
                 self._queue.put(("stderr", job.job_id, f"[ERROR] Parameter error: {e}\n", token))
                 self._queue.put(("done", job.job_id, sid, "error", "", token))
                 continue
-            self._launch(job, cmd, name, sid, token)
+            spec = build_run_spec(cmd, work_dir=work_dir or "", env_vars=env_vars)
+            self._launch(job, spec, name, sid, token)
 
     def handle_step_done(self, job: Job, sid: int, status: str, token=None) -> None:
         """Dispatch a finished step: advance the pipeline, or finish the job."""

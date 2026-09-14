@@ -20,7 +20,8 @@ except ImportError:
 
 from .. import __version__
 from ..db import ScriptDB
-from ..interpreter import build_command, detect_interpreter, resolve_interpreter
+from ..interpreter import (build_command, build_run_spec, detect_interpreter,
+                           resolve_interpreter)
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
@@ -1947,15 +1948,16 @@ class RYOSApp(_BaseWindow):
             _log.error("Import failed: %s", e)
             messagebox.showerror("Import Failed", str(e))
 
-    def _launch(self, job: "_Job", cmd, name, script_id, step_token=None) -> None:
+    def _launch(self, job: "_Job", spec, name, script_id, step_token=None) -> None:
         """Mark the script as run and start its worker thread.
 
         Single entry point for both ad-hoc script runs and pipeline steps, so
-        any change to how jobs are spawned lives in one place.
+        any change to how jobs are spawned lives in one place. `spec` is a
+        RunSpec carrying the command, working directory and environment.
         """
         self.db.mark_run(script_id)
         threading.Thread(
-            target=self._run_subprocess, args=(job, cmd, name, script_id, step_token), daemon=True,
+            target=self._run_subprocess, args=(job, spec, name, script_id, step_token), daemon=True,
         ).start()
 
     def _run_script(self, script_id, name, path, params, interpreter):
@@ -1979,6 +1981,9 @@ class RYOSApp(_BaseWindow):
 
         rec = self.db.get(script_id)
         group = (rec[5] or "") if rec else (self._active_group or "")
+        spec = build_run_spec(cmd,
+                              work_dir=(rec[8] if rec else "") or "",
+                              env_vars=rec[7] if rec else None)
         job = self._jobctl.new_job("script", script_id=script_id, pipeline_id=None,
                             name=name, group=group)
         job.start_time = datetime.now()
@@ -1996,7 +2001,7 @@ class RYOSApp(_BaseWindow):
         content = self._running_slots.get(group)
         if content and content.winfo_exists():
             self._add_running_row(content, job)
-        self._launch(job, cmd, name, script_id)
+        self._launch(job, spec, name, script_id)
         if self.db.is_detached(script_id):
             secs = self._settings.get("launcher_release_seconds", 3)
             self.after(max(0, int(secs)) * 1000,
@@ -2383,8 +2388,8 @@ class RYOSApp(_BaseWindow):
 
         self._run_script(script_id, display, abs_path, params, interpreter)
 
-    def _run_subprocess(self, job: "_Job", cmd, name, script_id, step_token=None):
-        run_subprocess(self.output_queue, job, cmd, name, script_id,
+    def _run_subprocess(self, job: "_Job", spec, name, script_id, step_token=None):
+        run_subprocess(self.output_queue, job, spec, name, script_id,
                        log_output=self._settings.get("log_runs_output", False),
                        step_token=step_token)
 
