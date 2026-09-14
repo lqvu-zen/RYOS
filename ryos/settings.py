@@ -82,6 +82,9 @@ _SETTINGS_DEFAULTS: dict = {
     # Hard cap on indexed files so a misconfigured base dir can't build a
     # multi-hundred-MB cache that freezes the UI on load.
     "quick_run_index_max_files": 5000,
+    # Run history older than this is pruned once at startup. 0 disables
+    # pruning entirely (history then grows without bound).
+    "history_retention_days": 90,
     "logging_enabled":        True,
     "log_level":              "INFO",
     "log_runs_output":        False,

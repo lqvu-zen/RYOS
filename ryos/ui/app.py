@@ -240,6 +240,8 @@ class RYOSApp(_BaseWindow):
         if self._instance_lock is not None:
             self.after(500, self._poll_instance_signals)
 
+        self._prune_run_history()
+
         if self._settings.get("auto_check_update", True):
             threading.Thread(target=self._check_for_update, daemon=True).start()
         self.attributes("-topmost", self._settings["always_on_top"])
@@ -1832,6 +1834,21 @@ class RYOSApp(_BaseWindow):
         if job.name_var is not None:
             job.name_var.set(job.name)
         self._sync_tray()
+
+    def _prune_run_history(self) -> None:
+        """Drop history past the retention window. Startup-only and best-effort:
+        a failure here must never stop the app from opening."""
+        try:
+            days = int(self._settings.get("history_retention_days", 90))
+        except (TypeError, ValueError):
+            days = 90
+        try:
+            removed = self.db.prune_runs(days)
+        except Exception:
+            _log.warning("Could not prune run history", exc_info=True)
+            return
+        if removed:
+            _log.info("Pruned %d run history rows older than %d days", removed, days)
 
     def _sync_tray(self) -> None:
         """Hand the tray a snapshot of what is running.

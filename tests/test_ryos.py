@@ -3830,3 +3830,362 @@ class TestControllerBuildsRunSpec(unittest.TestCase):
         spec = self.rec["launch"][0][0]
         self.assertIsNone(spec.env)
         self.assertEqual(spec.cwd, working_dir_for([here]))
+
+
+# ---------------------------------------------------------------------------
+# Run history — storage, retention, formatting, and the controller hooks
+# ---------------------------------------------------------------------------
+from ryos.db import (  # noqa: E402
+    RUN_PIPELINE, RUN_SCRIPT, RUN_STEP, SOURCE_MANUAL, SOURCE_PIPELINE,
+)
+import datetime  # noqa: E402
+from ryos.history import (  # noqa: E402
+    describe, format_duration, format_exit_code, format_run_row, format_status,
+    format_when, header_row, parse_stamp, summarize,
+)
+
+
+def _run_row(**kw):
+    """A list_runs-shaped tuple with sensible defaults."""
+    base = dict(id=1, script_id=1, pipeline_id=None, kind=RUN_SCRIPT, name="s",
+                started_at="2026-09-14T10:00:00", finished_at="2026-09-14T10:00:04",
+                status="ok", exit_code=0, step_index=None,
+                trigger_source=SOURCE_MANUAL)
+    base.update(kw)
+    return (base["id"], base["script_id"], base["pipeline_id"], base["kind"],
+            base["name"], base["started_at"], base["finished_at"], base["status"],
+            base["exit_code"], base["step_index"], base["trigger_source"])
+
+
+class TestRunHistoryStorage(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.sid = self.db.add("s", "/s.py", "", "", "G")
+        self.now = datetime.datetime.now()
+
+    def test_records_and_reads_back(self):
+        self.db.record_run(RUN_SCRIPT, name="s", script_id=self.sid,
+                           started_at=self.now, finished_at=self.now,
+                           status="ok", exit_code=0)
+        rows = self.db.list_runs(script_id=self.sid)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][3], RUN_SCRIPT)
+        self.assertEqual(rows[0][7], "ok")
+        self.assertEqual(rows[0][8], 0)
+
+    def test_exit_code_is_preserved_including_zero(self):
+        # 0 is falsy; a naive `if exit_code:` would drop the success case.
+        self.db.record_run(RUN_SCRIPT, name="s", script_id=self.sid,
+                           started_at=self.now, status="ok", exit_code=0)
+        self.assertEqual(self.db.list_runs(script_id=self.sid)[0][8], 0)
+
+    def test_missing_exit_code_stays_null(self):
+        self.db.record_run(RUN_SCRIPT, name="s", script_id=self.sid,
+                           started_at=self.now, status="error")
+        self.assertIsNone(self.db.list_runs(script_id=self.sid)[0][8])
+
+    def test_default_trigger_is_manual(self):
+        self.db.record_run(RUN_SCRIPT, name="s", script_id=self.sid,
+                           started_at=self.now)
+        self.assertEqual(self.db.list_runs(script_id=self.sid)[0][10], SOURCE_MANUAL)
+
+    def test_newest_first(self):
+        for i, when in enumerate(["2026-01-01T00:00:00", "2026-06-01T00:00:00",
+                                  "2026-03-01T00:00:00"]):
+            self.db.record_run(RUN_SCRIPT, name=f"r{i}", script_id=self.sid,
+                               started_at=when)
+        names = [r[4] for r in self.db.list_runs(script_id=self.sid)]
+        self.assertEqual(names, ["r1", "r2", "r0"])
+
+    def test_limit_is_respected(self):
+        for i in range(10):
+            self.db.record_run(RUN_SCRIPT, name=f"r{i}", script_id=self.sid,
+                               started_at=self.now)
+        self.assertEqual(len(self.db.list_runs(script_id=self.sid, limit=3)), 3)
+
+    def test_filters_by_script(self):
+        other = self.db.add("o", "/o.py", "", "", "G")
+        self.db.record_run(RUN_SCRIPT, name="mine", script_id=self.sid, started_at=self.now)
+        self.db.record_run(RUN_SCRIPT, name="theirs", script_id=other, started_at=self.now)
+        self.assertEqual([r[4] for r in self.db.list_runs(script_id=self.sid)], ["mine"])
+
+    def test_filters_by_pipeline(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.record_run(RUN_PIPELINE, name="P", pipeline_id=pid, started_at=self.now)
+        self.db.record_run(RUN_SCRIPT, name="s", script_id=self.sid, started_at=self.now)
+        self.assertEqual([r[4] for r in self.db.list_runs(pipeline_id=pid)], ["P"])
+
+    def test_accepts_a_datetime_or_a_string(self):
+        self.db.record_run(RUN_SCRIPT, name="dt", script_id=self.sid, started_at=self.now)
+        self.db.record_run(RUN_SCRIPT, name="str", script_id=self.sid,
+                           started_at="2026-09-14T10:00:00")
+        for row in self.db.list_runs(script_id=self.sid):
+            with self.subTest(name=row[4]):
+                self.assertIsNotNone(parse_stamp(row[5]))
+
+    def test_clear_for_one_item_leaves_others(self):
+        other = self.db.add("o", "/o.py", "", "", "G")
+        self.db.record_run(RUN_SCRIPT, name="mine", script_id=self.sid, started_at=self.now)
+        self.db.record_run(RUN_SCRIPT, name="theirs", script_id=other, started_at=self.now)
+        self.db.clear_runs(script_id=self.sid)
+        self.assertEqual(self.db.list_runs(script_id=self.sid), [])
+        self.assertEqual(len(self.db.list_runs(script_id=other)), 1)
+
+
+class TestRunHistoryRetention(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.sid = self.db.add("s", "/s.py", "", "")
+        now = datetime.datetime.now()
+        self.db.record_run(RUN_SCRIPT, name="recent", script_id=self.sid,
+                           started_at=now - datetime.timedelta(days=1))
+        self.db.record_run(RUN_SCRIPT, name="old", script_id=self.sid,
+                           started_at=now - datetime.timedelta(days=200))
+
+    def test_prunes_only_what_is_past_the_window(self):
+        removed = self.db.prune_runs(90)
+        self.assertEqual(removed, 1)
+        self.assertEqual([r[4] for r in self.db.list_runs(script_id=self.sid)], ["recent"])
+
+    def test_zero_disables_pruning(self):
+        # An off-by-one that treated 0 as "keep nothing" would silently destroy
+        # the user's entire history.
+        self.assertEqual(self.db.prune_runs(0), 0)
+        self.assertEqual(len(self.db.list_runs(script_id=self.sid)), 2)
+
+    def test_negative_disables_pruning(self):
+        self.assertEqual(self.db.prune_runs(-5), 0)
+        self.assertEqual(len(self.db.list_runs(script_id=self.sid)), 2)
+
+    def test_pruning_is_idempotent(self):
+        self.db.prune_runs(90)
+        self.assertEqual(self.db.prune_runs(90), 0)
+
+    def test_sub_second_runs_keep_a_real_duration(self):
+        # Stored at seconds resolution, every fast script would read "0.0s".
+        db = _make_db()
+        sid = db.add("s", "/s.py", "", "")
+        start = datetime.datetime.now()
+        db.record_run(RUN_SCRIPT, name="quick", script_id=sid, started_at=start,
+                      finished_at=start + datetime.timedelta(milliseconds=420),
+                      status="ok", exit_code=0)
+        row = db.list_runs(script_id=sid)[0]
+        self.assertEqual(format_duration(row[5], row[6]), "0.4s")
+
+    def test_millisecond_stamps_still_sort_and_prune(self):
+        db = _make_db()
+        sid = db.add("s", "/s.py", "", "")
+        now = datetime.datetime.now()
+        db.record_run(RUN_SCRIPT, name="new", script_id=sid, started_at=now)
+        db.record_run(RUN_SCRIPT, name="old", script_id=sid,
+                      started_at=now - datetime.timedelta(days=200))
+        self.assertEqual([r[4] for r in db.list_runs(script_id=sid)], ["new", "old"])
+        self.assertEqual(db.prune_runs(90), 1)
+        self.assertEqual([r[4] for r in db.list_runs(script_id=sid)], ["new"])
+
+
+class TestRunHistoryFormatting(unittest.TestCase):
+
+    def test_when_has_no_year(self):
+        self.assertEqual(format_when("2026-09-14T14:03:09"), "09-14 14:03:09")
+
+    def test_unparseable_stamp_renders_as_a_dash(self):
+        # History outlives the code that wrote it; a bad stamp must not raise
+        # inside a list redraw.
+        self.assertEqual(format_when("not-a-date"), "—")
+        self.assertIsNone(parse_stamp("not-a-date"))
+
+    def test_seconds_below_a_minute(self):
+        self.assertEqual(format_duration("2026-09-14T10:00:00", "2026-09-14T10:00:04"), "4.0s")
+
+    def test_minutes_are_zero_padded(self):
+        self.assertEqual(format_duration("2026-09-14T10:00:00", "2026-09-14T10:02:05"), "2m 05s")
+
+    def test_missing_finish_has_no_duration(self):
+        self.assertEqual(format_duration("2026-09-14T10:00:00", None), "—")
+
+    def test_negative_duration_is_rejected(self):
+        # A clock change shouldn't render "-3600.0s".
+        self.assertEqual(format_duration("2026-09-14T10:00:00", "2026-09-14T09:00:00"), "—")
+
+    def test_status_marks(self):
+        self.assertIn("ok", format_status("ok"))
+        self.assertIn("error", format_status("error"))
+        self.assertEqual(format_status(None), "—")
+
+    def test_unknown_status_passes_through(self):
+        self.assertEqual(format_status("weird"), "weird")
+
+    def test_exit_zero_is_shown_not_blanked(self):
+        self.assertEqual(format_exit_code(0), "0")
+        self.assertEqual(format_exit_code(None), "—")
+
+    def test_step_rows_name_their_position(self):
+        self.assertEqual(describe(_run_row(kind=RUN_STEP, step_index=3, name="build")),
+                         "step 3  build")
+
+    def test_non_step_rows_are_just_the_name(self):
+        self.assertEqual(describe(_run_row(name="build")), "build")
+
+    def test_columns_line_up_with_the_header(self):
+        # The list is monospace; a row wider than its columns would shear the
+        # whole table.
+        header = header_row()
+        at = header.index("WHAT")
+        for row in (_run_row(name="probe"),
+                    _run_row(name="probe", status="error", exit_code=127),
+                    _run_row(name="probe", finished_at=None, status="stopped",
+                             exit_code=None),
+                    _run_row(name="probe", kind=RUN_STEP, step_index=12),
+                    _run_row(name="probe", started_at="bad", finished_at=None,
+                             status=None, exit_code=None)):
+            with self.subTest(row=row):
+                # Positional, not a search: the name can also occur inside an
+                # earlier column's text.
+                self.assertTrue(format_run_row(row)[at:].startswith(describe(row)))
+
+    def test_summarize_counts(self):
+        rows = [_run_row(status="ok"), _run_row(status="error"), _run_row(status="ok")]
+        self.assertEqual(summarize(rows), "3 runs · 2 passed · 1 failed")
+
+    def test_summarize_singular(self):
+        self.assertIn("1 run ", summarize([_run_row()]))
+
+    def test_summarize_empty(self):
+        self.assertEqual(summarize([]), "No runs recorded yet.")
+
+
+class _FakeProc:
+    def __init__(self, returncode):
+        self.returncode = returncode
+
+    def poll(self):
+        return self.returncode
+
+
+class TestControllerWritesHistory(unittest.TestCase):
+    """The controller is the only place a run gets recorded, so both the ad-hoc
+    and the pipeline paths must land there."""
+
+    def setUp(self):
+        self.db = _make_db()
+        self.reg = JobRegistry()
+        self.q = _queue.Queue()
+        self.finished = []
+        self.ctl = JobController(
+            self.reg, self.q, self.db,
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda *a: None, on_started=lambda *a: None,
+            on_finish=lambda j: self.finished.append(j),
+            on_rename=lambda *a: None,
+            launch=lambda *a, **k: None,
+        )
+
+    def _script_job(self, trigger=SOURCE_MANUAL):
+        job = Job(1, "script", 7, None, "build", "job:1", "g", trigger=trigger)
+        self.reg.add(job)
+        return job
+
+    def _pipeline_job(self, steps, total=None):
+        job = Job(2, "pipeline", None, 3, "p", "job:2", "g", pipeline_name="Nightly",
+                  pipeline_queue=list(steps), pipeline_total=total or len(steps))
+        self.reg.add(job)
+        return job
+
+    def _step(self, sid, name, trigger_mode=TRIGGER_AFTER):
+        return (sid, sid, name, __file__, "", "", None, trigger_mode)
+
+    # ---- ad-hoc scripts ---------------------------------------------------
+
+    def test_script_run_is_recorded(self):
+        job = self._script_job()
+        self.ctl.handle_step_done(job, 7, "ok")
+        rows = self.db.list_runs(script_id=7)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][3], RUN_SCRIPT)
+        self.assertEqual(rows[0][7], "ok")
+
+    def test_script_failure_is_recorded(self):
+        job = self._script_job()
+        self.ctl.handle_step_done(job, 7, "error")
+        self.assertEqual(self.db.list_runs(script_id=7)[0][7], "error")
+
+    def test_exit_code_comes_from_the_process_handle(self):
+        job = self._script_job()
+        job.processes[None] = _FakeProc(3)
+        self.ctl.handle_step_done(job, 7, "error")
+        self.assertEqual(self.db.list_runs(script_id=7)[0][8], 3)
+
+    def test_no_process_means_no_exit_code(self):
+        # A launch failure never produced one.
+        job = self._script_job()
+        self.ctl.handle_step_done(job, 7, "error")
+        self.assertIsNone(self.db.list_runs(script_id=7)[0][8])
+
+    def test_job_trigger_is_carried_into_the_row(self):
+        # Nothing sets a non-manual trigger yet; the scheduler will.
+        job = self._script_job(trigger="schedule")
+        self.ctl.handle_step_done(job, 7, "ok")
+        self.assertEqual(self.db.list_runs(script_id=7)[0][10], "schedule")
+
+    # ---- pipelines --------------------------------------------------------
+
+    def test_each_step_gets_its_own_row(self):
+        job = self._pipeline_job([self._step(1, "a"), self._step(2, "b")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        self.ctl.handle_step_done(job, 2, "ok", token=2)
+        steps = [r for r in self.db.list_runs(pipeline_id=3) if r[3] == RUN_STEP]
+        self.assertEqual(len(steps), 2)
+        self.assertEqual(sorted(r[4] for r in steps), ["a", "b"])
+
+    def test_step_rows_use_the_pipeline_trigger_source(self):
+        job = self._pipeline_job([self._step(1, "a")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        step = [r for r in self.db.list_runs(pipeline_id=3) if r[3] == RUN_STEP][0]
+        self.assertEqual(step[10], SOURCE_PIPELINE)
+
+    def test_pipeline_summary_row_on_success(self):
+        job = self._pipeline_job([self._step(1, "a")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        summary = [r for r in self.db.list_runs(pipeline_id=3) if r[3] == RUN_PIPELINE]
+        self.assertEqual(len(summary), 1)
+        self.assertEqual(summary[0][7], "ok")
+        self.assertEqual(summary[0][4], "Nightly")
+
+    def test_pipeline_summary_row_on_failure_names_the_failed_step(self):
+        job = self._pipeline_job([self._step(1, "a"), self._step(2, "b")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "error", token=1)
+        summary = [r for r in self.db.list_runs(pipeline_id=3) if r[3] == RUN_PIPELINE][0]
+        self.assertEqual(summary[7], "error")
+        self.assertEqual(summary[9], 1)
+
+    def test_no_summary_row_while_steps_remain(self):
+        job = self._pipeline_job([self._step(1, "a"), self._step(2, "b")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        self.assertEqual([r for r in self.db.list_runs(pipeline_id=3)
+                          if r[3] == RUN_PIPELINE], [])
+
+    def test_concurrent_group_members_each_get_a_row(self):
+        # Settlement rewrites the group's status; the per-member rows must
+        # still carry each member's own result.
+        job = self._pipeline_job([self._step(1, "a"),
+                                  self._step(2, "b", TRIGGER_WITH)])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        self.ctl.handle_step_done(job, 2, "error", token=2)
+        steps = {r[4]: r[7] for r in self.db.list_runs(pipeline_id=3) if r[3] == RUN_STEP}
+        self.assertEqual(steps, {"a": "ok", "b": "error"})
+
+    def test_a_history_failure_does_not_break_the_run(self):
+        # History is secondary; a DB problem must not stop a pipeline.
+        job = self._script_job()
+        with mock.patch.object(self.db, "record_run", side_effect=RuntimeError("boom")):
+            self.ctl.handle_step_done(job, 7, "ok")
+        self.assertEqual(len(self.finished), 1)

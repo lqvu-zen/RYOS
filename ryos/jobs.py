@@ -19,9 +19,16 @@ class Job:
 
     def __init__(self, job_id: int, kind: str, script_id, pipeline_id, name: str,
                  tab_key: str, group: str, pipeline_name: str = "",
-                 pipeline_queue=None, pipeline_total: int = 0):
+                 pipeline_queue=None, pipeline_total: int = 0,
+                 trigger: str = "manual"):
         self.job_id = job_id
         self.kind = kind
+        # What started this run, recorded in the history row. "manual" until
+        # something other than a click can start a job.
+        self.trigger = trigger
+        # step_token -> when that step launched, so a history row can record a
+        # step's own duration rather than the whole pipeline's.
+        self.step_started: dict = {}
         self.script_id = script_id
         self.pipeline_id = pipeline_id
         self.name = name

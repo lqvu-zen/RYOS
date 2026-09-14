@@ -7,6 +7,7 @@ from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from ..db import ScriptDB
+from ..history import format_run_row, header_row, summarize
 from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
@@ -1544,3 +1545,95 @@ class AdvancedOptionsDialog(tk.Toplevel):
         if self._on_appearance is not None and not self._jobs_running:
             self._on_appearance(self._appearance_subset(), persist=False)
         self.destroy()
+
+
+class RunHistoryDialog(tk.Toplevel):
+    """Recent runs for one script or pipeline.
+
+    A Listbox with monospace columns rather than a ttk.Treeview: the Treeview
+    needs its own style wiring to stay readable across the theme gallery, and
+    this dialog shows a flat list with no hierarchy to justify that.
+    """
+
+    _LIMIT = 100
+
+    def __init__(self, parent, db: ScriptDB, *, script_id: int | None = None,
+                 pipeline_id: int | None = None, title: str = ""):
+        super().__init__(parent)
+        self.db = db
+        self._script_id = script_id
+        self._pipeline_id = pipeline_id
+
+        self.title(f"Run History — {title}" if title else "Run History")
+        self.resizable(True, True)
+        self.configure(bg=C["card_bg"])
+        self.grab_set()
+
+        head = tk.Frame(self, bg=C["card_bg"], padx=16, pady=12)
+        head.pack(fill="x")
+        tk.Label(head, text=title or "Run history", bg=C["card_bg"], fg=C["name_fg"],
+                 font=("Segoe UI", 11, "bold"), anchor="w").pack(fill="x")
+        self._summary = tk.StringVar()
+        tk.Label(head, textvariable=self._summary, bg=C["card_bg"], fg=C["path_fg"],
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x", pady=(2, 0))
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
+
+        hdr = tk.Frame(self, bg=C["bg"], padx=14, pady=4)
+        hdr.pack(fill="x")
+        tk.Label(hdr, text=header_row(), bg=C["bg"], fg=C["path_fg"],
+                 font=("Consolas", 9), anchor="w").pack(fill="x")
+
+        body = tk.Frame(self, bg=C["bg"])
+        body.pack(fill="both", expand=True, padx=12, pady=(0, 6))
+        sb = ttk.Scrollbar(body)
+        sb.pack(side="right", fill="y")
+        self._list = tk.Listbox(
+            body, yscrollcommand=sb.set, selectmode="single",
+            font=("Consolas", 9), exportselection=False,
+            bg=C["card_bg"], fg=C["name_fg"],
+            selectbackground=C["accent"], selectforeground=C["fg_on_dark"],
+            relief="flat", highlightthickness=1,
+            highlightbackground=C["border"], activestyle="none",
+        )
+        sb.config(command=self._list.yview)
+        self._list.pack(side="left", fill="both", expand=True)
+
+        btns = tk.Frame(self, bg=C["card_bg"], padx=16, pady=12)
+        btns.pack(fill="x")
+        tk.Button(btns, text="Close", command=self.destroy,
+                  bg=C["accent"], fg=C["fg_on_dark"], activebackground=C["accent2"],
+                  activeforeground=C["fg_on_dark"], relief="flat",
+                  padx=16, pady=6, cursor="hand2",
+                  font=("Segoe UI", 9, "bold")).pack(side="right")
+        tk.Button(btns, text="Clear History", command=self._clear,
+                  bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"],
+                  activebackground=C["btn_neutral_hover"],
+                  activeforeground=C["btn_neutral_fg"], relief="flat",
+                  padx=16, pady=6, cursor="hand2",
+                  font=("Segoe UI", 9)).pack(side="right", padx=(0, 8))
+
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self._reload()
+        self.transient(parent)
+        center_over_parent(self, parent, 620, 420)
+
+    def _reload(self) -> None:
+        rows = self.db.list_runs(script_id=self._script_id,
+                                 pipeline_id=self._pipeline_id,
+                                 limit=self._LIMIT)
+        self._list.delete(0, tk.END)
+        self._summary.set(summarize(rows))
+        if not rows:
+            self._list.insert(tk.END, "  Nothing here yet — run it once and it will show up.")
+            return
+        for r in rows:
+            self._list.insert(tk.END, format_run_row(r))
+
+    def _clear(self) -> None:
+        if not messagebox.askyesno("Clear History",
+                                   "Delete the recorded runs for this item?",
+                                   parent=self):
+            return
+        self.db.clear_runs(script_id=self._script_id, pipeline_id=self._pipeline_id)
+        self._reload()

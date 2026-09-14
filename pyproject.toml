@@ -66,8 +66,10 @@ files = [
     "ryos/dragdrop.py",
     "ryos/screens.py",
     "ryos/grouping.py",
+    "ryos/history.py",
     "ryos/ui/__init__.py",
     "ryos/ui/theme.py",
+    "ryos/ui/placement.py",
     "ryos/ui/widgets.py",
     "ryos/ui/pipeline.py",
 ]

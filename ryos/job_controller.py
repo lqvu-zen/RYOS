@@ -16,7 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from .db import TRIGGER_WITH
+from .db import (RUN_PIPELINE, RUN_SCRIPT, RUN_STEP, SOURCE_MANUAL,
+                 SOURCE_PIPELINE, TRIGGER_WITH)
 from .interpreter import build_command, build_run_spec, resolve_interpreter
 from .jobs import Job
 from .logger import get_logger
@@ -90,6 +91,7 @@ class JobController:
         pipeline_name: str = "",
         pipeline_queue=None,
         pipeline_total: int = 0,
+        trigger: str = SOURCE_MANUAL,
     ) -> Job:
         """Allocate, construct, and register a job; fire on_started; return it."""
         job_id = self._registry.new_id()
@@ -99,6 +101,7 @@ class JobController:
             pipeline_name=pipeline_name,
             pipeline_queue=pipeline_queue if pipeline_queue is not None else [],
             pipeline_total=pipeline_total,
+            trigger=trigger,
         )
         self._registry.add(job)
         self._on_started(job)
@@ -158,11 +161,15 @@ class JobController:
         job.group_labels = {}
         job.group_size = len(batch)
         prepared = []
+        launched_at = self._now()
         for step in batch:
             job.pipeline_step_idx += 1
             token = job.pipeline_step_idx
             job.group_pending.add(token)
             job.group_labels[token] = step[2]
+            # Stamped for the whole group at once: concurrent members really do
+            # start together, so they share a start time.
+            job.step_started[token] = launched_at
             prepared.append((token, step))
 
         first, last = prepared[0][0], prepared[-1][0]
@@ -205,12 +212,45 @@ class JobController:
             spec = build_run_spec(cmd, work_dir=work_dir or "", env_vars=env_vars)
             self._launch(job, spec, name, sid, token)
 
+    def _exit_code(self, job: Job, token) -> int | None:
+        """The finished step's process exit code, or None if it never launched.
+
+        Read off the Popen handle rather than carried on the queue: the done
+        item's tuple length is what distinguishes a tagged item from an
+        untagged one, so appending a field there would break that detection.
+        By the time this runs the worker has already called proc.wait(), and
+        the queue hand-off orders that write before this read.
+        """
+        proc = job.processes.get(token)
+        return None if proc is None else proc.returncode
+
+    def _record(self, kind: str, **fields) -> None:
+        """Append a history row. Never lets a history failure break a run."""
+        try:
+            self._db.record_run(kind, **fields)
+        except Exception:
+            _log.warning("Could not record %s run history", kind, exc_info=True)
+
     def handle_step_done(self, job: Job, sid: int, status: str, token=None) -> None:
         """Dispatch a finished step: advance the pipeline, or finish the job."""
-        secs = (self._now() - job.start_time).total_seconds()
+        finished_at = self._now()
+        secs = (finished_at - job.start_time).total_seconds()
         elapsed = _format_elapsed_secs(secs)
+        exit_code = self._exit_code(job, token)
 
         if job.kind == "pipeline":
+            # Recorded before group settlement, so each member of a concurrent
+            # group gets its own row with its own status -- settlement rewrites
+            # `status` to the group's verdict below.
+            self._record(
+                RUN_STEP,
+                name=job.group_labels.get(token) or job.name,
+                script_id=sid, pipeline_id=job.pipeline_id,
+                started_at=job.step_started.get(token, job.start_time),
+                finished_at=finished_at, status=status, exit_code=exit_code,
+                step_index=token if isinstance(token, int) else None,
+                trigger_source=SOURCE_PIPELINE,
+            )
             if job.group_pending:
                 if token not in job.group_pending:
                     # Defensive: an untagged/unrecognized item still has to make
@@ -245,6 +285,12 @@ class JobController:
                 )
                 self._on_status("Pipeline complete.")
                 total = job.pipeline_total
+                self._record(
+                    RUN_PIPELINE, name=job.pipeline_name or job.name,
+                    pipeline_id=job.pipeline_id, started_at=job.start_time,
+                    finished_at=finished_at, status="ok",
+                    step_index=total, trigger_source=job.trigger,
+                )
                 self._on_finish(job)
                 self._on_notify(
                     "RYOS — Pipeline passed",
@@ -256,12 +302,23 @@ class JobController:
                 self._on_status("Pipeline stopped (step failed).")
                 failed_at = job.group_failed_at or job.pipeline_step_idx
                 total = job.pipeline_total
+                self._record(
+                    RUN_PIPELINE, name=job.pipeline_name or job.name,
+                    pipeline_id=job.pipeline_id, started_at=job.start_time,
+                    finished_at=finished_at, status="error",
+                    step_index=failed_at, trigger_source=job.trigger,
+                )
                 self._on_finish(job)
                 self._on_notify(
                     "RYOS — Pipeline failed",
                     f"✗  {job.pipeline_name}  ·  failed at step {failed_at}/{total}  ·  {elapsed}",
                 )
         else:
+            self._record(
+                RUN_SCRIPT, name=job.name, script_id=sid,
+                started_at=job.start_time, finished_at=finished_at,
+                status=status, exit_code=exit_code, trigger_source=job.trigger,
+            )
             if status == "ok":
                 self._on_status("Done.")
                 self._on_notify("RYOS — Script passed", f"✓  {job.name}  ·  {elapsed}")

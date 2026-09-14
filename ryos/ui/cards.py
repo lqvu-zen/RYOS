@@ -5,7 +5,8 @@ from tkinter import messagebox, ttk
 
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
-from .dialogs import ScriptDialog, _PresetEntryDialog, _TempParamDialog
+from .dialogs import (RunHistoryDialog, ScriptDialog, _PresetEntryDialog,
+                      _TempParamDialog)
 from .placement import place_near
 from .theme import C, HIGHLIGHT_LABELS, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
@@ -311,6 +312,7 @@ class ScriptCard(tk.Frame):
         menu.add_command(label="▲  Move Up",     command=self._on_move_up)
         menu.add_command(label="▼  Move Down",   command=self._on_move_down)
         menu.add_separator()
+        menu.add_command(label="🕘  Run History…", command=self._show_history)
         menu.add_command(label="⧉  Clone",       command=self._clone)
         menu.add_separator()
         menu.add_command(label="🗑  Delete",      command=self._delete_card,
@@ -334,6 +336,10 @@ class ScriptCard(tk.Frame):
         if messagebox.askyesno("Delete", f"Delete '{self._name}'?", parent=self):
             self.db.delete(self.script_id)
             self.on_refresh()
+
+    def _show_history(self):
+        RunHistoryDialog(self.winfo_toplevel(), self.db,
+                         script_id=self.script_id, title=self._name)
 
     def _set_label_color(self, key):
         self.db.set_script_color(self.script_id, key)
@@ -604,6 +610,10 @@ class PipelineCard(tk.Frame):
         for ch in widget.winfo_children():
             self._set_bg(ch, color)
 
+    def _show_history(self):
+        RunHistoryDialog(self.winfo_toplevel(), self.db,
+                         pipeline_id=self.pipeline_id, title=self._name)
+
     def _set_label_color(self, key):
         self.db.set_pipeline_color(self.pipeline_id, key)
         self.on_refresh()
@@ -625,6 +635,7 @@ class PipelineCard(tk.Frame):
         menu.add_separator()
         menu.add_command(label="⚙  Edit",
                          command=lambda: self.on_edit(self.pipeline_id, self._name))
+        menu.add_command(label="🕘  Run History…", command=self._show_history)
         menu.add_command(label="⧉  Clone", command=self._clone)
         menu.add_separator()
         menu.add_command(label="🗑  Delete", command=self._delete,

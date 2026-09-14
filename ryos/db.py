@@ -3,7 +3,7 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .logger import get_logger
@@ -11,10 +11,37 @@ from .settings import DB_PATH
 
 _log = get_logger("db")
 
+
+def _iso(value):
+    """Millisecond-resolution ISO string from a datetime, or pass through/None.
+
+    Milliseconds rather than the seconds used elsewhere in this schema: most
+    scripts finish in well under a second, and at seconds resolution every one
+    of them would record a duration of 0.0s. The format stays fixed-width, so
+    the text comparisons that order and prune history still hold.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="milliseconds")
+    return str(value)
+
 # Per-step pipeline trigger mode: 'after' (default; sequential, unchanged
 # behavior) or 'with' (starts concurrently alongside the previous step).
 TRIGGER_AFTER = "after"
 TRIGGER_WITH = "with"
+
+# runs.kind — what a history row describes.
+RUN_SCRIPT = "script"       # an ad-hoc script run
+RUN_STEP = "step"           # one step of a pipeline
+RUN_PIPELINE = "pipeline"   # a pipeline run as a whole
+
+# runs.trigger_source — what started it. SCHEDULE is reserved for the
+# scheduler; nothing writes it yet.
+SOURCE_MANUAL = "manual"
+SOURCE_PIPELINE = "pipeline"
+SOURCE_SCHEDULE = "schedule"
+SOURCE_STARTUP = "startup"
 
 
 # --- Schema versioning -------------------------------------------------------
@@ -67,8 +94,49 @@ def _migrate_script_env(conn):
         conn.execute("ALTER TABLE scripts ADD COLUMN work_dir TEXT DEFAULT ''")
 
 
+def _migrate_run_history(conn):
+    """Durable per-run history, alongside the single last_run_* fields.
+
+    scripts.last_run_at / last_run_status stay exactly as they are: they are
+    denormalised, the cards already read them on every render, and moving card
+    rendering onto a join here would buy nothing.
+
+    Rows are written once, at completion, so a run in flight is absent from
+    history -- the Running section is what shows those. Three kinds:
+    'script' (an ad-hoc run), 'step' (one pipeline step), and 'pipeline'
+    (the run as a whole).
+
+    trigger_source records what started the run. It has no second value yet;
+    it exists now because backfilling "was this manual or scheduled?" after
+    the fact is impossible, and it is the first question anyone asks of a run
+    that happened while they were away. Named trigger_source rather than
+    trigger to stay clear of SQL's own meaning for that word.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS runs (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            script_id      INTEGER,
+            pipeline_id    INTEGER,
+            kind           TEXT NOT NULL,
+            name           TEXT NOT NULL DEFAULT '',
+            started_at     TEXT NOT NULL,
+            finished_at    TEXT,
+            status         TEXT,
+            exit_code      INTEGER,
+            step_index     INTEGER,
+            trigger_source TEXT NOT NULL DEFAULT 'manual'
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_script "
+                 "ON runs(script_id, started_at DESC)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_pipeline "
+                 "ON runs(pipeline_id, started_at DESC)")
+
+
 _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
-                     4: _migrate_script_env}
+                     4: _migrate_script_env, 5: _migrate_run_history}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -520,6 +588,88 @@ class ScriptDB:
     def set_favorite_pipeline(self, pipeline_id: int, fav: bool) -> None:
         with self._connect() as conn:
             conn.execute("UPDATE pipelines SET is_favorite=? WHERE id=?", (1 if fav else 0, pipeline_id))
+
+    # ---- run history -----------------------------------------------------
+
+    def record_run(self, kind: str, *, name: str, started_at, finished_at=None,
+                   script_id: int | None = None, pipeline_id: int | None = None,
+                   status: str | None = None, exit_code: int | None = None,
+                   step_index: int | None = None,
+                   trigger_source: str = SOURCE_MANUAL) -> int:
+        """Append one completed run. Returns its row id.
+
+        Timestamps accept a datetime or an ISO string; storing seconds-
+        resolution ISO keeps them sortable as text, like every other timestamp
+        in this schema.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO runs (script_id, pipeline_id, kind, name, started_at, "
+                "finished_at, status, exit_code, step_index, trigger_source) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (script_id, pipeline_id, kind, name or "",
+                 _iso(started_at), _iso(finished_at), status,
+                 None if exit_code is None else int(exit_code),
+                 step_index, trigger_source),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+    def list_runs(self, *, script_id: int | None = None,
+                  pipeline_id: int | None = None, kinds: tuple | None = None,
+                  limit: int = 50) -> list:
+        """Most recent runs first: (id, script_id, pipeline_id, kind, name,
+        started_at, finished_at, status, exit_code, step_index, trigger_source).
+
+        script_id and pipeline_id narrow the list; passing neither returns the
+        whole history.
+        """
+        sql = ("SELECT id, script_id, pipeline_id, kind, name, started_at, "
+               "finished_at, status, exit_code, step_index, trigger_source FROM runs")
+        where, args = [], []
+        if script_id is not None:
+            where.append("script_id=?")
+            args.append(script_id)
+        if pipeline_id is not None:
+            where.append("pipeline_id=?")
+            args.append(pipeline_id)
+        if kinds:
+            where.append(f"kind IN ({','.join('?' * len(kinds))})")
+            args.extend(kinds)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY started_at DESC, id DESC LIMIT ?"
+        args.append(max(1, int(limit)))
+        with self._connect() as conn:
+            return conn.execute(sql, args).fetchall()
+
+    def prune_runs(self, days: int) -> int:
+        """Drop history older than `days`; returns the number removed.
+
+        days <= 0 disables pruning rather than deleting everything — an
+        off-by-one here would silently destroy the user's whole history.
+        """
+        days = int(days)
+        if days <= 0:
+            return 0
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM runs WHERE started_at < ?", (cutoff,))
+            conn.commit()
+            return cur.rowcount
+
+    def clear_runs(self, *, script_id: int | None = None,
+                   pipeline_id: int | None = None) -> int:
+        """Delete history for one item, or all of it when given neither."""
+        with self._connect() as conn:
+            if script_id is not None:
+                cur = conn.execute("DELETE FROM runs WHERE script_id=?", (script_id,))
+            elif pipeline_id is not None:
+                cur = conn.execute("DELETE FROM runs WHERE pipeline_id=?", (pipeline_id,))
+            else:
+                cur = conn.execute("DELETE FROM runs")
+            conn.commit()
+            return cur.rowcount
 
     def set_script_color(self, script_id: int, color: str | None) -> None:
         """Set (or clear, with None) a script's card-label highlight key."""

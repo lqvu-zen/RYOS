@@ -136,8 +136,8 @@ def check_card_run(app):
     check_run_to_completion calls app._run_script directly, which skips
     ScriptCard._run -- and that is where the record returned by db.get() is
     unpacked. Widening db.get() has broken that unpack twice now (temp_param,
-    then env_vars/work_dir) with no test noticing, because the headless suite
-    mocks Tk and every other smoke check bypasses the card.
+    then env_vars/work_dir) without any test noticing, because the headless
+    suite mocks Tk and the other smoke checks bypass the card.
     """
     path = _write_script("print('card run')\n")
     sid = app.db.add("smoke-card-run", path, "", sys.executable)
@@ -145,8 +145,7 @@ def check_card_run(app):
         app._active_group = None
         app._refresh_cards()
         app.update_idletasks()
-        card = next((c for c in app._cards
-                     if getattr(c, "_name", "") == "smoke-card-run"), None)
+        card = next((c for c in app._cards if getattr(c, "_name", "") == "smoke-card-run"), None)
         assert card is not None, "card was not rendered"
         card._run()
         assert len(app._jobreg) == 1, "card Run did not register a job"
@@ -159,6 +158,24 @@ def check_card_run(app):
         app.db.delete(sid)
         os.unlink(path)
         app._refresh_cards()
+
+
+def check_run_history(app):
+    """A completed run must leave a history row carrying its real exit code."""
+    path = _write_script("import sys; print('bye'); sys.exit(5)\n")
+    sid = app.db.add("smoke-history", path, "", sys.executable)
+    try:
+        app._run_script(sid, "smoke-history", path, "", sys.executable)
+        assert pump_until(app, lambda: len(app._jobreg) == 0), "job did not finish"
+        rows = app.db.list_runs(script_id=sid)
+        assert len(rows) == 1, f"expected one history row, got {len(rows)}"
+        assert rows[0][7] == "error", f"expected status 'error', got {rows[0][7]!r}"
+        assert rows[0][8] == 5, f"expected exit code 5, got {rows[0][8]!r}"
+        print("  [ok] run-history: row recorded with real exit code")
+    finally:
+        app.db.clear_runs(script_id=sid)
+        app.db.delete(sid)
+        os.unlink(path)
 
 
 def check_favorites_reorder(app):
@@ -276,6 +293,7 @@ def main():
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)
         check_card_run(app)
+        check_run_history(app)
         check_favorites_reorder(app)
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)
