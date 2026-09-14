@@ -130,6 +130,37 @@ def check_card_rendering(app):
         app._refresh_cards()
 
 
+def check_card_run(app):
+    """Run a script the way a user does: through the card's own Run button.
+
+    check_run_to_completion calls app._run_script directly, which skips
+    ScriptCard._run -- and that is where the record returned by db.get() is
+    unpacked. Widening db.get() has broken that unpack twice now (temp_param,
+    then env_vars/work_dir) with no test noticing, because the headless suite
+    mocks Tk and every other smoke check bypasses the card.
+    """
+    path = _write_script("print('card run')\n")
+    sid = app.db.add("smoke-card-run", path, "", sys.executable)
+    try:
+        app._active_group = None
+        app._refresh_cards()
+        app.update_idletasks()
+        card = next((c for c in app._cards
+                     if getattr(c, "_name", "") == "smoke-card-run"), None)
+        assert card is not None, "card was not rendered"
+        card._run()
+        assert len(app._jobreg) == 1, "card Run did not register a job"
+        finished = pump_until(app, lambda: len(app._jobreg) == 0)
+        assert finished, "card-launched job did not finish within timeout"
+        status = _last_run_status(app, sid)
+        assert status == "ok", f"expected last_run_status 'ok', got {status!r}"
+        print("  [ok] card-run: ScriptCard._run launched and completed")
+    finally:
+        app.db.delete(sid)
+        os.unlink(path)
+        app._refresh_cards()
+
+
 def check_favorites_reorder(app):
     """Move Up on a favorite reorders the shared script order.
 
@@ -244,6 +275,7 @@ def main():
     try:
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)
+        check_card_run(app)
         check_favorites_reorder(app)
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)

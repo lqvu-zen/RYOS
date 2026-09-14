@@ -163,7 +163,8 @@ class ScriptDialog(tk.Toplevel):
         if script_id:
             rec = db.get(script_id)
             if rec:
-                _, name, path, params, interp, grp, temp_param, env_vars, work_dir = rec
+                (_, name, path, params, interp, grp, temp_param,
+                 env_vars, work_dir) = rec[:9]
                 self.e_name.insert(0, name)
                 self.e_path.insert(0, path)
                 self.e_params.insert(0, params)
@@ -383,7 +384,7 @@ class ScriptDialog(tk.Toplevel):
             if new_params is not None:
                 rec = self.db.get(self.script_id)
                 if rec:
-                    _, name, path, _, interp, grp, _temp = rec
+                    _, name, path, _, interp, grp, _temp = rec[:7]
                     self.db.update(self.script_id, name, path, new_params, interp, grp)
             if self.on_save:
                 self.on_save()

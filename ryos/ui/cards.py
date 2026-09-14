@@ -326,7 +326,7 @@ class ScriptCard(tk.Frame):
     def _clone(self):
         rec = self.db.get(self.script_id)
         if rec:
-            _, name, path, params, interp, grp, temp_param = rec
+            _, name, path, params, interp, grp, temp_param = rec[:7]
             self.db.add(f"{name} (copy)", path, params, interp, grp, temp_param)
             self.on_refresh()
 
@@ -356,7 +356,7 @@ class ScriptCard(tk.Frame):
         rec = self.db.get(self.script_id)
         if not rec:
             return
-        _, name, path, params, interp, _grp, temp_param = rec
+        _, name, path, params, interp, _grp, temp_param = rec[:7]
         params = self._selected_params(params)
         if temp_param:
             dlg = _TempParamDialog(self.winfo_toplevel(), saved_params=params,
@@ -373,7 +373,7 @@ class ScriptCard(tk.Frame):
         rec = self.db.get(self.script_id)
         if not rec:
             return
-        _, name, path, default_params, interp, _grp, _temp = rec
+        _, name, path, default_params, interp, _grp, _temp = rec[:7]
         script_id = self.script_id
         runner = self.runner
         on_refresh = self.on_refresh
