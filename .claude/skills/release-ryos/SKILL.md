@@ -75,20 +75,33 @@ Two details matter, and both have bitten a real release:
 
 - **`RYOS_ALLOW_MULTIPLE=1` is required.** The maintainer usually has their own RYOS open while releasing. Without this, the single-instance guard (`ryos/single_instance.py`) makes the new exe hand off to the running one and **exit cleanly with code 0** — which looks exactly like a crash to the check below, and aborts a perfectly good release. Never "fix" this by killing the maintainer's running instance; set the variable, which the guard explicitly honours.
 - **Check the window title.** A build that silently reused a stale `dist/cxfreeze` would pass a liveness-only check. The title carries `__version__`, so asserting on it proves you are testing the build you just made, and that the GUI actually came up rather than the process merely surviving.
+- **`$proc.Refresh()` before reading `MainWindowTitle`.** The property is cached on the `Process` object from when it was created, so without a refresh it reads empty however long you sleep — which looks like a stale build and aborts a good release. Poll rather than sleeping a fixed time: the window appears in well under a second.
 
 ```powershell
 $env:RYOS_ALLOW_MULTIPLE = "1"     # don't hand off to an already-running RYOS
 $expected = "<X.Y.Z>"              # the version set in step 2
 $proc = Start-Process -FilePath "D:\Projects\RYOS\dist\cxfreeze\RYOS.exe" -PassThru
-Start-Sleep -Seconds 8
+$title = ""
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Milliseconds 500
+    if ($proc.HasExited) { break }
+    $proc.Refresh()                # MainWindowTitle is cached without this
+    if ($proc.MainWindowTitle) { $title = $proc.MainWindowTitle; break }
+}
 if ($proc.HasExited) {
     Write-Error "RYOS.exe exited immediately (exit code $($proc.ExitCode)) — aborting release"
     exit 1
 }
-Write-Output ("still alive; main window title: " + $proc.MainWindowTitle)
-if ($proc.MainWindowTitle -notlike "*$expected*") {
+Write-Output ("still alive; main window title: " + $title)
+if ($title -notlike "*$expected*") {
     $proc.Kill()
     Write-Error "window title does not show $expected — stale build? aborting"
+    exit 1
+}
+Start-Sleep -Seconds 5             # and it must still be up a few seconds later
+$proc.Refresh()
+if ($proc.HasExited) {
+    Write-Error "RYOS.exe died after opening its window — aborting release"
     exit 1
 }
 $proc.Kill()
