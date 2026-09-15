@@ -5074,3 +5074,60 @@ class TestStepMatch(unittest.TestCase):
             idx = step_match(4, idx, True)
         self.assertEqual(idx, 3)
         self.assertEqual(step_match(4, idx, True), 0)
+
+
+# ---------------------------------------------------------------------------
+# Bulk-run capacity (ryos.jobs.split_by_capacity)
+# ---------------------------------------------------------------------------
+from ryos.jobs import split_by_capacity  # noqa: E402
+
+
+class TestSplitByCapacity(unittest.TestCase):
+    """Resolved once, up front, so the caller refuses the remainder with a
+    single message instead of one rejection box per script."""
+
+    def test_everything_fits(self):
+        self.assertEqual(split_by_capacity(5, 0, 10), (5, 0))
+
+    def test_partial_fit(self):
+        self.assertEqual(split_by_capacity(5, 8, 10), (2, 3))
+
+    def test_exactly_full(self):
+        self.assertEqual(split_by_capacity(5, 10, 10), (0, 5))
+
+    def test_fills_the_last_slot(self):
+        self.assertEqual(split_by_capacity(1, 9, 10), (1, 0))
+
+    def test_zero_cap_means_unlimited(self):
+        # The setting uses <= 0 for "no limit".
+        self.assertEqual(split_by_capacity(5, 99, 0), (5, 0))
+
+    def test_negative_cap_means_unlimited(self):
+        self.assertEqual(split_by_capacity(4, 99, -1), (4, 0))
+
+    def test_nothing_requested(self):
+        self.assertEqual(split_by_capacity(0, 3, 10), (0, 0))
+
+    def test_registry_over_the_cap(self):
+        # Shouldn't happen, but must not yield negative capacity.
+        self.assertEqual(split_by_capacity(3, 20, 10), (0, 3))
+
+    def test_negative_inputs_are_clamped(self):
+        self.assertEqual(split_by_capacity(-2, 0, 10), (0, 0))
+        self.assertEqual(split_by_capacity(3, -5, 10), (3, 0))
+
+    def test_the_two_halves_always_account_for_everything(self):
+        for requested in range(0, 8):
+            for running in range(0, 8):
+                for cap in (0, 1, 5, 10):
+                    with self.subTest(requested=requested, running=running, cap=cap):
+                        can, skipped = split_by_capacity(requested, running, cap)
+                        self.assertEqual(can + skipped, requested)
+                        self.assertGreaterEqual(can, 0)
+                        self.assertGreaterEqual(skipped, 0)
+
+    def test_never_exceeds_the_cap(self):
+        for running in range(0, 12):
+            with self.subTest(running=running):
+                can, _ = split_by_capacity(20, running, 10)
+                self.assertLessEqual(running + can, max(running, 10))

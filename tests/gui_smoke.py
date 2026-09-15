@@ -27,6 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import ryos.ui.app as appmod  # noqa: E402
 from ryos.ui.app import RYOSApp  # noqa: E402
 
 TIMEOUT = 30.0  # generous; the quick job finishes well under a second
@@ -176,6 +177,69 @@ def check_run_history(app):
         app.db.clear_runs(script_id=sid)
         app.db.delete(sid)
         os.unlink(path)
+
+
+def check_run_selected(app):
+    """Select mode runs every ticked script, and refuses past the job limit once.
+
+    Capacity is resolved before launching, so the over-limit case must report
+    a single count rather than popping one rejection per script -- which is
+    what would happen if each launch checked for itself.
+    """
+    import unittest.mock as mock
+
+    paths = [_write_script(f"print('bulk {i}')\n") for i in range(3)]
+    ids = [app.db.add(f"smoke-bulk-{i}", p, "", sys.executable)
+           for i, p in enumerate(paths)]
+    original_cap = app._settings.get("max_parallel_jobs")
+    try:
+        app._active_group = None
+        app._refresh_cards()
+        app.update_idletasks()
+        cards = [c for c in app._cards
+                 if getattr(c, "_name", "").startswith("smoke-bulk-")]
+        assert len(cards) == 3, f"expected 3 cards, got {len(cards)}"
+
+        # Nothing ticked -> an explanation, not a silent no-op.
+        with mock.patch.object(appmod.messagebox, "showinfo") as info:
+            app._run_selected()
+        assert info.called, "running with nothing selected said nothing"
+        assert len(app._jobreg) == 0
+
+        # All three fit under the normal cap.
+        app._settings["max_parallel_jobs"] = 10
+        for c in cards:
+            c.selected.set(True)
+        with mock.patch.object(appmod.messagebox, "showinfo") as info:
+            app._run_selected()
+        assert len(app._jobreg) == 3, f"expected 3 jobs, got {len(app._jobreg)}"
+        assert not info.called, "reported a limit that was not reached"
+        assert pump_until(app, lambda: len(app._jobreg) == 0), "bulk jobs did not finish"
+
+        # Tighten the cap: only some can start, and it says so exactly once.
+        app._settings["max_parallel_jobs"] = 2
+        for c in cards:
+            c.selected.set(True)
+        with mock.patch.object(appmod.messagebox, "showinfo") as info:
+            app._run_selected()
+        assert len(app._jobreg) == 2, f"expected 2 jobs, got {len(app._jobreg)}"
+        assert info.call_count == 1, \
+            f"expected one limit message, got {info.call_count}"
+        assert "1" in " ".join(str(a) for a in info.call_args[0]), \
+            f"message didn't name the skipped count: {info.call_args}"
+        assert all(c.selected.get() for c in cards), \
+            "selection was cleared, so the skipped scripts can't be retried"
+        assert pump_until(app, lambda: len(app._jobreg) == 0), "jobs did not finish"
+        print("  [ok] run-selected: bulk launch, and one message past the limit")
+    finally:
+        if original_cap is not None:
+            app._settings["max_parallel_jobs"] = original_cap
+        for sid in ids:
+            app.db.clear_runs(script_id=sid)
+            app.db.delete(sid)
+        for fp in paths:
+            os.unlink(fp)
+        app._refresh_cards()
 
 
 def check_output_search_and_filter(app):
@@ -503,6 +567,7 @@ def main():
         check_card_run(app)
         check_run_history(app)
         check_output_search_and_filter(app)
+        check_run_selected(app)
         check_pipeline_editor_lists_steps(app)
         check_schedule_fires(app)
         check_schedule_skips_while_running(app)

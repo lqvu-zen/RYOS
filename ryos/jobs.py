@@ -82,6 +82,22 @@ def format_elapsed(start_time: datetime, now: datetime) -> str:
     return f"{start_time.strftime('%H:%M:%S')}  ·  {elapsed}"
 
 
+def split_by_capacity(requested: int, running: int, max_jobs: int) -> tuple[int, int]:
+    """How many of `requested` launches fit: ``(can_start, skipped)``.
+
+    ``max_jobs <= 0`` means no cap, which is what the setting uses for
+    "unlimited". Pure, so the bulk-run decision can be tested without widgets —
+    and so the caller can refuse the remainder once, with a count, instead of
+    launching until each individual launch pops its own "too many jobs" box.
+    """
+    requested = max(0, int(requested))
+    if max_jobs <= 0:
+        return requested, 0
+    free = max(0, max_jobs - max(0, int(running)))
+    can = min(requested, free)
+    return can, requested - can
+
+
 class JobRegistry:
     """Owns the active jobs and allocates job ids.
 

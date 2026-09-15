@@ -371,6 +371,14 @@ class ScriptCard(tk.Frame):
         value = self._params_combo.get()
         return "" if value == self._EMPTY_LABEL else value
 
+    def run(self) -> None:
+        """Run this script exactly as its Run button does.
+
+        The public entry point, so bulk actions go through the same path as a
+        click rather than reimplementing preset and temp-param handling.
+        """
+        self._run()
+
     def _run(self):
         rec = self.db.get(self.script_id)
         if not rec:

@@ -41,7 +41,7 @@ from ..quickrun import (
     rank_suggestions, resolve, serialize_index, should_index,
 )
 from ..job_controller import JobController
-from ..jobs import Job as _Job, JobRegistry, format_elapsed
+from ..jobs import Job as _Job, JobRegistry, format_elapsed, split_by_capacity
 from .cards import PipelineCard, ScriptCard
 from .dialogs import (
     AdvancedOptionsDialog, CloseToTrayPromptDialog, GroupBaseDirDialog,
@@ -413,17 +413,23 @@ class RYOSApp(_BaseWindow):
 
         self._select_btn = None
 
+    _SELECT_HINT = "Tick the checkboxes next to the scripts you want to run or delete."
+
     def _build_select_bar(self):
-        """The multi-select delete bar (packed on demand by select mode)."""
+        """The multi-select action bar (packed on demand by select mode)."""
         self._select_bar = tk.Frame(self, bg=C["warn_bg"],
                                     highlightbackground=C["warn_border"], highlightthickness=1)
-        self._select_bar_var = tk.StringVar(value="Tick the checkboxes next to scripts you want to delete.")
+        self._select_bar_var = tk.StringVar(value=self._SELECT_HINT)
         tk.Label(self._select_bar, textvariable=self._select_bar_var,
                  bg=C["warn_bg"], fg=C["warn_fg"], font=("Segoe UI", 9),
                  padx=14, pady=5, anchor="w").pack(side="left", fill="x", expand=True)
         self._del_selected_btn = _flat_button(self._select_bar, "🗑 Delete Selected",
                                               "#5a2d2d", "#7a3d3d", self._delete_selected, width=15)
         self._del_selected_btn.pack(side="right", padx=10, pady=4)
+        self._run_selected_btn = _flat_button(self._select_bar, "▶ Run Selected",
+                                              C["btn_run_bg"], C["btn_run_hover"],
+                                              self._run_selected, width=13)
+        self._run_selected_btn.pack(side="right", padx=(10, 0), pady=4)
         self._sel_all_btn = tk.Button(
             self._select_bar, text="Select All",
             bg=C["warn_bg"], fg=C["warn_fg"],
@@ -1987,7 +1993,7 @@ class RYOSApp(_BaseWindow):
         self._select_mode = not self._select_mode
         if self._select_mode:
             self._options_menu.entryconfig(0, label="✕  Cancel select")
-            self._select_bar_var.set("Tick the checkboxes next to scripts you want to delete.")
+            self._select_bar_var.set(self._SELECT_HINT)
             self._select_bar.pack(fill="x", before=self._paned)
             for card in self._cards:
                 card.show_checkbox(self._update_select_count)
@@ -2003,7 +2009,7 @@ class RYOSApp(_BaseWindow):
         if n:
             self._select_bar_var.set(f"{n} of {total} selected")
         else:
-            self._select_bar_var.set("Tick the checkboxes next to scripts you want to delete.")
+            self._select_bar_var.set(self._SELECT_HINT)
         all_selected = n == total and total > 0
         self._sel_all_btn.config(text="Deselect All" if all_selected else "Select All")
 
@@ -2012,6 +2018,36 @@ class RYOSApp(_BaseWindow):
         for card in self._cards:
             card.selected.set(not all_selected)
         self._update_select_count()
+
+    def _run_selected(self):
+        """Run every ticked script, up to the parallel-job limit.
+
+        Capacity is resolved once, up front: launching until each individual
+        run refused itself would pop one "too many jobs" box per script. The
+        selection is deliberately left in place, so the skipped ones can be run
+        again once something finishes.
+        """
+        cards = [c for c in self._cards if c.selected.get()]
+        if not cards:
+            messagebox.showinfo(
+                "Nothing Selected",
+                "Tick the checkboxes next to the scripts you want to run.")
+            return
+        max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
+        can, skipped = split_by_capacity(len(cards), len(self._jobreg), max_jobs)
+        for card in cards[:can]:
+            card.run()
+        if skipped:
+            messagebox.showinfo(
+                "Job limit reached",
+                f"Started {can} of {len(cards)} selected script"
+                f"{'s' if len(cards) != 1 else ''}.\n\n"
+                f"{skipped} could not start because the limit of {max_jobs} "
+                "parallel jobs was reached. They are still selected — run them "
+                "again once something finishes.")
+        elif can:
+            self.status_var.set(
+                f"Started {can} script{'s' if can != 1 else ''}.")
 
     def _delete_selected(self):
         ids = [c.script_id for c in self._cards if c.selected.get()]
