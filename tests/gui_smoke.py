@@ -178,6 +178,60 @@ def check_run_history(app):
         os.unlink(path)
 
 
+def check_pipeline_editor_lists_steps(app):
+    """Opening the pipeline editor must actually show the steps.
+
+    Regression guard for issue #2. list_pipeline_steps has grown twice
+    (trigger_mode, then env_vars/work_dir) and the editor unpacked its rows
+    into a fixed number of names, so _reload_steps raised and the list came up
+    empty -- the steps looked like they had been deleted. Nothing caught it:
+    the headless suite mocks Tk, so this dialog never runs there.
+    """
+    from ryos.ui.pipeline import PipelineEditorDialog
+
+    paths = [_write_script("print('one')\n"), _write_script("print('two')\n")]
+    a = app.db.add("smoke-step-a", paths[0], "", sys.executable, "smoke-pipe-grp")
+    b = app.db.add("smoke-step-b", paths[1], "", sys.executable, "smoke-pipe-grp")
+    pid = app.db.create_pipeline("smoke-editor", "smoke-pipe-grp")
+    app.db.add_pipeline_step(pid, a)
+    app.db.add_pipeline_step(pid, b)
+    # An override and a concurrent step, so the label-building branches run too.
+    steps = app.db.list_pipeline_steps(pid)
+    app.db.update_pipeline_step_params(steps[1][0], "--ci")
+    app.db.set_step_trigger_mode(steps[1][0], "with")
+
+    dlg = None
+    try:
+        dlg = PipelineEditorDialog(app, app.db, pid, "smoke-editor",
+                                   "smoke-pipe-grp", lambda: None)
+        app.update_idletasks()
+        rows = list(dlg._listbox.get(0, "end"))
+        assert len(rows) == 2, f"editor showed {len(rows)} steps, expected 2: {rows}"
+        assert "smoke-step-a" in rows[0], rows
+        assert "smoke-step-b" in rows[1], rows
+        assert "--ci" in rows[1], f"param override not shown: {rows[1]!r}"
+        assert rows[1].startswith("∥"), f"concurrent marker missing: {rows[1]!r}"
+        # Selecting a row reads the same tuple a second way.
+        dlg._listbox.selection_set(1)
+        dlg._on_step_select()
+        app.update_idletasks()
+        print("  [ok] pipeline-editor: steps listed with override and marker")
+    finally:
+        if dlg is not None:
+            try:
+                dlg.grab_release()
+            except Exception:
+                pass
+            dlg.destroy()
+        app.db.delete_pipeline(pid)
+        app.db.delete(a)
+        app.db.delete(b)
+        app.db.delete_group("smoke-pipe-grp")
+        for fp in paths:
+            os.unlink(fp)
+        app._refresh_cards()
+
+
 def check_schedule_fires(app):
     """A due schedule launches its script, and the run is tagged as scheduled.
 
@@ -373,6 +427,7 @@ def main():
         check_card_rendering(app)
         check_card_run(app)
         check_run_history(app)
+        check_pipeline_editor_lists_steps(app)
         check_schedule_fires(app)
         check_schedule_skips_while_running(app)
         check_favorites_reorder(app)

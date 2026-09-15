@@ -154,7 +154,11 @@ class PipelineEditorDialog(tk.Toplevel):
             self._step_preset_combo.configure(state="disabled", values=[])
             self._step_preset_var.set("")
             return
-        step_id, sid, name, path, params, interp, params_override, trigger_mode = self._steps[idx]
+        # Slice rather than unpack the whole row: list_pipeline_steps has grown
+        # twice (trigger_mode, then env_vars/work_dir) and a fixed-arity unpack
+        # broke here both times, silently emptying the step list.
+        (step_id, sid, name, path, params, interp,
+         params_override, trigger_mode) = self._steps[idx][:8]
         presets = self.db.list_param_presets(sid)
         values = ["(Script default)"] + [p[2] for p in presets]
         self._step_preset_combo.configure(
@@ -189,7 +193,9 @@ class PipelineEditorDialog(tk.Toplevel):
         self._reloading = True
         self._steps = list(self.db.list_pipeline_steps(self.pipeline_id))
         self._listbox.delete(0, tk.END)
-        for i, (step_id, sid, name, path, params, interp, params_override, trigger_mode) in enumerate(self._steps):
+        for i, step in enumerate(self._steps):
+            (step_id, sid, name, path, params, interp,
+             params_override, trigger_mode) = step[:8]
             prefix = "∥ " if trigger_mode == TRIGGER_WITH else "  "
             label = f"{prefix}{i + 1}.  {name}"
             if params_override is not None:

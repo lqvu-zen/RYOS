@@ -4533,3 +4533,109 @@ class TestScheduleStorage(unittest.TestCase):
 
     def test_no_schedule_reads_as_none(self):
         self.assertIsNone(self.db.get_schedule(script_id=self.sid))
+
+
+# ---------------------------------------------------------------------------
+# Row widths (tripwire for the widened-tuple regression class)
+# ---------------------------------------------------------------------------
+
+class TestRowWidthsArePinned(unittest.TestCase):
+    """Widening a DB row has broken a fixed-arity unpack in the UI three times.
+
+    db.get() grew temp_param and later env_vars/work_dir, breaking
+    ScriptCard._run; list_pipeline_steps grew trigger_mode and later the same
+    two columns, breaking the pipeline editor so its step list came up empty
+    (issue #2). Both shipped, because the headless suite mocks Tk and never
+    executes those widget paths.
+
+    These pins do not stop anyone widening a row -- they make it deliberate.
+    When one fails, update the number here AND check that accessor's consumers
+    slice (row[:N]) rather than unpacking a fixed number of names.
+    """
+
+    EXPECTED_WIDTHS = {
+        "list_all": 12,
+        "get": 9,
+        "list_pipelines": 4,
+        "list_pipeline_steps": 10,
+        "list_param_presets": 3,
+        "list_runs": 11,
+        "list_schedules": 11,
+        "list_groups_with_meta": 2,
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls.db = _make_db()
+        cls.db.create_group("G")     # db.add() doesn't create the group row
+        cls.sid = cls.db.add("s", "/s.py", "--p", "python", "G")
+        cls.pid = cls.db.create_pipeline("P", "G")
+        cls.db.add_pipeline_step(cls.pid, cls.sid)
+        cls.db.replace_param_presets(cls.sid, [("fast", "--fast")])
+        cls.db.record_run(RUN_SCRIPT, name="s", script_id=cls.sid,
+                          started_at=datetime.datetime.now(), status="ok")
+        cls.db.add_schedule("script", script_id=cls.sid, spec_type=DAILY,
+                            spec=json.dumps({"at": "09:00"}))
+
+    def _rows(self, name):
+        calls = {
+            "list_all": lambda: self.db.list_all(),
+            "get": lambda: [self.db.get(self.sid)],
+            "list_pipelines": lambda: self.db.list_pipelines("G"),
+            "list_pipeline_steps": lambda: self.db.list_pipeline_steps(self.pid),
+            "list_param_presets": lambda: self.db.list_param_presets(self.sid),
+            "list_runs": lambda: self.db.list_runs(script_id=self.sid),
+            "list_schedules": lambda: self.db.list_schedules(script_id=self.sid),
+            "list_groups_with_meta": lambda: self.db.list_groups_with_meta(),
+        }
+        return calls[name]()
+
+    def test_widths(self):
+        for name, width in self.EXPECTED_WIDTHS.items():
+            with self.subTest(accessor=name):
+                rows = self._rows(name)
+                self.assertTrue(rows, f"{name} returned nothing to measure")
+                self.assertEqual(
+                    len(rows[0]), width,
+                    f"{name} row width changed ({len(rows[0])} != {width}). "
+                    f"Update the pin AND check its consumers slice row[:N] "
+                    f"instead of unpacking a fixed number of names.")
+
+    def test_every_pinned_accessor_still_exists(self):
+        for name in self.EXPECTED_WIDTHS:
+            with self.subTest(accessor=name):
+                self.assertTrue(callable(getattr(self.db, name, None)))
+
+
+class TestPipelineEditorUnpacksDefensively(unittest.TestCase):
+    """The editor's step rows must be sliced, not unpacked whole.
+
+    The GUI smoke test covers this behaviourally, but that only runs under
+    Xvfb; this catches a reintroduction in the headless suite too.
+    """
+
+    SRC = Path(__file__).resolve().parents[1] / "ryos" / "ui" / "pipeline.py"
+
+    def test_no_fixed_arity_unpack_of_a_step_row(self):
+        tree = ast.parse(self.SRC.read_text(encoding="utf-8"))
+        offenders = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                target = node.targets[0]
+                value = node.value
+            elif isinstance(node, ast.For):
+                target, value = node.target, node.iter
+            else:
+                continue
+            if not isinstance(target, ast.Tuple):
+                continue
+            # A slice (row[:8]) or a starred name is width-tolerant.
+            if isinstance(value, ast.Subscript) and isinstance(value.slice, ast.Slice):
+                continue
+            if any(isinstance(e, ast.Starred) for e in target.elts):
+                continue
+            if len(target.elts) >= 6:
+                offenders.append(node.lineno)
+        self.assertEqual(offenders, [],
+                         "pipeline.py unpacks a wide row at these lines; "
+                         "slice it (row[:8]) so a new column can't empty the list")
