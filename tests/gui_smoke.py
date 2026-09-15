@@ -178,6 +178,59 @@ def check_run_history(app):
         os.unlink(path)
 
 
+def check_output_search_and_filter(app):
+    """Find highlights matches, and Errors only hides everything else.
+
+    The filter works by eliding tags rather than rebuilding the buffer, so this
+    also checks the underlying text is left intact — a filter that destroyed
+    output would be far worse than no filter.
+    """
+    key = "all"
+    app._activate_tab(key)
+    app._clear_log()
+    app._append_output("building widget alpha\n", tab_key=key)
+    app._append_output("ERROR: widget exploded\n", tag="stderr", tab_key=key)
+    app._append_output("building widget beta\n", tab_key=key)
+    app.update_idletasks()
+    text = app._output_tabs[key]["text"]
+
+    def tagged(tag):
+        r = text.tag_ranges(tag)
+        return [text.get(r[i], r[i + 1]) for i in range(0, len(r), 2)]
+
+    try:
+        app._out_find_var.set("widget")
+        app.update_idletasks()
+        assert len(tagged("search")) == 3, tagged("search")
+        assert app._out_match_var.get() == "0/3", app._out_match_var.get()
+        app._step_output_match(True)
+        assert app._out_match_var.get() == "1/3"
+        app._out_find_var.set("")
+        app.update_idletasks()
+        assert tagged("search") == [], "highlights survived clearing the query"
+
+        app._out_errors_var.set(True)
+        app._apply_output_filter()
+        app.update_idletasks()
+        assert str(text.tag_cget("stdout", "elide")) in ("1", "true"), \
+            "errors-only did not elide plain output"
+        assert str(text.tag_cget("stderr", "elide")) not in ("1", "true"), \
+            "errors-only elided the errors themselves"
+        assert "building widget alpha" in text.get("1.0", "end"), \
+            "filtering destroyed the buffer"
+        app._out_errors_var.set(False)
+        app._apply_output_filter()
+        app.update_idletasks()
+        assert str(text.tag_cget("stdout", "elide")) in ("0", "false", ""), \
+            "plain output stayed hidden after turning the filter off"
+        print("  [ok] output-search: find highlights, errors-only elides, buffer intact")
+    finally:
+        app._out_find_var.set("")
+        app._out_errors_var.set(False)
+        app._apply_output_filter()
+        app._clear_log()
+
+
 def check_pipeline_editor_lists_steps(app):
     """Opening the pipeline editor must actually show the steps.
 
@@ -449,6 +502,7 @@ def main():
         check_card_rendering(app)
         check_card_run(app)
         check_run_history(app)
+        check_output_search_and_filter(app)
         check_pipeline_editor_lists_steps(app)
         check_schedule_fires(app)
         check_schedule_skips_while_running(app)

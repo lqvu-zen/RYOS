@@ -1,8 +1,9 @@
-"""UI-independent search/filter logic for the script list.
+"""UI-independent search/filter logic.
 
-Pure helpers extracted from ``RYOSApp`` so the matching rule and the
-"found in other groups" hint decision can be unit-tested without a display.
-The app renders widgets; this module makes the decisions.
+Pure helpers extracted from ``RYOSApp`` so the matching rules can be
+unit-tested without a display. The app renders widgets; this module makes the
+decisions. Two domains live here: filtering the script list, and finding text
+in an output tab.
 """
 
 from __future__ import annotations
@@ -65,3 +66,42 @@ def compute_hint(
         for g, n in others
     ]
     return SearchHint(links=links)
+
+
+# --- Output-panel search -----------------------------------------------------
+
+def find_spans(haystack: str, needle: str) -> list[tuple[int, int]]:
+    """Case-insensitive, non-overlapping match spans as (start, end) offsets.
+
+    Character offsets rather than line/column, because Tk accepts
+    ``"1.0 + N chars"`` directly — so the caller needs no index arithmetic of
+    its own, and this stays testable without a Text widget.
+
+    A blank needle matches nothing: highlighting every character the moment
+    someone focuses the box would be useless and slow.
+    """
+    if not needle or not haystack:
+        return []
+    hay, pin = haystack.lower(), needle.lower()
+    spans: list[tuple[int, int]] = []
+    start = 0
+    while True:
+        at = hay.find(pin, start)
+        if at < 0:
+            return spans
+        spans.append((at, at + len(pin)))
+        start = at + len(pin)      # non-overlapping: "aa" finds 2 in "aaaa"
+
+
+def step_match(count: int, current: int | None, forward: bool = True) -> int | None:
+    """Index of the next/previous match, wrapping at both ends.
+
+    None when there is nothing to step through. With no current position,
+    stepping forward lands on the first match and backward on the last, so the
+    first Enter after typing goes somewhere sensible either way.
+    """
+    if count <= 0:
+        return None
+    if current is None:
+        return 0 if forward else count - 1
+    return (current + (1 if forward else -1)) % count

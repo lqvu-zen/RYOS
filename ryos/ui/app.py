@@ -33,7 +33,7 @@ from ..dragdrop import compute_insertion, first_rect_at
 from ..grouping import bucket_by_group
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
-from ..search import compute_hint, matches, normalize_query
+from ..search import compute_hint, find_spans, matches, normalize_query, step_match
 from ..settings import QR_INDEX_DIR, _BASE, _PACKAGED, _load_settings, _save_settings
 from ..tray import TrayIcon
 from ..quickrun import (
@@ -217,6 +217,8 @@ class RYOSApp(_BaseWindow):
         self._elapsed_timer_id: str | None = None
         self._schedule_timer_id: str | None = None
         self._sched_ids_cache: tuple | None = None
+        self._out_search_job: str | None = None
+        self._out_search_syncing = False
         self._build_ui()
         self._refresh()
         self.after(80, self._drain_output_queue)
@@ -548,6 +550,8 @@ class RYOSApp(_BaseWindow):
                   activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._close_all_tabs).pack(side="right", padx=4)
+
+        self._build_output_search(out_header)
 
         self._out_tab_bar = tk.Frame(self.out_panel, bg=C["out_tabbar"])
         self._out_tab_body = tk.Frame(self.out_panel, bg=C["out_bg"])
@@ -2518,14 +2522,158 @@ class RYOSApp(_BaseWindow):
                        log_output=self._settings.get("log_runs_output", False),
                        step_token=step_token)
 
+    def _build_output_search(self, parent) -> None:
+        """Find box and an errors-only toggle, in the output header.
+
+        Both are per-tab state (see _tab_state), so switching tabs doesn't
+        silently carry one tab's filter onto another's output.
+        """
+        self._out_find_var = tk.StringVar()
+        self._out_errors_var = tk.BooleanVar(value=False)
+        self._out_match_var = tk.StringVar(value="")
+
+        bar = tk.Frame(parent, bg=C["out_header"])
+        bar.pack(side="left", padx=(16, 0))
+        tk.Label(bar, text="Find", bg=C["out_header"], fg=C["fg_on_dark_2"],
+                 font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
+        entry = tk.Entry(bar, textvariable=self._out_find_var, width=18,
+                         bg=C["out_bg"], fg=C["out_stdout"],
+                         insertbackground=C["out_stdout"], relief="flat",
+                         highlightthickness=1, highlightbackground=C["btn_dark_hover"],
+                         font=("Consolas", 9))
+        entry.pack(side="left")
+        self._out_find_entry = entry
+        entry.bind("<Return>", lambda _e: self._step_output_match(True))
+        entry.bind("<Shift-Return>", lambda _e: self._step_output_match(False))
+        entry.bind("<Escape>", lambda _e: self._clear_output_search())
+        self._out_find_var.trace_add("write", lambda *_: self._on_output_query_changed())
+
+        tk.Label(bar, textvariable=self._out_match_var, bg=C["out_header"],
+                 fg=C["fg_on_dark_2"], font=("Consolas", 8), width=10,
+                 anchor="w").pack(side="left", padx=(6, 0))
+        tk.Checkbutton(
+            bar, text="Errors only", variable=self._out_errors_var,
+            command=self._apply_output_filter,
+            bg=C["out_header"], fg=C["fg_on_dark_2"],
+            activebackground=C["out_header"], activeforeground=C["fg_on_dark"],
+            selectcolor=C["out_bg"], relief="flat", bd=0,
+            font=("Segoe UI", 9), cursor="hand2").pack(side="left", padx=(10, 0))
+
+    # ---- per-tab search state -------------------------------------------
+
+    def _tab_state(self, key: str) -> dict:
+        """The find/filter state for one tab, created on first use."""
+        tab = self._output_tabs.get(key)
+        if tab is None:
+            return {"query": "", "errors_only": False, "match": None}
+        return tab.setdefault("search", {"query": "", "errors_only": False,
+                                         "match": None})
+
+    def _configure_output_tags(self, text) -> None:
+        """Tags every output Text needs: colouring, eliding, and find highlights.
+
+        'stdout' carries no colour of its own — it exists so plain output can be
+        elided by tag, which is what makes the errors-only filter a one-line
+        toggle instead of a second buffer.
+        """
+        text.tag_config("stderr", foreground=C["out_stderr"])
+        text.tag_config("info",   foreground=C["out_status"])
+        text.tag_config("ok",     foreground=C["out_success"])
+        text.tag_config("stdout")
+        text.tag_config("search", background=C["out_status"], foreground=C["out_bg"])
+        text.tag_config("search_current", background=C["bolt"], foreground=C["out_bg"])
+        text.tag_raise("search")
+        text.tag_raise("search_current")
+
+    def _on_output_query_changed(self) -> None:
+        if not self._active_tab_key:
+            return
+        state = self._tab_state(self._active_tab_key)
+        state["query"] = self._out_find_var.get()
+        state["match"] = None
+        self._apply_output_search()
+
+    def _clear_output_search(self) -> None:
+        self._out_find_var.set("")
+
+    def _apply_output_search(self) -> None:
+        """Re-highlight the active tab for its current query."""
+        key = self._active_tab_key
+        if not key or key not in self._output_tabs:
+            return
+        text = self._output_tabs[key]["text"]
+        state = self._tab_state(key)
+        text.tag_remove("search", "1.0", tk.END)
+        text.tag_remove("search_current", "1.0", tk.END)
+        query = state.get("query") or ""
+        spans = find_spans(text.get("1.0", tk.END), query)
+        state["spans"] = spans
+        if not query:
+            self._out_match_var.set("")
+            return
+        for start, end in spans:
+            text.tag_add("search", f"1.0 + {start} chars", f"1.0 + {end} chars")
+        idx = state.get("match")
+        if idx is not None and 0 <= idx < len(spans):
+            self._mark_current_match(text, spans[idx])
+        self._out_match_var.set(
+            f"{(idx + 1) if idx is not None and spans else 0}/{len(spans)}"
+            if spans else "no matches")
+
+    def _mark_current_match(self, text, span) -> None:
+        start, end = span
+        text.tag_add("search_current", f"1.0 + {start} chars", f"1.0 + {end} chars")
+        text.see(f"1.0 + {start} chars")
+
+    def _step_output_match(self, forward: bool) -> None:
+        """Move to the next/previous match, wrapping."""
+        key = self._active_tab_key
+        if not key or key not in self._output_tabs:
+            return
+        state = self._tab_state(key)
+        spans = state.get("spans") or []
+        nxt = step_match(len(spans), state.get("match"), forward)
+        if nxt is None:
+            return
+        state["match"] = nxt
+        text = self._output_tabs[key]["text"]
+        text.tag_remove("search_current", "1.0", tk.END)
+        self._mark_current_match(text, spans[nxt])
+        self._out_match_var.set(f"{nxt + 1}/{len(spans)}")
+
+    def _apply_output_filter(self) -> None:
+        """Show only error lines, by eliding every other tag.
+
+        Eliding is what keeps this cheap: no second buffer, no re-render, and
+        the original text is untouched, so the toggle reverses instantly.
+        """
+        key = self._active_tab_key
+        if not key or key not in self._output_tabs:
+            return
+        state = self._tab_state(key)
+        state["errors_only"] = bool(self._out_errors_var.get())
+        text = self._output_tabs[key]["text"]
+        for tag in ("stdout", "info", "ok"):
+            text.tag_config(tag, elide=state["errors_only"])
+
+    def _sync_output_search_widgets(self, key: str) -> None:
+        """Point the shared find/filter widgets at this tab's own state."""
+        state = self._tab_state(key)
+        self._out_search_syncing = True
+        try:
+            self._out_find_var.set(state.get("query") or "")
+            self._out_errors_var.set(bool(state.get("errors_only")))
+        finally:
+            self._out_search_syncing = False
+        self._apply_output_filter()
+        self._apply_output_search()
+
     def _init_all_tab(self):
         text = scrolledtext.ScrolledText(
             self._out_tab_body, wrap="word", height=10, font=("Consolas", 10),
             bg=C["out_bg"], fg=C["out_stdout"], insertbackground=C["out_stdout"],
         )
-        text.tag_config("stderr", foreground=C["out_stderr"])
-        text.tag_config("info",   foreground=C["out_status"])
-        text.tag_config("ok",     foreground=C["out_success"])
+        self._configure_output_tags(text)
         btn = tk.Frame(self._out_tab_bar, bg=C["out_header"], cursor="hand2")
         btn.pack(side="left", padx=(1, 0), pady=(2, 0))
         name_lbl = tk.Label(btn, text="All", bg=C["out_header"], fg=C["fg_on_dark_2"],
@@ -2608,6 +2756,7 @@ class RYOSApp(_BaseWindow):
         if tab["close_lbl"]:
             tab["close_lbl"].config(fg="#888")
         tab["text"].pack(fill="both", expand=True)
+        self._sync_output_search_widgets(key)
 
     def _close_tab(self, key: str):
         if key == "all" or key not in self._output_tabs:
@@ -2674,15 +2823,33 @@ class RYOSApp(_BaseWindow):
         for k in keys:
             out_text = self._output_tabs[k]["text"]
             out_text.configure(state="normal")
-            if tag:
-                out_text.insert(tk.END, text, tag)
-            else:
-                out_text.insert(tk.END, text)
+            # Always tagged, so the errors-only filter can elide plain output
+            # by tag rather than needing a second buffer.
+            out_text.insert(tk.END, text, tag or "stdout")
             line_count = int(out_text.index(tk.END).split(".")[0]) - 1
             if line_count > max_lines:
                 out_text.delete("1.0", f"{line_count - max_lines + 1}.0")
             if scroll:
                 out_text.see(tk.END)
+        self._schedule_output_search_refresh()
+
+    def _schedule_output_search_refresh(self) -> None:
+        """Re-run the active search once the output settles.
+
+        Coalesced rather than run per insert: a chatty script would otherwise
+        rescan the whole buffer on every line.
+        """
+        if not getattr(self, "_out_find_var", None):
+            return
+        if not (self._out_find_var.get() or "").strip():
+            return
+        if getattr(self, "_out_search_job", None) is not None:
+            return
+        self._out_search_job = self.after(300, self._run_output_search_refresh)
+
+    def _run_output_search_refresh(self) -> None:
+        self._out_search_job = None
+        self._apply_output_search()
 
     def _clear_log(self):
         if not self._active_tab_key or self._active_tab_key not in self._output_tabs:

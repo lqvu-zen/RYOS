@@ -4993,3 +4993,84 @@ class TestPipelineFailurePolicy(unittest.TestCase):
                   {"b": ["error", "ok"]})
         self.assertEqual(self.launched, ["a", "b", "b"])
         self.assertEqual(self.verdict, "ok")
+
+
+# ---------------------------------------------------------------------------
+# Output-panel find (ryos.search)
+# ---------------------------------------------------------------------------
+from ryos.search import find_spans, step_match  # noqa: E402
+
+
+class TestFindSpans(unittest.TestCase):
+    """Offsets, not line/column: Tk takes '1.0 + N chars' directly."""
+
+    def test_single_match(self):
+        self.assertEqual(find_spans("hello world", "world"), [(6, 11)])
+
+    def test_several_matches(self):
+        self.assertEqual(find_spans("ab ab ab", "ab"), [(0, 2), (3, 5), (6, 8)])
+
+    def test_case_insensitive(self):
+        self.assertEqual(find_spans("Hello HELLO hello", "hello"),
+                         [(0, 5), (6, 11), (12, 17)])
+
+    def test_matches_do_not_overlap(self):
+        # "aa" in "aaaa" is two matches, not three.
+        self.assertEqual(find_spans("aaaa", "aa"), [(0, 2), (2, 4)])
+
+    def test_blank_needle_matches_nothing(self):
+        # Highlighting every character the moment the box is focused would be
+        # useless and slow.
+        self.assertEqual(find_spans("anything", ""), [])
+
+    def test_empty_haystack(self):
+        self.assertEqual(find_spans("", "x"), [])
+
+    def test_no_match(self):
+        self.assertEqual(find_spans("abc", "zzz"), [])
+
+    def test_needle_longer_than_haystack(self):
+        self.assertEqual(find_spans("ab", "abcdef"), [])
+
+    def test_spans_are_usable_slices(self):
+        hay = "the ERROR was an ERROR"
+        for start, end in find_spans(hay, "error"):
+            with self.subTest(start=start):
+                self.assertEqual(hay[start:end].lower(), "error")
+
+    def test_newlines_are_just_characters(self):
+        # The offsets index the raw buffer, newlines included.
+        self.assertEqual(find_spans("a\nb\nab", "ab"), [(4, 6)])
+
+
+class TestStepMatch(unittest.TestCase):
+
+    def test_no_matches(self):
+        self.assertIsNone(step_match(0, None))
+        self.assertIsNone(step_match(0, 3))
+
+    def test_first_step_forward_lands_on_the_first(self):
+        self.assertEqual(step_match(3, None, True), 0)
+
+    def test_first_step_backward_lands_on_the_last(self):
+        self.assertEqual(step_match(3, None, False), 2)
+
+    def test_forward_advances(self):
+        self.assertEqual([step_match(3, c, True) for c in (0, 1)], [1, 2])
+
+    def test_forward_wraps(self):
+        self.assertEqual(step_match(3, 2, True), 0)
+
+    def test_backward_wraps(self):
+        self.assertEqual(step_match(3, 0, False), 2)
+
+    def test_single_match_stays_put(self):
+        self.assertEqual(step_match(1, 0, True), 0)
+        self.assertEqual(step_match(1, 0, False), 0)
+
+    def test_round_trip_returns_to_the_start(self):
+        idx = None
+        for _ in range(4):
+            idx = step_match(4, idx, True)
+        self.assertEqual(idx, 3)
+        self.assertEqual(step_match(4, idx, True), 0)
