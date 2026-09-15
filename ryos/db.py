@@ -31,6 +31,15 @@ def _iso(value):
 TRIGGER_AFTER = "after"
 TRIGGER_WITH = "with"
 
+# pipeline_steps.on_failure — what a step's failure does to the run.
+FAIL_STOP = "stop"          # halt the pipeline (the original behaviour)
+FAIL_CONTINUE = "continue"  # keep going, and don't count it against the run
+
+# pipeline_steps.run_when — whether a step runs at all, given what came before.
+WHEN_ALWAYS = "always"
+WHEN_ON_SUCCESS = "on_success"
+WHEN_ON_FAILURE = "on_failure"   # cleanup / notify steps
+
 # runs.kind — what a history row describes.
 RUN_SCRIPT = "script"       # an ad-hoc script run
 RUN_STEP = "step"           # one step of a pipeline
@@ -167,9 +176,31 @@ def _migrate_schedules(conn):
                  "ON schedules(enabled, next_run_at)")
 
 
+def _migrate_step_failure_policy(conn):
+    """Per-step failure handling: stop or continue, retries, and a run condition.
+
+    Every default reproduces the original behaviour exactly -- a step stops the
+    pipeline, is never retried, and always runs -- so an existing pipeline
+    behaves identically until someone changes something.
+
+    run_when='on_failure' is the one that unlocks cleanup and notify steps:
+    a step that runs precisely because something earlier went wrong.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(pipeline_steps)")]
+    if "on_failure" not in cols:
+        conn.execute("ALTER TABLE pipeline_steps ADD COLUMN "
+                     "on_failure TEXT NOT NULL DEFAULT 'stop'")
+    if "retries" not in cols:
+        conn.execute("ALTER TABLE pipeline_steps ADD COLUMN "
+                     "retries INTEGER NOT NULL DEFAULT 0")
+    if "run_when" not in cols:
+        conn.execute("ALTER TABLE pipeline_steps ADD COLUMN "
+                     "run_when TEXT NOT NULL DEFAULT 'always'")
+
+
 _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
                      4: _migrate_script_env, 5: _migrate_run_history,
-                     6: _migrate_schedules}
+                     6: _migrate_schedules, 7: _migrate_step_failure_policy}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -434,7 +465,8 @@ class ScriptDB:
             pipeline_data = []
             for p_id, p_name, p_group, p_order in pipelines:
                 steps = conn.execute(
-                    "SELECT s.path, ps.params_override, ps.trigger_mode "
+                    "SELECT s.path, ps.params_override, ps.trigger_mode, "
+                    "ps.on_failure, ps.retries, ps.run_when "
                     "FROM pipeline_steps ps "
                     "JOIN scripts s ON s.id=ps.script_id "
                     "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
@@ -446,16 +478,21 @@ class ScriptDB:
                     "sort_order": p_order,
                     "steps": [{"script_path": path,
                                "params_override": override,
-                               "trigger_mode": mode}
-                              for path, override, mode in steps],
+                               "trigger_mode": mode,
+                               "on_failure": on_fail,
+                               "retries": retries,
+                               "run_when": when}
+                              for path, override, mode, on_fail, retries, when
+                              in steps],
                 })
 
         data = {
             # v4 added the per-script flags (temp_param / detached /
             # is_favorite / label_color) and the per-step params_override and
-            # trigger_mode; v5 added env_vars / work_dir. Every one of them is
-            # defaulted on read, so older files still import unchanged.
-            "version": 5,
+            # trigger_mode; v5 added env_vars / work_dir; v6 added the per-step
+            # failure policy. Every one of them is defaulted on read, so older
+            # files still import unchanged.
+            "version": 6,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
             "groups": [{"name": g[0], "sort_order": g[1], "base_dir": g[2]} for g in groups],
             "scripts": script_data,
@@ -584,12 +621,24 @@ class ScriptDB:
                         # the step neither sequential nor concurrent at runtime.
                         mode = (TRIGGER_WITH if step.get("trigger_mode") == TRIGGER_WITH
                                 else TRIGGER_AFTER)
+                        on_fail = (FAIL_CONTINUE
+                                   if step.get("on_failure") == FAIL_CONTINUE
+                                   else FAIL_STOP)
+                        when = step.get("run_when")
+                        when = (when if when in (WHEN_ON_SUCCESS, WHEN_ON_FAILURE)
+                                else WHEN_ALWAYS)
+                        try:
+                            retries = max(0, int(step.get("retries") or 0))
+                        except (TypeError, ValueError):
+                            retries = 0
                         conn.execute(
                             "INSERT INTO pipeline_steps "
-                            "(pipeline_id, script_id, step_order, params_override, trigger_mode) "
-                            "VALUES (?, ?, ?, ?, ?)",
+                            "(pipeline_id, script_id, step_order, params_override, "
+                            " trigger_mode, on_failure, retries, run_when) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                             (p_id, sid, i * 10,
-                             step.get("params_override"), mode),
+                             step.get("params_override"), mode,
+                             on_fail, retries, when),
                         )
                 # A hand-edited or reordered file could leave a leading 'with',
                 # which has no previous step to run alongside.
@@ -972,16 +1021,20 @@ class ScriptDB:
                 )
                 new_pipe_id = cur.lastrowid
                 steps = conn.execute(
-                    "SELECT script_id, step_order, params_override, trigger_mode FROM pipeline_steps "
+                    "SELECT script_id, step_order, params_override, trigger_mode, "
+                    "on_failure, retries, run_when FROM pipeline_steps "
                     "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
                     (old_pipe_id,),
                 ).fetchall()
-                for script_id, step_order, params_override, trigger_mode in steps:
+                for (script_id, step_order, params_override, trigger_mode,
+                     on_failure, retries, run_when) in steps:
                     new_script_id = id_map.get(script_id, script_id)
                     conn.execute(
-                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, params_override, trigger_mode) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (new_pipe_id, new_script_id, step_order, params_override, trigger_mode),
+                        "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, "
+                        "params_override, trigger_mode, on_failure, retries, run_when) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (new_pipe_id, new_script_id, step_order, params_override,
+                         trigger_mode, on_failure, retries, run_when),
                     )
             conn.commit()
             return len(source_scripts), len(source_pipelines)
@@ -1036,15 +1089,19 @@ class ScriptDB:
             )
             new_id = cur.lastrowid
             steps = conn.execute(
-                "SELECT script_id, step_order, trigger_mode FROM pipeline_steps "
+                "SELECT script_id, step_order, trigger_mode, on_failure, retries, run_when "
+                "FROM pipeline_steps "
                 "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
                 (pipeline_id,),
             ).fetchall()
-            for script_id, step_order, trigger_mode in steps:
+            for (script_id, step_order, trigger_mode,
+                 on_failure, retries, run_when) in steps:
                 conn.execute(
-                    "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, trigger_mode) "
-                    "VALUES (?, ?, ?, ?)",
-                    (new_id, script_id, step_order, trigger_mode),
+                    "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, "
+                    "trigger_mode, on_failure, retries, run_when) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (new_id, script_id, step_order, trigger_mode,
+                     on_failure, retries, run_when),
                 )
             conn.commit()
             return new_id
@@ -1104,19 +1161,55 @@ class ScriptDB:
 
     def list_pipeline_steps(self, pipeline_id: int) -> list:
         """Returns (step_id, script_id, name, path, params, interpreter,
-        params_override, trigger_mode, env_vars, work_dir).
+        params_override, trigger_mode, env_vars, work_dir, on_failure, retries,
+        run_when).
 
         env_vars/work_dir come from the script, not the step: a step inherits
-        its script's execution environment and has no override of its own."""
+        its script's execution environment and has no override of its own.
+
+        Consumers must slice this row (row[:N]) rather than unpack it whole --
+        it has grown three times, and each time a fixed-arity unpack broke.
+        TestRowWidthsArePinned guards the width."""
         with self._connect() as conn:
             return conn.execute(
                 "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter, "
                 "ps.params_override, ps.trigger_mode, "
-                "s.env_vars, COALESCE(s.work_dir, '') "
+                "s.env_vars, COALESCE(s.work_dir, ''), "
+                "ps.on_failure, ps.retries, ps.run_when "
                 "FROM pipeline_steps ps JOIN scripts s ON s.id = ps.script_id "
                 "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
                 (pipeline_id,),
             ).fetchall()
+
+    def set_step_policy(self, step_id: int, *, on_failure: str | None = None,
+                        retries: int | None = None,
+                        run_when: str | None = None) -> None:
+        """Set any of a step's failure-handling fields; None leaves one alone.
+
+        Values are clamped to the known set rather than trusted: these columns
+        are NOT NULL and drive branching in handle_step_done, where an
+        unrecognised value would mean a step that is neither one thing nor the
+        other at runtime.
+        """
+        updates: list[str] = []
+        args: list = []          # mixed str/int SQL parameters
+        if on_failure is not None:
+            updates.append("on_failure=?")
+            args.append(FAIL_CONTINUE if on_failure == FAIL_CONTINUE else FAIL_STOP)
+        if retries is not None:
+            updates.append("retries=?")
+            args.append(max(0, int(retries)))
+        if run_when is not None:
+            updates.append("run_when=?")
+            args.append(run_when if run_when in
+                        (WHEN_ON_SUCCESS, WHEN_ON_FAILURE) else WHEN_ALWAYS)
+        if not updates:
+            return
+        args.append(step_id)
+        with self._connect() as conn:
+            conn.execute(f"UPDATE pipeline_steps SET {', '.join(updates)} WHERE id=?",
+                         args)
+            conn.commit()
 
     def set_step_trigger_mode(self, step_id: int, mode: str):
         """Set one step's start rule; the pipeline's first step is always 'after'."""

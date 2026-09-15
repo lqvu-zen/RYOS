@@ -16,8 +16,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from .db import (RUN_PIPELINE, RUN_SCRIPT, RUN_STEP, SOURCE_MANUAL,
-                 SOURCE_PIPELINE, TRIGGER_WITH)
+from .db import (FAIL_CONTINUE, RUN_PIPELINE, RUN_SCRIPT, RUN_STEP,
+                 SOURCE_MANUAL, SOURCE_PIPELINE, TRIGGER_WITH,
+                 WHEN_ON_FAILURE, WHEN_ON_SUCCESS)
 from .interpreter import build_command, build_run_spec, resolve_interpreter
 from .jobs import Job
 from .logger import get_logger
@@ -39,6 +40,42 @@ def _tag_lines(text: str, label: str) -> str:
     """Prefix each non-empty line with a short step label, for concurrent-group output."""
     tag = f"[{label[:12]}] "
     return "".join(tag + line if line.strip() else line for line in text.splitlines(keepends=True))
+
+
+def step_on_failure(step) -> str:
+    """A step row's failure policy, defaulting for rows that predate it."""
+    return step[10] if len(step) > 10 else "stop"
+
+
+def step_retries(step) -> int:
+    """How many extra attempts a step row allows."""
+    try:
+        return max(0, int(step[11])) if len(step) > 11 else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def step_run_when(step) -> str:
+    """The condition under which a step row runs at all."""
+    return step[12] if len(step) > 12 else "always"
+
+
+def should_run_step(step, *, failed: bool, stopping: bool) -> bool:
+    """Whether a queued step should run, given what has happened so far.
+
+    `failed` is "anything has failed"; `stopping` is "a step whose policy is
+    stop has failed". Once stopping, only on_failure steps survive -- that is
+    what makes the default policy identical to the original behaviour, where a
+    failure cleared the queue outright.
+    """
+    when = step_run_when(step)
+    if stopping:
+        return when == WHEN_ON_FAILURE
+    if when == WHEN_ON_SUCCESS:
+        return not failed
+    if when == WHEN_ON_FAILURE:
+        return failed
+    return True
 
 
 class JobController:
@@ -149,6 +186,12 @@ class JobController:
         if job.stopped or not job.pipeline_queue:
             return
 
+        # Skip any leading steps whose condition doesn't hold, so a step that
+        # shouldn't run never becomes a group leader.
+        self._skip_unrunnable_head(job)
+        if not job.pipeline_queue:
+            return
+
         batch = [job.pipeline_queue.pop(0)]
         while job.pipeline_queue and job.pipeline_queue[0][7] == TRIGGER_WITH:
             batch.append(job.pipeline_queue.pop(0))
@@ -170,6 +213,9 @@ class JobController:
             # Stamped for the whole group at once: concurrent members really do
             # start together, so they share a start time.
             job.step_started[token] = launched_at
+            # Kept so a retry can relaunch this exact step under this token.
+            job.step_rows[token] = step
+            job.step_retries[token] = step_retries(step)
             prepared.append((token, step))
 
         first, last = prepared[0][0], prepared[-1][0]
@@ -191,26 +237,61 @@ class JobController:
         self._on_rename(job)
 
         for token, step in prepared:
-            step_id, sid, name, path, params, interp, override, _mode = step[:8]
-            # A step inherits its script's environment and working directory.
-            # Shorter tuples (tests, and anything predating these columns) have
-            # neither, which yields the default spec.
-            env_vars = step[8] if len(step) > 8 else None
-            work_dir = step[9] if len(step) > 9 else ""
-            if override is not None:
-                params = override
-            if not Path(path).exists():
-                self._queue.put(("stderr", job.job_id, f"[ERROR] File not found: {path}\n", token))
-                self._queue.put(("done", job.job_id, sid, "error", "", token))
-                continue                      # NOT `return` — siblings must still launch
-            try:
-                cmd = build_command(path, params, resolve_interpreter(path, interp))
-            except ValueError as e:
-                self._queue.put(("stderr", job.job_id, f"[ERROR] Parameter error: {e}\n", token))
-                self._queue.put(("done", job.job_id, sid, "error", "", token))
-                continue
-            spec = build_run_spec(cmd, work_dir=work_dir or "", env_vars=env_vars)
-            self._launch(job, spec, name, sid, token)
+            self._launch_step(job, token, step)
+
+    def _launch_step(self, job: Job, token, step) -> None:
+        """Launch one step under `token`. Also the retry path, so an attempt is
+        assembled exactly the same way every time.
+
+        Failures here are reported on the queue rather than raised, and never
+        `return` out of the caller's loop — siblings in a concurrent group must
+        still launch.
+        """
+        step_id, sid, name, path, params, interp, override, _mode = step[:8]
+        # A step inherits its script's environment and working directory.
+        # Shorter tuples (tests, and anything predating these columns) have
+        # neither, which yields the default spec.
+        env_vars = step[8] if len(step) > 8 else None
+        work_dir = step[9] if len(step) > 9 else ""
+        if override is not None:
+            params = override
+        if not Path(path).exists():
+            self._queue.put(("stderr", job.job_id, f"[ERROR] File not found: {path}\n", token))
+            self._queue.put(("done", job.job_id, sid, "error", "", token))
+            return
+        try:
+            cmd = build_command(path, params, resolve_interpreter(path, interp))
+        except ValueError as e:
+            self._queue.put(("stderr", job.job_id, f"[ERROR] Parameter error: {e}\n", token))
+            self._queue.put(("done", job.job_id, sid, "error", "", token))
+            return
+        spec = build_run_spec(cmd, work_dir=work_dir or "", env_vars=env_vars)
+        self._launch(job, spec, name, sid, token)
+
+    def _skip_unrunnable_head(self, job: Job) -> None:
+        """Drop leading steps whose condition doesn't hold, announcing each.
+
+        Only the head, and only when the pipeline is about to advance: a
+        step's condition depends on what has happened *so far*, so filtering
+        the whole queue up front would decide an on_failure step's fate before
+        the failure it exists to react to had happened.
+
+        Skipped steps are named in the output rather than silently vanishing —
+        "nothing ran and I don't know why" is the worst outcome for a
+        conditional step.
+        """
+        while job.pipeline_queue:
+            step = job.pipeline_queue[0]
+            if should_run_step(step, failed=job.pipeline_failed,
+                               stopping=job.pipeline_stopping):
+                return
+            job.pipeline_queue.pop(0)
+            job.pipeline_step_idx += 1
+            self._on_output(
+                job.tab_key,
+                f"  ↳ skipped step {job.pipeline_step_idx}/{job.pipeline_total}: "
+                f"{step[2]} ({step_run_when(step)})\n",
+                "info")
 
     def _exit_code(self, job: Job, token) -> int | None:
         """The finished step's process exit code, or None if it never launched.
@@ -251,6 +332,25 @@ class JobController:
                 step_index=token if isinstance(token, int) else None,
                 trigger_source=SOURCE_PIPELINE,
             )
+            # Retry first: a step with attempts left is relaunched under the
+            # same token and stays pending, so the group has not settled and
+            # nothing downstream sees a failure yet. Each attempt has already
+            # recorded its own history row above.
+            if status != "ok" and job.step_retries.get(token, 0) > 0:
+                row = job.step_rows.get(token)
+                if row is not None:
+                    job.step_retries[token] -= 1
+                    budget = step_retries(row)
+                    attempt = budget - job.step_retries[token]
+                    self._on_output(
+                        job.tab_key,
+                        f"  ↻ retry {attempt}/{budget}: "
+                        f"{job.group_labels.get(token, '')}\n",
+                        "info")
+                    job.step_started[token] = self._now()
+                    self._launch_step(job, token, row)
+                    return
+
             if job.group_pending:
                 if token not in job.group_pending:
                     # Defensive: an untagged/unrecognized item still has to make
@@ -263,19 +363,53 @@ class JobController:
                     token = job.group_pending.pop()
                 else:
                     job.group_pending.discard(token)
-                if status != "ok" and not job.group_failed:
-                    job.group_failed = True
-                    job.group_failed_at = token
+                if status != "ok":
+                    # Any failure arms run_when; only a 'stop' member's failure
+                    # poisons the group and, with it, the run.
+                    job.pipeline_failed = True
+                    row = job.step_rows.get(token)
+                    tolerated = row is not None and step_on_failure(row) == FAIL_CONTINUE
+                    if tolerated:
+                        self._on_output(
+                            job.tab_key,
+                            f"  ↳ {job.group_labels.get(token, 'step')} failed "
+                            f"(continuing)\n", "info")
+                    elif not job.group_failed:
+                        job.group_failed = True
+                        job.group_failed_at = token
                 if job.group_pending:
                     # A sibling is still running; wait for it regardless of whether
                     # this one failed — we don't kill in-flight siblings.
                     return
                 status = "error" if job.group_failed else "ok"
 
-            if status == "ok" and job.pipeline_queue:
-                self.run_next_pipeline_step(job)
-                return
-            elif status == "ok":
+            if status != "ok":
+                # A stop-policy failure halts normal steps, but on_failure
+                # steps are exactly the ones that should still run.
+                job.pipeline_failed = True
+                if not job.pipeline_stopping:
+                    job.pipeline_stopping = True
+                    job.pipeline_failed_at = job.group_failed_at or job.pipeline_step_idx
+                self._skip_unrunnable_head(job)
+                if job.pipeline_queue and not job.stopped:
+                    self._on_output(
+                        job.tab_key,
+                        "\n[Step failed — running failure steps]\n", "stderr")
+                    self.run_next_pipeline_step(job)
+                    return
+            else:
+                # Resolve conditional steps before asking "is there more?" --
+                # otherwise a queue holding only skippable steps looks non-empty
+                # and the job never reaches a terminal state.
+                self._skip_unrunnable_head(job)
+                if job.pipeline_queue:
+                    self.run_next_pipeline_step(job)
+                    return
+
+            # Terminal. The verdict is the run's, not the last step's: a
+            # cleanup step succeeding after a failure must not turn the
+            # pipeline green.
+            if not job.pipeline_stopping:
                 self._on_output(
                     job.tab_key,
                     f"\n{'━' * 60}\n"
@@ -300,7 +434,8 @@ class JobController:
                 job.pipeline_queue.clear()
                 self._on_output(job.tab_key, "\n[Pipeline stopped — step failed]\n", "stderr")
                 self._on_status("Pipeline stopped (step failed).")
-                failed_at = job.group_failed_at or job.pipeline_step_idx
+                failed_at = (job.pipeline_failed_at or job.group_failed_at
+                             or job.pipeline_step_idx)
                 total = job.pipeline_total
                 self._record(
                     RUN_PIPELINE, name=job.pipeline_name or job.name,

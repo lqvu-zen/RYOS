@@ -258,7 +258,7 @@ class TestScriptDBExportImport(unittest.TestCase):
             path = f.name
         self.db.export_to_file(path)
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 5)
+        self.assertEqual(data["version"], 6)
         self.assertIn("exported_at", data)
         self.assertEqual(len(data["scripts"]), 2)
         names = [s["name"] for s in data["scripts"]]
@@ -3418,7 +3418,7 @@ class TestExportImportFidelity(unittest.TestCase):
         path = self._tmp_json()
         src.export_to_file(path)
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 5)
+        self.assertEqual(data["version"], 6)
 
     def test_payload_carries_the_new_step_fields(self):
         src, _pid = self._populated_db()
@@ -4557,7 +4557,7 @@ class TestRowWidthsArePinned(unittest.TestCase):
         "list_all": 12,
         "get": 9,
         "list_pipelines": 4,
-        "list_pipeline_steps": 10,
+        "list_pipeline_steps": 13,
         "list_param_presets": 3,
         "list_runs": 11,
         "list_schedules": 11,
@@ -4639,3 +4639,357 @@ class TestPipelineEditorUnpacksDefensively(unittest.TestCase):
         self.assertEqual(offenders, [],
                          "pipeline.py unpacks a wide row at these lines; "
                          "slice it (row[:8]) so a new column can't empty the list")
+
+
+# ---------------------------------------------------------------------------
+# Per-step failure policy (on_failure / retries / run_when)
+# ---------------------------------------------------------------------------
+from ryos.db import (  # noqa: E402
+    FAIL_CONTINUE, FAIL_STOP, WHEN_ALWAYS, WHEN_ON_FAILURE, WHEN_ON_SUCCESS,
+)
+from ryos.job_controller import (  # noqa: E402
+    should_run_step, step_on_failure, step_retries, step_run_when,
+)
+from ryos.ui.pipeline import _policy_marks  # noqa: E402
+
+
+def _policy_step(name="s", *, mode=TRIGGER_AFTER, on_failure=FAIL_STOP,
+                 retries=0, run_when=WHEN_ALWAYS, path=None):
+    """A 13-wide step row, the shape list_pipeline_steps returns."""
+    return (1, 1, name, path or __file__, "", "", None, mode, None, "",
+            on_failure, retries, run_when)
+
+
+class TestStepPolicyReaders(unittest.TestCase):
+    """Rows narrower than 13 predate these columns and must read as defaults."""
+
+    def test_defaults_from_a_full_row(self):
+        row = _policy_step()
+        self.assertEqual(step_on_failure(row), FAIL_STOP)
+        self.assertEqual(step_retries(row), 0)
+        self.assertEqual(step_run_when(row), WHEN_ALWAYS)
+
+    def test_short_row_reads_as_default(self):
+        short = (1, 1, "s", "/s.py", "", "", None, TRIGGER_AFTER)
+        self.assertEqual(step_on_failure(short), FAIL_STOP)
+        self.assertEqual(step_retries(short), 0)
+        self.assertEqual(step_run_when(short), WHEN_ALWAYS)
+
+    def test_values_are_read_back(self):
+        row = _policy_step(on_failure=FAIL_CONTINUE, retries=3,
+                           run_when=WHEN_ON_FAILURE)
+        self.assertEqual(step_on_failure(row), FAIL_CONTINUE)
+        self.assertEqual(step_retries(row), 3)
+        self.assertEqual(step_run_when(row), WHEN_ON_FAILURE)
+
+    def test_unusable_retries_read_as_zero(self):
+        # This sits on the run path; a bad value must not raise mid-pipeline.
+        for bad in ("lots", None, -4):
+            with self.subTest(retries=bad):
+                self.assertEqual(step_retries(_policy_step(retries=bad)), 0)
+
+
+class TestShouldRunStep(unittest.TestCase):
+    """The condition is the whole of run_when's behaviour, so pin every case."""
+
+    def test_always_runs_normally(self):
+        self.assertTrue(should_run_step(_policy_step(), failed=False, stopping=False))
+        self.assertTrue(should_run_step(_policy_step(), failed=True, stopping=False))
+
+    def test_always_is_skipped_once_stopping(self):
+        # This is what reproduces the original behaviour, where a failure
+        # cleared the queue outright.
+        self.assertFalse(should_run_step(_policy_step(), failed=True, stopping=True))
+
+    def test_on_success_needs_a_clean_run(self):
+        step = _policy_step(run_when=WHEN_ON_SUCCESS)
+        self.assertTrue(should_run_step(step, failed=False, stopping=False))
+        self.assertFalse(should_run_step(step, failed=True, stopping=False))
+
+    def test_on_success_is_skipped_after_a_tolerated_failure(self):
+        # A continue step's failure still counts as "something has failed".
+        step = _policy_step(run_when=WHEN_ON_SUCCESS)
+        self.assertFalse(should_run_step(step, failed=True, stopping=False))
+
+    def test_on_failure_needs_a_failure(self):
+        step = _policy_step(run_when=WHEN_ON_FAILURE)
+        self.assertFalse(should_run_step(step, failed=False, stopping=False))
+        self.assertTrue(should_run_step(step, failed=True, stopping=False))
+
+    def test_on_failure_survives_stopping(self):
+        # Cleanup steps are precisely the ones that must still run.
+        step = _policy_step(run_when=WHEN_ON_FAILURE)
+        self.assertTrue(should_run_step(step, failed=True, stopping=True))
+
+    def test_short_rows_behave_like_always(self):
+        short = (1, 1, "s", "/s.py", "", "", None, TRIGGER_AFTER)
+        self.assertTrue(should_run_step(short, failed=False, stopping=False))
+        self.assertFalse(should_run_step(short, failed=True, stopping=True))
+
+
+class TestPolicyMarks(unittest.TestCase):
+    """Only deviations are marked, so ordinary pipelines look untouched."""
+
+    def test_all_defaults_mark_nothing(self):
+        self.assertEqual(_policy_marks(_policy_step()), "")
+
+    def test_short_row_marks_nothing(self):
+        self.assertEqual(_policy_marks((1, 1, "s", "/s.py", "", "", None, "after")), "")
+
+    def test_continue(self):
+        self.assertIn("!", _policy_marks(_policy_step(on_failure=FAIL_CONTINUE)))
+
+    def test_retries(self):
+        self.assertIn("↻3", _policy_marks(_policy_step(retries=3)))
+
+    def test_conditions(self):
+        self.assertIn("?ok", _policy_marks(_policy_step(run_when=WHEN_ON_SUCCESS)))
+        self.assertIn("?fail", _policy_marks(_policy_step(run_when=WHEN_ON_FAILURE)))
+
+
+class TestStepPolicyStorage(unittest.TestCase):
+
+    def setUp(self):
+        self.db = _make_db()
+        self.sid = self.db.add("s", "/s.py", "", "", "G")
+        self.pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(self.pid, self.sid)
+        self.step_id = self.db.list_pipeline_steps(self.pid)[0][0]
+
+    def _row(self):
+        return self.db.list_pipeline_steps(self.pid)[0]
+
+    def test_defaults_reproduce_the_old_behaviour(self):
+        row = self._row()
+        self.assertEqual((row[10], row[11], row[12]),
+                         (FAIL_STOP, 0, WHEN_ALWAYS))
+
+    def test_set_and_read_back(self):
+        self.db.set_step_policy(self.step_id, on_failure=FAIL_CONTINUE,
+                                retries=2, run_when=WHEN_ON_FAILURE)
+        row = self._row()
+        self.assertEqual((row[10], row[11], row[12]),
+                         (FAIL_CONTINUE, 2, WHEN_ON_FAILURE))
+
+    def test_none_leaves_a_field_untouched(self):
+        self.db.set_step_policy(self.step_id, retries=4)
+        self.db.set_step_policy(self.step_id, on_failure=FAIL_CONTINUE)
+        row = self._row()
+        self.assertEqual(row[11], 4, "retries was clobbered")
+        self.assertEqual(row[10], FAIL_CONTINUE)
+
+    def test_unknown_values_are_clamped(self):
+        # These columns are NOT NULL and drive branching; a stray value would
+        # make a step neither one thing nor the other at runtime.
+        self.db.set_step_policy(self.step_id, on_failure="maybe",
+                                retries=-3, run_when="whenever")
+        row = self._row()
+        self.assertEqual((row[10], row[11], row[12]),
+                         (FAIL_STOP, 0, WHEN_ALWAYS))
+
+    def test_no_arguments_is_a_noop(self):
+        self.db.set_step_policy(self.step_id)
+        self.assertEqual(self._row()[10], FAIL_STOP)
+
+    def test_clone_pipeline_carries_the_policy(self):
+        self.db.set_step_policy(self.step_id, on_failure=FAIL_CONTINUE,
+                                retries=2, run_when=WHEN_ON_FAILURE)
+        new_id = self.db.clone_pipeline(self.pid)
+        row = self.db.list_pipeline_steps(new_id)[0]
+        self.assertEqual((row[10], row[11], row[12]),
+                         (FAIL_CONTINUE, 2, WHEN_ON_FAILURE))
+
+    def test_clone_group_carries_the_policy(self):
+        self.db.create_group("G")
+        self.db.set_step_policy(self.step_id, on_failure=FAIL_CONTINUE, retries=1)
+        self.db.clone_group("G", "G2")
+        new_pid = self.db.list_pipelines("G2")[0][0]
+        row = self.db.list_pipeline_steps(new_pid)[0]
+        self.assertEqual((row[10], row[11]), (FAIL_CONTINUE, 1))
+
+    def test_export_import_round_trip(self):
+        self.db.set_step_policy(self.step_id, on_failure=FAIL_CONTINUE,
+                                retries=2, run_when=WHEN_ON_FAILURE)
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = f.name
+        self.db.export_to_file(path)
+        other = _make_db()
+        other.import_from_file(path)
+        pid = other.list_pipelines("G")[0][0]
+        row = other.list_pipeline_steps(pid)[0]
+        self.assertEqual((row[10], row[11], row[12]),
+                         (FAIL_CONTINUE, 2, WHEN_ON_FAILURE))
+
+    def test_import_clamps_hostile_values(self):
+        with tempfile.NamedTemporaryFile(suffix=".json", mode="w",
+                                         delete=False, encoding="utf-8") as f:
+            json.dump({
+                "version": 6,
+                "groups": [{"name": "G", "sort_order": 0, "base_dir": ""}],
+                "scripts": [{"name": "a", "path": "/a.py", "params": "",
+                             "interpreter": "", "order_index": 0,
+                             "group_name": "G", "presets": []}],
+                "pipelines": [{"name": "P2", "group_name": "G", "sort_order": 0,
+                               "steps": [{"script_path": "/a.py",
+                                          "on_failure": "sometimes",
+                                          "retries": "many",
+                                          "run_when": "whenever"}]}],
+            }, f)
+            path = f.name
+        other = _make_db()
+        other.import_from_file(path)
+        pid = [p[0] for p in other.list_pipelines("G") if p[1] == "P2"][0]
+        row = other.list_pipeline_steps(pid)[0]
+        self.assertEqual((row[10], row[11], row[12]),
+                         (FAIL_STOP, 0, WHEN_ALWAYS))
+
+
+class TestPipelineFailurePolicy(unittest.TestCase):
+    """End-to-end through the real controller, with scripted step outcomes.
+
+    The default case must stay byte-identical to the behaviour before any of
+    this existed: a failure stops the run and later steps never start.
+    """
+
+    def setUp(self):
+        self.outcomes: dict = {}
+        self.launched: list = []
+        self.notified: list = []
+        self.reg = JobRegistry()
+        self.q = _queue.Queue()
+        self.ctl = JobController(
+            self.reg, self.q, _make_db(),
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda t, b: self.notified.append(t),
+            on_started=lambda *a: None, on_finish=lambda *a: None,
+            on_rename=lambda *a: None, launch=self._launch,
+        )
+
+    def _launch(self, job, spec, name, sid, token=None):
+        self.launched.append(name)
+        seq = self.outcomes.get(name, ["ok"])
+        status = seq.pop(0) if len(seq) > 1 else (seq[0] if seq else "ok")
+        self.q.put(("done_tag", job.job_id, sid, status, "ok", "", token))
+
+    def _run(self, steps, outcomes=None):
+        self.outcomes = {k: list(v) for k, v in (outcomes or {}).items()}
+        job = Job(1, "pipeline", None, 1, "p", "job:1", "g", pipeline_name="P",
+                  pipeline_queue=list(steps), pipeline_total=len(steps))
+        self.reg.add(job)
+        self.ctl.run_next_pipeline_step(job)
+        for _ in range(200):
+            if self.q.empty():
+                break
+            self.ctl.pump()
+        return job
+
+    @property
+    def verdict(self):
+        if not self.notified:
+            return "unfinished"
+        return "ok" if "passed" in self.notified[-1] else "error"
+
+    # ---- the default must not have changed ----
+
+    def test_default_failure_stops_the_run(self):
+        self._run([_policy_step("a"), _policy_step("b"), _policy_step("c")],
+                  {"b": ["error"]})
+        self.assertEqual(self.launched, ["a", "b"])
+        self.assertEqual(self.verdict, "error")
+
+    def test_default_clean_run_passes(self):
+        self._run([_policy_step("a"), _policy_step("b")])
+        self.assertEqual(self.launched, ["a", "b"])
+        self.assertEqual(self.verdict, "ok")
+
+    # ---- continue ----
+
+    def test_continue_lets_the_run_carry_on(self):
+        self._run([_policy_step("a"),
+                   _policy_step("b", on_failure=FAIL_CONTINUE),
+                   _policy_step("c")], {"b": ["error"]})
+        self.assertEqual(self.launched, ["a", "b", "c"])
+
+    def test_a_tolerated_failure_does_not_fail_the_run(self):
+        self._run([_policy_step("a", on_failure=FAIL_CONTINUE)], {"a": ["error"]})
+        self.assertEqual(self.verdict, "ok")
+
+    # ---- retries ----
+
+    def test_retry_until_success(self):
+        self._run([_policy_step("a", retries=2)], {"a": ["error", "error", "ok"]})
+        self.assertEqual(self.launched, ["a", "a", "a"])
+        self.assertEqual(self.verdict, "ok")
+
+    def test_retries_are_bounded(self):
+        self._run([_policy_step("a", retries=1)], {"a": ["error"]})
+        self.assertEqual(self.launched, ["a", "a"])
+        self.assertEqual(self.verdict, "error")
+
+    def test_no_retry_on_success(self):
+        self._run([_policy_step("a", retries=3)])
+        self.assertEqual(self.launched, ["a"])
+
+    def test_retry_then_continue(self):
+        # Retries exhaust first, then the failure policy decides.
+        self._run([_policy_step("a", retries=1, on_failure=FAIL_CONTINUE),
+                   _policy_step("b")], {"a": ["error"]})
+        self.assertEqual(self.launched, ["a", "a", "b"])
+        self.assertEqual(self.verdict, "ok")
+
+    # ---- run_when ----
+
+    def test_on_failure_step_runs_after_a_failure(self):
+        self._run([_policy_step("a"), _policy_step("b"),
+                   _policy_step("cleanup", run_when=WHEN_ON_FAILURE)],
+                  {"b": ["error"]})
+        self.assertEqual(self.launched, ["a", "b", "cleanup"])
+
+    def test_the_run_still_fails_after_a_successful_cleanup(self):
+        # A cleanup step succeeding must not turn the pipeline green.
+        self._run([_policy_step("a"),
+                   _policy_step("cleanup", run_when=WHEN_ON_FAILURE)],
+                  {"a": ["error"]})
+        self.assertEqual(self.verdict, "error")
+
+    def test_on_failure_step_is_skipped_on_a_clean_run(self):
+        self._run([_policy_step("a"),
+                   _policy_step("cleanup", run_when=WHEN_ON_FAILURE)])
+        self.assertEqual(self.launched, ["a"])
+        self.assertEqual(self.verdict, "ok")
+
+    def test_on_success_step_is_skipped_after_a_tolerated_failure(self):
+        self._run([_policy_step("a", on_failure=FAIL_CONTINUE),
+                   _policy_step("b", run_when=WHEN_ON_SUCCESS)],
+                  {"a": ["error"]})
+        self.assertEqual(self.launched, ["a"])
+
+    def test_a_queue_of_only_skippable_steps_still_finishes(self):
+        # Regression: skipping emptied the queue without anything reaching a
+        # terminal state, so the job sat in Running forever.
+        self._run([_policy_step("a"),
+                   _policy_step("b", run_when=WHEN_ON_FAILURE)])
+        self.assertNotEqual(self.verdict, "unfinished")
+
+    # ---- concurrent groups ----
+
+    def test_a_tolerated_member_failure_does_not_poison_the_group(self):
+        self._run([_policy_step("a"),
+                   _policy_step("b", mode=TRIGGER_WITH, on_failure=FAIL_CONTINUE),
+                   _policy_step("c")], {"b": ["error"]})
+        self.assertEqual(self.launched, ["a", "b", "c"])
+        self.assertEqual(self.verdict, "ok")
+
+    def test_a_stop_member_failure_fails_the_group(self):
+        self._run([_policy_step("a"), _policy_step("b", mode=TRIGGER_WITH),
+                   _policy_step("c")], {"b": ["error"]})
+        self.assertEqual(self.launched, ["a", "b"])
+        self.assertEqual(self.verdict, "error")
+
+    def test_retry_relaunches_only_the_failing_member(self):
+        # Retrying the group would re-run siblings that already succeeded.
+        self._run([_policy_step("a"),
+                   _policy_step("b", mode=TRIGGER_WITH, retries=1)],
+                  {"b": ["error", "ok"]})
+        self.assertEqual(self.launched, ["a", "b", "b"])
+        self.assertEqual(self.verdict, "ok")

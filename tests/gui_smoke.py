@@ -212,10 +212,32 @@ def check_pipeline_editor_lists_steps(app):
         assert "--ci" in rows[1], f"param override not shown: {rows[1]!r}"
         assert rows[1].startswith("∥"), f"concurrent marker missing: {rows[1]!r}"
         # Selecting a row reads the same tuple a second way.
+        dlg._listbox.selection_clear(0, "end")
         dlg._listbox.selection_set(1)
         dlg._on_step_select()
         app.update_idletasks()
-        print("  [ok] pipeline-editor: steps listed with override and marker")
+        assert str(dlg._on_failure_combo.cget("state")) == "readonly", \
+            "policy controls stayed disabled with a step selected"
+
+        # Set a non-default policy through the real handler and check it shows.
+        dlg._on_failure_var.set(dlg._FAIL_LABELS["continue"])
+        dlg._retries_var.set("2")
+        dlg._on_policy_change()
+        app.update_idletasks()
+        stored = app.db.list_pipeline_steps(pid)[1]
+        assert stored[10] == "continue" and stored[11] == 2, stored[10:]
+        marked = dlg._listbox.get(1)
+        assert "!" in marked and "↻2" in marked, f"policy marks missing: {marked!r}"
+
+        # Removing the selection must leave the controls disabled, not stale.
+        dlg._listbox.selection_clear(0, "end")
+        dlg._listbox.selection_set(0)
+        dlg._on_step_select()
+        dlg._remove_selected()
+        app.update_idletasks()
+        assert str(dlg._on_failure_combo.cget("state")) == "disabled", \
+            "policy controls stayed enabled after Remove"
+        print("  [ok] pipeline-editor: steps, override, marker and policy controls")
     finally:
         if dlg is not None:
             try:

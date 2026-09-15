@@ -29,6 +29,18 @@ class Job:
         # step_token -> when that step launched, so a history row can record a
         # step's own duration rather than the whole pipeline's.
         self.step_started: dict = {}
+        # Per-step failure policy, main-thread-owned.
+        #   step_rows    token -> the step row, kept so a retry can relaunch it
+        #   step_retries token -> attempts still available for that step
+        self.step_rows: dict = {}
+        self.step_retries: dict = {}
+        # Two distinct flags. pipeline_failed means *something* failed and
+        # drives run_when; pipeline_stopping means a step whose policy is
+        # 'stop' failed, which halts normal steps and fails the run. A step set
+        # to continue can set the first without setting the second.
+        self.pipeline_failed: bool = False
+        self.pipeline_stopping: bool = False
+        self.pipeline_failed_at: int | None = None
         self.script_id = script_id
         self.pipeline_id = pipeline_id
         self.name = name
