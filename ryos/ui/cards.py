@@ -70,6 +70,32 @@ def row_metrics() -> tuple[int, int, int, int]:
     return _ROW_METRICS.get((_COMPACT, _CARD_SIZE), _ROW_METRICS[(_COMPACT, "medium")])
 
 
+def _status_badge(parent, status: str, on_retry, compact: bool = False) -> "tk.Label | None":
+    """The last-run badge, which doubles as the retry control when it failed.
+
+    A failed badge is where the eye already is when you notice something broke,
+    so it carries the retry rather than adding a separate button (issue #4).
+    The ↻ glyph, the hand cursor and the hover lift are what stop it reading
+    as a plain status chip. A successful badge stays inert — clicking "OK" and
+    having something run would be a nasty surprise.
+    """
+    if status == "error":
+        badge = tk.Label(parent, text="↻" if compact else "✕ Failed  ↻", bg=C["error"],
+                         fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
+                         padx=5, pady=1, cursor="hand2")
+        badge.bind("<Button-1>", lambda _e: on_retry())
+        badge.bind("<Enter>", lambda _e: badge.config(bg=C["btn_stop_active"]))
+        badge.bind("<Leave>", lambda _e: badge.config(bg=C["error"]))
+        Tooltip(badge, "Failed — click to run it again")
+        return badge
+    if status == "ok" and not compact:
+        return tk.Label(parent, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
+                        font=("Segoe UI", 8, "bold"), padx=5, pady=1)
+    # Compact cards show nothing for a clean run: the whole point of compact
+    # mode is that a card is one line unless something needs attention.
+    return None
+
+
 def _add_highlight_menu(menu: tk.Menu, current, on_pick) -> tk.Menu:
     """Attach the colour-picker submenu shared by the script and pipeline cards.
 
@@ -187,7 +213,20 @@ class ScriptCard(tk.Frame):
                 Tooltip(sched_badge, "Runs on a schedule — right-click to edit")
             ScrollingLabel(name_row, name, name_fg, C["card_bg"]).pack(side="left", fill="both", expand=True)
         else:
-            ScrollingLabel(text_area, name, name_fg, C["card_bg"]).pack(fill="x")
+            # Compact cards have no path/status row, so a failure would have
+            # nowhere to show and the retry badge nowhere to live. Give it one
+            # beside the name, and only when there is something to report --
+            # a clean compact card stays exactly as it was.
+            compact_badge = _status_badge(text_area, last_run_status or "", self.run,
+                                          compact=True)
+            if compact_badge is None:
+                ScrollingLabel(text_area, name, name_fg, C["card_bg"]).pack(fill="x")
+            else:
+                crow = tk.Frame(text_area, bg=C["card_bg"])
+                crow.pack(fill="x")
+                ScrollingLabel(crow, name, name_fg, C["card_bg"]).pack(
+                    side="left", fill="both", expand=True)
+                compact_badge.pack(side="right", padx=(6, 0))
         if not _COMPACT:
             display_path = path
             if group_base_dir and path:
@@ -209,12 +248,9 @@ class ScriptCard(tk.Frame):
                     sep = "  ·  " if display_path else ""
                     tk.Label(sub_row, text=f"{sep}{last_run}", bg=C["card_bg"],
                              fg=C["path_fg"], font=("Segoe UI", 8), anchor="w").pack(side="left")
-                    if last_run_status == "error":
-                        tk.Label(sub_row, text="✕ Failed", bg=C["error"], fg=C["fg_on_dark"],
-                                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
-                    elif last_run_status == "ok":
-                        tk.Label(sub_row, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
-                                 font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(6, 0))
+                    badge = _status_badge(sub_row, last_run_status, self.run)
+                    if badge is not None:
+                        badge.pack(side="left", padx=(6, 0))
 
         self._params_combo = None
         presets = db.list_param_presets(sid)
@@ -430,7 +466,8 @@ class PipelineCard(tk.Frame):
     def __init__(self, parent, pipeline_id: int, name: str, db: ScriptDB,
                  group_name: str, on_run, on_edit, on_refresh,
                  is_favorite: bool = False, on_toggle_favorite=None,
-                 label_color: str | None = None, scheduled: bool = False):
+                 label_color: str | None = None, scheduled: bool = False,
+                 last_status: str | None = None):
         super().__init__(parent, bg=C["card_bg"],
                          highlightbackground=C["border"], highlightthickness=1)
         self.pipeline_id = pipeline_id
@@ -444,6 +481,7 @@ class PipelineCard(tk.Frame):
         self._on_toggle_favorite = on_toggle_favorite
         self._label_color = label_color
         self._scheduled = scheduled
+        self._last_status = last_status
         name_fg = highlight_fg(label_color) or C["name_fg"]
 
         steps = db.list_pipeline_steps(pipeline_id)
@@ -522,8 +560,17 @@ class PipelineCard(tk.Frame):
             name_label = ScrollingLabel(name_row, name, name_fg, C["card_bg"])
             name_label.pack(side="left", fill="both", expand=True)
         else:
-            name_label = ScrollingLabel(content, name, name_fg, C["card_bg"])
-            name_label.pack(fill="x")
+            compact_badge = _status_badge(content, last_status or "", self.run,
+                                          compact=True)
+            if compact_badge is None:
+                name_label = ScrollingLabel(content, name, name_fg, C["card_bg"])
+                name_label.pack(fill="x")
+            else:
+                crow = tk.Frame(content, bg=C["card_bg"])
+                crow.pack(fill="x")
+                name_label = ScrollingLabel(crow, name, name_fg, C["card_bg"])
+                name_label.pack(side="left", fill="both", expand=True)
+                compact_badge.pack(side="right", padx=(6, 0))
 
         n = len(steps)
         if _COMPACT:
@@ -552,6 +599,11 @@ class PipelineCard(tk.Frame):
             tk.Label(summary_row, text=f"{n} step{'s' if n != 1 else ''}  ·  {summary_text}",
                      bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8), anchor="w",
                      cursor="hand2" if n > 0 else "").pack(side="left", fill="x", expand=True)
+            # Pipelines had no outcome badge at all; the status comes from the
+            # run history, since there is no last_run_status column for them.
+            pipe_badge = _status_badge(summary_row, last_status or "", self.run)
+            if pipe_badge is not None:
+                pipe_badge.pack(side="left", padx=(6, 0))
 
             if n > 0:
                 for w in (summary_row, *summary_row.winfo_children()):
@@ -647,6 +699,15 @@ class PipelineCard(tk.Frame):
             pass
         for ch in widget.winfo_children():
             self._set_bg(ch, color)
+
+    def run(self) -> None:
+        """Run this pipeline exactly as its Run button does.
+
+        Retry re-runs the whole pipeline rather than resuming from the failed
+        step: resuming would assume the earlier steps' side effects are still
+        valid, which is usually not true.
+        """
+        self.on_run(self.pipeline_id, self._name)
 
     def _show_history(self):
         RunHistoryDialog(self.winfo_toplevel(), self.db,

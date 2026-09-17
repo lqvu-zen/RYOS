@@ -208,6 +208,74 @@ def check_card_run(app):
         app._refresh_cards()
 
 
+def check_failed_badge_retries(app):
+    """Clicking a failed card's badge runs it again (issue #4).
+
+    Checks the badge is present, marked, styled as a control and actually
+    bound, then invokes what that binding calls. It deliberately does not
+    synthesise a <Button-1>: widgets here are laid out but never truly
+    displayed (winfo_ismapped is 0 even when geometry is correct), so a
+    generated click is silently swallowed and would make this pass vacuously.
+
+    Run in both card modes. Compact cards have no path/status row, so the
+    first version of this shipped a retry that was invisible to anyone using
+    compact mode — which is the mode this machine is set to.
+    """
+    import tkinter as tk
+
+    from ryos.ui import cards as cards_mod
+
+    path = _write_script("import sys; sys.exit(1)\n")
+    sid = app.db.add("smoke-retry", path, "", sys.executable)
+    original_compact = cards_mod._COMPACT
+
+    def badges(widget, out=None):
+        out = [] if out is None else out
+        if isinstance(widget, tk.Label) and (
+                "Failed" in str(widget.cget("text"))
+                or str(widget.cget("text")) == "↻"):
+            out.append(widget)
+        for ch in widget.winfo_children():
+            badges(ch, out)
+        return out
+
+    try:
+        # Fail it once so the card renders a Failed badge.
+        app._run_script(sid, "smoke-retry", path, "", sys.executable)
+        assert pump_until(app, lambda: len(app._jobreg) == 0), "first run did not finish"
+        assert _last_run_status(app, sid) == "error", "script did not fail as set up"
+
+        app._active_group = None
+        for compact in (False, True):
+            cards_mod.set_compact_mode(compact)
+            app._refresh_cards()
+            app.update_idletasks()
+            app.update()
+            card = next(c for c in app._cards
+                        if getattr(c, "_name", "") == "smoke-retry")
+            found = [b for b in badges(card)
+                     if "↻" in str(b.cget("text"))]
+            assert len(found) == 1, (
+                f"compact={compact}: expected one retry badge, got {len(found)}")
+            badge = found[0]
+            assert str(badge.cget("cursor")) == "hand2", (
+                f"compact={compact}: badge doesn't look clickable")
+            assert "<Button-1>" in badge.bind(), (
+                f"compact={compact}: badge is not bound to anything")
+
+            card.run()                     # what that binding calls
+            assert len(app._jobreg) == 1, (
+                f"compact={compact}: the badge's action did not re-run it")
+            assert pump_until(app, lambda: len(app._jobreg) == 0), "retry did not finish"
+        print("  [ok] failed-badge: bound retry works in both card modes")
+    finally:
+        cards_mod.set_compact_mode(original_compact)
+        app.db.clear_runs(script_id=sid)
+        app.db.delete(sid)
+        os.unlink(path)
+        app._refresh_cards()
+
+
 def check_run_history(app):
     """A completed run must leave a history row carrying its real exit code."""
     path = _write_script("import sys; print('bye'); sys.exit(5)\n")
@@ -613,6 +681,7 @@ def main():
         check_card_rendering(app)
         check_card_button_alignment(app)
         check_card_run(app)
+        check_failed_badge_retries(app)
         check_run_history(app)
         check_output_search_and_filter(app)
         check_run_selected(app)

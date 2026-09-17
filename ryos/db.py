@@ -834,6 +834,23 @@ class ScriptDB:
         with self._connect() as conn:
             return conn.execute(sql, args).fetchall()
 
+    def last_pipeline_status(self) -> dict:
+        """{pipeline_id: status} from each pipeline's most recent run.
+
+        Pipelines have no last_run_status column of their own -- scripts do,
+        but a pipeline's outcome only exists in the history table. Fetched as
+        one query per card refresh rather than one per card.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT pipeline_id, status FROM runs r WHERE kind=? "
+                "AND pipeline_id IS NOT NULL AND started_at = ("
+                "  SELECT MAX(started_at) FROM runs WHERE kind=r.kind "
+                "  AND pipeline_id=r.pipeline_id)",
+                (RUN_PIPELINE,),
+            ).fetchall()
+        return {pid: status for pid, status in rows if pid is not None}
+
     def prune_runs(self, days: int) -> int:
         """Drop history older than `days`; returns the number removed.
 

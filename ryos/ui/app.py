@@ -217,6 +217,7 @@ class RYOSApp(_BaseWindow):
         self._elapsed_timer_id: str | None = None
         self._schedule_timer_id: str | None = None
         self._sched_ids_cache: tuple | None = None
+        self._pipe_status_cache: dict | None = None
         self._out_search_job: str | None = None
         self._out_search_syncing = False
         self._build_ui()
@@ -1012,6 +1013,16 @@ class RYOSApp(_BaseWindow):
         self._refresh_tabs()
         self._refresh_cards()
 
+    def _pipeline_status(self) -> dict:
+        """Cached-per-refresh {pipeline_id: last run status}."""
+        if self._pipe_status_cache is None:
+            try:
+                self._pipe_status_cache = self.db.last_pipeline_status()
+            except Exception:
+                _log.warning("Could not read pipeline run status", exc_info=True)
+                self._pipe_status_cache = {}
+        return self._pipe_status_cache
+
     def _scheduled_ids(self):
         """Cached-per-refresh (script_ids, pipeline_ids) that carry a schedule."""
         if self._sched_ids_cache is None:
@@ -1117,6 +1128,7 @@ class RYOSApp(_BaseWindow):
                 on_toggle_favorite=make_fav_toggle_pipeline(p_id),
                 label_color=p_color,
                 scheduled=p_id in self._scheduled_ids()[1],
+                last_status=self._pipeline_status().get(p_id),
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_pipeline_drag(pc)
@@ -1173,6 +1185,7 @@ class RYOSApp(_BaseWindow):
                 on_toggle_favorite=make_toggle_fav_pipeline(p_id),
                 label_color=p_color,
                 scheduled=p_id in self._scheduled_ids()[1],
+                last_status=self._pipeline_status().get(p_id),
             )
             pc.pack(fill="x", pady=_pad_y, ipady=_ipad_y)
             self._bind_pipeline_drag(pc)
@@ -1222,6 +1235,7 @@ class RYOSApp(_BaseWindow):
 
     def _refresh_cards(self):
         self._sched_ids_cache = None   # one schedules query per refresh
+        self._pipe_status_cache = None
         self._reset_cards_state()
         if self._active_group is None:
             all_scripts = self.db.list_all()
