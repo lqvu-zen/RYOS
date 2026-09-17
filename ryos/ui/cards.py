@@ -217,16 +217,21 @@ class ScriptCard(tk.Frame):
             # nowhere to show and the retry badge nowhere to live. Give it one
             # beside the name, and only when there is something to report --
             # a clean compact card stays exactly as it was.
-            compact_badge = _status_badge(text_area, last_run_status or "", self.run,
+            # The row exists whether or not there is a badge, so every
+            # compact card is the same height, and the badge is *parented* to
+            # the row rather than merely packed into it -- a widget packed into
+            # a sibling sits below it in the stacking order and gets painted
+            # over, which is what broke this the first time round.
+            crow = tk.Frame(text_area, bg=C["card_bg"])
+            crow.pack(fill="x")
+            # Badge first: pack fills in order, so the expanding name label
+            # would otherwise claim the whole row and squash the badge to 1px.
+            compact_badge = _status_badge(crow, last_run_status or "", self.run,
                                           compact=True)
-            if compact_badge is None:
-                ScrollingLabel(text_area, name, name_fg, C["card_bg"]).pack(fill="x")
-            else:
-                crow = tk.Frame(text_area, bg=C["card_bg"])
-                crow.pack(fill="x")
-                ScrollingLabel(crow, name, name_fg, C["card_bg"]).pack(
-                    side="left", fill="both", expand=True)
+            if compact_badge is not None:
                 compact_badge.pack(side="right", padx=(6, 0))
+            ScrollingLabel(crow, name, name_fg, C["card_bg"]).pack(
+                side="left", fill="both", expand=True)
         if not _COMPACT:
             display_path = path
             if group_base_dir and path:
@@ -241,16 +246,24 @@ class ScriptCard(tk.Frame):
             if display_path or has_run:
                 sub_row = tk.Frame(text_area, bg=C["card_bg"])
                 sub_row.pack(fill="x")
-                if display_path:
-                    tk.Label(sub_row, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
-                             font=("Segoe UI", 8), anchor="w").pack(side="left")
+                # Right-hand items are packed FIRST so they always get their
+                # width; the path then takes whatever is left and is clipped.
+                # Packed in reading order the path label (which can be very
+                # long) consumed the whole row and squeezed the status badge to
+                # 1px, so a failure was effectively invisible on any card with
+                # a long path -- and the badge is now the retry control.
                 if has_run:
-                    sep = "  ·  " if display_path else ""
-                    tk.Label(sub_row, text=f"{sep}{last_run}", bg=C["card_bg"],
-                             fg=C["path_fg"], font=("Segoe UI", 8), anchor="w").pack(side="left")
                     badge = _status_badge(sub_row, last_run_status, self.run)
                     if badge is not None:
-                        badge.pack(side="left", padx=(6, 0))
+                        badge.pack(side="right", padx=(6, 0))
+                    sep = "  ·  " if display_path else ""
+                    tk.Label(sub_row, text=f"{sep}{last_run}", bg=C["card_bg"],
+                             fg=C["path_fg"], font=("Segoe UI", 8),
+                             anchor="e").pack(side="right")
+                if display_path:
+                    tk.Label(sub_row, text=display_path, bg=C["card_bg"], fg=C["path_fg"],
+                             font=("Segoe UI", 8), anchor="w").pack(
+                        side="left", fill="x", expand=True)
 
         self._params_combo = None
         presets = db.list_param_presets(sid)
@@ -560,17 +573,15 @@ class PipelineCard(tk.Frame):
             name_label = ScrollingLabel(name_row, name, name_fg, C["card_bg"])
             name_label.pack(side="left", fill="both", expand=True)
         else:
-            compact_badge = _status_badge(content, last_status or "", self.run,
+            # Same shape as ScriptCard: one row always, badge parented to it.
+            crow = tk.Frame(content, bg=C["card_bg"])
+            crow.pack(fill="x")
+            compact_badge = _status_badge(crow, last_status or "", self.run,
                                           compact=True)
-            if compact_badge is None:
-                name_label = ScrollingLabel(content, name, name_fg, C["card_bg"])
-                name_label.pack(fill="x")
-            else:
-                crow = tk.Frame(content, bg=C["card_bg"])
-                crow.pack(fill="x")
-                name_label = ScrollingLabel(crow, name, name_fg, C["card_bg"])
-                name_label.pack(side="left", fill="both", expand=True)
+            if compact_badge is not None:
                 compact_badge.pack(side="right", padx=(6, 0))
+            name_label = ScrollingLabel(crow, name, name_fg, C["card_bg"])
+            name_label.pack(side="left", fill="both", expand=True)
 
         n = len(steps)
         if _COMPACT:

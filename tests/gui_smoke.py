@@ -262,6 +262,15 @@ def check_failed_badge_retries(app):
                 f"compact={compact}: badge doesn't look clickable")
             assert "<Button-1>" in badge.bind(), (
                 f"compact={compact}: badge is not bound to anything")
+            # Laid out, not just present. The first compact version parented
+            # the badge to the wrong widget and packed it after the expanding
+            # name, so it ended up 1x1 and painted over.
+            assert badge.winfo_width() >= 10 and badge.winfo_height() >= 10, (
+                f"compact={compact}: badge collapsed to "
+                f"{badge.winfo_width()}x{badge.winfo_height()}")
+            assert badge.winfo_parent() == str(badge.master), (
+                f"compact={compact}: badge is packed into a widget that isn't "
+                "its parent, so it sits below it in the stacking order")
 
             card.run()                     # what that binding calls
             assert len(app._jobreg) == 1, (
