@@ -489,6 +489,16 @@ class PipelineCard(tk.Frame):
               lambda: on_edit(pipeline_id, name), tip="Edit",
               fg=C["btn_neutral_fg"])
         _sep()
+        # A script card carries a fourth button here (▶+ Run with parameter),
+        # which has no pipeline equivalent. Without this spacer the two card
+        # types' button columns don't line up in a mixed list (issue #3). It is
+        # Built by _rbtn like every other cell, so it is the same widget with
+        # the same padding and therefore exactly the same width — a Label or
+        # Frame sized to width=3 comes out 4px narrower and shifts the whole
+        # strip. Empty and disabled, so it reads as space, not a dead control.
+        _rbtn("", C["btn_neutral_bg"], C["btn_neutral_bg"], None,
+              state="disabled")
+        _sep()
         _rbtn("▶", C["btn_run_bg"], C["btn_run_hover"],
               lambda: on_run(pipeline_id, name), tip="Run")
 

@@ -131,6 +131,53 @@ def check_card_rendering(app):
         app._refresh_cards()
 
 
+def check_card_button_alignment(app):
+    """Script and pipeline cards must present the same button columns.
+
+    A script card has a fourth button (▶+ Run with parameter) that pipelines
+    have no equivalent for, so without a spacer only the Run column lines up
+    in a mixed list (issue #3). Measured in pixels, because the spacer has to
+    be the same widget class to come out the same width — a Label sized to the
+    same character width lands 4px narrower.
+    """
+    import tkinter as tk
+
+    path = _write_script("print('align')\n")
+    sid = app.db.add("smoke-align", path, "", sys.executable, "smoke-align-grp")
+    pid = app.db.create_pipeline("smoke-align-pipe", "smoke-align-grp")
+
+    def cells(card):
+        strip = [w for w in card.winfo_children()
+                 if isinstance(w, tk.Frame)
+                 and any(isinstance(c, tk.Button) for c in w.winfo_children())]
+        assert strip, "button strip not found"
+        return [(w.winfo_rootx(), w.winfo_width())
+                for w in strip[0].winfo_children() if w.winfo_width() > 1]
+
+    try:
+        app._active_group = "smoke-align-grp"
+        app._refresh_cards()
+        app.update_idletasks()
+        app.update()
+        card = next(c for c in app._cards
+                    if getattr(c, "_name", "") == "smoke-align")
+        pipe = next(c for c in app._pipeline_cards
+                    if getattr(c, "_name", "") == "smoke-align-pipe")
+        sc, pc = cells(card), cells(pipe)
+        assert len(sc) == len(pc), f"columns differ: {len(sc)} vs {len(pc)}"
+        for i, (a, b) in enumerate(zip(sc, pc)):
+            assert abs(a[0] - b[0]) <= 1 and abs(a[1] - b[1]) <= 1, (
+                f"column {i} misaligned: script {a} vs pipeline {b}")
+        print(f"  [ok] card-buttons: {len(sc)} columns aligned across card types")
+    finally:
+        app.db.delete_pipeline(pid)
+        app.db.delete(sid)
+        app.db.delete_group("smoke-align-grp")
+        os.unlink(path)
+        app._active_group = None
+        app._refresh_cards()
+
+
 def check_card_run(app):
     """Run a script the way a user does: through the card's own Run button.
 
@@ -564,6 +611,7 @@ def main():
     try:
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)
+        check_card_button_alignment(app)
         check_card_run(app)
         check_run_history(app)
         check_output_search_and_filter(app)

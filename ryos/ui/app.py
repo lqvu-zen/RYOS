@@ -2757,7 +2757,10 @@ class RYOSApp(_BaseWindow):
             self._bind_tab_context_menu(btn, name_lbl, close_lbl, key)
             self._activate_tab(key)
 
-        if not self._out_expanded:
+        # Opening the panel on every run yanks focus away from the card list,
+        # so it is opt-in. The tab is still created and made active, so the
+        # output is right there when the panel is opened by hand.
+        if self._settings.get("auto_open_output", False) and not self._out_expanded:
             self._toggle_output()
 
     def _bind_tab_context_menu(self, btn, name_lbl, close_lbl, key: str):

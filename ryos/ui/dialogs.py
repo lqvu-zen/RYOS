@@ -843,6 +843,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
         self._max_lines         = tk.StringVar(value=str(self._settings["max_output_lines"]))
         self._max_parallel      = tk.StringVar(value=str(self._settings.get("max_parallel_jobs", 10)))
         self._launcher_release  = tk.StringVar(value=str(self._settings.get("launcher_release_seconds", 3)))
+        self._auto_open_output  = tk.BooleanVar(
+            value=self._settings.get("auto_open_output", False))
         self._auto_clear        = tk.BooleanVar(value=self._settings["auto_clear_output"])
         self._auto_scroll       = tk.BooleanVar(value=self._settings["auto_scroll_output"])
         self._auto_check_update = tk.BooleanVar(value=self._settings.get("auto_check_update", True))
@@ -1282,6 +1284,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
     def _build_output_tab(self, tab):
         vcmd = self._vcmd_int
         f = self._section(tab, "OUTPUT")
+        self._chk(f, "Open the output panel when a run starts",  self._auto_open_output)
         self._chk(f, "Auto-clear output before each run",        self._auto_clear)
         self._chk(f, "Auto-scroll to bottom",                     self._auto_scroll)
         self._chk(f, "Notify when script / pipeline completes",   self._notify_on_complete)
@@ -1522,6 +1525,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
             "max_output_lines":         max_lines,
             "max_parallel_jobs":        max_parallel,
             "launcher_release_seconds": launcher_release,
+            "auto_open_output":         self._auto_open_output.get(),
             "auto_clear_output":        self._auto_clear.get(),
             "auto_scroll_output":       self._auto_scroll.get(),
             "notify_on_complete":       self._notify_on_complete.get(),

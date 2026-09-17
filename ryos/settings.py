@@ -64,6 +64,10 @@ _SETTINGS_DEFAULTS: dict = {
     "window_width":           540,
     "window_height":          640,
     "max_output_lines":       2000,
+    # Pop the output panel open when a run starts. Off by default: the
+    # panel jumping open on every run is disruptive when you are working
+    # in the card list (issue #6).
+    "auto_open_output":       False,
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
     "auto_check_update":      True,
