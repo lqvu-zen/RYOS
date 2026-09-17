@@ -14,11 +14,13 @@ flowchart TD
         cards["cards"]
         dialogs["dialogs"]
         pipeline["pipeline"]
-        theme["theme · widgets"]
+        theme["theme · widgets · theme_editor"]
+        placement["placement ★"]
         app --- cards
         app --- dialogs
         app --- pipeline
         app --- theme
+        app --- placement
     end
 
     subgraph core["core · UI-independent, unit-tested"]
@@ -29,10 +31,20 @@ flowchart TD
         jobs["jobs ★"]
         runner["runner ★"]
         job_controller["job_controller ★"]
+        scheduling["scheduling ★"]
+        history["history ★"]
+        search["search ★"]
+        grouping["grouping ★"]
+        dragdrop["dragdrop ★"]
+        screens["screens ★"]
+        themes["themes"]
         notifications["notifications"]
         logger["logger"]
         startup["startup"]
+        single_instance["single_instance"]
     end
+
+    tray["tray · optional pystray shell"] --> app
 
     ui --> core
 ```
@@ -60,6 +72,17 @@ could be tested in isolation.
 | `ryos/notifications.py` | Windows toast + GitHub update check (`_parse_version`, `_fetch_latest_release`). | partial |
 | `ryos/logger.py` | Rotating-file logger setup for the `ryos` namespace, plus a global excepthook. | — |
 | `ryos/startup.py` | Windows "run at login" registry entry. | — |
+| `ryos/scheduling.py` | Recurring schedules as pure functions over naive local time: `normalize_spec`, `next_occurrence`, `preview`, `resolve_due`, `describe_spec`. Interval / daily / weekly, with a catch-up policy for time the app spent closed. | yes |
+| `ryos/history.py` | Formatting for the run-history view — `parse_stamp`, `format_when`, `format_duration`, `format_status`, `describe`, `summarize`. No storage; `db.list_runs()` supplies the rows. | yes |
+| `ryos/search.py` | Card search: query parsing and match ranking over scripts, pipelines and groups. | yes |
+| `ryos/grouping.py` | Group ordering, collapse state, and the rules for moving an item between groups. | yes |
+| `ryos/dragdrop.py` | Where a dragged card lands — index maths and the legality of a drop, separated from Tk's drag events. | yes |
+| `ryos/screens.py` | Pure monitor geometry: `clamp_to_work_area`, `center_on_rect`, `anchored_position` (flip, then clamp). Knows nothing about Tk or Win32. | yes |
+| `ryos/ui/placement.py` | Applies `screens.py` to real windows — `work_area_for_widget`, `center_over_parent`, `place_near`. Uses Win32 `MonitorFromPoint` / `GetMonitorInfoW` where available, with a documented Tk-only fallback. This is what keeps dialogs on the monitor the app is on. | yes |
+| `ryos/themes.py` | The built-in theme gallery and WCAG `contrast_ratio()`, used to keep generated colours legible. | yes |
+| `ryos/ui/theme_editor.py` | Dialog for editing and previewing a custom theme. | — |
+| `ryos/tray.py` | System-tray icon: tooltip and dynamic menu listing what is currently running. `pystray` is optional — every entry point is guarded so the app runs without it, and CI exercises that path. | partial |
+| `ryos/single_instance.py` | Single-instance guard; a second launch hands its arguments to the running window and exits 0. `RYOS_ALLOW_MULTIPLE=1` bypasses it (the release smoke test needs this). | yes |
 
 ## Threading and the output queue
 
@@ -86,8 +109,10 @@ element:
 | `("done", job_id, script_id, "error", message)` | Launch failed — no process was created. |
 | `("done_tag", job_id, script_id, status, tag, footer)` | Process finished; `status` is `ok`/`error`, footer carries the exit code. |
 
-`Stop` calls `.terminate()` (then `.kill()`) on the `Job.current_process`
-stored by the worker.
+A job can have several steps running at once, so handles live in
+`Job.processes` (`step_token -> Popen`). `Stop` clears the remaining queue and
+walks `job.active_processes()`, calling `.terminate()` on each live handle.
+`Job.current_process` remains for the single-step path only.
 
 ## Data flow: running a script
 
@@ -103,9 +128,29 @@ Run click
    → on completion: db.mark_run_status(), notifications, card badge update
 ```
 
-Pipelines reuse the same machinery: a pipeline `Job` carries a `pipeline_queue`
-of remaining steps; when one step's `done_tag` arrives, `_run_next_pipeline_step`
-launches the next, stopping early if a step exits non-zero.
+Pipelines reuse the same machinery, with `JobController` owning the sequencing.
+A pipeline `Job` carries a `pipeline_queue` of remaining steps;
+`run_next_pipeline_step` launches the head, and `handle_step_done` settles a
+step and decides what happens next. Four things make that more than a loop:
+
+- **Concurrent groups.** Steps marked "run with previous" start together and are
+  tracked in `job.group_pending` by token; the group settles when the set empties.
+- **Failure policy.** Each step carries `on_failure` (stop or continue) and a
+  retry count. Two separate flags distinguish *something failed*
+  (`pipeline_failed`) from *the run is winding down* (`pipeline_stopping`), so a
+  cleanup step can still run after a failure.
+- **Conditional steps.** A step's `run_when` (`always` / `on_success` /
+  `on_failure`) is evaluated **lazily, at the head of the queue** — not up front.
+  Evaluating the whole queue in advance would drop an `on_failure` cleanup step
+  before the failure it exists to handle.
+- **Launcher steps.** A step whose script is marked `detached` opens something
+  and keeps running. `release_launcher_step` settles it through the normal
+  completion path and *then* records the token in `job.released_steps`; the
+  order matters, and a late real completion for a released token is ignored.
+
+Whatever path is taken, the queue is settled before asking "is there more?" —
+skipping every remaining step must still reach a terminal state, or the job
+hangs in Running forever.
 
 ## Where data lives
 
@@ -116,7 +161,7 @@ launches the next, stopping early if a step exits non-zero.
 
 | File / dir | Contents |
 | --- | --- |
-| `scripts.db` | SQLite: scripts, groups, pipelines, steps, param presets. |
+| `scripts.db` | SQLite: scripts, groups, pipelines, pipeline steps, param presets, run history (`runs`), schedules. |
 | `settings.json` | All app settings (tolerant load — corrupt/missing falls back to defaults). |
 | `logs/ryos.log` | Rotating log (1 MiB × 3 backups). |
 | `qr_index/` | Cached Quick Run file indexes per base directory. |
@@ -141,16 +186,37 @@ This is what makes the test suite possible without a display:
   a `.py` would relaunch the app, so `_find_python()` / `resolve_interpreter()`
   fall back to a real Python on `PATH`.
 - **Schema migrations**: `_ensure_baseline()` brings any old database up to the
-  v1 schema; numbered entries in `_MIGRATIONS` run once each, gated by SQLite's
-  `PRAGMA user_version`.
+  v1 schema and is **frozen** — it is not where new schema goes. Numbered
+  entries in `_MIGRATIONS` run once each, gated by SQLite's `PRAGMA
+  user_version`, and each re-checks `PRAGMA table_info` so it is safe to run
+  twice. The schema is at v7; `SCHEMA_VERSION` is derived from the migration
+  keys rather than written down separately.
+- **Widening an accessor row is a breaking change**: `db.get()` and
+  `list_pipeline_steps()` are unpacked positionally in the UI, and appending a
+  column has broken those call sites three separate times — twice in shipped
+  builds. Call sites slice to a fixed width (`rec[:7]`, `row[:8]`), and
+  `TestRowWidthsArePinned` pins the widths so the next widening fails a test
+  rather than a user's window.
 
 ## Running and testing
 
 ```bash
 uv run ryos                                  # launch the app
 uv run --no-project --with pytest pytest -q  # run the test suite (tkinter is mocked)
+uv run python tests/gui_smoke.py             # real-Tk smoke checks (needs a display)
 uvx ruff check .                             # lint
 ```
+
+`tests/gui_smoke.py` builds real widgets and asserts on geometry — it catches
+the layout regressions the mocked suite cannot see. Synthetic input does not
+work in every environment (`event_generate` can be inert and
+`wait_visibility()` can hang), so the checks call `.invoke()` and the handlers
+directly rather than faking clicks.
+
+One CI trap worth knowing: `--no-project` still resolves against a local
+`.venv`, so a dependency present locally can be absent on CI and the documented
+command will not reproduce the failure. That is how the tray tests passed
+locally while CI sat red for five commits.
 
 CI (`.github/workflows/ci.yml`) runs ruff and pytest on every push/PR across
 Ubuntu + Windows × Python 3.10/3.13. See `TECH_DEBT.md` for known rough edges

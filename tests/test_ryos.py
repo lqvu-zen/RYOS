@@ -5252,3 +5252,84 @@ class TestLauncherStepRelease(unittest.TestCase):
         rows = db.list_pipeline_steps(pid)
         self.assertEqual(rows[0][13], 1)
         self.assertEqual(rows[1][13], 0)
+
+
+# ---------------------------------------------------------------------------
+# Documentation drift
+# ---------------------------------------------------------------------------
+
+class TestDocsMatchTheCode(unittest.TestCase):
+    """The reference docs drifted three months behind the code once already.
+
+    By the time anyone noticed, API_REFERENCE documented list_pipeline_steps as
+    a 7-tuple that had been 14 fields for months, and 23 of 61 public ScriptDB
+    methods were missing entirely. Stale prose is cheap to tolerate and
+    expensive to trust, so the parts that can be checked mechanically are
+    checked here, on every push.
+
+    These assertions are deliberately shallow -- they check that names exist
+    and that specific known-wrong claims are gone. They cannot tell whether a
+    description is *good*, only whether it is about something real.
+    """
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def _read(self, *parts):
+        return (self.ROOT.joinpath(*parts)).read_text(encoding="utf-8")
+
+    def test_every_public_scriptdb_method_is_documented(self):
+        import inspect
+        api = self._read("docs", "API_REFERENCE.md")
+        section = api[api.index("## `ryos.db`"):api.index("## `ryos.interpreter`")]
+        documented = {n for n in re.findall(r"`([a-z_][a-z0-9_]*)\(", section)
+                      if not n.startswith("_")}
+        actual = {n for n, _ in inspect.getmembers(ScriptDB, inspect.isfunction)
+                  if not n.startswith("_")}
+        missing = sorted(actual - documented)
+        self.assertEqual(missing, [],
+                         f"undocumented ScriptDB methods: {missing}")
+
+    def test_the_reference_documents_no_phantom_methods(self):
+        import inspect
+        api = self._read("docs", "API_REFERENCE.md")
+        section = api[api.index("## `ryos.db`"):api.index("## `ryos.interpreter`")]
+        documented = {n for n in re.findall(r"`([a-z_][a-z0-9_]*)\(", section)
+                      if not n.startswith("_")}
+        actual = {n for n, _ in inspect.getmembers(ScriptDB, inspect.isfunction)
+                  if not n.startswith("_")}
+        phantom = sorted(documented - actual - {"max", "int"})
+        self.assertEqual(phantom, [],
+                         f"documented but nonexistent: {phantom}")
+
+    def test_row_shapes_in_the_docs_match_the_queries(self):
+        # The exact failure that shipped twice: a widened row, documented at
+        # its old width.
+        api = self._read("docs", "API_REFERENCE.md")
+        db = _make_db()
+        db.create_group("G")
+        sid = db.add("s", "/s.py", "", "", "G")
+        pid = db.create_pipeline("P", "G")
+        db.add_pipeline_step(pid, sid)
+        for claim in (f"list of **{len(db.list_pipeline_steps(pid)[0])}-tuples**",
+                      f"{len(db.get(sid))}-tuple or `None`",
+                      f"list of {len(db.list_all()[0])}-tuples"):
+            # Assert on a short message: dumping the whole document here makes
+            # the real failure unreadable.
+            self.assertTrue(claim in api,
+                            f"API_REFERENCE does not say {claim!r} -- a row "
+                            f"was widened without updating the docs")
+
+    def test_architecture_names_every_core_module(self):
+        arch = self._read("docs", "ARCHITECTURE.md")
+        core = [f.stem for f in (self.ROOT / "ryos").glob("*.py")
+                if not f.stem.startswith("_")]
+        unmentioned = sorted(m for m in core if m not in arch)
+        self.assertEqual(unmentioned, [],
+                         f"ARCHITECTURE.md never mentions: {unmentioned}")
+
+    def test_claude_md_describes_process_termination_correctly(self):
+        # Handles moved to Job.processes when concurrent steps landed; the old
+        # claim sent readers to a field that is empty for any pipeline.
+        claude = self._read("CLAUDE.md")
+        self.assertIn("Job.processes", claude)
+        self.assertNotIn("stored in `self.current_process`; `Stop` button", claude)
