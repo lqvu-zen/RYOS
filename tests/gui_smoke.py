@@ -208,44 +208,46 @@ def check_card_run(app):
         app._refresh_cards()
 
 
-def check_failed_badge_retries(app):
-    """Clicking a failed card's badge runs it again (issue #4).
+def check_failed_run_button_becomes_retry(app):
+    """After a failure the Run button turns into Retry (issue #4).
 
-    Checks the badge is present, marked, styled as a control and actually
-    bound, then invokes what that binding calls. It deliberately does not
-    synthesise a <Button-1>: widgets here are laid out but never truly
-    displayed (winfo_ismapped is 0 even when geometry is correct), so a
-    generated click is silently swallowed and would make this pass vacuously.
+    Checked in both card modes and against the real button, because the first
+    version of this hung the retry off the status badge -- which compact cards
+    don't render at all, and which a long path squeezed to 1px in normal mode.
+    The button strip is present at every card size, which is why it is the
+    right home for the action.
 
-    Run in both card modes. Compact cards have no path/status row, so the
-    first version of this shipped a retry that was invisible to anyone using
-    compact mode — which is the mode this machine is set to.
+    invoke() rather than a synthetic click: widgets here are laid out but never
+    displayed (winfo_ismapped is 0 with correct geometry), so a generated
+    <Button-1> is swallowed and the check would pass vacuously.
     """
     import tkinter as tk
 
     from ryos.ui import cards as cards_mod
+    from ryos.ui.theme import C
+
+    def run_button(card):
+        strip = [w for w in card.winfo_children()
+                 if isinstance(w, tk.Frame)
+                 and any(isinstance(c, tk.Button) for c in w.winfo_children())][0]
+        return list(strip.winfo_children())[-1]
 
     path = _write_script("import sys; sys.exit(1)\n")
     sid = app.db.add("smoke-retry", path, "", sys.executable)
     original_compact = cards_mod._COMPACT
-
-    def badges(widget, out=None):
-        out = [] if out is None else out
-        if isinstance(widget, tk.Label) and (
-                "Failed" in str(widget.cget("text"))
-                or str(widget.cget("text")) == "↻"):
-            out.append(widget)
-        for ch in widget.winfo_children():
-            badges(ch, out)
-        return out
-
     try:
-        # Fail it once so the card renders a Failed badge.
+        app._active_group = None
+        app._refresh_cards()
+        app.update_idletasks()
+        app.update()
+        card = next(c for c in app._cards
+                    if getattr(c, "_name", "") == "smoke-retry")
+        assert str(run_button(card).cget("text")) == "▶",             "a script that has never run should show Run, not Retry"
+
         app._run_script(sid, "smoke-retry", path, "", sys.executable)
         assert pump_until(app, lambda: len(app._jobreg) == 0), "first run did not finish"
         assert _last_run_status(app, sid) == "error", "script did not fail as set up"
 
-        app._active_group = None
         for compact in (False, True):
             cards_mod.set_compact_mode(compact)
             app._refresh_cards()
@@ -253,30 +255,21 @@ def check_failed_badge_retries(app):
             app.update()
             card = next(c for c in app._cards
                         if getattr(c, "_name", "") == "smoke-retry")
-            found = [b for b in badges(card)
-                     if "↻" in str(b.cget("text"))]
-            assert len(found) == 1, (
-                f"compact={compact}: expected one retry badge, got {len(found)}")
-            badge = found[0]
-            assert str(badge.cget("cursor")) == "hand2", (
-                f"compact={compact}: badge doesn't look clickable")
-            assert "<Button-1>" in badge.bind(), (
-                f"compact={compact}: badge is not bound to anything")
-            # Laid out, not just present. The first compact version parented
-            # the badge to the wrong widget and packed it after the expanding
-            # name, so it ended up 1x1 and painted over.
-            assert badge.winfo_width() >= 10 and badge.winfo_height() >= 10, (
-                f"compact={compact}: badge collapsed to "
-                f"{badge.winfo_width()}x{badge.winfo_height()}")
-            assert badge.winfo_parent() == str(badge.master), (
-                f"compact={compact}: badge is packed into a widget that isn't "
-                "its parent, so it sits below it in the stacking order")
+            btn = run_button(card)
+            assert str(btn.cget("text")) == "↻", (
+                f"compact={compact}: Run button did not become Retry "
+                f"(reads {str(btn.cget('text'))!r})")
+            assert str(btn.cget("bg")) == C["error"], (
+                f"compact={compact}: retry button is not marked as a failure")
+            assert btn.winfo_width() >= 10 and btn.winfo_height() >= 10, (
+                f"compact={compact}: retry button collapsed to "
+                f"{btn.winfo_width()}x{btn.winfo_height()}")
 
-            card.run()                     # what that binding calls
+            btn.invoke()
             assert len(app._jobreg) == 1, (
-                f"compact={compact}: the badge's action did not re-run it")
+                f"compact={compact}: the retry button did not re-run it")
             assert pump_until(app, lambda: len(app._jobreg) == 0), "retry did not finish"
-        print("  [ok] failed-badge: bound retry works in both card modes")
+        print("  [ok] retry-button: Run becomes Retry after a failure, both modes")
     finally:
         cards_mod.set_compact_mode(original_compact)
         app.db.clear_runs(script_id=sid)
@@ -690,7 +683,7 @@ def main():
         check_card_rendering(app)
         check_card_button_alignment(app)
         check_card_run(app)
-        check_failed_badge_retries(app)
+        check_failed_run_button_becomes_retry(app)
         check_run_history(app)
         check_output_search_and_filter(app)
         check_run_selected(app)
