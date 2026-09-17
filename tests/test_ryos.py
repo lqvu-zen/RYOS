@@ -4557,7 +4557,7 @@ class TestRowWidthsArePinned(unittest.TestCase):
         "list_all": 12,
         "get": 9,
         "list_pipelines": 4,
-        "list_pipeline_steps": 13,
+        "list_pipeline_steps": 14,
         "list_param_presets": 3,
         "list_runs": 11,
         "list_schedules": 11,
@@ -5131,3 +5131,124 @@ class TestSplitByCapacity(unittest.TestCase):
             with self.subTest(running=running):
                 can, _ = split_by_capacity(20, running, 10)
                 self.assertLessEqual(running + can, max(running, 10))
+
+
+# ---------------------------------------------------------------------------
+# Launcher steps (issue #5)
+# ---------------------------------------------------------------------------
+
+class TestLauncherStepRelease(unittest.TestCase):
+    """A launcher step is settled without waiting for its process to exit.
+
+    The ordering is the delicate part: the step must be settled through the
+    normal completion path *first*, and only then marked released -- marking it
+    first would make handle_step_done ignore the very call releasing it, which
+    is exactly the bug the first attempt shipped.
+    """
+
+    def setUp(self):
+        self.db = _make_db()
+        self.launched = []
+        self.finished = []
+        self.reg = JobRegistry()
+        self.q = _queue.Queue()
+        self.ctl = JobController(
+            self.reg, self.q, self.db,
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda *a: None, on_started=lambda *a: None,
+            on_finish=lambda j: self.finished.append(j),
+            on_rename=lambda *a: None,
+            launch=lambda job, spec, name, sid, tok=None:
+                self.launched.append((name, tok)),
+        )
+
+    def _job(self, steps):
+        job = Job(1, "pipeline", None, 1, "p", "job:1", "g", pipeline_name="P",
+                  pipeline_queue=list(steps), pipeline_total=len(steps))
+        self.reg.add(job)
+        return job
+
+    def _step(self, sid, name):
+        return (sid, sid, name, __file__, "", "", None, TRIGGER_AFTER,
+                None, "", FAIL_STOP, 0, WHEN_ALWAYS, 0)
+
+    def test_release_advances_to_the_next_step(self):
+        job = self._job([self._step(1, "launcher"), self._step(2, "next")])
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual([n for n, _ in self.launched], ["launcher"])
+        released = self.ctl.release_launcher_step(job, 1, 1)
+        self.assertTrue(released)
+        self.assertEqual([n for n, _ in self.launched], ["launcher", "next"])
+
+    def test_release_settles_before_marking(self):
+        # If the token were marked released first, handle_step_done would
+        # ignore it and the pipeline would never move.
+        job = self._job([self._step(1, "launcher"), self._step(2, "next")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.release_launcher_step(job, 1, 1)
+        self.assertIn(1, job.released_steps)
+        self.assertNotIn(1, job.group_pending)
+
+    def test_the_real_completion_is_ignored_afterwards(self):
+        job = self._job([self._step(1, "launcher"), self._step(2, "next")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.release_launcher_step(job, 1, 1)
+        before = list(self.launched)
+        # The launcher finally exits, long after it was released.
+        self.ctl.handle_step_done(job, 1, "error", token=1)
+        self.assertEqual(self.launched, before,
+                         "a late launcher completion disturbed the run")
+        self.assertFalse(job.pipeline_stopping,
+                         "a late launcher failure failed the pipeline")
+
+    def test_a_late_completion_cannot_consume_another_pending_step(self):
+        # Without the released_steps guard this hits the untagged fallback,
+        # which pops an unrelated pending token -- corrupting a later group.
+        job = self._job([self._step(1, "launcher"), self._step(2, "next")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.release_launcher_step(job, 1, 1)
+        pending_now = set(job.group_pending)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        self.assertEqual(job.group_pending, pending_now,
+                         "a late completion consumed the running step")
+
+    def test_release_records_history_for_the_step(self):
+        job = self._job([self._step(7, "launcher")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.release_launcher_step(job, 1, 7)
+        steps = [r for r in self.db.list_runs(pipeline_id=1) if r[3] == RUN_STEP]
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0][7], "ok")
+
+    def test_release_is_a_noop_once_the_step_finished(self):
+        job = self._job([self._step(1, "launcher"), self._step(2, "next")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)     # exited on its own
+        launched_after = list(self.launched)
+        self.assertFalse(self.ctl.release_launcher_step(job, 1, 1))
+        self.assertEqual(self.launched, launched_after)
+
+    def test_release_is_a_noop_on_a_stopped_run(self):
+        job = self._job([self._step(1, "launcher"), self._step(2, "next")])
+        self.ctl.run_next_pipeline_step(job)
+        job.stopped = True
+        self.assertFalse(self.ctl.release_launcher_step(job, 1, 1))
+
+    def test_release_completes_a_one_step_pipeline(self):
+        job = self._job([self._step(1, "launcher")])
+        self.ctl.run_next_pipeline_step(job)
+        self.ctl.release_launcher_step(job, 1, 1)
+        self.assertEqual(len(self.finished), 1,
+                         "releasing the only step did not finish the pipeline")
+
+    def test_detached_flag_reaches_the_step_row(self):
+        db = _make_db()
+        db.create_group("G")
+        sid = db.add("launcher", "/l.py", "", "", "G", detached=1)
+        plain = db.add("plain", "/p.py", "", "", "G")
+        pid = db.create_pipeline("P", "G")
+        db.add_pipeline_step(pid, sid)
+        db.add_pipeline_step(pid, plain)
+        rows = db.list_pipeline_steps(pid)
+        self.assertEqual(rows[0][13], 1)
+        self.assertEqual(rows[1][13], 0)

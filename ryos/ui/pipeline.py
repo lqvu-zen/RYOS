@@ -24,6 +24,10 @@ def _policy_marks(step) -> str:
         marks.append("?ok")
     elif len(step) > 12 and step[12] == WHEN_ON_FAILURE:
         marks.append("?fail")
+    if len(step) > 13 and step[13]:
+        # Not a policy the editor sets -- it comes from the script -- but the
+        # list is where you'd wonder why a step doesn't hold the pipeline up.
+        marks.append("→launch")
     return ("   " + " ".join(marks)) if marks else ""
 
 
@@ -114,7 +118,8 @@ class PipelineEditorDialog(tk.Toplevel):
         legend.pack(fill="x")
         tk.Label(legend, text="∥ = starts together with the step above   ·   "
                             "! = keeps going if it fails   ·   ↻n = retries   ·   "
-                            "? = only runs on success/failure",
+                            "? = only runs on success/failure   ·   "
+                            "→launch = launcher; doesn't hold up the next step",
                  bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 4))
 
         opt = tk.Frame(self, bg=C["card_bg"], padx=12, pady=4)

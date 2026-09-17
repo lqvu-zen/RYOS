@@ -33,6 +33,10 @@ class Job:
         #   step_rows    token -> the step row, kept so a retry can relaunch it
         #   step_retries token -> attempts still available for that step
         self.step_rows: dict = {}
+        # Launcher steps released before their process exited. Their real
+        # completion arrives later and must be ignored, or it would be
+        # mis-attributed to whatever step is pending by then.
+        self.released_steps: set = set()
         self.step_retries: dict = {}
         # Two distinct flags. pipeline_failed means *something* failed and
         # drives run_when; pipeline_stopping means a step whose policy is

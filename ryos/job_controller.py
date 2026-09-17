@@ -293,6 +293,25 @@ class JobController:
                 f"{step[2]} ({step_run_when(step)})\n",
                 "info")
 
+    def release_launcher_step(self, job: Job, token, sid: int) -> bool:
+        """Settle a launcher step that is still running, and stop waiting on it.
+
+        Ordering is the whole point. The step is settled *first*, through the
+        normal completion path, and only then marked released -- mark it before
+        and handle_step_done would ignore the very call that releases it. After
+        this returns, the process's real completion arrives to a token already
+        in released_steps and is dropped.
+
+        False when there was nothing to release: it exited on its own, or the
+        run was stopped.
+        """
+        if job.stopped or token not in job.group_pending:
+            return False
+        self._db.mark_run_status(sid, "ok")
+        self.handle_step_done(job, sid, "ok", token)
+        job.released_steps.add(token)
+        return True
+
     def _exit_code(self, job: Job, token) -> int | None:
         """The finished step's process exit code, or None if it never launched.
 
@@ -320,6 +339,13 @@ class JobController:
         exit_code = self._exit_code(job, token)
 
         if job.kind == "pipeline":
+            if token in job.released_steps:
+                # A launcher step already counted as done; this is its process
+                # finally exiting. Dropping it here is what stops the untagged
+                # fallback below from consuming an unrelated pending step.
+                _log.info("Ignoring late completion for released launcher step %s",
+                          token)
+                return
             # Recorded before group settlement, so each member of a concurrent
             # group gets its own row with its own status -- settlement rewrites
             # `status` to the group's verdict below.

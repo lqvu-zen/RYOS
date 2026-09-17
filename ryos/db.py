@@ -1179,10 +1179,13 @@ class ScriptDB:
     def list_pipeline_steps(self, pipeline_id: int) -> list:
         """Returns (step_id, script_id, name, path, params, interpreter,
         params_override, trigger_mode, env_vars, work_dir, on_failure, retries,
-        run_when).
+        run_when, detached).
 
         env_vars/work_dir come from the script, not the step: a step inherits
-        its script's execution environment and has no override of its own.
+        its script's execution environment and has no override of its own. So
+        does detached -- a launcher step is released once it has started rather
+        than waited on, so a first step that just opens an app doesn't hold the
+        rest of the pipeline.
 
         Consumers must slice this row (row[:N]) rather than unpack it whole --
         it has grown three times, and each time a fixed-arity unpack broke.
@@ -1192,7 +1195,8 @@ class ScriptDB:
                 "SELECT ps.id, s.id, s.name, s.path, s.params, s.interpreter, "
                 "ps.params_override, ps.trigger_mode, "
                 "s.env_vars, COALESCE(s.work_dir, ''), "
-                "ps.on_failure, ps.retries, ps.run_when "
+                "ps.on_failure, ps.retries, ps.run_when, "
+                "COALESCE(s.detached, 0) "
                 "FROM pipeline_steps ps JOIN scripts s ON s.id = ps.script_id "
                 "WHERE ps.pipeline_id=? ORDER BY ps.step_order ASC, ps.id ASC",
                 (pipeline_id,),

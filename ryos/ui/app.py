@@ -2137,6 +2137,15 @@ class RYOSApp(_BaseWindow):
         threading.Thread(
             target=self._run_subprocess, args=(job, spec, name, script_id, step_token), daemon=True,
         ).start()
+        # A launcher step opens something and keeps running, so waiting for it
+        # to exit would stall the pipeline forever (issue #5). Release it after
+        # the same grace period an ad-hoc launcher run gets. Ad-hoc runs carry
+        # no token and go through _auto_release_launcher instead.
+        if step_token is not None and self.db.is_detached(script_id):
+            secs = max(0, int(self._settings.get("launcher_release_seconds", 3)))
+            self.after(secs * 1000,
+                       lambda j=job, t=step_token, sid=script_id:
+                       self._release_launcher_step(j, t, sid))
 
     def _run_script(self, script_id, name, path, params, interpreter,
                     trigger=SOURCE_MANUAL):
@@ -2185,6 +2194,21 @@ class RYOSApp(_BaseWindow):
             secs = self._settings.get("launcher_release_seconds", 3)
             self.after(max(0, int(secs)) * 1000,
                        lambda j=job: self._auto_release_launcher(j))
+
+    def _release_launcher_step(self, job: "_Job", token, script_id: int) -> None:
+        """Count a still-running launcher step as done so the pipeline advances.
+
+        The process is deliberately left running -- that is the whole point of a
+        launcher. Its real completion arrives later and is dropped by the
+        controller, which is why the token is recorded as released first.
+        """
+        if job.stopped or token not in job.group_pending:
+            return              # exited on its own, or the run was stopped
+        secs = self._settings.get("launcher_release_seconds", 3)
+        self._append_output(
+            f"  ↳ launcher step released after {secs}s; continuing\n",
+            tag="info", tab_key=job.tab_key)
+        self._jobctl.release_launcher_step(job, token, script_id)
 
     def _auto_release_launcher(self, job: "_Job") -> None:
         """Drop a launcher job from the Running list once it has launched,
