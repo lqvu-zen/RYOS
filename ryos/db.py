@@ -986,6 +986,13 @@ class ScriptDB:
             conn.commit()
 
     def clone_group(self, source: str, new_name: str) -> tuple[int, int]:
+        """Copy a group with its scripts, pipelines, steps and presets.
+
+        Everything that defines an item comes along, including `detached` --
+        a cloned launcher that lost that flag would block its pipeline, which
+        is the behaviour issue #5 existed to remove. Only run history is left
+        behind: the copy has not run yet.
+        """
         with self._connect() as conn:
             max_order = conn.execute("SELECT COALESCE(MAX(sort_order), -1) FROM groups").fetchone()[0]
             src_base = conn.execute(
@@ -999,20 +1006,23 @@ class ScriptDB:
             now = datetime.now().isoformat(timespec="seconds")
             source_scripts = conn.execute(
                 "SELECT id, name, path, params, interpreter, order_index, "
-                "COALESCE(temp_param, 0), env_vars, COALESCE(work_dir, '') "
+                "COALESCE(temp_param, 0), env_vars, COALESCE(work_dir, ''), "
+                "COALESCE(detached, 0), COALESCE(is_favorite, 0), label_color "
                 "FROM scripts WHERE group_name=?",
                 (source,),
             ).fetchall()
             id_map: dict[int, int] = {}
             for (old_id, s_name, path, params, interpreter, order_index,
-                 temp_param, env_vars, work_dir) in source_scripts:
+                 temp_param, env_vars, work_dir, detached, is_favorite,
+                 label_color) in source_scripts:
                 cur = conn.execute(
                     "INSERT INTO scripts (name, path, params, interpreter, created_at, "
                     "last_run_at, last_run_status, order_index, group_name, temp_param, "
-                    "env_vars, work_dir) "
-                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)",
+                    "env_vars, work_dir, detached, is_favorite, label_color) "
+                    "VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (s_name, path, params, interpreter, now, order_index, new_name,
-                     temp_param, env_vars, work_dir),
+                     temp_param, env_vars, work_dir, detached, is_favorite,
+                     label_color),
                 )
                 new_id = cur.lastrowid
                 id_map[old_id] = new_id
@@ -1028,13 +1038,15 @@ class ScriptDB:
                         (new_id, label, preset_params, sort_order),
                     )
             source_pipelines = conn.execute(
-                "SELECT id, name, sort_order FROM pipelines WHERE group_name=?",
+                "SELECT id, name, sort_order, COALESCE(is_favorite, 0), label_color "
+                "FROM pipelines WHERE group_name=?",
                 (source,),
             ).fetchall()
-            for old_pipe_id, p_name, sort_order in source_pipelines:
+            for old_pipe_id, p_name, sort_order, p_fav, p_color in source_pipelines:
                 cur = conn.execute(
-                    "INSERT INTO pipelines (name, group_name, sort_order) VALUES (?, ?, ?)",
-                    (p_name, new_name, sort_order),
+                    "INSERT INTO pipelines (name, group_name, sort_order, "
+                    "is_favorite, label_color) VALUES (?, ?, ?, ?, ?)",
+                    (p_name, new_name, sort_order, p_fav, p_color),
                 )
                 new_pipe_id = cur.lastrowid
                 steps = conn.execute(
@@ -1089,35 +1101,44 @@ class ScriptDB:
             return cur.lastrowid
 
     def clone_pipeline(self, pipeline_id: int) -> int:
+        """Copy a pipeline, its steps, and everything that defines them.
+
+        A clone differs from its source only in name and id. That includes the
+        per-step params_override -- omitting it produced a copy that looked
+        right in the editor and ran with the wrong arguments.
+        """
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT name, group_name FROM pipelines WHERE id=?", (pipeline_id,)
+                "SELECT name, group_name, COALESCE(is_favorite, 0), label_color "
+                "FROM pipelines WHERE id=?", (pipeline_id,)
             ).fetchone()
             if not row:
                 raise ValueError(f"Pipeline {pipeline_id} not found")
-            name, group_name = row
+            name, group_name, is_favorite, label_color = row
             max_order = conn.execute(
                 "SELECT COALESCE(MAX(sort_order), -1) FROM pipelines WHERE group_name=?",
                 (group_name,),
             ).fetchone()[0]
             cur = conn.execute(
-                "INSERT INTO pipelines (name, group_name, sort_order) VALUES (?, ?, ?)",
-                (f"{name} (copy)", group_name, max_order + 1),
+                "INSERT INTO pipelines (name, group_name, sort_order, "
+                "is_favorite, label_color) VALUES (?, ?, ?, ?, ?)",
+                (f"{name} (copy)", group_name, max_order + 1,
+                 is_favorite, label_color),
             )
             new_id = cur.lastrowid
             steps = conn.execute(
-                "SELECT script_id, step_order, trigger_mode, on_failure, retries, run_when "
-                "FROM pipeline_steps "
+                "SELECT script_id, step_order, params_override, trigger_mode, "
+                "on_failure, retries, run_when FROM pipeline_steps "
                 "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
                 (pipeline_id,),
             ).fetchall()
-            for (script_id, step_order, trigger_mode,
+            for (script_id, step_order, params_override, trigger_mode,
                  on_failure, retries, run_when) in steps:
                 conn.execute(
                     "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, "
-                    "trigger_mode, on_failure, retries, run_when) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (new_id, script_id, step_order, trigger_mode,
+                    "params_override, trigger_mode, on_failure, retries, run_when) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (new_id, script_id, step_order, params_override, trigger_mode,
                      on_failure, retries, run_when),
                 )
             conn.commit()

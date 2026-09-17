@@ -87,7 +87,7 @@ Module-level constants:
 | `rename_group(old, new)` | — | |
 | `reorder_groups(names)` | — | Persists tab order. |
 | `delete_group(name)` | — | |
-| `clone_group(source, new_name)` | `tuple[int, int]` | `(scripts_copied, pipelines_copied)`. |
+| `clone_group(source, new_name)` | `tuple[int, int]` | `(scripts_copied, pipelines_copied)`. A clone differs from its source in name, id and group only — `detached`, `label_color`, `is_favorite`, presets and step overrides all come along. Run history is the deliberate exception: the copy has not run yet. |
 | `group_match_counts(query)` | `list[tuple[str, int]]` | `(group_name, matches)` for the search bar; ungrouped bucket last, blank query → `[]`. `%` and `_` are escaped to literals. |
 | `groups_with_match(query)` | `list[str]` | The names from `group_match_counts`, same order. |
 
@@ -96,7 +96,7 @@ Module-level constants:
 | Method | Returns | Notes |
 | --- | --- | --- |
 | `create_pipeline(name, group_name)` | `int` (new id) | |
-| `clone_pipeline(pipeline_id)` | `int` (new id) | Copies steps; names it `"… (copy)"`. Raises `ValueError` if not found. |
+| `clone_pipeline(pipeline_id)` | `int` (new id) | Copies the steps and everything that defines them — including each step’s `params_override`. Names it `"… (copy)"`. Raises `ValueError` if not found. |
 | `rename_pipeline(pipeline_id, name)` | — | |
 | `delete_pipeline(pipeline_id)` | — | Also deletes its steps. |
 | `list_pipelines(group_name)` | list of `(id, name, is_favorite, label_color)` | |

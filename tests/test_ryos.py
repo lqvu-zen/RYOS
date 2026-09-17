@@ -5333,3 +5333,83 @@ class TestDocsMatchTheCode(unittest.TestCase):
         claude = self._read("CLAUDE.md")
         self.assertIn("Job.processes", claude)
         self.assertNotIn("stored in `self.current_process`; `Stop` button", claude)
+
+
+# ---------------------------------------------------------------------------
+# Cloning carries everything that defines an item
+# ---------------------------------------------------------------------------
+
+class TestCloneCarriesEverything(unittest.TestCase):
+    """Clone used to copy the obvious fields and silently drop the rest.
+
+    Each of these is a field that was lost. The worst two were not cosmetic:
+    a cloned launcher lost `detached` and went back to blocking its pipeline
+    (the behaviour issue #5 removed), and a cloned pipeline lost its per-step
+    params_override, so the copy looked correct in the editor and ran with the
+    wrong arguments.
+
+    The rule these pin down: a clone differs from its source in name, id and
+    group only. Run history is the one deliberate exception -- the copy has
+    not run yet.
+    """
+
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("G")
+        self.sid = self.db.add("launcher", "/l.py", "", "", "G", detached=1)
+        self.db.set_script_color(self.sid, "red")
+        self.db.set_favorite_script(self.sid, True)
+        self.pid = self.db.create_pipeline("P", "G")
+        self.db.set_pipeline_color(self.pid, "blue")
+        self.db.set_favorite_pipeline(self.pid, True)
+        self.step = self.db.add_pipeline_step(self.pid, self.sid)
+        self.db.update_pipeline_step_params(self.step, "--override-me")
+
+    def _script_in(self, group):
+        return [r for r in self.db.list_all() if r[8] == group][0]
+
+    # -- clone_group ------------------------------------------------------
+    def test_clone_group_keeps_a_launcher_a_launcher(self):
+        self.db.clone_group("G", "G copy")
+        clone = self._script_in("G copy")
+        self.assertTrue(self.db.is_detached(clone[0]),
+                        "cloned launcher lost `detached` and would block its "
+                        "pipeline")
+
+    def test_clone_group_carries_script_colour_and_favourite(self):
+        self.db.clone_group("G", "G copy")
+        clone = self._script_in("G copy")
+        self.assertEqual(clone[10], 1)          # is_favorite
+        self.assertEqual(clone[11], "red")      # label_color
+
+    def test_clone_group_carries_pipeline_colour_and_favourite(self):
+        self.db.clone_group("G", "G copy")
+        _pid, _name, fav, color = self.db.list_pipelines("G copy")[0]
+        self.assertEqual((fav, color), (1, "blue"))
+
+    def test_clone_group_carries_step_param_overrides(self):
+        self.db.clone_group("G", "G copy")
+        new_pid = self.db.list_pipelines("G copy")[0][0]
+        self.assertEqual(self.db.list_pipeline_steps(new_pid)[0][6],
+                         "--override-me")
+
+    def test_clone_group_leaves_run_history_behind(self):
+        # The deliberate exception: the copy has not run.
+        self.db.mark_run(self.sid)
+        self.db.mark_run_status(self.sid, "error")
+        self.db.clone_group("G", "G copy")
+        clone = self._script_in("G copy")
+        self.assertIsNone(clone[6], "clone inherited last_run_at")
+        self.assertIsNone(clone[7], "clone inherited last_run_status")
+
+    # -- clone_pipeline ---------------------------------------------------
+    def test_clone_pipeline_carries_step_param_overrides(self):
+        new_id = self.db.clone_pipeline(self.pid)
+        self.assertEqual(self.db.list_pipeline_steps(new_id)[0][6],
+                         "--override-me",
+                         "the copy would run with the wrong arguments")
+
+    def test_clone_pipeline_carries_colour_and_favourite(self):
+        new_id = self.db.clone_pipeline(self.pid)
+        row = [p for p in self.db.list_pipelines("G") if p[0] == new_id][0]
+        self.assertEqual((row[2], row[3]), (1, "blue"))
