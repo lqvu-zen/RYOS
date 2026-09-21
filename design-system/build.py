@@ -463,6 +463,21 @@ def print_audit() -> None:
 
 # --- driver ------------------------------------------------------------------
 
+# Generated files whose bytes git may rewrite on checkout. Compared with line
+# endings normalised, because CI runs --check on Windows too and a CRLF
+# checkout would otherwise report an up-to-date tree as stale. .gitattributes
+# pins these to LF as well; this is the belt to that pair of braces, so the
+# check is correct in any working tree however it was configured.
+_TEXT_SUFFIXES = frozenset({".json", ".svg"})
+
+
+def _unchanged(path: Path, blob: bytes) -> bool:
+    current = path.read_bytes()
+    if path.suffix.lower() in _TEXT_SUFFIXES:
+        return current.replace(b"\r\n", b"\n") == blob.replace(b"\r\n", b"\n")
+    return current == blob
+
+
 def generated_files() -> dict[str, bytes]:
     files = {"tokens.json":
              (json.dumps(build_tokens(), indent=1) + "\n").encode("utf-8")}
@@ -487,8 +502,7 @@ def main() -> int:
     stale = []
     for rel, blob in files.items():
         path = OUT / rel
-        current = path.read_bytes() if path.exists() else None
-        if current == blob:
+        if path.exists() and _unchanged(path, blob):
             continue
         stale.append(rel)
         if not args.check:
