@@ -467,6 +467,7 @@ Constants: `SEED_KEYS`, `ADVANCED_KEYS`, `CUSTOM_THEMES_PATH`, `PRESETS_DIR`,
 | Function | Returns | Purpose |
 | --- | --- | --- |
 | `contrast_ratio(c1, c2)` | `float` | WCAG contrast ratio — the check that keeps generated colours legible. |
+| `disabled_pair(bg, fg, surface)` | `tuple[str, str]` | The disabled `(slab, label)` for a button of any colour. Derived per button, not taken from one palette value: a single disabled colour turns a dark button near-white on a light theme. |
 | `build_palette(seed, overrides=None)` | `dict` | Derive a full palette from a handful of seed colours. |
 | `is_hex_color(value)` | `bool` | |
 | `validate_seed(seed)` | `list[str]` | Problems with a seed, empty when fine. |
@@ -520,7 +521,7 @@ directly.
 | `cards.py` | `ScriptCard`, `PipelineCard`; module helpers `set_compact_mode`, `set_card_size`, `card_padding`, `row_metrics`, and `run_button_style(last_status)` — which turns the Run button into a red retry button after a failure. |
 | `dialogs.py` | `ScriptDialog`, `NewGroupDialog`, `GroupBaseDirDialog`, `ParamPickerDialog`, `AdvancedOptionsDialog` (Appearance / Startup & Window / Output / Quick Run / Logging tabs), schedule and run-history dialogs. |
 | `pipeline.py` | `PipelineEditorDialog`, plus `_policy_marks()` — the `!`, `↻n`, `?ok`, `?fail`, `→launch` annotations on a step row. |
-| `theme.py` | `apply_theme(theme_name, accent=None)`, the `C` palette dict every widget reads its colours from, `HIGHLIGHT_SEEDS` / `highlight_fg(key, *surfaces)` for per-card label colours, plus ttk-style and snap-to-corner helpers. |
+| `theme.py` | `apply_theme(theme_name, accent=None)`, `set_button_enabled(btn, enabled)` (flips state *and* appearance — Tk alone only dims the label, to a system colour), the `C` palette dict every widget reads its colours from, `HIGHLIGHT_SEEDS` / `highlight_fg(key, *surfaces)` for per-card label colours, plus ttk-style and snap-to-corner helpers. |
 | `theme_editor.py` | `ThemeEditorDialog`. |
 | `widgets.py` | `Tooltip`, `ScrollingLabel`. |
 | `placement.py` | Documented above — it is pure enough to unit-test, unlike the rest of this layer. |

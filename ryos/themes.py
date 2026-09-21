@@ -80,6 +80,8 @@ _REFERENCE_FALLBACK: dict[str, dict] = {
         "btn_neutral_bg":    "#eef1f6",
         "btn_neutral_hover": "#dde3ee",
         "btn_neutral_fg":    "#5a6573",
+        "btn_disabled_bg":   "#fafbfc",
+        "btn_disabled_fg":   "#9da4ac",
         "btn_stop_idle":           "#3a3a3a",
         "btn_stop_idle_fg":        "#666666",
         "btn_stop_idle_active_fg": "#888888",
@@ -137,6 +139,8 @@ _REFERENCE_FALLBACK: dict[str, dict] = {
         "btn_neutral_bg":    "#2a323e",
         "btn_neutral_hover": "#353f4e",
         "btn_neutral_fg":    "#c2cad6",
+        "btn_disabled_bg":   "#212732",
+        "btn_disabled_fg":   "#5d6470",
         "btn_stop_idle":           "#3a3a3a",
         "btn_stop_idle_fg":        "#777777",
         "btn_stop_idle_active_fg": "#999999",
@@ -218,6 +222,16 @@ def _shade(hex_str: str, factor: float) -> str:
     return f"#{max(0, min(255, r)):02x}{max(0, min(255, g)):02x}{max(0, min(255, b)):02x}"
 
 
+def _mix(c1: str, c2: str, t: float) -> str:
+    """Blend two #rrggbb colours; t=0 returns c1, t=1 returns c2."""
+    a, b = c1.lstrip("#"), c2.lstrip("#")
+    out = []
+    for i in (0, 2, 4):
+        ca, cb = int(a[i:i + 2], 16), int(b[i:i + 2], 16)
+        out.append(max(0, min(255, round(ca + (cb - ca) * t))))
+    return "#%02x%02x%02x" % tuple(out)
+
+
 def _rel_luminance(hex_str: str) -> float:
     """WCAG relative luminance of a #rrggbb color, in [0, 1]."""
     h = hex_str.lstrip("#")
@@ -234,6 +248,48 @@ def contrast_ratio(c1: str, c2: str) -> float:
     l1, l2 = _rel_luminance(c1), _rel_luminance(c2)
     hi, lo = max(l1, l2), min(l1, l2)
     return (hi + 0.05) / (lo + 0.05)
+
+
+# A disabled control has to read as disabled on any theme, which a fixed shade
+# factor cannot do: themes differ in how much contrast their muted text already
+# carries, and one factor gives 1.5:1 on solarized-dark and 3.9:1 on
+# high-contrast. So the label is walked toward its own background until it hits
+# DISABLED_TARGET -- the same approach highlight_fg uses for label colours.
+# WCAG exempts disabled controls from the 4.5 text minimum, so the goal is a
+# band: dim enough to read as off, legible enough to still identify the control.
+DISABLED_TARGET = 2.6
+_DISABLED_STEPS = 24
+
+
+def disabled_pair(bg: str, fg: str, surface: str) -> tuple[str, str]:
+    """The disabled (slab, label) for a button of any colour.
+
+    Derived per button rather than taken from one palette value: a single
+    disabled colour turns a dark button near-white on a light theme, a change
+    so large it reads as a different control rather than a dimmed one.
+
+    The slab is the button deflated toward the surface it sits on. Where the
+    button already sits near the surface there is nowhere to mix toward, so it
+    moves away from it instead. On light themes the neutral button is so close
+    to the card already that its slab barely shifts either way -- there, the
+    dimmed label is what carries the state, which is the conventional signal
+    regardless.
+    """
+    dis_bg = _mix(bg, surface, 0.45)
+    if contrast_ratio(bg, dis_bg) < 1.08:
+        dis_bg = _shade(bg, 0.10 if _rel_luminance(surface) > 0.5 else -0.18)
+    dis_fg = fg
+    for i in range(_DISABLED_STEPS + 1):
+        dis_fg = _mix(fg, dis_bg, i / _DISABLED_STEPS)
+        if contrast_ratio(dis_fg, dis_bg) <= DISABLED_TARGET:
+            break
+    return dis_bg, dis_fg
+
+
+def _disabled_pair(neutral_bg: str, neutral_fg: str, surface: str) -> dict:
+    """Palette defaults, for widgets that are born disabled and never flip."""
+    dis_bg, dis_fg = disabled_pair(neutral_bg, neutral_fg, surface)
+    return {"btn_disabled_bg": dis_bg, "btn_disabled_fg": dis_fg}
 
 
 def build_palette(seed: dict, overrides: dict | None = None) -> dict:
@@ -280,6 +336,8 @@ def build_palette(seed: dict, overrides: dict | None = None) -> dict:
         "tab_inactive_bg":    _shade(bg, -0.05 if light else 0.06),
         "tab_inactive_hover": _shade(bg, -0.10 if light else 0.11),
     })
+    base.update(_disabled_pair(base["btn_neutral_bg"], base["btn_neutral_fg"],
+                               surface))
 
     # Optional advanced overrides: pin the chosen key and refresh any companion
     # colour (hover/variant) so buttons and tabs stay coherent.

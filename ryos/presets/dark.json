@@ -67,6 +67,8 @@
     "menu_bg": "#2d2d2d",
     "menu_danger": "#ff8080",
     "tooltip_bg": "#2d2d2d",
-    "tooltip_border": "#555555"
+    "tooltip_border": "#555555",
+    "btn_disabled_bg": "#212732",
+    "btn_disabled_fg": "#5d6470"
   }
 }

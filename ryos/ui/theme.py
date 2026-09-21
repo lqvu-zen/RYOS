@@ -11,7 +11,7 @@ from ..screens import work_area_at_point
 from ..themes import (
     BUILTIN_THEMES, SEEDS, THEME_LABELS, THEME_MODES, THEME_ORDER,
     _rel_luminance, _shade, build_palette, contrast_ratio,
-    disambiguate_custom_labels,
+    disabled_pair, disambiguate_custom_labels,
 )
 
 # Named theme palettes, sourced from the engine. Kept here so existing
@@ -160,18 +160,59 @@ def highlight_fg(key: str | None, *surfaces: str) -> str | None:
 
 
 def _flat_button(parent, text, bg, hover_bg, command, width=9, fg=None):
-    """Borderless button with hover color swap. Pass fg to override white text."""
+    """Borderless button with hover color swap. Pass fg to override white text.
+
+    The hover bindings check the button's state, because Tk keeps delivering
+    <Enter> to a disabled widget -- without the check a dead button lights up
+    under the pointer and looks clickable (issue #7). Use set_button_enabled()
+    to flip one, so its colours change with its state.
+    """
     _fg = fg if fg is not None else C["btn_fg"]
     btn = tk.Button(
         parent, text=text, command=command,
         bg=bg, fg=_fg,
         activebackground=hover_bg, activeforeground=_fg,
+        disabledforeground=C["btn_disabled_fg"],
         relief="flat", bd=0, padx=12, pady=5,
         font=("Segoe UI", 9, "bold"), cursor="hand2", width=width,
     )
-    btn.bind("<Enter>", lambda e: btn.config(bg=hover_bg))
-    btn.bind("<Leave>", lambda e: btn.config(bg=bg))
+    btn._bg, btn._hbg, btn._fg = bg, hover_bg, _fg
+    btn.bind("<Enter>", lambda e: _hover(btn, hover_bg))
+    btn.bind("<Leave>", lambda e: _hover(btn, bg))
     return btn
+
+
+def _hover(btn, colour) -> None:
+    """Apply a hover colour, but only while the button can actually be used."""
+    try:
+        if str(btn.cget("state")) == "disabled":
+            return
+        btn.config(bg=colour)
+    except tk.TclError:
+        pass  # widget torn down mid-hover
+
+
+def set_button_enabled(btn, enabled: bool, *, bg: str = "", fg: str = "") -> None:
+    """Flip a flat button's state *and* its appearance.
+
+    Tk only dims the label when a button is disabled, and on a custom palette
+    it dims it to a Windows system colour that has nothing to do with the
+    theme. Changing the slab too is what makes the state legible.
+
+    Buttons from _flat_button carry their enabled colours, so `bg`/`fg` are
+    only needed for one built by hand.
+    """
+    on_bg = bg or getattr(btn, "_bg", "") or str(btn.cget("bg"))
+    on_fg = fg or getattr(btn, "_fg", "") or str(btn.cget("fg"))
+    try:
+        if enabled:
+            btn.configure(state="normal", cursor="hand2", bg=on_bg, fg=on_fg)
+        else:
+            dis_bg, dis_fg = disabled_pair(on_bg, on_fg, C["card_bg"])
+            btn.configure(state="disabled", cursor="",
+                          bg=dis_bg, disabledforeground=dis_fg)
+    except tk.TclError:
+        pass  # widget already destroyed
 
 
 def _configure_ttk_styles() -> None:

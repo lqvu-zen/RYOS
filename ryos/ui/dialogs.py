@@ -26,7 +26,7 @@ from ..themes import (
     load_user_themes, resolve_user_themes_dir, save_user_theme,
 )
 from .theme import (
-    C, THEMES, _apply_snap_corner, _flat_button,
+    C, THEMES, _apply_snap_corner, _flat_button, set_button_enabled,
     available_themes, custom_themes, set_custom_themes,
 )
 from .placement import center_over_parent, offset_from_parent
@@ -1189,11 +1189,10 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
         if self._jobs_running:
             for b in (create_btn, edit_btn, del_btn, export_btn, import_btn):
-                b.configure(state="disabled", cursor="")
+                set_button_enabled(b, False)
         elif not is_custom:
-            edit_btn.configure(state="disabled", cursor="")
-            del_btn.configure(state="disabled", cursor="")
-            export_btn.configure(state="disabled", cursor="")
+            for b in (edit_btn, del_btn, export_btn):
+                set_button_enabled(b, False)
 
         # Themes folder: auto-scanned for custom theme files; drop a .json in to
         # add a theme. Configurable so users can point it anywhere.
@@ -1212,7 +1211,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                                 C["btn_dark_hover"], self._open_themes_dir, width=6)
         open_btn.pack(side="left", padx=(4, 0))
         if self._jobs_running:
-            browse_btn.configure(state="disabled", cursor="")
+            set_button_enabled(browse_btn, False)
 
         f = self._section(tab, "ACCENT COLOR")
         swatch_row = tk.Frame(f, bg=C["bg"])
@@ -1228,8 +1227,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
                              C["btn_dark_hover"], self._reset_accent, width=6)
         reset.pack(side="left")
         if self._jobs_running:
-            choose.configure(state="disabled", cursor="")
-            reset.configure(state="disabled", cursor="")
+            set_button_enabled(choose, False)
+            set_button_enabled(reset, False)
 
         f = self._section(tab, "DISPLAY")
         self._chk(f, "Compact cards (denser layout)", self._compact, state)
