@@ -43,6 +43,25 @@ born disabled and never flip.
 `text` falls under 4.5:1 on `bg` or `surface`, or `text_muted` under 3:1 on
 `bg`. Non-fatal by design: a user's theme is theirs.
 
+**`ink_on(*fills)`** — the fix for a fill that can't shade toward
+itself. `btn_run_bg` is user-overridable (it lives in `ADVANCED_KEYS`), so its
+ink can't be a colour baked into the theme; `disabled_pair`'s and
+`highlight_fg`'s trick of walking a colour toward itself also can't reach a
+saturated fill like `#2ecc71`'s green, which tops out around 1.63:1 after a
+dozen steps because a colour has nowhere to run from itself. `ink_on` instead
+picks the better of two fixed poles, pure white and pure black: for a
+**single** fill the worst case is 4.58:1 (at the mid-luminance point where a
+fill contrasts equally against both), so one fill always clears 4.5:1.
+
+`build_palette` uses it for `btn_run_fg`, `ok_fg` and `error_fg`. Be precise
+about what that buys: `btn_run_fg` is judged against `btn_run_bg` **and**
+`btn_run_hover`, and two fills can pull toward opposite poles, so the
+single-fill guarantee does not carry over. Sampling every pinnable run colour
+with its real −12% hover, about 10% land under 4.5:1, worst ≈4.08:1. Every
+shipped theme sits at 5.4–10.0:1, and 4.08:1 is still far better than the
+2.10:1 it replaced — but for a multi-fill control this is a best-effort
+choice, not a floor. Do not describe it as one.
+
 ## Which floor applies
 
 WCAG 2 asks 4.5:1 of body text, and 3:1 of text at 24px+ (or bold 19px+) and of
@@ -54,27 +73,34 @@ eight themes (3.42:1 at worst, on Ocean Depths).
 
 ## Where the shipped palettes miss
 
-Eight distinct pairs, 35 cells across the eight themes. These are the source's
+Five distinct pairs, 14 cells across the eight themes. These are the source's
 real values and they stay exact — the note is the deliverable, not a re-tint.
+(`btn_run_fg` on `btn_run_bg`/`btn_run_hover`, `ok_fg` on `ok` and `error_fg`
+on `error` are no longer in this table — see `ink_on` above.)
 
 | Pair | Worst | Fails on | What to do |
 |---|---|---|---|
-| `btn_fg` on `btn_run_bg` | **2.10:1** | all 8 | Worst in the system: white on `#2ecc71`, under even the 3:1 mark floor. It is the `▶` on every Run button and the `▶ Run Selected` label. A darker green, or `name_fg` on the green, fixes it without touching the brand. |
-| `fg_on_dark` on `ok` | **2.10:1** | all 8 | The same green under the `✓ OK` badge. The `✓` carries the meaning independently of the word, which is the only reason this is survivable. |
 | `fg_on_dark` on `accent` | **2.00:1** (Nord) | dark, nord, solarized-dark, ocean-depths, high-contrast | These themes lighten the accent for a dark ground and then keep white on it. They want *dark* text on the accent — an `on-accent` token is the correct fix, rather than darkening the accent itself. |
 | `fg_on_dark` on `pipe_accent` | **4.20:1** | dark, nord, solarized-dark, ocean-depths, high-contrast | The `🕒 SCHEDULED` badge. A near miss, and the same shape of problem as `on-accent`. The 5px pipeline rail that shares this colour is a mark, and clears 3:1 comfortably. |
-| `btn_fg` on `error` | **3.63:1** | the 5 dark themes | The `✕ Failed` badge and the `↻` retry glyph. Passes 3:1 for the glyph, misses 4.5:1 for the 8pt bold word. |
 | `btn_neutral_fg` on `btn_neutral_bg` | **3.26:1** (Solarized Dark) | nord, solarized-dark | Card gutter glyphs: reorder, history, star. Both values are *derived*, so the fix belongs in the `_shade` factors, not in either seed. |
 | `name_fg` on `card_hover` | **3.63:1** (Solarized Dark) | solarized-dark | Card names under the pointer. Solarized's `text` is `#93a1a1`, already low on `card_bg` at 4.86:1; the +10% hover shade pushes it under. |
 | `path_fg` on `card_bg` | **4.11:1** (Solarized Dark) | solarized-dark | Script paths and last-run timestamps. Solarized Dark is the one theme whose muted text misses; every other theme is 4.68:1 or better. |
 
-Solarized Dark accounts for four of the eight on its own: its palette is built
+`accent`/`pipe_accent` share the exact root cause `btn_run_bg` had, and it is
+worth stating precisely for whoever picks the follow-up up: `fg_on_dark` and
+`btn_fg` are **literals**. `build_palette` never derives or shades them at
+all — one fixed ink is applied to every filled slab regardless of that fill's
+luminance. Pointing `ink_on` at `accent` and `pipe_accent` closes them the
+same way. Deliberately not done here, to keep the run-family change reviewable.
+
+Solarized Dark accounts for two of the five on its own: its palette is built
 for a terminal, where the whole point is low-contrast foreground text, and
 porting it faithfully means porting that.
 
 Everything else clears its floor in every theme, including all seven highlight
 colours by construction, `warn_fg` on `warn_bg` (7.0–8.4:1), the whole output
-panel (6.0–11.3:1), and `fg_on_dark` on `header_bg` (9.9–21:1).
+panel (6.0–11.3:1), `fg_on_dark` on `header_bg` (9.9–21:1), and the run/ok/error
+family `ink_on` now derives (5.4–10.0:1, every theme).
 
 ## If you add a theme
 

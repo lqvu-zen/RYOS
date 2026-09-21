@@ -19,9 +19,13 @@ three create buttons all pass `width=6` so they line up regardless of label.
 | Role | `bg` / `hover_bg` |
 |---|---|
 | Create, modify, confirm | `btn_create_bg` / `btn_create_hover` (both track `accent`) |
-| Run | `btn_run_bg` / `btn_run_hover` |
+| Run | `btn_run_bg` / `btn_run_hover`, with `fg=btn_run_fg` |
 | Options, neutral dark | `btn_dark_bg` / `btn_dark_hover` |
-| Quick Run | `bolt` / `bolt_hover`, with `fg=name_fg` — the only button that overrides `btn_fg` |
+| Quick Run | `bolt` / `bolt_hover`, with `fg=name_fg` |
+
+Run and Quick Run both override `btn_fg`. Run's override is
+`ink_on(btn_run_bg, btn_run_hover)` rather than a fixed colour, because
+`btn_run_bg` is user-overridable — see `RunButton`.
 
 ## Rules
 

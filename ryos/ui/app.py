@@ -429,7 +429,8 @@ class RYOSApp(_BaseWindow):
         self._del_selected_btn.pack(side="right", padx=10, pady=4)
         self._run_selected_btn = _flat_button(self._select_bar, "▶ Run Selected",
                                               C["btn_run_bg"], C["btn_run_hover"],
-                                              self._run_selected, width=13)
+                                              self._run_selected, width=13,
+                                              fg=C["btn_run_fg"])
         self._run_selected_btn.pack(side="right", padx=(10, 0), pady=4)
         self._sel_all_btn = tk.Button(
             self._select_bar, text="Select All",

@@ -68,6 +68,7 @@ files = [
     "ryos/grouping.py",
     "ryos/history.py",
     "ryos/scheduling.py",
+    "ryos/themes.py",
     "ryos/ui/__init__.py",
     "ryos/ui/theme.py",
     "ryos/ui/placement.py",
