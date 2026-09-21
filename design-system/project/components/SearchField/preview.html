@@ -1,0 +1,31 @@
+<!-- @dsCard group="Input" height=170 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .bar { display:flex; align-items:center; gap:4px; width:100%; max-width:540px; }
+  .g { color:var(--path_fg); font-size:13px; padding-right:4px; }
+  .fld { flex:1; background:var(--card_bg); color:var(--name_fg); font-size:13px;
+         padding:4px; min-height:25px; display:flex; align-items:center; }
+  .fld.ph { color:var(--path_fg); }
+  .car { display:inline-block; width:1px; height:15px; background:var(--name_fg); margin-left:1px; }
+  .go { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+        padding:5px 12px; color:var(--btn_fg); background:var(--btn_run_bg); margin-left:4px; }
+  .go:hover { background:var(--btn_run_hover); }
+</style>
+<div class="stage" style="width:100%">
+  <div class="cap">Placeholder</div>
+  <div class="bar"><span class="g">🔍</span><div class="fld ph">Filter scripts &amp; pipelines…</div></div>
+  <div class="cap">Typed</div>
+  <div class="bar"><span class="g">🔍</span><div class="fld">backup<span class="car"></span></div></div>
+  <div class="cap">Quick-run entry — same field, mono-flavoured hint</div>
+  <div class="bar" style="border:1px solid var(--border);background:var(--bg);padding:6px 8px">
+    <div class="fld ph" style="flex:1">script name [params...]</div>
+    <button class="go">▶ Run</button>
+  </div>
+</div>

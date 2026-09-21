@@ -1,0 +1,35 @@
+<!-- @dsCard group="Actions" height=170 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .gutter { display:inline-flex; background:var(--border); gap:1px; height:44px; }
+  .ib { width:34px; border:0; cursor:pointer; font-family:inherit; font-size:13px;
+        background:var(--btn_neutral_bg); color:var(--btn_neutral_fg); }
+  .ib:hover { background:var(--btn_neutral_hover); }
+  .ib.run { background:var(--btn_run_bg); color:var(--btn_fg); }
+  .ib.run:hover { background:var(--btn_run_hover); }
+  .ib.retry { background:var(--error); color:var(--btn_fg); }
+  .ib.stop { background:var(--btn_stop_idle); color:var(--btn_stop_idle_fg); cursor:default; }
+  .ib.stop.armed { background:var(--btn_stop_active); color:var(--fg_on_dark); cursor:pointer; }
+  .ib.fav { background:var(--accent_wash); color:var(--accent); }
+  .ib[disabled] { color:#444; cursor:default; }
+</style>
+<div class="stage">
+  <div class="cap">Idle</div>
+  <div class="gutter"><button class="ib run" title="Run">▶</button></div>
+  <div class="cap">After a failed run — same button, same action</div>
+  <div class="gutter"><button class="ib retry" title="Last run failed — click to run it again">↻</button></div>
+  <div class="cap">And in compact mode, where the badge row is gone</div>
+  <div style="display:flex;background:var(--card_bg);border:1px solid var(--border);width:340px">
+    <div style="width:5px;background:var(--accent)"></div>
+    <div style="flex:1;padding:4px 10px;font-size:15px;font-weight:700">sync-share</div>
+    <div class="gutter" style="height:auto"><button class="ib retry">↻</button></div>
+  </div>
+</div>

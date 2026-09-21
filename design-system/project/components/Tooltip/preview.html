@@ -1,0 +1,31 @@
+<!-- @dsCard group="Feedback" height=200 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .tip { background:var(--tooltip_bg); border:1px solid var(--tooltip_border);
+         color:var(--fg_on_dark); font-size:11px; padding:3px 6px; }
+  .prev { background:var(--border); padding:1px; display:inline-block; }
+  .pin { background:var(--card_bg); padding:10px 12px; min-width:300px; }
+  .pn { font-size:15px; font-weight:700; margin-bottom:4px; }
+  .pr { display:flex; gap:10px; font-size:11px; padding:1px 0; }
+  .pr span { color:var(--path_fg); width:68px; flex:none; }
+  .pr b { font-weight:400; font-family:var(--font-mono); color:var(--name_fg); }
+</style>
+<div class="stage">
+  <div class="cap">Tooltip — 500ms, on the pointer's own monitor</div>
+  <div class="tip">Last run failed — click to run it again</div>
+  <div class="tip">Asks for a temporary parameter on each run (not saved)</div>
+  <div class="cap">HoverPreview — 1000ms, a built body on card_bg inside a 1px border</div>
+  <div class="prev"><div class="pin">
+    <div class="pn">sync-share</div>
+    <div class="pr"><span>Path</span><b>tools/sync-share.ps1</b></div>
+    <div class="pr"><span>Params</span><b>-Target \\nas\backup</b></div>
+    <div class="pr"><span>Last run</span><b>2026-09-21 08:15 · failed</b></div>
+  </div></div>
+</div>

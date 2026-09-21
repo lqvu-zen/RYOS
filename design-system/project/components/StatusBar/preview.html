@@ -1,0 +1,26 @@
+<!-- @dsCard group="Chrome" height=120 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  .fb { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+        padding:5px 12px; color:var(--btn_fg); background:var(--btn_create_bg); line-height:1.35; }
+  .fb:hover { background:var(--btn_create_hover); }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .fill { width:100%; background:var(--bg); color:var(--path_fg); font-size:11px;
+          padding:10px 12px; border:1px solid var(--border); border-bottom:0; }
+  .sb { width:100%; background:var(--status_bg); color:var(--btn_dark_hover);
+        font-size:11px; padding:4px 10px; }
+</style>
+<div class="stage" style="width:100%;padding:0;gap:0">
+  <div class="fill">card list</div>
+  <div class="sb">Ready.</div>
+  <div style="height:12px"></div>
+  <div class="fill">card list</div>
+  <div class="sb">Running nightly-backup…</div>
+</div>

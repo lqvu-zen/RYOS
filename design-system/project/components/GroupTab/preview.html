@@ -1,0 +1,39 @@
+<!-- @dsCard group="Chrome" height=130 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  .fb { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+        padding:5px 12px; color:var(--btn_fg); background:var(--btn_create_bg); line-height:1.35; }
+  .fb:hover { background:var(--btn_create_hover); }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .tabs { display:flex; align-items:flex-end; gap:0; width:100%; max-width:640px; }
+  .w { background:var(--border); padding:1px; margin:3px 3px 0; }
+  .w.act { background:var(--card_bg); }
+  .i { background:var(--tab_inactive_bg); }
+  .w.act .i { background:var(--card_bg); }
+  .t { border:0; cursor:pointer; font-family:inherit; font-size:13px; padding:6px 14px;
+       width:100%; background:transparent; color:var(--tab_fg); }
+  .t.act { color:var(--accent); font-weight:700; }
+  .t:hover { background:var(--tab_inactive_hover); }
+  .t.act:hover { background:var(--accent_wash); }
+  .ind { height:3px; background:var(--tab_inactive_bg); }
+  .ind.act { background:var(--accent); }
+  .plane { width:100%; max-width:640px; background:var(--card_bg); border:1px solid var(--border);
+           padding:10px 12px; font-size:12px; color:var(--path_fg); }
+</style>
+<div class="stage">
+  <div class="tabs">
+    <div class="w act"><div class="i"><button class="t act">Maintenance</button><div class="ind act"></div></div></div>
+    <div class="w"><div class="i"><button class="t">Builds</button><div class="ind"></div></div></div>
+    <div class="w"><div class="i"><button class="t">Reports</button><div class="ind"></div></div></div>
+    <div style="flex:1"></div>
+    <div class="w"><div class="i"><button class="t">All</button><div class="ind"></div></div></div>
+  </div>
+  <div class="plane">The active tab shares the card surface — the two read as one plane.</div>
+</div>

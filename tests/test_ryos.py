@@ -5,6 +5,7 @@ Run with:  uv run python -m pytest tests/test_ryos.py -v
        or: uv run python -m unittest discover -s tests -v
 """
 import ast
+import importlib.util
 import json
 import os
 import re
@@ -5413,3 +5414,58 @@ class TestCloneCarriesEverything(unittest.TestCase):
         new_id = self.db.clone_pipeline(self.pid)
         row = [p for p in self.db.list_pipelines("G") if p[0] == new_id][0]
         self.assertEqual((row[2], row[3]), (1, "blue"))
+
+
+class TestDesignSystemIsCurrent(unittest.TestCase):
+    """The published design system's derived files must match the live code.
+
+    design-system/build.py regenerates tokens.json and the app-icon assets from
+    ryos.themes, ryos.interpreter and icon.ico. If a palette, a script-tag fill,
+    a highlight seed or the icon changes without the design system being
+    rebuilt, the two drift apart silently -- this is the tripwire.
+
+    Fix a failure with:  python design-system/build.py
+    """
+
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+        if not (self.root / "design-system" / "build.py").exists():
+            self.skipTest("design-system/ not present in this checkout")
+
+    def test_generated_files_are_up_to_date(self):
+        proc = subprocess.run(
+            [sys.executable, str(self.root / "design-system" / "build.py"), "--check"],
+            cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(
+            proc.returncode, 0,
+            "design-system/project is stale -- run: python design-system/build.py\n"
+            + proc.stdout + proc.stderr)
+
+    def test_every_palette_key_has_a_usage_note(self):
+        """A new palette key must arrive with a note saying what it is for."""
+        spec = importlib.util.spec_from_file_location(
+            "_ds_build", self.root / "design-system" / "build.py")
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        documented = {k for k, _ in build.USAGE}
+        for theme in build.palettes().values():
+            self.assertEqual(
+                set(theme) - documented, set(),
+                "palette key(s) with no usage note in design-system/build.py")
+
+    def test_components_have_guidelines_and_a_preview(self):
+        """Every component card needs both halves; Cover needs only a preview."""
+        comp = self.root / "design-system" / "project" / "components"
+        for d in sorted(p for p in comp.iterdir() if p.is_dir()):
+            preview = d / "preview.html"
+            self.assertTrue(preview.exists(), f"{d.name} has no preview.html")
+            first = preview.read_text(encoding="utf-8").splitlines()[0]
+            self.assertTrue(
+                first.startswith("<!-- @dsCard"),
+                f"{d.name}/preview.html must open with a @dsCard marker")
+            readme = (d / "README.md").exists()
+            if d.name == "Cover":
+                self.assertFalse(
+                    readme, "Cover/ must stay bare or it becomes an ordinary card")
+            else:
+                self.assertTrue(readme, f"{d.name} has no README.md")

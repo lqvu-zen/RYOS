@@ -1,0 +1,37 @@
+<!-- @dsCard group="Chrome" height=160 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  .fb { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+        padding:5px 12px; color:var(--btn_fg); background:var(--btn_create_bg); line-height:1.35; }
+  .fb:hover { background:var(--btn_create_hover); }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .hdr { background:var(--header_bg); padding:14px 18px; display:flex; width:100%;
+         align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .mark { color:var(--fg_on_dark); font-size:19px; font-weight:700; display:flex; align-items:center; }
+  .bolt { color:var(--bolt); }
+  .acts { display:flex; gap:6px; align-items:center; }
+  .gear { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+          padding:5px 12px; margin-left:8px; color:var(--btn_fg); background:var(--btn_dark_bg); }
+  .gear:hover { background:var(--btn_dark_hover); }
+</style>
+<div class="stage" style="padding:0;width:100%">
+  <div class="hdr">
+    <div class="mark"><span class="bolt">⚡</span><span>&nbsp;RYOS</span></div>
+    <div class="acts">
+      <button class="fb" style="width:104px" title="Create a pipeline">+ Pipeline</button>
+      <button class="fb" style="width:104px" title="Create a group">+ Group</button>
+      <button class="fb" style="width:104px" title="Create a script">+ Script</button>
+      <button class="gear" title="Options">⚙</button>
+    </div>
+  </div>
+  <div style="padding:14px 18px 0;width:100%">
+    <div class="cap">space-18 sets the window's outer margin — the search bar lines up with the mark</div>
+  </div>
+</div>

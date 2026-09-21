@@ -1,0 +1,32 @@
+<!-- @dsCard group="Feedback" height=150 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  .badge { font-size:11px; font-weight:700; padding:1px 5px; color:var(--fg_on_dark);
+           white-space:nowrap; line-height:1.35; display:inline-block; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style></style>
+<div class="stage">
+  <div class="stage row" style="padding:0">
+    <span class="badge" style="background:var(--ok)">✓ OK</span>
+    <span class="badge" style="background:var(--error)">✕ Failed</span>
+    <span class="cap">and, for a card that has never run — nothing</span>
+  </div>
+  <div class="cap">In place</div>
+  <div style="display:flex;background:var(--card_bg);border:1px solid var(--border);width:480px">
+    <div style="width:5px;background:var(--accent)"></div>
+    <div style="flex:1;min-width:0;padding:10px 12px">
+      <div style="font-size:15px;font-weight:700">nightly-backup</div>
+      <div style="display:flex;gap:6px;font-size:11px;color:var(--path_fg);align-items:center">
+        <span style="flex:1;min-width:0;overflow:hidden;white-space:nowrap">scripts/maintenance/nightly-backup.py</span>
+        <span>· 03:00</span>
+        <span class="badge" style="background:var(--ok)">✓ OK</span>
+      </div>
+    </div>
+  </div>
+</div>
