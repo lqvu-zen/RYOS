@@ -1,6 +1,6 @@
 # RYOS Refactor — Summary & Plan
 
-_Companion to `docs/tech-debt-2026-06-24.md`. Last updated 2026-06-24._
+_Companion to `docs/tech-debt-2026-06-24.md` (now superseded). Last updated 2026-06-24 — the phases below describe the June register; the current plan lives in [`tech-debt-2026-09-21.md`](../tech-debt-2026-09-21.md)._
 
 ## Update — 2026-06-25: Theme Factory landed (plan additions)
 
