@@ -213,7 +213,7 @@ class ThemeEditorDialog(tk.Toplevel):
                  font=("Segoe UI", 8), anchor="w").pack(fill="x", padx=8, pady=(0, 8))
         btns = tk.Frame(card, bg=p["card_bg"])
         btns.pack(fill="x", padx=8, pady=(0, 8))
-        tk.Label(btns, text="Run", bg=p["btn_run_bg"], fg=p["btn_fg"],
+        tk.Label(btns, text="Run", bg=p["btn_run_bg"], fg=p["btn_run_fg"],
                  font=("Segoe UI", 8, "bold"), padx=10, pady=3).pack(side="left")
         tk.Label(btns, text="Modify", bg=p["btn_mod_bg"], fg=p["btn_fg"],
                  font=("Segoe UI", 8, "bold"), padx=10, pady=3).pack(side="left", padx=6)

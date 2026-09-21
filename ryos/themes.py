@@ -73,6 +73,7 @@ _REFERENCE_FALLBACK: dict[str, dict] = {
         "btn_fg":            "#ffffff",
         "btn_run_bg":        "#2ecc71",
         "btn_run_hover":     "#27ae60",
+        "btn_run_fg":        "#000000",
         "btn_mod_bg":        "#4a6fa5",
         "btn_mod_hover":     "#3d5d8a",
         "btn_create_bg":     "#4a6fa5",
@@ -93,8 +94,10 @@ _REFERENCE_FALLBACK: dict[str, dict] = {
         "tab_inactive_bg":    "#e4e9f0",
         "tab_inactive_hover": "#d8dfe8",
         "ok":          "#2ecc71",
+        "ok_fg":       "#000000",
         "running":     "#27ae60",
         "error":       "#c0392b",
+        "error_fg":    "#ffffff",
         "warn_bg":     "#fff7e6",
         "warn_border": "#f3d99a",
         "warn_fg":     "#7a4a00",
@@ -132,6 +135,7 @@ _REFERENCE_FALLBACK: dict[str, dict] = {
         "btn_fg":            "#ffffff",
         "btn_run_bg":        "#2ecc71",
         "btn_run_hover":     "#27ae60",
+        "btn_run_fg":        "#000000",
         "btn_mod_bg":        "#5b8bd0",
         "btn_mod_hover":     "#4a72ad",
         "btn_create_bg":     "#5b8bd0",
@@ -152,8 +156,10 @@ _REFERENCE_FALLBACK: dict[str, dict] = {
         "tab_inactive_bg":    "#222a35",
         "tab_inactive_hover": "#2c3440",
         "ok":          "#2ecc71",
+        "ok_fg":       "#000000",
         "running":     "#27ae60",
         "error":       "#e05a5a",
+        "error_fg":    "#000000",
         "warn_bg":     "#3a2f1a",
         "warn_border": "#5c4a26",
         "warn_fg":     "#f0c980",
@@ -260,6 +266,50 @@ def contrast_ratio(c1: str, c2: str) -> float:
 DISABLED_TARGET = 2.6
 _DISABLED_STEPS = 24
 
+# The floor ink_on's tests assert against: WCAG's 4.5:1 body-text minimum.
+# ink_on itself does not read it -- it always returns the better pole.
+ON_FILL_MIN_RATIO = 4.5
+# The two poles ink_on chooses between. Pure white/black rather than any
+# themed near-white/near-black -- see ink_on's docstring for why the purity
+# matters (it is what the 4.58:1 worst case below is computed against).
+INK_LIGHT_POLE = "#ffffff"
+INK_DARK_POLE = "#000000"
+
+
+def ink_on(*fills: str) -> str:
+    """Legible ink colour for text/glyphs drawn on one or more filled slabs.
+
+    A fill like `btn_run_bg` is user-overridable (it is in ADVANCED_KEYS), so
+    its ink can't be a colour baked into the theme -- it has to be derived
+    from whatever the user pins. `disabled_pair`/`highlight_fg`'s trick of
+    shading a colour toward itself doesn't reach here: walking a saturated
+    fill like `#2ecc71` toward ITSELF tops out around 1.63:1 after a dozen
+    steps, because a colour has nowhere to run from itself.
+
+    Choosing the better of two fixed poles instead -- pure white, pure black
+    -- sidesteps that: the worst case, across every possible fill, is where a
+    mid-luminance fill contrasts equally against both poles (~L=0.179), and
+    that worst case is 4.58:1 -- above the 4.5:1 floor for any SINGLE fill.
+    That is what makes this safe to point at one colour a user can set to
+    literally anything.
+
+    That 4.58:1 floor is a SINGLE-fill guarantee. When several fills are
+    given (a button's idle and hover colours), the pole is judged by its
+    worst contrast across all of them, and two fills can pull toward
+    opposite poles: sampling every pinnable run colour with its real -12%
+    hover, about 10% land under 4.5:1, worst ~4.08:1. Every shipped theme
+    sits at 5.4-10.0:1, and 4.08:1 is still far better
+    than the 2.10:1 this replaced -- but it is a best-effort choice across
+    fills, not a floor.
+
+    Returns the better pole either way; there is nowhere better to go.
+    """
+    if not fills:
+        raise ValueError("ink_on needs at least one fill colour")
+    poles = (INK_LIGHT_POLE, INK_DARK_POLE)
+    worst = {p: min(contrast_ratio(p, f) for f in fills) for p in poles}
+    return max(poles, key=lambda p: worst[p])
+
 
 def disabled_pair(bg: str, fg: str, surface: str) -> tuple[str, str]:
     """The disabled (slab, label) for a button of any colour.
@@ -353,6 +403,12 @@ def build_palette(seed: dict, overrides: dict | None = None) -> dict:
         base["pipe_accent2"] = _shade(adv["pipe_accent"], 0.12)
     if "accent2" in adv:
         base["btn_mod_hover"] = base["btn_create_hover"] = adv["accent2"]
+
+    # Derived after the advanced overlay so a user-pinned run colour (or a
+    # theme's own error) drives its ink, not the mode's REFERENCE default.
+    base["btn_run_fg"] = ink_on(base["btn_run_bg"], base["btn_run_hover"])
+    base["ok_fg"] = ink_on(base["ok"])
+    base["error_fg"] = ink_on(base["error"])
 
     if overrides:
         base.update(overrides)

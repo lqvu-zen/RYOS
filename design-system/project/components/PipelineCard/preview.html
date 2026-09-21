@@ -26,9 +26,9 @@
   .ib { width:34px; border:0; cursor:pointer; font-family:inherit; font-size:13px;
         background:var(--btn_neutral_bg); color:var(--btn_neutral_fg); }
   .ib:hover { background:var(--btn_neutral_hover); }
-  .ib.run { background:var(--btn_run_bg); color:var(--btn_fg); }
+  .ib.run { background:var(--btn_run_bg); color:var(--btn_run_fg); }
   .ib.run:hover { background:var(--btn_run_hover); }
-  .ib.retry { background:var(--error); color:var(--btn_fg); }
+  .ib.retry { background:var(--error); color:var(--error_fg); }
   .ib.retry:hover { background:var(--btn_stop_active); }
   .ib.stop { background:var(--btn_stop_idle); color:var(--btn_stop_idle_fg); cursor:default; }
   .ib.stop.armed { background:var(--btn_stop_active); color:var(--fg_on_dark); cursor:pointer; }
@@ -45,7 +45,7 @@
       <div class="subrow">
         <span class="path">build.ps1 → test.py → publish.sh</span>
         <span>&nbsp;·&nbsp; 2026-09-19 17:42</span>
-        <span class="badge" style="background:var(--ok)">✓ OK</span>
+        <span class="badge" style="background:var(--ok);color:var(--ok_fg)">✓ OK</span>
       </div>
     </div>
     <div class="gutter">

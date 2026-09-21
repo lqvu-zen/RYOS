@@ -35,12 +35,13 @@ from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
-    THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _shade, build_palette,
-    contrast_ratio, contrast_warnings, delete_user_theme,
-    disabled_pair,
-    disambiguate_custom_labels, export_theme, import_theme, is_hex_color,
-    load_base_themes, load_custom_themes, load_presets, load_user_themes,
-    resolve_user_themes_dir, save_custom_themes, save_user_theme, validate_seed,
+    THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _rel_luminance, _shade,
+    build_palette, contrast_ratio, contrast_warnings, delete_user_theme,
+    disabled_pair, disambiguate_custom_labels, export_theme, import_theme,
+    ink_on, is_hex_color, load_base_themes, load_custom_themes, load_presets,
+    ON_FILL_MIN_RATIO,
+    load_user_themes, resolve_user_themes_dir, save_custom_themes,
+    save_user_theme, validate_seed,
 )
 
 # sqlite3 context managers commit/rollback but don't close — suppress the noise in Python 3.13+
@@ -5556,6 +5557,147 @@ class TestDisabledState(unittest.TestCase):
                 self.assertNotEqual(dis_bg.lower(), pal["btn_dark_bg"].lower())
 
 
+# ---------------------------------------------------------------------------
+# The run/ok/error ink family (issue: white text on the green run button
+# measured 2.10:1 -- shading a fill toward itself can't fix a colour that has
+# nowhere to run from, so the ink is chosen between two fixed poles instead)
+# ---------------------------------------------------------------------------
+
+from ryos.ui.cards import run_button_style  # noqa: E402
+from ryos.ui.theme import C  # noqa: E402
+
+
+def _all_theme_seeds():
+    """{name: seed} for every shipped theme -- built-ins, bundled presets and
+    the theme gallery -- the same merge TestDisabledState uses."""
+    seeds = dict(SEEDS)
+    for pid, _label, seed in load_presets():
+        seeds[pid] = seed
+    for fp in sorted((Path(__file__).resolve().parents[1]
+                      / "theme-gallery").glob("*.json")):
+        data = json.loads(fp.read_text(encoding="utf-8"))
+        if isinstance(data.get("seed"), dict):
+            seeds.setdefault(fp.stem, data["seed"])
+    return seeds
+
+
+class TestRunFillInk(unittest.TestCase):
+    """btn_run_fg/ok_fg/error_fg clear 4.5:1 on their fill(s) for every
+    shipped theme, and a fill a user pins gets ink chosen from that fill.
+
+    Note the scope: ink_on guarantees 4.5:1 for a SINGLE fill, not for the
+    two-fill (idle + hover) case -- roughly 10% of arbitrary pins land
+    between 4.08 and 4.5 there. These assertions cover the shipped themes,
+    which all sit at 5.4-10.0:1, plus two hand-picked pins that exercise the
+    pole flip. They are not a proof that every possible pin clears AA.
+    """
+
+    def test_run_fill_ink_clears_aa_on_every_shipped_theme(self):
+        for name, seed in _all_theme_seeds().items():
+            with self.subTest(theme=name):
+                pal = build_palette(seed)
+                self.assertGreaterEqual(
+                    contrast_ratio(pal["btn_run_fg"], pal["btn_run_bg"]), 4.5,
+                    f"{name}: btn_run_fg on btn_run_bg")
+                self.assertGreaterEqual(
+                    contrast_ratio(pal["btn_run_fg"], pal["btn_run_hover"]), 4.5,
+                    f"{name}: btn_run_fg on btn_run_hover")
+                self.assertGreaterEqual(
+                    contrast_ratio(pal["ok_fg"], pal["ok"]), 4.5,
+                    f"{name}: ok_fg on ok")
+                self.assertGreaterEqual(
+                    contrast_ratio(pal["error_fg"], pal["error"]), 4.5,
+                    f"{name}: error_fg on error")
+                # build_palette must actually be wired to ink_on, not a copy
+                # of what ink_on happened to return when this test was written.
+                self.assertEqual(
+                    pal["btn_run_fg"],
+                    ink_on(pal["btn_run_bg"], pal["btn_run_hover"]))
+                self.assertEqual(pal["ok_fg"], ink_on(pal["ok"]))
+                self.assertEqual(pal["error_fg"], ink_on(pal["error"]))
+
+    def _pinned_ink(self, run_fill: str) -> tuple[str, dict]:
+        seed = dict(SEEDS["light"])
+        seed["btn_run_bg"] = run_fill
+        pal = build_palette(seed)
+        return pal["btn_run_fg"], pal
+
+    def test_pinned_dark_run_colour_gets_legible_light_ink(self):
+        ink, pal = self._pinned_ink("#10301c")
+        self.assertGreaterEqual(contrast_ratio(ink, pal["btn_run_bg"]), 4.5)
+        self.assertGreaterEqual(contrast_ratio(ink, pal["btn_run_hover"]), 4.5)
+        self.assertGreater(_rel_luminance(ink), _rel_luminance(pal["btn_run_bg"]),
+                           "a dark user-pinned run colour must get LIGHTER ink")
+
+    def test_pinned_light_run_colour_gets_legible_dark_ink(self):
+        ink, pal = self._pinned_ink("#d6f5e3")
+        self.assertGreaterEqual(contrast_ratio(ink, pal["btn_run_bg"]), 4.5)
+        self.assertGreaterEqual(contrast_ratio(ink, pal["btn_run_hover"]), 4.5)
+        self.assertLess(_rel_luminance(ink), _rel_luminance(pal["btn_run_bg"]),
+                        "a light user-pinned run colour must get DARKER ink")
+
+    def test_dark_and_light_pinned_fills_get_different_ink(self):
+        # A fix that pins one constant ink (e.g. always name_fg) would pass
+        # the two tests above individually on some seeds and still be wrong.
+        dark_ink, _ = self._pinned_ink("#10301c")
+        light_ink, _ = self._pinned_ink("#d6f5e3")
+        self.assertNotEqual(dark_ink.lower(), light_ink.lower())
+
+
+class TestRunButtonInkIsWired(unittest.TestCase):
+    """Palette-level correctness (TestRunFillInk) is not enough on its own --
+    run_button_style() has to actually hand the ink to the widget layer. This
+    is the class of bug CLAUDE.md calls out: the accessor's shape changed and
+    a call site silently kept unpacking the old one."""
+
+    def setUp(self):
+        self._saved_C = dict(C)
+
+    def tearDown(self):
+        C.clear()
+        C.update(self._saved_C)
+
+    def test_run_button_style_arity_is_pinned(self):
+        # Pinned, not >=: widening again must be a deliberate edit here AND at
+        # both fixed-width unpacks in cards.py, which Tk-mocked tests cannot
+        # catch. Same reasoning as TestRowWidthsArePinned.
+        C.clear()
+        C.update(build_palette(SEEDS["light"]))
+        for status in (None, "ok", "error"):
+            with self.subTest(status=status):
+                self.assertEqual(len(run_button_style(status)), 6)
+
+    def test_run_button_ink_clears_aa_for_every_theme_and_status(self):
+        for name, seed in _all_theme_seeds().items():
+            C.clear()
+            C.update(build_palette(seed))
+            for status in (None, "ok", "error"):
+                with self.subTest(theme=name, status=status):
+                    _text, fg, afg, bg, hover, _tip = run_button_style(status)
+                    self.assertGreaterEqual(
+                        contrast_ratio(fg, bg), ON_FILL_MIN_RATIO,
+                        f"{name}/{status}: run button fg={fg} on bg={bg}")
+                    # The hovered ink is the whole reason active_fg exists:
+                    # the retry state hovers from a mid red to a near-black
+                    # one, and dropping it silently gives 2.64:1 on the dark
+                    # themes.
+                    self.assertGreaterEqual(
+                        contrast_ratio(afg, hover), ON_FILL_MIN_RATIO,
+                        f"{name}/{status}: hovered ink={afg} on hover={hover}")
+
+    def test_builtin_palettes_carry_legible_ink_verbatim(self):
+        # BUILTIN_THEMES["light"|"dark"] come straight from REFERENCE, NOT
+        # through build_palette, so the literals in _REFERENCE_FALLBACK and
+        # the preset JSONs are not covered by the seed-driven tests above.
+        for name in ("light", "dark"):
+            pal = BUILTIN_THEMES[name]
+            for ink, fill in (("btn_run_fg", "btn_run_bg"),
+                              ("btn_run_fg", "btn_run_hover"),
+                              ("ok_fg", "ok"), ("error_fg", "error")):
+                with self.subTest(theme=name, pair=f"{ink}/{fill}"):
+                    self.assertGreaterEqual(
+                        contrast_ratio(pal[ink], pal[fill]), ON_FILL_MIN_RATIO,
+                        f"{name}: {ink}={pal[ink]} on {fill}={pal[fill]}")
 class TestMypyScopeIsCurrent(unittest.TestCase):
     """Every module is either type-checked or deliberately excluded.
 

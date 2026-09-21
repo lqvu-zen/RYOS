@@ -8,6 +8,7 @@ from ..interpreter import _script_tag
 from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
                       _PresetEntryDialog, _TempParamDialog)
 from .placement import place_near
+from ..themes import ink_on
 from .theme import C, HIGHLIGHT_LABELS, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
 
@@ -71,27 +72,35 @@ def row_metrics() -> tuple[int, int, int, int]:
 
 
 def run_button_style(last_status: str | None) -> tuple:
-    """(text, bg, hover, tooltip) for a card's Run button.
+    """(text, fg, active_fg, bg, hover, tooltip) for a card's Run button.
 
     After a failure the Run button *becomes* the retry: same action, so it
     needs no second control, and unlike a status badge the button strip is
     present in every card mode and size. The ↻ glyph rather than ✕ keeps it
     from reading as a stop button in the red.
+
+    `active_fg` is the ink for the hovered fill and is not always `fg`: the
+    retry state sits on `error`, a mid red, but hovers to `btn_stop_active`,
+    a near-black one, and no single ink clears both. Returned here rather
+    than derived at the call sites so it is covered by this function's tests
+    and cannot drift between the two cards.
     """
     if last_status == "error":
-        return ("↻", C["error"], C["btn_stop_active"],
+        return ("↻", C["error_fg"], ink_on(C["btn_stop_active"]),
+                C["error"], C["btn_stop_active"],
                 "Last run failed — click to run it again")
-    return ("▶", C["btn_run_bg"], C["btn_run_hover"], "Run")
+    return ("▶", C["btn_run_fg"], ink_on(C["btn_run_hover"]),
+            C["btn_run_bg"], C["btn_run_hover"], "Run")
 
 
 def _status_badge(parent, status: str) -> "tk.Label | None":
     """The last-run status chip. Reports only — the Run button carries retry."""
     if status == "error":
         return tk.Label(parent, text="✕ Failed", bg=C["error"],
-                        fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
+                        fg=C["error_fg"], font=("Segoe UI", 8, "bold"),
                         padx=5, pady=1)
     if status == "ok":
-        return tk.Label(parent, text="✓ OK", bg=C["ok"], fg=C["fg_on_dark"],
+        return tk.Label(parent, text="✓ OK", bg=C["ok"], fg=C["ok_fg"],
                         font=("Segoe UI", 8, "bold"), padx=5, pady=1)
     return None
 
@@ -285,8 +294,10 @@ class ScriptCard(tk.Frame):
         _rbtn("▶+", C["btn_neutral_bg"], C["btn_neutral_hover"], self._run_with_param,
               fg=C["btn_neutral_fg"], tip="Run with parameter")
         _sep()
-        _run_text, _run_bg, _run_hover, _run_tip = run_button_style(last_run_status)
-        _rbtn(_run_text, _run_bg, _run_hover, self._run, tip=_run_tip)
+        (_run_text, _run_fg, _run_afg,
+         _run_bg, _run_hover, _run_tip) = run_button_style(last_run_status)
+        _rbtn(_run_text, _run_bg, _run_hover, self._run,
+              fg=_run_fg, active_fg=_run_afg, tip=_run_tip)
 
         for widget in (self, text_area):
             widget.bind("<Enter>", self._on_enter)
@@ -543,9 +554,11 @@ class PipelineCard(tk.Frame):
         # load rather than as empty space (issue #7).
         _rbtn("", C["border"], C["border"], None, state="disabled")
         _sep()
-        _run_text, _run_bg, _run_hover, _run_tip = run_button_style(last_status)
+        (_run_text, _run_fg, _run_afg,
+         _run_bg, _run_hover, _run_tip) = run_button_style(last_status)
         _rbtn(_run_text, _run_bg, _run_hover,
-              lambda: on_run(pipeline_id, name), tip=_run_tip)
+              lambda: on_run(pipeline_id, name),
+              fg=_run_fg, active_fg=_run_afg, tip=_run_tip)
 
         _pad_x, _pad_y = card_padding()
         content = tk.Frame(self, bg=C["card_bg"], padx=_pad_x, pady=_pad_y)

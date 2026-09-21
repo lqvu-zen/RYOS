@@ -28,6 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import ryos.ui.app as appmod  # noqa: E402
+from ryos.themes import ink_on  # noqa: E402
+from ryos.ui.theme import apply_theme  # noqa: E402
 from ryos.ui.app import RYOSApp  # noqa: E402
 
 TIMEOUT = 30.0  # generous; the quick job finishes well under a second
@@ -323,6 +325,20 @@ def check_failed_run_button_becomes_retry(app):
                 f"(reads {str(btn.cget('text'))!r})")
             assert str(btn.cget("bg")) == C["error"], (
                 f"compact={compact}: retry button is not marked as a failure")
+            # The palette and run_button_style can both be correct while the
+            # call site drops the kwargs; only a real widget shows that, and
+            # the Tk-mocked suite cannot. Dropping active_fg= is silent and
+            # measures 2.64:1 on the dark themes.
+            assert str(btn.cget("fg")) == C["error_fg"], (
+                f"compact={compact}: retry glyph reads "
+                f"{str(btn.cget('fg'))!r}, not error_fg -- call site dropped fg=")
+            # NB: only checked for consistency here. Under Light the correct
+            # hover ink and the dropped-kwarg fallback are both #ffffff, so
+            # this cannot fail -- the discriminating check runs under Dark
+            # below.
+            assert str(btn.cget("activeforeground")) == ink_on(C["btn_stop_active"]), (
+                f"compact={compact}: retry glyph's hovered ink reads "
+                f"{str(btn.cget('activeforeground'))!r} -- call site dropped active_fg=")
             assert btn.winfo_width() >= 10 and btn.winfo_height() >= 10, (
                 f"compact={compact}: retry button collapsed to "
                 f"{btn.winfo_width()}x{btn.winfo_height()}")
@@ -331,7 +347,32 @@ def check_failed_run_button_becomes_retry(app):
             assert len(app._jobreg) == 1, (
                 f"compact={compact}: the retry button did not re-run it")
             assert pump_until(app, lambda: len(app._jobreg) == 0), "retry did not finish"
+        # Dark is where dropping active_fg= actually shows: error_fg is
+        # #000000 there while the hovered fill btn_stop_active needs #ffffff,
+        # so the fallback and the correct value differ. Light makes them
+        # identical, which is why the in-loop check above is not enough.
+        cards_mod.set_compact_mode(False)
+        apply_theme("dark")
+        try:
+            app._refresh_cards()
+            app.update_idletasks()
+            app.update()
+            card = next(c for c in app._cards
+                        if getattr(c, "_name", "") == "smoke-retry")
+            btn = run_button(card)
+            want = ink_on(C["btn_stop_active"])
+            assert want != C["error_fg"], (
+                "this check is only meaningful where the hovered ink differs "
+                "from the resting one; Dark no longer provides that")
+            assert str(btn.cget("activeforeground")) == want, (
+                f"dark theme: retry glyph's hovered ink reads "
+                f"{str(btn.cget('activeforeground'))!r}, expected {want} -- "
+                "the call site dropped active_fg= (2.64:1 on the dark themes)")
+        finally:
+            apply_theme(app._settings.get("theme", "light"),
+                        app._settings.get("accent_color"))
         print("  [ok] retry-button: Run becomes Retry after a failure, both modes")
+        print("  [ok] retry-button: hovered ink survives on a dark palette")
     finally:
         cards_mod.set_compact_mode(original_compact)
         app.db.clear_runs(script_id=sid)
