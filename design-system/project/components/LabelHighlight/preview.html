@@ -1,0 +1,66 @@
+<!-- @dsCard group="Feedback" height=430 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  .badge { font-size:11px; font-weight:700; padding:1px 5px; color:var(--fg_on_dark);
+           white-space:nowrap; line-height:1.35; display:inline-block; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .sw { width:38px; height:22px; display:inline-block; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,220px)); gap:1px;
+          border:1px solid var(--border); background:var(--border); }
+  .rc { padding:6px 10px; display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .rc b { font-size:14px; }
+  .rc i { font-style:normal; font-size:10px; color:#8a8f98; font-family:var(--font-mono); }
+</style>
+<div class="stage">
+  <div class="cap">The seven seeds, as stored in HIGHLIGHT_SEEDS</div>
+  <div class="stage row" style="padding:0">
+    <span class="sw" style="background:#e05252" title="red seed #e05252"></span>
+    <span class="sw" style="background:#e08a3c" title="orange seed #e08a3c"></span>
+    <span class="sw" style="background:#d4a72c" title="yellow seed #d4a72c"></span>
+    <span class="sw" style="background:#3fa45b" title="green seed #3fa45b"></span>
+    <span class="sw" style="background:#2aa3a8" title="teal seed #2aa3a8"></span>
+    <span class="sw" style="background:#4a90d9" title="blue seed #4a90d9"></span>
+    <span class="sw" style="background:#a06ee0" title="purple seed #a06ee0"></span>
+  </div>
+  <div class="cap">Resolved for the Light theme — shaded darker until 4.5:1 on both surfaces</div>
+  <div class="grid">
+    <div class="rc" style="background:#ffffff"><b style="color:#bd4545">red</b><i>#bd4545 · 2 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#bd4545">red</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#ffffff"><b style="color:#9f602a">orange</b><i>#9f602a · 4 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#9f602a">orange</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#ffffff"><b style="color:#8a6b1b">yellow</b><i>#8a6b1b · 5 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#8a6b1b">yellow</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#ffffff"><b style="color:#2f7e45">green</b><i>#2f7e45 · 3 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#2f7e45">green</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#ffffff"><b style="color:#1f7e81">teal</b><i>#1f7e81 · 3 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#1f7e81">teal</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#ffffff"><b style="color:#396fa8">blue</b><i>#396fa8 · 3 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#396fa8">blue</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#ffffff"><b style="color:#875cbd">purple</b><i>#875cbd · 2 steps</i></div>
+    <div class="rc" style="background:#f5f7ff"><b style="color:#875cbd">purple</b><i>on card_hover</i></div>
+  </div>
+  <div class="cap">Resolved for the Dark theme — the same seeds, shaded lighter</div>
+  <div class="grid">
+    <div class="rc" style="background:#1d232d"><b style="color:#e67676">red</b><i>#e67676 · 3 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#e67676">red</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#1d232d"><b style="color:#e08a3c">orange</b><i>#e08a3c · 0 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#e08a3c">orange</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#1d232d"><b style="color:#d4a72c">yellow</b><i>#d4a72c · 0 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#d4a72c">yellow</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#1d232d"><b style="color:#4eab68">green</b><i>#4eab68 · 1 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#4eab68">green</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#1d232d"><b style="color:#3baaae">teal</b><i>#3baaae · 1 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#3baaae">teal</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#1d232d"><b style="color:#5898dc">blue</b><i>#5898dc · 1 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#5898dc">blue</b><i>on card_hover</i></div>
+    <div class="rc" style="background:#1d232d"><b style="color:#ae83e4">purple</b><i>#ae83e4 · 2 steps</i></div>
+    <div class="rc" style="background:#262e3a"><b style="color:#ae83e4">purple</b><i>on card_hover</i></div>
+  </div>
+</div>

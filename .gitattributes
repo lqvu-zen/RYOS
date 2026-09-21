@@ -1,0 +1,9 @@
+# design-system/build.py --check compares its generated files against freshly
+# built bytes, and CI runs it on windows-latest as well as ubuntu. Without
+# these, git hands the Windows runner a CRLF checkout, the byte comparison
+# fails, and an up-to-date tree reports as stale. build.py also normalises line
+# endings when comparing; both are needed, because the attributes only govern
+# checkouts made after they land.
+design-system/project/tokens.json         text eol=lf
+design-system/project/assets/**/*.svg     text eol=lf
+design-system/project/assets/**/*.png     binary

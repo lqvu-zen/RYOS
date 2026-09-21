@@ -1,0 +1,32 @@
+<!-- @dsCard group="Feedback" height=160 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .sel { display:flex; align-items:center; gap:4px; width:100%; flex-wrap:wrap;
+         background:var(--warn_bg); border:1px solid var(--warn_border); }
+  .h { flex:1; min-width:180px; color:var(--warn_fg); font-size:12px; padding:5px 14px; }
+  .sel button { border:0; cursor:pointer; font-family:inherit; font-size:12px;
+                font-weight:700; padding:5px 10px; margin:4px; }
+  .sa { background:var(--warn_bg); color:var(--warn_fg); }
+  .sa:hover { background:var(--warn_border); }
+  .r { background:var(--btn_run_bg); color:var(--btn_fg); padding:5px 12px !important; }
+  .r:hover { background:var(--btn_run_hover); }
+  .d { background:#5a2d2d; color:#fff; padding:5px 12px !important; }
+  .d:hover { background:#7a3d3d; }
+</style>
+<div class="stage" style="width:100%">
+  <div class="cap">Empty — the hint is the empty state</div>
+  <div class="sel"><span class="h">Tick the checkboxes next to the scripts you want to run or delete.</span>
+    <button class="sa">Select All</button>
+    <button class="r">▶ Run Selected</button><button class="d">🗑 Delete Selected</button></div>
+  <div class="cap">With a selection</div>
+  <div class="sel"><span class="h">3 scripts selected.</span>
+    <button class="sa">Clear</button>
+    <button class="r">▶ Run Selected</button><button class="d">🗑 Delete Selected</button></div>
+</div>

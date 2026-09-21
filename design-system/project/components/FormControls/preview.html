@@ -1,0 +1,46 @@
+<!-- @dsCard group="Input" height=220 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .cb { position:relative; display:flex; align-items:center; width:260px; gap:8px;
+        background:var(--card_bg); border:1px solid var(--border); padding:2px 4px;
+        font-size:13px; color:var(--name_fg); }
+  .cb.foc { border-color:var(--accent); }
+  .cb.open { border-color:var(--accent); }
+  .cb span { flex:1; } .cb i { font-style:normal; color:var(--path_fg); font-size:12px; }
+  .list { position:absolute; top:100%; left:-1px; right:-1px; background:var(--card_bg);
+          border:1px solid var(--border); z-index:2; }
+  .list div { padding:2px 4px; } .list .sel { background:var(--accent_wash); }
+  .nb { display:flex; gap:0; background:var(--bg); }
+  .nb span { padding:6px 12px; font-size:12px; color:var(--path_fg); background:var(--bg);
+             border:1px solid var(--border); border-bottom:0; cursor:pointer; }
+  .nb span.on { background:var(--card_bg); color:var(--accent); }
+  .nbody { display:flex; background:var(--card_bg); border:1px solid var(--border);
+           padding:10px 12px; font-size:12px; color:var(--path_fg); gap:10px; }
+  .nbody { align-items:stretch; }
+  .scroll { width:12px; background:var(--bg); margin-left:auto; flex:none; }
+  .thumb { width:12px; height:36px; background:var(--border); }
+  .sash { height:4px; background:var(--border); }
+</style>
+<div class="stage">
+  <div class="cap">Combobox — resting, focused, open</div>
+  <div class="stage" style="padding:0;gap:6px">
+    <div class="cb"><span>(no parameters)</span><i>▾</i></div>
+    <div class="cb foc"><span>--verbose --dry-run</span><i>▾</i></div>
+    <div class="cb open"><span>--verbose --dry-run</span><i>▾</i>
+      <div class="list"><div>(no parameters)</div><div class="sel">--verbose --dry-run</div><div>--full</div></div>
+    </div>
+  </div>
+  <div class="cap">Notebook tabs · scrollbar · sash</div>
+  <div class="stage" style="padding:0;gap:0;width:100%;max-width:420px">
+    <div class="nb"><span class="on">General</span><span>Scheduling</span><span>Appearance</span></div>
+    <div class="nbody">Settings for the selected tab.<div class="scroll"><div class="thumb"></div></div></div>
+    <div class="sash"></div>
+  </div>
+</div>

@@ -1,0 +1,60 @@
+<!-- @dsCard height=300 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); }
+  .cover { position:relative; width:960px; height:300px; background:var(--bg);
+            font-family:var(--font-sans); overflow:hidden; }
+  .name { position:absolute; left:40px; bottom:74px; font-size:120px; font-weight:700;
+           line-height:.92; letter-spacing:-.02em; color:var(--name_fg); margin:0; }
+  .tag { position:absolute; left:44px; bottom:44px; font-size:14px; color:var(--path_fg); margin:0; }
+  svg { position:absolute; inset:0; }
+  .ink   { fill:var(--header_bg); }  .gold  { fill:var(--bolt); }
+  .steel { fill:var(--accent); }     .grape { fill:var(--pipe_accent); }
+  .card  { fill:var(--card_bg); }    .term  { fill:var(--out_bg); }
+  .edge  { fill:none; stroke:var(--border); stroke-width:1; }
+  .r1 { fill:var(--out_stdout); } .r2 { fill:var(--out_stderr); } .r3 { fill:var(--out_status); }
+</style>
+<div class="cover">
+<svg viewBox="0 0 960 300" width="960" height="300" aria-hidden="true">
+  <!-- blocks:      header_bg 440x40, accent 400x56, pipe_accent 400x40, card_bg 340x48,
+                    out_bg 460x68 - five bands, three bleeding off the right edge.
+       arrangement: a strip of unequal bands stacked at a space-6 pitch, each led by a
+                    5px rail - the card list itself, which is what RYOS looks like.
+       pattern:     the rails (5px, the `rail` token) repeated down the stack, plus three
+                    terminal rules at a space-12 pitch inside the out_bg band and the
+                    make_icon.py bolt polygon clipped by the header band. Chosen because
+                    this system's whole anatomy is rail + surface + hairline; a dot grid
+                    or tile field would describe some other dense UI.
+       scales:      heights 40/56/40/48/68, gaps space-6, rails 5px, rules 1px hairline
+                    at space-12 pitch, radius-none throughout. -->
+  <clipPath id="band1"><rect x="520" y="12" width="440" height="40"/></clipPath>
+
+  <g>
+    <rect class="ink"   x="520" y="12" width="440" height="40"/>
+    <polygon class="gold" points="931,-16 871,60.5 907,60.5 895,122 955,45.5 919,45.5" clip-path="url(#band1)"/>
+    <rect class="gold"  x="520" y="12" width="5" height="40"/>
+    <rect class="edge"  x="520.5" y="12.5" width="439.5" height="39"/>
+  </g>
+
+  <rect class="steel" x="480" y="58"  width="400" height="56"/>
+  <rect class="gold"  x="480" y="58"  width="5"   height="56"/>
+
+  <rect class="grape" x="560" y="120" width="400" height="40"/>
+  <rect class="steel" x="560" y="120" width="5"   height="40"/>
+
+  <rect class="card"  x="480" y="166" width="340" height="48"/>
+  <rect class="edge"  x="480.5" y="166.5" width="339" height="47"/>
+  <rect class="grape" x="480" y="166" width="5"   height="48"/>
+
+  <g>
+    <rect class="term" x="500" y="220" width="460" height="68"/>
+    <rect class="edge" x="500.5" y="220.5" width="459.5" height="67"/>
+    <rect class="gold" x="500" y="220" width="5"   height="68"/>
+    <rect class="r3"   x="521" y="236" width="196" height="1"/>
+    <rect class="r1"   x="521" y="248" width="286" height="1"/>
+    <rect class="r2"   x="521" y="260" width="142" height="1"/>
+  </g>
+</svg>
+<p class="name">RYOS</p>
+<p class="tag">Run your own scripts.</p>
+</div>

@@ -1,0 +1,40 @@
+<!-- @dsCard group="Input" height=200 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .banner { display:flex; align-items:center; gap:8px; width:100%; max-width:560px;
+            background:var(--bg); padding:4px 0; }
+  .banner b { font-size:15px; }
+  .n { font-size:11px; color:var(--path_fg); }
+  .qr { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+        padding:5px 12px; background:var(--bolt); color:var(--name_fg); }
+  .qr:hover, .qr.on { background:var(--bolt_hover); }
+  .qbar { display:flex; align-items:center; gap:4px; background:var(--bg);
+          border:1px solid var(--border); padding:6px 4px 6px 8px; }
+  .fld { flex:1; background:var(--card_bg); color:var(--name_fg); font-size:13px;
+         padding:4px; min-height:25px; display:flex; align-items:center; }
+  .fld.ph { color:var(--path_fg); }
+  .go { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
+        padding:5px 12px; color:var(--btn_fg); background:var(--btn_run_bg); }
+  .go:hover { background:var(--btn_run_hover); }
+</style>
+<div class="stage" style="width:100%">
+  <div class="cap">Collapsed</div>
+  <div class="banner"><b>Maintenance</b><span class="n">4 scripts</span><div style="flex:1"></div>
+    <button class="qr" title="Toggle quick-run bar">⚡</button></div>
+  <div class="cap">Expanded</div>
+  <div style="width:100%;max-width:560px">
+    <div class="banner" style="max-width:none"><b>Maintenance</b><span class="n">4 scripts</span><div style="flex:1"></div>
+      <button class="qr on" title="Toggle quick-run bar">⚡</button></div>
+    <div class="qbar">
+      <div class="fld ph">script name [params...]</div>
+      <button class="go">▶ Run</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,43 @@
+<!-- @dsCard group="Output" height=300 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
+  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+</style>
+<style>
+  .panel { width:100%; background:var(--out_bg); }
+  .ohdr { display:flex; align-items:center; gap:14px; background:var(--out_header);
+          color:var(--fg_on_dark_2); font-size:11px; padding:4px 10px; flex-wrap:wrap; }
+  .oact { cursor:pointer; }
+  .oact:hover { color:var(--fg_on_dark); }
+  .otabs { display:flex; gap:1px; background:var(--out_tabbar); padding:0 4px; }
+  .ot { color:var(--fg_on_dark_2); font-size:11px; padding:4px 10px; cursor:pointer;
+        background:var(--out_header); }
+  .ot.on { background:var(--out_bg); color:var(--fg_on_dark); }
+  .obody { font-family:var(--font-mono); font-size:13px; line-height:1.5; padding:8px 10px;
+           white-space:pre; overflow-x:auto; }
+  .so { color:var(--out_stdout); } .se { color:var(--out_stderr); }
+  .st { color:var(--out_status); }  .su { color:var(--out_success); }
+  .obody span { display:block; }
+</style>
+<div class="stage" style="width:100%;padding:0">
+  <div class="panel">
+    <div class="ohdr"><span>Output</span><div style="flex:1"></div>
+      <span class="oact">Find</span><span class="oact">🗑 Clear</span><span class="oact">✕ Close All</span>
+      <span class="oact">▼ Hide Output</span></div>
+    <div class="otabs"><span class="ot on">All</span><span class="ot">nightly-backup</span>
+      <span class="ot">release-candidate</span></div>
+    <div class="obody">
+<span class="st">▶ nightly-backup — started 03:00:01</span>
+<span class="so">Scanning 4 volumes…</span>
+<span class="so">  /data          1.2 TB   ok</span>
+<span class="so">  /home          380 GB   ok</span>
+<span class="se">  /mnt/archive   unreachable after 30s</span>
+<span class="st">◼ exited with code 1</span>
+<span class="su">✓ release-candidate — 3 steps completed in 4m12s</span>
+    </div>
+  </div>
+</div>
