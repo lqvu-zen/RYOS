@@ -37,6 +37,7 @@ from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
     THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _shade, build_palette,
     contrast_ratio, contrast_warnings, delete_user_theme,
+    disabled_pair,
     disambiguate_custom_labels, export_theme, import_theme, is_hex_color,
     load_base_themes, load_custom_themes, load_presets, load_user_themes,
     resolve_user_themes_dir, save_custom_themes, save_user_theme, validate_seed,
@@ -5469,3 +5470,87 @@ class TestDesignSystemIsCurrent(unittest.TestCase):
                     readme, "Cover/ must stay bare or it becomes an ordinary card")
             else:
                 self.assertTrue(readme, f"{d.name} has no README.md")
+# ---------------------------------------------------------------------------
+# Disabled controls must read as disabled (issue #7)
+# ---------------------------------------------------------------------------
+
+class TestDisabledState(unittest.TestCase):
+    """A disabled button was indistinguishable from a working one.
+
+    The palette had no disabled colours at all, so Tk fell back to a Windows
+    system colour that has no relationship to the theme. These pin the derived
+    state instead: dimmer than enabled on every theme, still legible, and never
+    a wholesale colour change that would read as a different control.
+    """
+
+    def _all_seeds(self):
+        seeds = dict(SEEDS)
+        for pid, _label, seed in load_presets():
+            seeds[pid] = seed
+        for fp in sorted((Path(__file__).resolve().parents[1]
+                          / "theme-gallery").glob("*.json")):
+            data = json.loads(fp.read_text(encoding="utf-8"))
+            if isinstance(data.get("seed"), dict):
+                seeds.setdefault(fp.stem, data["seed"])
+        return seeds
+
+    def test_the_palette_carries_disabled_colours(self):
+        for name in ("light", "dark"):
+            pal = build_palette(SEEDS[name])
+            self.assertIn("btn_disabled_bg", pal)
+            self.assertIn("btn_disabled_fg", pal)
+            self.assertTrue(is_hex_color(pal["btn_disabled_bg"]))
+            self.assertTrue(is_hex_color(pal["btn_disabled_fg"]))
+
+    def test_disabled_label_is_dimmer_than_enabled_on_every_theme(self):
+        for name, seed in self._all_seeds().items():
+            with self.subTest(theme=name):
+                pal = build_palette(seed)
+                enabled = contrast_ratio(pal["btn_neutral_fg"],
+                                         pal["btn_neutral_bg"])
+                dis_bg, dis_fg = disabled_pair(pal["btn_neutral_bg"],
+                                               pal["btn_neutral_fg"],
+                                               pal["card_bg"])
+                dimmed = contrast_ratio(dis_fg, dis_bg)
+                self.assertLess(dimmed, enabled,
+                                f"{name}: disabled label is not dimmer")
+
+    def test_disabled_label_stays_legible(self):
+        # WCAG exempts disabled controls from 4.5, but invisible is not a
+        # state -- the user still has to see which control is off.
+        for name, seed in self._all_seeds().items():
+            for style in ("btn_neutral", "btn_dark"):
+                with self.subTest(theme=name, style=style):
+                    pal = build_palette(seed)
+                    bg = pal[f"{style}_bg"]
+                    fg = pal["btn_neutral_fg" if style == "btn_neutral"
+                             else "btn_fg"]
+                    dis_bg, dis_fg = disabled_pair(bg, fg, pal["card_bg"])
+                    r = contrast_ratio(dis_fg, dis_bg)
+                    self.assertGreaterEqual(r, 1.8, f"{name}/{style}: {r:.2f}")
+                    self.assertLessEqual(r, 3.8, f"{name}/{style}: {r:.2f}")
+
+    def test_disabled_slab_is_derived_from_the_button_not_a_global(self):
+        # One global disabled colour turned a dark button near-white on a
+        # light theme -- a change so large it read as a different control.
+        pal = build_palette(SEEDS["light"])
+        dark_bg, _ = disabled_pair(pal["btn_dark_bg"], pal["btn_fg"],
+                                   pal["card_bg"])
+        neutral_bg, _ = disabled_pair(pal["btn_neutral_bg"],
+                                      pal["btn_neutral_fg"], pal["card_bg"])
+        self.assertNotEqual(dark_bg, neutral_bg,
+                            "every button disables to the same colour")
+        # the dark button must stay recognisably dark
+        self.assertLess(contrast_ratio(dark_bg, pal["card_bg"]),
+                        contrast_ratio(pal["btn_dark_bg"], pal["card_bg"]),
+                        "disabling made the dark button louder, not quieter")
+        self.assertGreater(contrast_ratio(dark_bg, pal["card_bg"]), 1.5,
+                           "the disabled dark button washed out to the card")
+
+    def test_disabled_slab_always_differs_from_enabled(self):
+        for name, seed in self._all_seeds().items():
+            with self.subTest(theme=name):
+                pal = build_palette(seed)
+                dis_bg, _ = disabled_pair(pal["btn_dark_bg"], pal["btn_fg"],
+                                          pal["card_bg"])
+                self.assertNotEqual(dis_bg.lower(), pal["btn_dark_bg"].lower())

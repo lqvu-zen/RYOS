@@ -29,6 +29,11 @@ in the app binds `<Enter>` and `<Leave>` to swap `bg` for its `*_hover` twin.
 There is no transition, no lift, no outline. Pair every fill token you use with
 its hover token.
 
+The corollary: a control that *can't* be pressed has to say that too, and the
+absence of a hover swap is not enough — Tk keeps sending `<Enter>` to a
+disabled widget. Flip one with `set_button_enabled()`, which dims the slab as
+well as the label through `disabled_pair()`.
+
 **Failure is shown on the control that fixes it.** After a failed run the Run
 button *becomes* the retry: same action, `error` fill, `↻` instead of `▶`. The
 `✕ Failed` badge only reports. Don't add a second control for a recovery the

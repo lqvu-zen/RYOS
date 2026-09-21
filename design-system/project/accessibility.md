@@ -26,6 +26,19 @@ serves all thirteen themes.** Don't hand-tune a highlight per theme — pass the
 surfaces it will actually land on. The right-click menu does exactly this,
 resolving its swatches against `menu_bg` rather than `card_bg`.
 
+**`disabled_pair(bg, fg, surface)`** — the same idea aimed the other way. A
+disabled control has to be *less* legible than a live one, but by a controlled
+amount: the slab is the button deflated 45% toward the surface behind it, and
+the label is then mixed toward that slab in 24 steps until it drops to
+`DISABLED_TARGET`, 2.6:1. WCAG exempts disabled controls from the 4.5:1 text
+minimum, so the target is "clearly dimmed, still readable" rather than a floor.
+
+It is computed per button rather than stored once, because one disabled colour
+would turn a dark button near-white on a light theme — a change so large it
+reads as a *different* control instead of a dimmed one. The two
+`btn_disabled_*` tokens are only the palette default, for controls that are
+born disabled and never flip.
+
 **`contrast_warnings(seed)`** — soft warnings in the theme editor when a seed's
 `text` falls under 4.5:1 on `bg` or `surface`, or `text_muted` under 3:1 on
 `bg`. Non-fatal by design: a user's theme is theirs.

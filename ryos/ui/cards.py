@@ -532,12 +532,16 @@ class PipelineCard(tk.Frame):
         # A script card carries a fourth button here (▶+ Run with parameter),
         # which has no pipeline equivalent. Without this spacer the two card
         # types' button columns don't line up in a mixed list (issue #3). It is
-        # Built by _rbtn like every other cell, so it is the same widget with
+        # built by _rbtn like every other cell, so it is the same widget with
         # the same padding and therefore exactly the same width — a Label or
         # Frame sized to width=3 comes out 4px narrower and shifts the whole
-        # strip. Empty and disabled, so it reads as space, not a dead control.
-        _rbtn("", C["btn_neutral_bg"], C["btn_neutral_bg"], None,
-              state="disabled")
+        # strip.
+        #
+        # It is painted in the strip's own colour, not btn_neutral_bg. Being
+        # blank and disabled is not enough: a neutral-coloured slab sits 1.03:1
+        # against the strip, so it read as a button whose icon had failed to
+        # load rather than as empty space (issue #7).
+        _rbtn("", C["border"], C["border"], None, state="disabled")
         _sep()
         _run_text, _run_bg, _run_hover, _run_tip = run_button_style(last_status)
         _rbtn(_run_text, _run_bg, _run_hover,

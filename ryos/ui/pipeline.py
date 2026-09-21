@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 from ..db import (FAIL_CONTINUE, FAIL_STOP, TRIGGER_AFTER, TRIGGER_WITH,
                   WHEN_ALWAYS, WHEN_ON_FAILURE, WHEN_ON_SUCCESS, ScriptDB)
 from .placement import center_over_parent
-from .theme import C
+from .theme import C, set_button_enabled
 
 
 def _policy_marks(step) -> str:
@@ -106,12 +106,14 @@ class PipelineEditorDialog(tk.Toplevel):
                       bd=0, padx=10, pady=4, cursor="hand2",
                       font=("Segoe UI", 9)).pack(side="left", padx=2)
         self._trigger_btn = tk.Button(
-            ctrl, text="∥ With Prev", command=self._toggle_trigger, state="disabled",
+            ctrl, text="∥ With Prev", command=self._toggle_trigger,
             bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"],
             activebackground=C["btn_neutral_hover"],
             activeforeground=C["btn_neutral_fg"], relief="flat",
             bd=0, padx=10, pady=4, cursor="hand2",
             font=("Segoe UI", 9))
+        set_button_enabled(self._trigger_btn, False,
+                           bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"])
         self._trigger_btn.pack(side="left", padx=2)
 
         legend = tk.Frame(self, bg=C["card_bg"], padx=12)
@@ -221,7 +223,8 @@ class PipelineEditorDialog(tk.Toplevel):
         if self._reloading or self._preset_changing:
             return
         idx = self._selected_index()
-        self._trigger_btn.configure(state="disabled" if idx in (None, 0) else "normal")
+        set_button_enabled(self._trigger_btn, idx not in (None, 0),
+                           bg=C["btn_neutral_bg"], fg=C["btn_neutral_fg"])
         for combo in (self._on_failure_combo, self._retries_combo, self._run_when_combo):
             combo.configure(state="readonly" if idx is not None else "disabled")
         if idx is None:

@@ -42,6 +42,17 @@ accent2             accent  -15%          /  -15%
 accent_wash         accent  +86%          /  -55%
 ```
 
+Two keys are derived by a loop rather than a fixed factor, because a fixed
+shade cannot hold a *ratio* across thirteen palettes:
+
+```
+btn_disabled_bg   btn_neutral_bg mixed 45% toward card_bg -- or shaded AWAY
+                  from it where the two are already within 1.08:1, since
+                  there is nowhere to mix toward
+btn_disabled_fg   btn_neutral_fg mixed toward that slab in 24 steps, stopping
+                  at 2.6:1  (themes.disabled_pair)
+```
+
 If you add a token that needs a hover or pressed twin, derive it here rather
 than asking the user for another colour.
 

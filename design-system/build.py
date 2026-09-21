@@ -109,6 +109,8 @@ USAGE: list[tuple[str, str]] = [
     ("btn_stop_idle_hover", "Disabled stop button under the pointer."),
     ("btn_stop_active", "Stop button fill while a job is running, and the pressed state of the retry Run button."),
     ("btn_stop_active_hover", "Armed stop button under the pointer."),
+    ("btn_disabled_bg", "Slab of a control that is born disabled and never flips -- the palette default. A control that toggles calls disabled_pair() with its own colours instead. Derived: btn_neutral_bg mixed 45% toward card_bg, or shaded away from it where there is nowhere to mix toward."),
+    ("btn_disabled_fg", "Label on a disabled control. Derived: btn_neutral_fg mixed toward its own slab in 24 steps until it drops to 2.6:1 -- dim enough to read as disabled, not so dim it vanishes."),
     ("btn_dark_bg", "The header's options (gear) button."),
     ("btn_dark_hover", "Options button under the pointer; also the StatusBar's text colour."),
     ("tab_inactive_bg", "Inactive GroupTab face and its 3px indicator. Derived: bg shaded -5% light / +6% dark."),

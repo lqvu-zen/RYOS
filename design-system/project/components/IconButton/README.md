@@ -22,6 +22,15 @@ the next hover reverts it to the stale colour.
 
 - Default fill is `btn_neutral_bg` / `btn_neutral_hover` with `btn_neutral_fg`.
 - A favourited star is `accent_wash`; an unfavourited one is neutral.
-- A disabled button gets the `arrow` cursor and no hover bindings — the absence
-  of the fill swap is how disabled reads.
+- Flip a button's state with `set_button_enabled()`, never a bare
+  `config(state=...)`. Tk dims only the label, and on a custom palette it dims
+  it to a Windows system colour unrelated to the theme; the helper swaps the
+  slab too, which is what makes the state legible. It also gives the button the
+  `arrow` cursor.
+- Tk keeps delivering `<Enter>` to a disabled widget, so the hover bindings
+  check state before swapping. Skip that check and a dead button lights up
+  under the pointer and looks clickable.
+- A blank spacer cell is painted `border`, the strip's own colour — not
+  `btn_neutral_bg`, which sits 1.03:1 against the strip and reads as a button
+  whose icon failed to load rather than as empty space.
 - Every icon button takes a `Tooltip`. A bare glyph without one is a bug.

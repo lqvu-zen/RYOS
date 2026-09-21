@@ -178,6 +178,68 @@ def check_card_button_alignment(app):
         app._refresh_cards()
 
 
+
+def check_spacer_does_not_look_like_a_button(app):
+    """The pipeline card's alignment spacer must read as a gap, not a control.
+
+    Issue #3 added a blank disabled button so both card types have four
+    columns. Issue #7 was that it was painted btn_neutral_bg like a real
+    button, which sits ~1.03:1 against the strip -- so it looked like a button
+    whose icon had failed to load. Blank and disabled was not enough; the
+    colour is what carried the wrong signal.
+
+    Checked on real widgets because this is about what is painted, which the
+    mocked suite cannot see.
+    """
+    import tkinter as tk
+
+    from ryos.ui.theme import C
+
+    path = _write_script("print('spacer')\n")
+    sid = app.db.add("smoke-spacer", path, "", sys.executable, "smoke-spacer-grp")
+    pid = app.db.create_pipeline("smoke-spacer-pipe", "smoke-spacer-grp")
+
+    def buttons(card):
+        strip = [w for w in card.winfo_children()
+                 if isinstance(w, tk.Frame)
+                 and any(isinstance(c, tk.Button) for c in w.winfo_children())]
+        assert strip, "button strip not found"
+        return [w for w in strip[0].winfo_children() if isinstance(w, tk.Button)]
+
+    try:
+        app._active_group = "smoke-spacer-grp"
+        app._refresh_cards()
+        app.update_idletasks()
+        app.update()
+        card = next(c for c in app._cards
+                    if getattr(c, "_name", "") == "smoke-spacer")
+        pipe = next(c for c in app._pipeline_cards
+                    if getattr(c, "_name", "") == "smoke-spacer-pipe")
+        real = buttons(card)[2]          # the script card's ▶+ button
+        spacer = buttons(pipe)[2]        # the pipeline card's spacer
+
+        spacer_bg = str(spacer.cget("bg"))
+        real_bg = str(real.cget("bg"))
+        assert spacer_bg == C["border"], (
+            f"spacer is {spacer_bg}, expected the strip colour {C['border']}")
+        assert spacer_bg != real_bg, (
+            f"spacer still painted like a real button ({spacer_bg})")
+        assert str(spacer.cget("state")) == "disabled", "spacer is clickable"
+        # issue #3 must stay fixed
+        assert spacer.winfo_width() == real.winfo_width(), (
+            f"spacer width {spacer.winfo_width()} != button "
+            f"{real.winfo_width()} — issue #3 regressed")
+        print(f"  [ok] spacer-reads-as-gap: {spacer_bg} matches the strip, "
+              f"width {spacer.winfo_width()} still matches the button")
+    finally:
+        app.db.delete_pipeline(pid)
+        app.db.delete(sid)
+        app.db.delete_group("smoke-spacer-grp")
+        os.unlink(path)
+        app._active_group = None
+        app._refresh_cards()
+
+
 def check_card_run(app):
     """Run a script the way a user does: through the card's own Run button.
 
@@ -682,6 +744,7 @@ def main():
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)
         check_card_button_alignment(app)
+        check_spacer_does_not_look_like_a_button(app)
         check_card_run(app)
         check_failed_run_button_becomes_retry(app)
         check_run_history(app)
