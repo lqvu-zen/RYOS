@@ -5554,3 +5554,67 @@ class TestDisabledState(unittest.TestCase):
                 dis_bg, _ = disabled_pair(pal["btn_dark_bg"], pal["btn_fg"],
                                           pal["card_bg"])
                 self.assertNotEqual(dis_bg.lower(), pal["btn_dark_bg"].lower())
+
+
+class TestMypyScopeIsCurrent(unittest.TestCase):
+    """Every module is either type-checked or deliberately excluded.
+
+    The scope list in pyproject silently fell behind: themes.py, tray.py and
+    single_instance.py were all added to the project *after* the list was last
+    reviewed, so 1,128 lines of UI-free core sat outside the type-check for a
+    quarter without anyone deciding that. Nothing failed, because nothing was
+    watching.
+
+    This makes a new module a decision rather than an omission: add it to
+    [tool.mypy] files, or name it here with a reason.
+    """
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    # Excluded on purpose. Each entry is a claim someone has to justify.
+    EXCLUDED = {
+        "ryos/__init__.py": "two lines, just __version__",
+        "ryos/__main__.py": "thin entry point",
+        "ryos/ui/app.py": "widget-driven; Tk's dynamic API false-positives",
+        "ryos/ui/dialogs.py": "widget-driven; same",
+        "ryos/ui/cards.py": "widget-driven; same",
+        "ryos/ui/theme_editor.py": "widget-driven; same",
+        "ryos/startup.py": "Windows-only (winreg); fails --platform linux, "
+                           "which is where the typecheck job runs",
+    }
+
+    def _scope(self):
+        text = (self.ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        block = re.search(r"\[tool\.mypy\](.*?)(?=\n\[|\Z)", text, re.S)
+        self.assertIsNotNone(block, "no [tool.mypy] section")
+        files = re.search(r"^files\s*=\s*\[(.*?)\]", block.group(1), re.S | re.M)
+        self.assertIsNotNone(files, "no files list under [tool.mypy]")
+        return {e.replace("\\", "/") for e in re.findall(r'"([^"]+)"', files.group(1))}
+
+    def _modules(self):
+        out = set()
+        for f in (self.ROOT / "ryos").rglob("*.py"):
+            if "__pycache__" in f.parts:
+                continue
+            out.add(str(f.relative_to(self.ROOT)).replace("\\", "/"))
+        return out
+
+    def test_every_module_is_checked_or_excluded(self):
+        unaccounted = sorted(self._modules() - self._scope() - set(self.EXCLUDED))
+        self.assertEqual(
+            unaccounted, [],
+            "these modules are neither type-checked nor listed as excluded: "
+            f"{unaccounted}. Add them to [tool.mypy] files in pyproject.toml "
+            "(confirm with `uvx mypy --platform linux <file>` first), or add "
+            "them to EXCLUDED here with the reason.")
+
+    def test_the_scope_list_names_only_real_files(self):
+        missing = sorted(f for f in self._scope()
+                         if not (self.ROOT / f).exists())
+        self.assertEqual(missing, [],
+                         f"[tool.mypy] lists files that do not exist: {missing}")
+
+    def test_nothing_is_both_checked_and_excluded(self):
+        both = sorted(self._scope() & set(self.EXCLUDED))
+        self.assertEqual(both, [],
+                         f"listed in [tool.mypy] but also marked excluded: {both}")

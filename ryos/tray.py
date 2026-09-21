@@ -12,7 +12,7 @@ so the tray never reads state the UI thread is concurrently mutating.
 """
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from . import __version__
 from .logger import get_logger
@@ -27,6 +27,11 @@ except Exception:
     # ryos.ui.app imports this module at load time, so any failure here
     # (missing wheel, or a broken backend on an unusual platform) must not
     # prevent the app itself from importing -- only the tray degrades.
+    #
+    # This is NOT a statement that pystray is optional: pyproject declares it
+    # as a hard dependency so every user gets a tray. The guard is for a
+    # broken install, and it is what lets the test suite and CI run without
+    # the package at all.
     pystray = None
     Image = None
     _AVAILABLE = False
@@ -95,7 +100,10 @@ class TrayIcon:
         self._icon_path = icon_path
         self._base_title = title or f"RYOS v{__version__}"
         self._title = self._base_title
-        self._icon = None
+        # pystray.Icon once started. Any, because pystray is an optional
+        # dependency with no stubs -- the guards around it are what keep
+        # this honest, not the annotation.
+        self._icon: Optional[Any] = None
         self._thread: Optional[threading.Thread] = None
         self._image = _load_tray_image(icon_path)
         self._jobs: list[tuple[int, str]] = []
@@ -160,7 +168,9 @@ class TrayIcon:
             _log.debug("Could not update tray tooltip", exc_info=True)
 
     def start(self) -> None:
-        if not self.available:
+        # `available` already covers this, but it is a property over a module
+        # global, so narrowing has to be restated where pystray is used.
+        if not self.available or pystray is None:
             return
         self._icon = pystray.Icon("RYOS", self._image, self._title,
                                   self._build_menu())

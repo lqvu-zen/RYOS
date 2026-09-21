@@ -46,10 +46,15 @@ class SingleInstance:
             self._thread.start()
 
     def _serve(self) -> None:
-        self._sock.settimeout(1.0)
+        # Bound once: __init__ only starts this thread when _sock is not None,
+        # an invariant the type checker cannot see through self.
+        sock = self._sock
+        if sock is None:
+            return
+        sock.settimeout(1.0)
         while not self._stop_event.is_set():
             try:
-                conn, _addr = self._sock.accept()
+                conn, _addr = sock.accept()
             except socket.timeout:
                 continue
             except OSError:

@@ -3,6 +3,11 @@ name = "ryos"
 dynamic = ["version"]
 description = "RYOS - Run Your Own Scripts"
 requires-python = ">=3.10"
+# pystray/pillow are required, not optional, so `uv run ryos` gives every user
+# a working tray. ryos/tray.py still guards the import -- that guard is about a
+# broken install (bad wheel, no backend on an unusual desktop) degrading to "no
+# tray" instead of refusing to start, NOT about the package being absent by
+# design. Both are deliberate; see docs/tech-debt-2026-09-21.md item 4.
 dependencies = [
     "tkinterdnd2>=0.3.0,<1.0",
     "pystray>=0.19,<1.0",
@@ -46,12 +51,21 @@ ignore = ["E741"]
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
-# Scope: the UI-free core plus the cleanly-typed Tkinter modules. The heavily
-# widget-driven UI files (ryos/ui/app.py, dialogs.py, cards.py) are excluded for
-# now -- Tk's dynamic API yields many false positives there -- and
-# ryos/startup.py is Windows-only (winreg), so it can't be checked on the Linux
-# CI runner. Running `mypy` with no arguments checks exactly the files listed
-# here; widening into the remaining UI files is tracked as future work.
+# Scope: the UI-free core, the cleanly-typed Tkinter modules, and the design
+# system generator. Running `mypy` with no arguments checks exactly the files
+# listed here.
+#
+# Two deliberate exclusions, both verified rather than assumed:
+#   * ryos/ui/app.py, dialogs.py, cards.py, theme_editor.py -- heavily
+#     widget-driven; Tk's dynamic API yields many false positives. Widening
+#     into these is tracked in docs/tech-debt-2026-09-21.md.
+#   * ryos/startup.py -- Windows-only (winreg). It passes on Windows but
+#     reports 8 `name is not defined` errors under `mypy --platform linux`,
+#     which is where the typecheck CI job runs. Check it locally with
+#     `mypy ryos/startup.py` if you touch it.
+#
+# When adding a module here, confirm it is clean on BOTH platforms:
+#   uvx mypy --platform linux <file>
 files = [
     "ryos/db.py",
     "ryos/interpreter.py",
@@ -73,4 +87,8 @@ files = [
     "ryos/ui/placement.py",
     "ryos/ui/widgets.py",
     "ryos/ui/pipeline.py",
+    "ryos/themes.py",
+    "ryos/tray.py",
+    "ryos/single_instance.py",
+    "design-system/build.py",
 ]
