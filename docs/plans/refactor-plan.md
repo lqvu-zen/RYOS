@@ -1,6 +1,6 @@
 # RYOS Refactor — Summary & Plan
 
-_Companion to `docs/tech-debt-2026-06-24.md`. Last updated 2026-06-24._
+_Companion to `docs/tech-debt-2026-06-24.md` (now superseded). Last updated 2026-06-24 — the phases below describe the June register; the current plan lives in [`tech-debt-2026-09-21.md`](../tech-debt-2026-09-21.md)._
 
 ## Update — 2026-06-25: Theme Factory landed (plan additions)
 
@@ -58,7 +58,14 @@ widget-bound code.
 
 ## What's left
 
-### 1. `SearchController` — the main remaining structural step
+### 1. `SearchController` — superseded
+
+> **Superseded 2026-09-21.** Measuring `app.py` by concern showed search/filter
+> is only 217 lines and carries the second-highest toolkit density in the file,
+> so extracting it buys little ahead of a UI rewrite. Quick Run (493 lines, low
+> density) is the better first extraction. See
+> [`qt-migration.md`](qt-migration.md) for the measured seam table and the
+> revised order. The reasoning below is kept for provenance.
 The search feature's *state* still lives on `RYOSApp`: `_search_var`,
 `_search_ph` (placeholder flag), `_search_entry`, `_search_clear_btn`,
 `_search_hint`, `_search_hint_dismissed`, and the methods `_clear_search`,

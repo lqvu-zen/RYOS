@@ -219,5 +219,5 @@ command will not reproduce the failure. That is how the tray tests passed
 locally while CI sat red for five commits.
 
 CI (`.github/workflows/ci.yml`) runs ruff and pytest on every push/PR across
-Ubuntu + Windows × Python 3.10/3.13. See `TECH_DEBT.md` for known rough edges
+Ubuntu + Windows × Python 3.10/3.13. See `docs/tech-debt-2026-09-21.md` for known rough edges
 and `docs/CONTRIBUTING.md` for the development workflow.

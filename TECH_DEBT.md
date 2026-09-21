@@ -4,7 +4,7 @@
 > kept for provenance. It no longer reflects the codebase (it predates the
 > `JobController` extraction, the CI `gui-smoke`/`typecheck` jobs, and
 > `screens.py`). For the current state, see
-> [`docs/tech-debt-2026-06-24.md`](docs/tech-debt-2026-06-24.md).
+> [`docs/tech-debt-2026-09-21.md`](docs/tech-debt-2026-09-21.md).
 
 _Generated 2026-06-10 · version 1.7.2-dev · ~5,600 LOC across `ryos/`_
 _Updated 2026-06-10 — remediation in progress; see Progress section below._
