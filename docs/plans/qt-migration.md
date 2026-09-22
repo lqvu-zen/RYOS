@@ -105,16 +105,53 @@ Expensive to reverse, so take them before writing the shell.
 
 **Design system.** 48 files, 18 component previews, four days old. The token/palette half is toolkit-independent and survives; the component guidance is written about Tk widgets and needs rewriting as each component ports. `design-system/build.py` reads `build_palette()`, `_script_tag()` and `HIGHLIGHT_SEEDS`, all of which are core — so the generator itself survives.
 
+## Packaging: measured
+
+A throwaway PySide6 app shaped like RYOS's shell (tabs, a scrolling card list,
+a four-button row per card, an output pane, a status bar) built with cx_Freeze
+and smoke-tested by launching it and asserting on its window title.
+
+| Build | Folder | Zipped | Runs? |
+| --- | ---: | ---: | :--: |
+| Untuned | 364 MB | **151.1 MB** | ✅ |
+| Module excludes | 92 MB | 36.8 MB | ✅ |
+| Excludes + DLL prune | 56 MB | **23.3 MB** | ✅ |
+| *Today's Tk build* | *~49 MB* | *19.7 MB* | |
+
+**So the real cost is +3.6 MB on the download, not the 40–80 MB this plan
+originally guessed.** The untuned figure is the trap: cx_Freeze bundles every
+Qt module it can find, and `Qt6WebEngineCore.dll` alone is **195 MB** — a whole
+browser engine, for an app that renders no HTML.
+
+Two levers, in order of payoff:
+
+1. **`excludes` for unused PySide6 submodules** (WebEngine, QML/Quick, Qt3D,
+   Multimedia, Charts, Designer, Pdf, Sql, Bluetooth, …). 364 → 92 MB. This is
+   declarative and belongs in `setup_cxfreeze.py`.
+2. **Dropping the DLLs the excludes cannot reach.** Module excludes stop the
+   Python bindings but not the sibling DLLs in the package directory, so
+   `Qt6Quick`, `Qt6Qml`, `Qt6Pdf`, `Qt6OpenGL`, the `translations/` tree and
+   the bundled OpenSSL pair survive. 92 → 56 MB.
+
+**Lever 2 needs care.** Deleting DLLs post-build fails at *runtime*, not build
+time, so a later feature that reaches for `QtSvg` or `QtNetwork` would ship
+broken. Express it as `bin_excludes` in the build config rather than an rm, and
+keep the exe smoke test in the release runbook — it already asserts the window
+title, which is exactly the check that catches a missing Qt plugin.
+
+RYOS needs `QtCore`, `QtGui`, `QtWidgets`. Nothing in the current feature set
+needs Qt's network stack (the GitHub update check uses `urllib`) or SVG.
+
 ## Costs to accept up front
 
-- **Download size: 19.7 MB → roughly 40–80 MB.** PySide6 bundles the Qt runtime. For an app distributed as a zip from Releases, this is the change users will most notice. Worth measuring with a throwaway cx_Freeze build before committing.
+- **Download size: 19.7 MB → 23.3 MB, but only if the build is tuned.** Measured, not estimated — see below.
 - **`gui_smoke.py` is rewritten** — 771 lines, 16 checks. Mitigated by `QTest` making the replacements better than the originals.
 - **A second UI in the tree** for the duration of Phase 2.
 - **Licensing:** PySide6 is LGPL, so a closed-source or commercial build stays possible. (PyQt6 would be GPL-or-paid, which would bind RYOS itself.)
 
 ## Open questions
 
-- Does `cx_Freeze` + PySide6 produce a working single-folder build on Windows, and at what size? **Measure before Phase 2.**
+- ~~Does `cx_Freeze` + PySide6 produce a working single-folder build on Windows, and at what size?~~ **Answered 2026-09-22 — yes, and the size is a tuning problem, not a Qt problem.**
 - Keep `tkinterdnd2`-style OS file drops? Qt handles this natively; confirm the behaviour matches on Windows.
 - Does the single-instance handoff (`single_instance.py`, raw win32) still work, or should it become `QLocalServer`/`QLocalSocket`? The latter is cross-platform and would retire more ctypes.
 
