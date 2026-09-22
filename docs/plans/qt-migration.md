@@ -105,10 +105,12 @@ Expensive to reverse, so take them before writing the shell.
 
 | Phase | State |
 | --- | --- |
-| 1.1 Drag & drop extraction | not started |
+| 1.1 Drag & drop extraction | **done 2026-09-22** (`8f589fb`) — rules extracted, 16 tests; `app.py` unchanged in size, see note |
 | 1.2 Quick Run controller | not started |
 | 1.3 Jobs into `JobController` | not started |
 | 1.4 Group controller | not started |
 | 2.x Qt port | blocked on Phase 1 |
+
+**1.1 note — the extraction did not shrink ** (3,145 → 3,153). The decisions were small; what they were tangled in is widget code that stays until the port. Expect the same shape from 1.2–1.4: the line count falls less than the seam table suggests, because that table measures whole methods while only their decisions move. The real win is UI-free, tested rules that survive the rewrite — treat the ~1,200-line target as optimistic.
 
 _Update this table as steps land, and record any measurement that contradicts the plan — the seam table above is a snapshot and will drift as `app.py` shrinks._
