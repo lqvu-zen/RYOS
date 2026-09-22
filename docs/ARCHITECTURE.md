@@ -81,6 +81,7 @@ could be tested in isolation.
 | `ryos/dragdrop.py` | Where a dragged card lands — index maths and the legality of a drop, separated from Tk's drag events. | yes |
 | `ryos/screens.py` | Pure monitor geometry: `clamp_to_work_area`, `center_on_rect`, `anchored_position` (flip, then clamp). Knows nothing about Tk or Win32. | yes |
 | `ryos/ui/placement.py` | Applies `screens.py` to real windows — `work_area_for_widget`, `center_over_parent`, `place_near`. Uses Win32 `MonitorFromPoint` / `GetMonitorInfoW` where available, with a documented Tk-only fallback. This is what keeps dialogs on the monitor the app is on. | yes |
+| `ryos/qtui/` | The PySide6 front-end, built alongside `ryos/ui/` and not yet shipping (docs/plans/qt-migration.md). `stylesheet.py` turns a palette into one Qt stylesheet — pure, no Qt import, so it is unit-tested in the main suite; whether the CSS reaches real widgets is checked by `tests/qt_smoke.py`. PySide6 is optional: nothing else imports this package. | yes |
 | `ryos/themes.py` | The built-in theme gallery and WCAG `contrast_ratio()`, used to keep generated colours legible. | yes |
 | `ryos/ui/theme_editor.py` | Dialog for editing and previewing a custom theme. | — |
 | `ryos/tray.py` | System-tray icon: tooltip and dynamic menu listing what is currently running. `pystray` is optional — every entry point is guarded so the app runs without it, and CI exercises that path. | partial |
@@ -207,6 +208,14 @@ uv run ryos                                  # launch the app
 uv run --no-project --with pytest pytest -q  # run the test suite (tkinter is mocked)
 uv run python tests/gui_smoke.py             # real-Tk smoke checks (needs a display)
 uvx ruff check .                             # lint
+```
+
+`tests/qt_smoke.py` is the Qt equivalent of the Tk smoke below. It exits 0
+with a notice when PySide6 is absent, so CI and the ordinary test run are
+unaffected:
+
+```bash
+uv run --no-project --with PySide6 python tests/qt_smoke.py
 ```
 
 `tests/gui_smoke.py` builds real widgets and asserts on geometry — it catches

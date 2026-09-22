@@ -88,6 +88,8 @@ files = [
     "ryos/ui/placement.py",
     "ryos/ui/widgets.py",
     "ryos/ui/pipeline.py",
+    "ryos/qtui/__init__.py",
+    "ryos/qtui/stylesheet.py",
     "ryos/themes.py",
     "ryos/tray.py",
     "ryos/single_instance.py",

@@ -38,6 +38,13 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
+from ryos.qtui.stylesheet import (  # noqa: E402
+    REQUIRED_KEYS as QSS_REQUIRED_KEYS,
+    MissingPaletteKeys,
+    missing_keys as qss_missing_keys,
+    stylesheet as qss,
+    stylesheet_for as qss_for,
+)
 from ryos.grouping import (  # noqa: E402
     active_after_delete, active_after_rename, unique_clone_name,
     validate_group_name,
@@ -6295,3 +6302,93 @@ class TestGroupCrudRules(unittest.TestCase):
             self.assertNotIn(name, db.list_groups())
             db.clone_group("Build", name)
         self.assertEqual(len(db.list_groups()), 5)
+
+
+class TestQtStylesheet(unittest.TestCase):
+    """The Qt stylesheet generator.
+
+    Pure: a function of the palette, with no Qt import, so it runs in this
+    suite alongside everything else. Whether the generated CSS actually reaches
+    real widgets is a separate question, answered by tests/qt_smoke.py --
+    Qt parses QSS leniently and drops bad rules silently, so valid-looking text
+    is not proof.
+    """
+
+    def _all_seeds(self):
+        seeds = dict(SEEDS)
+        for pid, _label, seed in load_presets():
+            seeds[pid] = seed
+        gallery = Path(__file__).resolve().parents[1] / "theme-gallery"
+        for fp in sorted(gallery.glob("*.json")):
+            data = json.loads(fp.read_text(encoding="utf-8"))
+            if isinstance(data.get("seed"), dict):
+                seeds.setdefault(fp.stem, data["seed"])
+        return seeds
+
+    def test_every_shipped_theme_generates(self):
+        for name, seed in sorted(self._all_seeds().items()):
+            with self.subTest(theme=name):
+                css = qss(build_palette(seed))
+                self.assertIn("QPushButton", css)
+                self.assertNotIn("None", css)
+
+    def test_a_missing_key_raises_rather_than_emitting_a_hole(self):
+        # CSS with a hole in it leaves the widget on Qt's default theme, which
+        # on a dark palette is dark-on-dark: easy to miss, unusable in practice.
+        with self.assertRaises(MissingPaletteKeys):
+            qss({"bg": "#000000"})
+
+    def test_the_error_names_what_is_missing(self):
+        try:
+            qss({"bg": "#000000"})
+        except MissingPaletteKeys as e:
+            self.assertIn("card_bg", str(e))
+        else:
+            self.fail("no error raised")
+
+    def test_missing_keys_reports_in_declaration_order(self):
+        gaps = qss_missing_keys({})
+        self.assertEqual(gaps, list(QSS_REQUIRED_KEYS))
+
+    def test_a_full_palette_has_no_gaps(self):
+        self.assertEqual(qss_missing_keys(build_palette(SEEDS["dark"])), [])
+
+    def test_the_palette_values_actually_appear(self):
+        pal = build_palette(SEEDS["dark"])
+        css = qss(pal)
+        for key in ("bg", "card_bg", "accent", "btn_run_bg", "out_bg"):
+            with self.subTest(key=key):
+                self.assertIn(pal[key], css, f"{key} never reached the CSS")
+
+    def test_two_themes_produce_different_css(self):
+        light = qss(build_palette(SEEDS["light"]))
+        dark = qss(build_palette(SEEDS["dark"]))
+        self.assertNotEqual(light, dark)
+
+    def test_generation_is_deterministic(self):
+        pal = build_palette(SEEDS["dark"])
+        self.assertEqual(qss(pal), qss(pal))
+
+    def test_disabled_state_is_styled_at_all(self):
+        # Issue #7's rule, carried into Qt: a disabled control must not look
+        # like a working one.
+        css = qss(build_palette(SEEDS["dark"]))
+        self.assertIn("QPushButton:disabled", css)
+
+    def test_braces_balance(self):
+        # An unbalanced brace makes Qt drop everything after it, silently.
+        css = qss(build_palette(SEEDS["dark"]))
+        self.assertEqual(css.count("{"), css.count("}"))
+
+    def test_no_stray_format_placeholders(self):
+        css = qss(build_palette(SEEDS["dark"]))
+        self.assertNotIn("{c[", css)
+
+    def test_stylesheet_for_rejects_an_unknown_theme(self):
+        with self.assertRaises(KeyError):
+            qss_for("no-such-theme")
+
+    def test_stylesheet_for_works_on_the_built_ins(self):
+        for name in ("light", "dark"):
+            with self.subTest(theme=name):
+                self.assertIn("QMainWindow", qss_for(name))
