@@ -30,6 +30,7 @@ from ..runner import run_subprocess
 from ..dragdrop import (MOVE_TO_GROUP, REORDER, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
+from .. import outputpanel
 from ..grouping import (active_after_delete, active_after_rename,
                         bucket_by_group, unique_clone_name,
                         validate_group_name)
@@ -2755,17 +2756,8 @@ class RYOSApp(_BaseWindow):
     def _append_output(self, text: str, tag: str | None = None, tab_key: str | None = None):
         max_lines = self._settings.get("max_output_lines", 2000)
         scroll = self._settings.get("auto_scroll_output", True)
-        if tab_key is not None:
-            # Background job: always write to its own tab + "all"
-            keys = [tab_key] if tab_key in self._output_tabs else []
-            if "all" in self._output_tabs and tab_key != "all":
-                keys.append("all")
-        else:
-            if not self._active_tab_key or self._active_tab_key not in self._output_tabs:
-                return
-            keys = [self._active_tab_key]
-            if self._active_tab_key != "all" and "all" in self._output_tabs:
-                keys.append("all")
+        keys = outputpanel.target_tabs(tab_key, self._active_tab_key,
+                                       self._output_tabs)
         for k in keys:
             out_text = self._output_tabs[k]["text"]
             out_text.configure(state="normal")
@@ -2773,8 +2765,9 @@ class RYOSApp(_BaseWindow):
             # by tag rather than needing a second buffer.
             out_text.insert(tk.END, text, tag or "stdout")
             line_count = int(out_text.index(tk.END).split(".")[0]) - 1
-            if line_count > max_lines:
-                out_text.delete("1.0", f"{line_count - max_lines + 1}.0")
+            drop = outputpanel.overflow_lines(line_count, max_lines)
+            if drop:
+                out_text.delete("1.0", f"{drop + 1}.0")
             if scroll:
                 out_text.see(tk.END)
         self._schedule_output_search_refresh()

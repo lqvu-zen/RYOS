@@ -38,8 +38,8 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
-from ryos import (marquee, pipelinesteps, scriptform,  # noqa: E402
-                  settings_schema, themeform, verdict)
+from ryos import (marquee, outputpanel, pipelinesteps,  # noqa: E402
+                  scriptform, settings_schema, themeform, verdict)
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -5776,6 +5776,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/cards.py": "imports PySide6; same reason as qtui/widgets.py",
         "ryos/qtui/dialogs.py": "imports PySide6; same reason",
         "ryos/qtui/pipeline.py": "imports PySide6; same reason",
+        "ryos/qtui/shell.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -6927,3 +6928,92 @@ class TestVerdict(unittest.TestCase):
     def test_a_verdict_is_immutable(self):
         with self.assertRaises(Exception):
             verdict.PROCEED.kind = "nope"
+
+
+class TestOutputRouting(unittest.TestCase):
+    """Where a line of output goes, and when the buffer is trimmed.
+
+    Decided inline while writing into a Tk Text widget, so neither rule could
+    be tested without a display. Extracted for the Qt shell (phase 2.6).
+    """
+
+    OPEN = ("all", "job:1", "job:2")
+
+    def test_a_job_writes_to_its_own_tab_and_the_mirror(self):
+        self.assertEqual(
+            outputpanel.target_tabs("job:1", "job:2", self.OPEN),
+            ["job:1", "all"])
+
+    def test_a_job_reaches_its_tab_even_while_another_is_in_front(self):
+        # Background jobs keep writing wherever the user is looking.
+        self.assertIn("job:1",
+                      outputpanel.target_tabs("job:1", "all", self.OPEN))
+
+    def test_the_mirror_is_never_written_twice(self):
+        # A job whose own tab *is* the mirror must not get two copies.
+        self.assertEqual(outputpanel.target_tabs("all", "all", self.OPEN),
+                         ["all"])
+
+    def test_a_closed_job_tab_still_reaches_the_mirror(self):
+        # Closing the tab of a running job must not discard the rest of its
+        # output; the mirror is what makes that safe.
+        self.assertEqual(
+            outputpanel.target_tabs("job:gone", "all", self.OPEN), ["all"])
+
+    def test_untagged_text_goes_to_whatever_is_in_front(self):
+        self.assertEqual(outputpanel.target_tabs(None, "job:2", self.OPEN),
+                         ["job:2", "all"])
+
+    def test_untagged_text_is_dropped_when_its_tab_has_gone(self):
+        self.assertEqual(outputpanel.target_tabs(None, "job:gone", self.OPEN),
+                         [])
+
+    def test_untagged_text_is_dropped_with_no_active_tab(self):
+        self.assertEqual(outputpanel.target_tabs(None, None, self.OPEN), [])
+
+    def test_no_mirror_means_only_the_job_tab(self):
+        self.assertEqual(
+            outputpanel.target_tabs("job:1", "job:1", ("job:1",)), ["job:1"])
+
+    def test_routing_never_repeats_a_key(self):
+        for tab_key in (None, "all", "job:1", "job:gone"):
+            for active in (None, "all", "job:1", "job:gone"):
+                with self.subTest(tab_key=tab_key, active=active):
+                    keys = outputpanel.target_tabs(tab_key, active, self.OPEN)
+                    self.assertEqual(len(keys), len(set(keys)))
+
+    # -- the buffer cap ----------------------------------------------------
+    def test_a_buffer_within_the_cap_is_not_trimmed(self):
+        self.assertEqual(outputpanel.overflow_lines(50, 100), 0)
+
+    def test_a_buffer_exactly_at_the_cap_is_not_trimmed(self):
+        self.assertEqual(outputpanel.overflow_lines(100, 100), 0)
+
+    def test_the_overflow_is_the_excess(self):
+        self.assertEqual(outputpanel.overflow_lines(150, 100), 50)
+
+    def test_a_zero_cap_means_no_limit_not_keep_nothing(self):
+        # The reading that does not silently erase everything the user ran.
+        self.assertEqual(outputpanel.overflow_lines(5000, 0), 0)
+
+    def test_a_negative_cap_also_means_no_limit(self):
+        self.assertEqual(outputpanel.overflow_lines(5000, -1), 0)
+
+    # -- section visibility ------------------------------------------------
+    def test_an_empty_section_always_shows(self):
+        # It is holding an empty-state placeholder; hiding the header would
+        # leave that floating with nothing to explain it.
+        self.assertTrue(outputpanel.section_is_visible(
+            query_active=True, has_cards=False, any_match=False))
+
+    def test_a_section_shows_when_no_search_is_active(self):
+        self.assertTrue(outputpanel.section_is_visible(
+            query_active=False, has_cards=True, any_match=False))
+
+    def test_a_section_hides_when_a_search_excludes_everything_in_it(self):
+        self.assertFalse(outputpanel.section_is_visible(
+            query_active=True, has_cards=True, any_match=False))
+
+    def test_a_section_shows_when_something_in_it_matches(self):
+        self.assertTrue(outputpanel.section_is_visible(
+            query_active=True, has_cards=True, any_match=True))

@@ -97,6 +97,7 @@ files = [
     "ryos/pipelinesteps.py",
     "ryos/verdict.py",
     "ryos/themeform.py",
+    "ryos/outputpanel.py",
     "ryos/themes.py",
     "ryos/tray.py",
     "ryos/single_instance.py",
