@@ -12,13 +12,12 @@ from ..history import format_run_row, header_row, summarize
 from ..scheduling import (CATCH_UP_ALL, CATCH_UP_ONCE, CATCH_UP_SKIP, DAILY,
                           INTERVAL, SPEC_TYPES, WEEKLY, next_occurrence,
                           normalize_spec, preview)
-from .. import scriptform
+from .. import scriptform, settings_schema
 from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
     _CORNER_LABEL_TO_VAL,
     _CORNER_VAL_TO_LABEL,
-    _SETTINGS_DEFAULTS,
 )
 from ..startup import _set_startup, _startup_enabled
 from ..quickrun import _is_inside
@@ -1480,27 +1479,17 @@ class AdvancedOptionsDialog(tk.Toplevel):
                      _clear_log_file, width=14).pack(anchor="w", pady=(6, 0))
 
     def _save(self):
-        try:
-            max_lines = max(100, int(self._max_lines.get() or 100))
-        except ValueError:
-            max_lines = _SETTINGS_DEFAULTS["max_output_lines"]
-        try:
-            max_parallel = max(0, int(self._max_parallel.get() or 0))
-        except ValueError:
-            max_parallel = _SETTINGS_DEFAULTS["max_parallel_jobs"]
-        try:
-            launcher_release = max(0, int(self._launcher_release.get() or 0))
-        except ValueError:
-            launcher_release = _SETTINGS_DEFAULTS["launcher_release_seconds"]
-        try:
-            win_w = max(400, int(self._win_width.get()  or 540))
-            win_h = max(300, int(self._win_height.get() or 640))
-        except ValueError:
-            win_w, win_h = 540, 640
-        try:
-            qr_max_files = max(0, int(self._qr_index_max_files.get() or 0))
-        except ValueError:
-            qr_max_files = _SETTINGS_DEFAULTS["quick_run_index_max_files"]
+        # Bounds, fallbacks and what an empty box means all live in
+        # ryos.settings_schema, so the Qt options form coerces identically.
+        _num = settings_schema.coerce
+        max_lines = _num("max_output_lines", self._max_lines.get())
+        max_parallel = _num("max_parallel_jobs", self._max_parallel.get())
+        launcher_release = _num("launcher_release_seconds",
+                                self._launcher_release.get())
+        win_w = _num("window_width", self._win_width.get())
+        win_h = _num("window_height", self._win_height.get())
+        qr_max_files = _num("quick_run_index_max_files",
+                            self._qr_index_max_files.get())
         # Fold in any extension left typed-but-not-added so it isn't lost.
         self._qr_add()
         qr_exts = list(self._qr_exts)  # already normalized; blank = index everything

@@ -38,7 +38,7 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
-from ryos import marquee, scriptform  # noqa: E402
+from ryos import marquee, scriptform, settings_schema  # noqa: E402
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -6583,3 +6583,126 @@ class TestScriptFormValidation(unittest.TestCase):
             scriptform.resolve_path(base_dir="", relative="sub/a.py",
                                     absolute="/x/a.py", use_relative=True),
             "/x/a.py")
+
+
+class TestSettingsSchema(unittest.TestCase):
+    """What each setting is, and how a form's raw text becomes a value.
+
+    The numeric parsing was five near-identical try/except blocks inside
+    AdvancedOptionsDialog._save, unreachable without a display. Extracted for
+    the Qt options form (phase 2.4).
+    """
+
+    def test_every_field_has_a_real_default(self):
+        for f in settings_schema.FIELDS:
+            with self.subTest(key=f.key):
+                self.assertIn(f.key, _SETTINGS_DEFAULTS)
+
+    def test_every_field_lands_on_a_known_tab(self):
+        for f in settings_schema.FIELDS:
+            with self.subTest(key=f.key):
+                self.assertIn(f.tab, settings_schema.TABS)
+
+    def test_every_field_has_a_known_kind(self):
+        kinds = {settings_schema.BOOL, settings_schema.INT,
+                 settings_schema.TEXT, settings_schema.CHOICE,
+                 settings_schema.LIST}
+        for f in settings_schema.FIELDS:
+            with self.subTest(key=f.key):
+                self.assertIn(f.kind, kinds)
+
+    def test_keys_are_unique(self):
+        keys = [f.key for f in settings_schema.FIELDS]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_a_choice_fields_default_is_one_of_its_choices(self):
+        # Otherwise coerce() would reject the default and loop back to it.
+        for f in settings_schema.FIELDS:
+            if f.kind == settings_schema.CHOICE:
+                with self.subTest(key=f.key):
+                    self.assertIn(f.default, f.choices)
+
+    def test_every_tab_has_fields(self):
+        for tab in settings_schema.TABS:
+            with self.subTest(tab=tab):
+                self.assertTrue(settings_schema.fields_for(tab))
+
+    def test_only_internal_settings_are_left_out(self):
+        # A new user-facing setting should be added to the schema; these four
+        # are driven by their own controls or written by the app itself.
+        uncovered = set(_SETTINGS_DEFAULTS) - set(settings_schema.BY_KEY)
+        self.assertEqual(uncovered, {"accent_color", "last_group", "theme",
+                                     "window_geometry"})
+
+    # -- coercion ----------------------------------------------------------
+    def test_a_number_below_the_minimum_is_clamped(self):
+        self.assertEqual(settings_schema.coerce("max_output_lines", "50"), 100)
+
+    def test_a_negative_job_cap_becomes_zero(self):
+        self.assertEqual(settings_schema.coerce("max_parallel_jobs", "-3"), 0)
+
+    def test_unparseable_text_falls_back_to_the_default(self):
+        self.assertEqual(settings_schema.coerce("max_output_lines", "abc"),
+                         _SETTINGS_DEFAULTS["max_output_lines"])
+
+    def test_an_unknown_choice_falls_back_to_the_default(self):
+        self.assertEqual(settings_schema.coerce("card_size", "huge"), "medium")
+
+    def test_a_valid_choice_is_kept(self):
+        self.assertEqual(settings_schema.coerce("card_size", "large"), "large")
+
+    def test_a_list_setting_survives_a_list(self):
+        self.assertEqual(
+            settings_schema.coerce("quick_run_index_extensions", [".py"]),
+            [".py"])
+
+    def test_a_list_setting_rejects_a_non_list(self):
+        self.assertEqual(
+            settings_schema.coerce("quick_run_index_extensions", "nope"),
+            _SETTINGS_DEFAULTS["quick_run_index_extensions"])
+
+    def test_an_unknown_key_passes_through(self):
+        self.assertEqual(settings_schema.coerce("not_a_setting", "x"), "x")
+
+    def test_coerce_all_leaves_unknown_keys_alone(self):
+        got = settings_schema.coerce_all({"card_size": "huge", "other": 1})
+        self.assertEqual(got, {"card_size": "medium", "other": 1})
+
+    def test_coerce_never_raises(self):
+        for f in settings_schema.FIELDS:
+            for raw in (None, "", "  ", "abc", -999, 10 ** 9, [], {}):
+                with self.subTest(key=f.key, raw=raw):
+                    settings_schema.coerce(f.key, raw)
+
+    # -- parity with the hand-written code it replaced ---------------------
+    def test_an_empty_box_behaves_exactly_as_it_used_to(self):
+        # The old dialog wrote `int(entry.get() or N)`, where N was sometimes
+        # the minimum rather than the default: clearing "Maximum parallel
+        # jobs" meant *no limit*, not "back to 10". Preserved deliberately.
+        for key, before in (("max_output_lines", 100),
+                            ("max_parallel_jobs", 0),
+                            ("launcher_release_seconds", 0),
+                            ("window_width", 540),
+                            ("window_height", 640),
+                            ("quick_run_index_max_files", 0)):
+            with self.subTest(key=key):
+                self.assertEqual(settings_schema.coerce(key, ""), before)
+
+    def test_clamping_matches_the_old_bounds(self):
+        for key, raw, want in (("max_output_lines", "1", 100),
+                               ("max_parallel_jobs", "-1", 0),
+                               ("launcher_release_seconds", "-5", 0),
+                               ("window_width", "10", 400),
+                               ("window_height", "10", 300),
+                               ("quick_run_index_max_files", "-1", 0)):
+            with self.subTest(key=key):
+                self.assertEqual(settings_schema.coerce(key, raw), want)
+
+    def test_the_dialog_no_longer_hand_parses_these(self):
+        # The point of the module is one implementation; a reintroduced
+        # try/except in _save would silently diverge from the Qt form.
+        src = (Path(__file__).resolve().parents[1]
+               / "ryos/ui/dialogs.py").read_text(encoding="utf-8")
+        self.assertIn("settings_schema.coerce", src)
+        self.assertNotIn("max(100, int(", src)
+        self.assertNotIn("max(400, int(", src)
