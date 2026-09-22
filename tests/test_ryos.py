@@ -39,7 +39,7 @@ from ryos.quickrun_index import (  # noqa: E402
     save_disk_index, scan,
 )
 from ryos import (marquee, pipelinesteps, scriptform,  # noqa: E402
-                  settings_schema)
+                  settings_schema, themeform, verdict)
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -57,7 +57,7 @@ from ryos.dragdrop import (  # noqa: E402
 )
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
-    ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
+    ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEED_KEYS, SEEDS, THEME_LABELS,
     THEME_MODES, THEME_ORDER, _REFERENCE_FALLBACK, _rel_luminance, _shade,
     build_palette, contrast_ratio, contrast_warnings, delete_user_theme,
     disabled_pair, disambiguate_custom_labels, export_theme, import_theme,
@@ -6813,3 +6813,117 @@ class TestPipelineStepRows(unittest.TestCase):
         self.assertTrue(pipelinesteps.first_step_cannot_run_with_previous(0))
         self.assertTrue(pipelinesteps.first_step_cannot_run_with_previous(None))
         self.assertFalse(pipelinesteps.first_step_cannot_run_with_previous(1))
+
+
+class TestThemeFormRules(unittest.TestCase):
+    """Naming a custom theme, and what an advanced row shows.
+
+    These sat inside ThemeEditorDialog between colorchooser and messagebox
+    calls. Extracted for the Qt editor (phase 2.5).
+    """
+
+    def _seed(self):
+        return dict(SEEDS["dark"])
+
+    def test_a_named_valid_theme_saves(self):
+        self.assertTrue(themeform.validate("Midnight", self._seed()).ok)
+
+    def test_a_blank_name_is_refused_as_a_warning(self):
+        check = themeform.validate("   ", self._seed())
+        self.assertFalse(check.ok)
+        self.assertEqual(check.severity, verdict.WARNING)
+
+    def test_a_taken_name_is_refused(self):
+        check = themeform.validate("Nord", self._seed(), taken=["Nord"])
+        self.assertFalse(check.ok)
+        self.assertIn("Nord", check.message)
+
+    def test_names_collide_case_insensitively(self):
+        # Two themes differing only in case are indistinguishable in the
+        # picker, and collide on disk on Windows.
+        self.assertFalse(themeform.validate("NORD", self._seed(),
+                                            taken=["nord"]).ok)
+
+    def test_the_name_is_trimmed_before_comparison(self):
+        self.assertFalse(themeform.validate("  Nord  ", self._seed(),
+                                            taken=["nord"]).ok)
+
+    def test_an_invalid_seed_is_refused_and_lists_the_problems(self):
+        seed = self._seed()
+        seed["accent"] = "not-a-colour"
+        check = themeform.validate("X", seed)
+        self.assertFalse(check.ok)
+        self.assertIn("accent", check.message)
+
+    def test_the_name_is_checked_before_the_seed(self):
+        # Telling someone their colours are wrong when they have not named the
+        # theme yet is the wrong first complaint.
+        seed = self._seed()
+        seed["accent"] = "nope"
+        self.assertEqual(themeform.validate("", seed).severity,
+                         verdict.WARNING)
+
+    # -- advanced rows -----------------------------------------------------
+    def test_an_unset_advanced_row_shows_the_derived_colour(self):
+        # Never an empty swatch for a colour the app will nonetheless paint.
+        seed = self._seed()
+        key = ADVANCED_KEYS[0][0]
+        seed.pop(key, None)
+        self.assertEqual(themeform.effective_color(seed, key),
+                         build_palette(seed)[key])
+        self.assertFalse(themeform.is_overridden(seed, key))
+
+    def test_an_overridden_advanced_row_shows_the_override(self):
+        seed = self._seed()
+        key = ADVANCED_KEYS[0][0]
+        seed[key] = "#123456"
+        self.assertEqual(themeform.effective_color(seed, key), "#123456")
+        self.assertTrue(themeform.is_overridden(seed, key))
+
+    def test_a_malformed_override_falls_back_to_derived(self):
+        seed = self._seed()
+        key = ADVANCED_KEYS[0][0]
+        seed[key] = "banana"
+        self.assertEqual(themeform.effective_color(seed, key),
+                         build_palette(seed)[key])
+        self.assertFalse(themeform.is_overridden(seed, key))
+
+    def test_every_required_seed_colour_has_a_label(self):
+        for key in SEED_KEYS:
+            with self.subTest(key=key):
+                self.assertIn(key, themeform.COLOR_LABELS)
+
+
+class TestVerdict(unittest.TestCase):
+    """The shared verdict shape.
+
+    Three modules had grown their own copy of this -- the launch preflight,
+    the script form and the theme editor -- which is how wording and severity
+    conventions drift apart.
+    """
+
+    def test_proceed_is_ok_and_asks_nothing(self):
+        self.assertTrue(verdict.PROCEED.ok)
+        self.assertFalse(verdict.PROCEED.needs_confirmation)
+
+    def test_a_refusal_is_neither_ok_nor_a_question(self):
+        v = verdict.refuse("T", "M")
+        self.assertFalse(v.ok)
+        self.assertFalse(v.needs_confirmation)
+
+    def test_a_refusal_defaults_to_error(self):
+        self.assertEqual(verdict.refuse("T", "M").severity, verdict.ERROR)
+
+    def test_a_confirmation_is_a_question_not_a_refusal(self):
+        v = verdict.confirm("T", "M?")
+        self.assertTrue(v.needs_confirmation)
+        self.assertFalse(v.ok)
+
+    def test_the_script_form_uses_the_shared_shape(self):
+        # scriptform.Check is an alias; if it diverged again the two would
+        # drift on severity names.
+        self.assertIs(scriptform.Check, verdict.Verdict)
+
+    def test_a_verdict_is_immutable(self):
+        with self.assertRaises(Exception):
+            verdict.PROCEED.kind = "nope"

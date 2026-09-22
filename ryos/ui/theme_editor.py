@@ -11,23 +11,16 @@ validated (name, seed) back to the caller, which persists and applies it.
 import tkinter as tk
 from tkinter import colorchooser, messagebox
 
+from .. import themeform
 from ..themes import (
     ADVANCED_KEYS, SEED_KEYS, build_palette, contrast_warnings, is_hex_color,
-    validate_seed,
 )
 from .placement import offset_from_parent
 from .theme import C, _flat_button
 
-# Human labels for each required seed colour, in display order.
-_COLOR_LABELS = {
-    "bg":         "Background",
-    "surface":    "Cards & dialogs",
-    "border":     "Borders & dividers",
-    "header_bg":  "Header bar",
-    "accent":     "Accent",
-    "text":       "Primary text",
-    "text_muted": "Secondary text",
-}
+# Labels live in ryos.themeform so both editors name the colours
+# identically.
+_COLOR_LABELS = themeform.COLOR_LABELS
 
 
 class ThemeEditorDialog(tk.Toplevel):
@@ -154,9 +147,7 @@ class ThemeEditorDialog(tk.Toplevel):
     # ---------------------------------------------------------------- helpers
     def _effective(self, key: str) -> str:
         """The colour shown for an advanced key: explicit override or derived."""
-        if is_hex_color(self._seed.get(key)):
-            return self._seed[key]
-        return build_palette(self._seed)[key]
+        return themeform.effective_color(self._seed, key)
 
     # ---------------------------------------------------------------- actions
     def _choose(self, key: str) -> None:
@@ -229,18 +220,9 @@ class ThemeEditorDialog(tk.Toplevel):
 
     def _save(self) -> None:
         name = self._name_var.get().strip()
-        if not name:
-            messagebox.showerror("Theme editor", "Give the theme a name.", parent=self)
-            return
-        if name.lower() in self._taken:
-            messagebox.showerror("Theme editor",
-                                 f"A theme named “{name}” already exists.", parent=self)
-            return
-        problems = validate_seed(self._seed)
-        if problems:
-            messagebox.showerror("Theme editor",
-                                 "Fix these first:\n• " + "\n• ".join(problems),
-                                 parent=self)
+        check = themeform.validate(name, self._seed, self._taken)
+        if not check.ok:
+            messagebox.showerror(check.title, check.message, parent=self)
             return
         if self._on_save is not None:
             self._on_save(name, dict(self._seed))

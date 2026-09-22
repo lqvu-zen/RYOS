@@ -13,39 +13,23 @@ a network share that is offline), so the form asks rather than refusing.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-
 from .quickrun import _is_inside
 
-OK = "ok"            # save it
-REFUSE = "refuse"    # cannot be saved; say why
-CONFIRM = "confirm"  # probably wrong; ask before saving
+from . import verdict
+from .verdict import CONFIRM, OK, REFUSE
+
+#: Re-exported so callers can compare `check.kind` without importing two
+#: modules. Named in __all__ because they are otherwise unused here, and a
+#: lint pass would remove them.
+__all__ = ["CONFIRM", "Check", "OK", "REFUSE", "resolve_path", "validate"]
+
+#: The verdict shape is shared with the theme editor and the launch preflight
+#: (ryos/verdict.py). Kept under the name this module already used, so its
+#: callers and tests read unchanged.
+Check = verdict.Verdict
 
 
-@dataclass(frozen=True)
-class Check:
-    """The verdict on a form, with the words to show for it.
-
-    `severity` matters only for REFUSE: "warning" for a field the user has
-    simply not filled in yet, "error" for something actually wrong with what
-    they entered. The caller maps it onto its own dialog.
-    """
-
-    kind: str
-    title: str = ""
-    message: str = ""
-    severity: str = "error"
-
-    @property
-    def ok(self) -> bool:
-        return self.kind == OK
-
-    @property
-    def needs_confirmation(self) -> bool:
-        return self.kind == CONFIRM
-
-
-_OK = Check(OK)
+_OK = verdict.PROCEED
 
 
 def resolve_path(*, base_dir: str, relative: str, absolute: str,
@@ -77,14 +61,14 @@ def validate(*, name: str, path: str, interpreter: str, base_dir: str = "",
     interpreter = interpreter.strip()
 
     if not name:
-        return Check(REFUSE, "Missing Info", "Name is required.",
-                     severity="warning")
+        return verdict.refuse("Missing Info", "Name is required.",
+                              verdict.WARNING)
     if not path and not interpreter:
         # An interpreter with no path is legitimate -- "python -c" style
         # entries, and launchers that are nothing but a command.
-        return Check(REFUSE, "Missing Info",
-                     "Path is required when no interpreter is set.",
-                     severity="warning")
+        return verdict.refuse(
+            "Missing Info", "Path is required when no interpreter is set.",
+            verdict.WARNING)
     if path and base_dir and not _is_inside(path, base_dir):
         return Check(REFUSE, "Path outside group directory",
                      f"The path\n{path}\nis outside the base directory for "
