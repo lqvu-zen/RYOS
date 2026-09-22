@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from .. import cardstyle
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
@@ -36,73 +37,46 @@ def set_card_size(size: str) -> None:
     _CARD_SIZE = size
 
 
-# Padding table: (padx, pady) for card body frame.
-_CARD_PADDING = {
-    # (compact, size): (padx, pady)
-    (False, "small"):  (12,  6),
-    (False, "medium"): (12, 10),
-    (False, "large"):  (12, 14),
-    (True,  "small"):  (10,  2),
-    (True,  "medium"): (10,  4),
-    (True,  "large"):  (10,  8),
-}
-
-# Hover dwell before the compact-mode detail preview appears.
-_PREVIEW_DELAY_MS = 1000
-
-# Row metrics: (row_pady, row_ipady, stop_pady, name_pady)
-_ROW_METRICS = {
-    (False, "small"):  (3, 1, 3, 4),
-    (False, "medium"): (5, 2, 5, 6),
-    (False, "large"):  (8, 4, 7, 9),
-    (True,  "small"):  (1, 0, 1, 1),
-    (True,  "medium"): (2, 0, 2, 2),
-    (True,  "large"):  (5, 2, 4, 5),
-}
+# The tables live in ryos.cardstyle so the Qt cards lay out identically; this
+# module only holds the current mode and size and binds them in.
+_PREVIEW_DELAY_MS = cardstyle.PREVIEW_DELAY_MS
 
 
 def card_padding() -> tuple[int, int]:
-    """Return (padx, pady) for the card body frame based on current mode and size."""
-    return _CARD_PADDING.get((_COMPACT, _CARD_SIZE), _CARD_PADDING[(_COMPACT, "medium")])
+    """(padx, pady) for the card body frame, at the current mode and size."""
+    return cardstyle.card_padding(_COMPACT, _CARD_SIZE)
 
 
 def row_metrics() -> tuple[int, int, int, int]:
-    """Return (row_pady, row_ipady, stop_pady, name_pady) for running rows and card packing."""
-    return _ROW_METRICS.get((_COMPACT, _CARD_SIZE), _ROW_METRICS[(_COMPACT, "medium")])
+    """(row_pady, row_ipady, stop_pady, name_pady) at the current mode and size."""
+    return cardstyle.row_metrics(_COMPACT, _CARD_SIZE)
 
 
 def run_button_style(last_status: str | None) -> tuple:
     """(text, fg, active_fg, bg, hover, tooltip) for a card's Run button.
 
-    After a failure the Run button *becomes* the retry: same action, so it
-    needs no second control, and unlike a status badge the button strip is
-    present in every card mode and size. The ↻ glyph rather than ✕ keeps it
-    from reading as a stop button in the red.
+    The rule — after a failure the Run button *becomes* the retry — lives in
+    `cardstyle.run_button()`, which returns palette keys. This resolves them
+    against the live Tk palette; the Qt cards resolve the same keys through
+    their stylesheet, so the two cannot drift.
 
     `active_fg` is the ink for the hovered fill and is not always `fg`: the
     retry state sits on `error`, a mid red, but hovers to `btn_stop_active`,
-    a near-black one, and no single ink clears both. Returned here rather
-    than derived at the call sites so it is covered by this function's tests
-    and cannot drift between the two cards.
+    a near-black one, and no single ink clears both.
     """
-    if last_status == "error":
-        return ("↻", C["error_fg"], ink_on(C["btn_stop_active"]),
-                C["error"], C["btn_stop_active"],
-                "Last run failed — click to run it again")
-    return ("▶", C["btn_run_fg"], ink_on(C["btn_run_hover"]),
-            C["btn_run_bg"], C["btn_run_hover"], "Run")
+    spec = cardstyle.run_button(last_status)
+    return (spec.glyph, C[spec.fg_key], ink_on(C[spec.hover_fg_key]),
+            C[spec.bg_key], C[spec.hover_key], spec.tooltip)
 
 
 def _status_badge(parent, status: str) -> "tk.Label | None":
     """The last-run status chip. Reports only — the Run button carries retry."""
-    if status == "error":
-        return tk.Label(parent, text="✕ Failed", bg=C["error"],
-                        fg=C["error_fg"], font=("Segoe UI", 8, "bold"),
-                        padx=5, pady=1)
-    if status == "ok":
-        return tk.Label(parent, text="✓ OK", bg=C["ok"], fg=C["ok_fg"],
-                        font=("Segoe UI", 8, "bold"), padx=5, pady=1)
-    return None
+    spec = cardstyle.status_badge(status)
+    if spec is None:
+        return None
+    return tk.Label(parent, text=spec.text, bg=C[spec.bg_key],
+                    fg=C[spec.fg_key], font=("Segoe UI", 8, "bold"),
+                    padx=5, pady=1)
 
 
 def _add_highlight_menu(menu: tk.Menu, current, on_pick) -> tk.Menu:

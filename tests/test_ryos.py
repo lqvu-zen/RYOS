@@ -5770,6 +5770,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/widgets.py": "imports PySide6, an optional dependency the "
                                 "typecheck job does not install; checked by "
                                 "tests/qt_smoke.py instead",
+        "ryos/qtui/cards.py": "imports PySide6; same reason as qtui/widgets.py",
     }
 
     def _scope(self):
