@@ -92,6 +92,7 @@ files = [
     "ryos/qtui/stylesheet.py",
     "ryos/marquee.py",
     "ryos/cardstyle.py",
+    "ryos/scriptform.py",
     "ryos/themes.py",
     "ryos/tray.py",
     "ryos/single_instance.py",

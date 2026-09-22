@@ -38,7 +38,7 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
-from ryos import marquee  # noqa: E402
+from ryos import marquee, scriptform  # noqa: E402
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -6478,3 +6478,108 @@ class TestMarquee(unittest.TestCase):
                 src = fp.read_text(encoding="utf-8")
                 self.assertIn("marquee", src,
                               f"{rel} does not use ryos.marquee")
+
+
+class TestScriptFormValidation(unittest.TestCase):
+    """The add/edit-script form's rules.
+
+    These lived inside ScriptDialog._save between messagebox calls, so they
+    had no coverage at all -- dialogs.py is the largest untested module in the
+    project (register item 5). Extracted for the Qt port (phase 2.4).
+    """
+
+    def test_a_complete_form_saves(self):
+        self.assertTrue(scriptform.validate(
+            name="build", path="/x/build.py", interpreter="").ok)
+
+    def test_a_missing_name_is_refused(self):
+        check = scriptform.validate(name="  ", path="/x/a.py", interpreter="")
+        self.assertEqual(check.kind, scriptform.REFUSE)
+        self.assertIn("Name", check.message)
+
+    def test_a_missing_name_is_a_warning_not_an_error(self):
+        # An empty field the user has not reached yet is not a red-icon event.
+        check = scriptform.validate(name="", path="/x/a.py", interpreter="")
+        self.assertEqual(check.severity, "warning")
+
+    def test_a_path_is_required_without_an_interpreter(self):
+        check = scriptform.validate(name="x", path="", interpreter="")
+        self.assertEqual(check.kind, scriptform.REFUSE)
+        self.assertIn("Path", check.message)
+
+    def test_an_interpreter_alone_is_enough(self):
+        # "python -c" style entries and bare-command launchers have no path.
+        self.assertTrue(scriptform.validate(
+            name="x", path="", interpreter="python").ok)
+
+    def test_a_path_outside_the_group_base_dir_is_refused(self):
+        check = scriptform.validate(
+            name="x", path="/elsewhere/a.py", interpreter="",
+            base_dir="/base", group_name="G")
+        self.assertEqual(check.kind, scriptform.REFUSE)
+        self.assertIn("outside", check.title.lower())
+        self.assertIn("G", check.message)
+
+    def test_a_path_inside_the_base_dir_is_fine(self):
+        self.assertTrue(scriptform.validate(
+            name="x", path=os.path.join("/base", "sub", "a.py"),
+            interpreter="", base_dir="/base", group_name="G").ok)
+
+    def test_a_missing_file_asks_rather_than_refusing(self):
+        # The file may not be written yet, or live on an offline share.
+        check = scriptform.validate(name="x", path="/x/a.py", interpreter="",
+                                    path_exists=False)
+        self.assertEqual(check.kind, scriptform.CONFIRM)
+        self.assertTrue(check.needs_confirmation)
+        self.assertFalse(check.ok)
+
+    def test_a_missing_file_is_not_questioned_when_an_interpreter_is_set(self):
+        # The interpreter may create it, or the path may be its argument.
+        self.assertTrue(scriptform.validate(
+            name="x", path="/x/a.py", interpreter="python",
+            path_exists=False).ok)
+
+    def test_the_base_dir_rule_beats_the_existence_question(self):
+        # A path in the wrong place is wrong whether or not it exists; asking
+        # "save anyway?" about it would be the wrong question.
+        check = scriptform.validate(
+            name="x", path="/elsewhere/a.py", interpreter="",
+            base_dir="/base", group_name="G", path_exists=False)
+        self.assertEqual(check.kind, scriptform.REFUSE)
+
+    def test_required_fields_are_checked_before_the_path_location(self):
+        check = scriptform.validate(name="", path="/elsewhere/a.py",
+                                    interpreter="", base_dir="/base")
+        self.assertIn("Name", check.message)
+
+    # -- resolve_path ------------------------------------------------------
+    def test_an_absolute_path_is_used_as_typed(self):
+        self.assertEqual(
+            scriptform.resolve_path(base_dir="/base", relative="",
+                                    absolute="  /x/a.py ", use_relative=False),
+            "/x/a.py")
+
+    def test_a_relative_path_joins_the_base_dir(self):
+        got = scriptform.resolve_path(base_dir=os.sep + "base",
+                                      relative="sub/a.py", absolute="",
+                                      use_relative=True)
+        self.assertEqual(got, os.path.normpath(os.sep + "base/sub/a.py"))
+
+    def test_a_leading_separator_does_not_escape_the_base_dir(self):
+        # "/sub/a.py" in the relative box means "under the base", not "at the
+        # filesystem root" -- os.path.join would otherwise discard the base.
+        got = scriptform.resolve_path(base_dir=os.sep + "base",
+                                      relative="/sub/a.py", absolute="",
+                                      use_relative=True)
+        self.assertEqual(got, os.path.normpath(os.sep + "base/sub/a.py"))
+
+    def test_an_empty_relative_box_yields_no_path(self):
+        self.assertEqual(
+            scriptform.resolve_path(base_dir="/base", relative="   ",
+                                    absolute="", use_relative=True), "")
+
+    def test_relative_mode_is_ignored_without_a_base_dir(self):
+        self.assertEqual(
+            scriptform.resolve_path(base_dir="", relative="sub/a.py",
+                                    absolute="/x/a.py", use_relative=True),
+            "/x/a.py")

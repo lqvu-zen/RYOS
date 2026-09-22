@@ -12,6 +12,7 @@ from ..history import format_run_row, header_row, summarize
 from ..scheduling import (CATCH_UP_ALL, CATCH_UP_ONCE, CATCH_UP_SKIP, DAILY,
                           INTERVAL, SPEC_TYPES, WEEKLY, next_occurrence,
                           normalize_spec, preview)
+from .. import scriptform
 from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
@@ -498,25 +499,23 @@ class ScriptDialog(tk.Toplevel):
         group_name = self.e_group.get().strip()
         base_dir = self.group_base_dirs.get(group_name, "")
 
-        if base_dir and self.e_relpath.winfo_ismapped():
-            relpath = self.e_relpath.get().strip().lstrip(os.sep + "/")
-            path = os.path.normpath(os.path.join(base_dir, relpath)) if relpath else ""
-        else:
-            path = self.e_path.get().strip()
+        path = scriptform.resolve_path(
+            base_dir=base_dir,
+            relative=self.e_relpath.get(),
+            absolute=self.e_path.get(),
+            use_relative=bool(base_dir) and self.e_relpath.winfo_ismapped())
 
-        if not name or (not path and not interp):
-            messagebox.showwarning("Missing Info", "Name is required. Path is required when no interpreter is set.", parent=self)
+        check = scriptform.validate(
+            name=name, path=path, interpreter=interp, base_dir=base_dir,
+            group_name=group_name,
+            path_exists=bool(path) and Path(path).exists())
+        if check.kind == scriptform.REFUSE:
+            show = (messagebox.showwarning if check.severity == "warning"
+                    else messagebox.showerror)
+            show(check.title, check.message, parent=self)
             return
-        if path:
-            if base_dir and not _is_inside(path, base_dir):
-                messagebox.showerror(
-                    "Path outside group directory",
-                    f"The path\n{path}\nis outside the base directory for group '{group_name}':\n{base_dir}",
-                    parent=self,
-                )
-                return
-        if not interp and not Path(path).exists():
-            if not messagebox.askyesno("Warning", f"File not found:\n{path}\n\nSave anyway?", parent=self):
+        if check.needs_confirmation:
+            if not messagebox.askyesno(check.title, check.message, parent=self):
                 return
 
         temp_param = int(self.temp_param_var.get())

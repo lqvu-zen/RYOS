@@ -860,8 +860,25 @@ def check_launcher_auto_release(app):
         app._refresh_cards()
 
 
+def _isolated_db():
+    """Point RYOSApp at a throwaway database for the duration of the run.
+
+    Without this the smoke checks run against the maintainer's real
+    scripts.db: they create groups, scripts and pipelines and rely on their
+    own `finally` blocks to clean up, so any check that fails part-way leaves
+    junk in live data. Returns the temp path so the caller can remove it.
+    """
+    import ryos.db as dbmod
+
+    path = Path(tempfile.mkdtemp()) / "smoke.db"
+    appmod.ScriptDB = lambda *a, **k: dbmod.ScriptDB(path)
+    return path
+
+
 def main():
     print("RYOS GUI smoke starting...")
+    db_path = _isolated_db()
+    print(f"  (using a throwaway database: {db_path})")
     app = RYOSApp()
     app._settings["auto_check_update"] = False  # avoid network in CI
     try:
