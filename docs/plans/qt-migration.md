@@ -61,6 +61,23 @@ Each step follows the `JobController` pattern: UI-free, callbacks injected at co
 
 **Target: `app.py` 3,145 → ~1,940 lines**, with ~1,200 lines becoming toolkit-free core.
 
+> **Outcome, 2026-09-22 — the target was wrong, and the work was still worth doing.**
+> `app.py` finished at **3,014**, down 131 lines rather than ~1,200. The seam table
+> measures whole methods, but only their *decisions* move; the widget code they were
+> tangled in stays until the port. What Phase 1 actually bought:
+>
+> - **66 new tests** over logic that was previously unreachable without a display —
+>   drag rules, the Quick Run index, launch preflight, group CRUD.
+> - **One new UI-free module** (`quickrun_index.py`, 232 lines) and three grown
+>   (`dragdrop.py`, `grouping.py`, `job_controller.py`).
+> - **Quick Run's first end-to-end check**, closing most of register item 2.
+> - **Four real bugs found in the extractions themselves**, each caught by a test
+>   written against the newly-reachable code: `clear()` resetting the disk gate,
+>   `SKIP_DIRS` duplicated instead of shared, every refusal routed through
+>   `showerror`, and the drag threshold.
+>
+> Judge phases like these by what becomes testable, not by the line count.
+
 **Exit criteria:** 655+ tests green, ruff clean, mypy clean on both platforms, GUI smoke exit 0, and a release cut at the end so the extractions reach users on Tk. Nothing in Phase 1 is staked on the port happening.
 
 ## Phase 2 — Port alongside
@@ -108,8 +125,8 @@ Expensive to reverse, so take them before writing the shell.
 | 1.1 Drag & drop extraction | **done 2026-09-22** (`8f589fb`) — rules extracted, 16 tests; `app.py` unchanged in size, see note |
 | 1.2 Quick Run controller | **done 2026-09-22** — index extracted to `quickrun_index.py`, 17 tests, +1 smoke check; `app.py` 3,145 → 3,033 |
 | 1.3 Jobs into `JobController` | **done 2026-09-22** — launch preflight extracted as LaunchPlan/Refusal, 13 tests; `app.py` 3,033 → 3,017 |
-| 1.4 Group controller | not started |
-| 2.x Qt port | blocked on Phase 1 |
+| 1.4 Group controller | **done 2026-09-22** — CRUD rules into `grouping.py`, 20 tests; `app.py` 3,017 → 3,014 |
+| 2.x Qt port | **unblocked** — Phase 1 complete 2026-09-22 |
 
 **1.1 note — the extraction did not shrink ** (3,145 → 3,153). The decisions were small; what they were tangled in is widget code that stays until the port. Expect the same shape from 1.2–1.4: the line count falls less than the seam table suggests, because that table measures whole methods while only their decisions move. The real win is UI-free, tested rules that survive the rewrite — treat the ~1,200-line target as optimistic.
 
