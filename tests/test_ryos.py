@@ -38,6 +38,10 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
+from ryos.grouping import (  # noqa: E402
+    active_after_delete, active_after_rename, unique_clone_name,
+    validate_group_name,
+)
 from ryos.dragdrop import (  # noqa: E402
     MOVE_TO_GROUP, NOTHING, REORDER, compute_insertion, first_rect_at,
     passed_threshold, resolve_drop, shows_insertion_indicator,
@@ -6191,3 +6195,103 @@ class TestLaunchPlanning(unittest.TestCase):
                                       candidate_groups=["G"])
         plan.steps.clear()
         self.assertEqual(len(self.db.list_pipeline_steps(pid)), 1)
+
+
+class TestGroupCrudRules(unittest.TestCase):
+    """Naming a clone, and which tab survives a rename or delete.
+
+    These sat between dialog calls in RYOSApp, so they were unreachable
+    without a display. Extracted for the Qt migration (phase 1.4).
+    """
+
+    # -- clone naming ------------------------------------------------------
+    def test_the_first_copy_is_unnumbered(self):
+        self.assertEqual(unique_clone_name("Build", ["Build"]),
+                         "Build (copy)")
+
+    def test_the_second_copy_starts_at_two(self):
+        # Not "(copy 1)": the unnumbered name is already the first copy.
+        self.assertEqual(
+            unique_clone_name("Build", ["Build", "Build (copy)"]),
+            "Build (copy 2)")
+
+    def test_numbering_skips_what_exists(self):
+        existing = ["Build", "Build (copy)", "Build (copy 2)", "Build (copy 3)"]
+        self.assertEqual(unique_clone_name("Build", existing), "Build (copy 4)")
+
+    def test_numbering_fills_a_gap_it_finds(self):
+        # (copy 2) is free even though (copy 3) is taken; take the free one
+        # rather than always appending past the highest.
+        existing = ["Build", "Build (copy)", "Build (copy 3)"]
+        self.assertEqual(unique_clone_name("Build", existing), "Build (copy 2)")
+
+    def test_cloning_something_never_cloned_needs_no_number(self):
+        self.assertEqual(unique_clone_name("Fresh", ["Other"]), "Fresh (copy)")
+
+    def test_clone_naming_accepts_any_iterable(self):
+        self.assertEqual(unique_clone_name("B", {"B", "B (copy)"}),
+                         "B (copy 2)")
+
+    # -- name validation ---------------------------------------------------
+    def test_a_cancelled_dialog_is_not_a_validation_failure(self):
+        self.assertIsNone(validate_group_name(None, ["A"]))
+
+    def test_a_blank_name_is_rejected(self):
+        self.assertIsNotNone(validate_group_name("   ", ["A"]))
+
+    def test_a_duplicate_name_is_rejected_and_says_which(self):
+        problem = validate_group_name("A", ["A"])
+        self.assertIsNotNone(problem)
+        self.assertIn("A", problem)
+
+    def test_a_duplicate_is_caught_after_trimming(self):
+        # "  A  " and "A" are the same group as far as anyone is concerned.
+        self.assertIsNotNone(validate_group_name("  A  ", ["A"]))
+
+    def test_a_free_name_passes(self):
+        self.assertIsNone(validate_group_name("B", ["A"]))
+
+    # -- which tab stays selected -----------------------------------------
+    def test_renaming_the_open_group_follows_it(self):
+        self.assertEqual(active_after_rename("A", "A", "B"), "B")
+
+    def test_renaming_another_group_leaves_the_selection(self):
+        self.assertEqual(active_after_rename("A", "C", "D"), "A")
+
+    def test_renaming_while_in_the_all_view_stays_there(self):
+        self.assertIsNone(active_after_rename(None, "A", "B"))
+
+    def test_deleting_the_open_group_falls_back_to_the_first(self):
+        self.assertEqual(active_after_delete("A", "A", ["B", "C"]), "B")
+
+    def test_deleting_the_last_group_falls_back_to_the_all_view(self):
+        # Never a name that no longer exists -- that renders an empty tab.
+        self.assertIsNone(active_after_delete("A", "A", []))
+
+    def test_deleting_another_group_leaves_the_selection(self):
+        self.assertEqual(active_after_delete("A", "B", ["A", "C"]), "A")
+
+    def test_deleting_while_in_the_all_view_stays_there(self):
+        self.assertIsNone(active_after_delete(None, "A", ["B"]))
+
+    # -- the two rules together, against a real database -------------------
+    def test_delete_never_selects_a_group_that_is_gone(self):
+        db = _make_db()
+        for name in ("A", "B", "C"):
+            db.create_group(name)
+        active = "B"
+        for victim in ("B", "A", "C"):
+            db.delete_group(victim)
+            active = active_after_delete(active, victim, db.list_groups())
+            self.assertIn(active, list(db.list_groups()) + [None],
+                          f"selected {active!r}, which no longer exists")
+        self.assertIsNone(active)
+
+    def test_a_clone_name_is_always_free_in_a_real_database(self):
+        db = _make_db()
+        db.create_group("Build")
+        for _ in range(4):
+            name = unique_clone_name("Build", db.list_groups())
+            self.assertNotIn(name, db.list_groups())
+            db.clone_group("Build", name)
+        self.assertEqual(len(db.list_groups()), 5)

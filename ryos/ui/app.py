@@ -30,7 +30,9 @@ from ..runner import run_subprocess
 from ..dragdrop import (MOVE_TO_GROUP, REORDER, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from ..grouping import bucket_by_group
+from ..grouping import (active_after_delete, active_after_rename,
+                        bucket_by_group, unique_clone_name,
+                        validate_group_name)
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
 from ..search import compute_hint, find_spans, matches, normalize_query, step_match
@@ -838,8 +840,8 @@ class RYOSApp(_BaseWindow):
         if new and new.strip() and new.strip() != old:
             self.db.rename_group(old, new.strip())
             _log.info("Group renamed: %s -> %s", old, new.strip())
-            if self._active_group == old:
-                self._active_group = new.strip()
+            self._active_group = active_after_rename(self._active_group, old,
+                                                     new.strip())
             self._refresh()
 
     def _delete_group(self, name: str):
@@ -850,27 +852,22 @@ class RYOSApp(_BaseWindow):
         ):
             self.db.delete_group(name)
             _log.info("Group deleted: %s", name)
-            if self._active_group == name:
-                remaining = self.db.list_groups()
-                self._active_group = remaining[0] if remaining else None
+            self._active_group = active_after_delete(
+                self._active_group, name, self.db.list_groups())
             self._refresh()
 
     def _clone_group(self, source: str):
-        existing = self.db.list_groups()
-        default = f"{source} (copy)"
-        if default in existing:
-            n = 2
-            while f"{source} (copy {n})" in existing:
-                n += 1
-            default = f"{source} (copy {n})"
+        default = unique_clone_name(source, self.db.list_groups())
         name = simpledialog.askstring("Clone Group", f"Name for clone of '{source}':",
                                       initialvalue=default, parent=self)
-        if not name or not name.strip():
+        if name is None:
+            return
+        problem = validate_group_name(name, self.db.list_groups())
+        if problem:
+            if name.strip():          # blank means they just cleared the box
+                messagebox.showerror("Clone Group", problem, parent=self)
             return
         name = name.strip()
-        if name in self.db.list_groups():
-            messagebox.showerror("Clone Group", f"A group named '{name}' already exists.", parent=self)
-            return
         scripts_n, pipes_n = self.db.clone_group(source, name)
         _log.info("Group cloned: %s -> %s (%d scripts, %d pipelines)", source, name, scripts_n, pipes_n)
         self._active_group = name
