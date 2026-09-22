@@ -29,7 +29,9 @@ from ..interpreter import (build_command, build_run_spec, detect_interpreter,
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
-from ..dragdrop import compute_insertion, first_rect_at
+from ..dragdrop import (MOVE_TO_GROUP, REORDER, compute_insertion,
+                        first_rect_at, passed_threshold, resolve_drop,
+                        shows_insertion_indicator)
 from ..grouping import bucket_by_group
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
@@ -1655,8 +1657,9 @@ class RYOSApp(_BaseWindow):
     def _card_drag_motion(self, event, card: "ScriptCard"):
         if self._drag_card is None:
             return
-        if (abs(event.x_root - self._drag_start_x) < self._DRAG_THRESHOLD and
-                abs(event.y_root - self._drag_start_y) < self._DRAG_THRESHOLD):
+        if not passed_threshold(event.x_root - self._drag_start_x,
+                                event.y_root - self._drag_start_y,
+                                self._DRAG_THRESHOLD):
             return
         if self._drag_ghost is None:
             self._create_drag_ghost(card)
@@ -1718,7 +1721,9 @@ class RYOSApp(_BaseWindow):
             active_list = [c for c in fav_pool if c._group_name == g]
         else:
             active_list = self._pipeline_cards if is_pipeline_drag else self._cards
-        if (self._active_group is None and not in_favs) or not active_list:
+        if not shows_insertion_indicator(in_favorites=in_favs,
+                                         active_group=self._active_group,
+                                         has_targets=bool(active_list)):
             if self._drag_indicator:
                 self._drag_indicator.place_forget()
             return
@@ -1751,40 +1756,42 @@ class RYOSApp(_BaseWindow):
         card = self._drag_card
         if card is None:
             return
-        if self._drag_ghost is not None:
-            is_pipeline = isinstance(card, PipelineCard)
-            if self._drag_target_group is not None:
-                if self._drag_target_group != card._group_name:
-                    if is_pipeline:
-                        self.db.move_pipeline_to_group(card.pipeline_id, self._drag_target_group)
-                    else:
-                        self.db.move_to_group(card.script_id, self._drag_target_group)
-                        if not is_pipeline:
-                            target_base = self.db.get_group_base_dir(self._drag_target_group)
-                            rec = self.db.get(card.script_id)
-                            if target_base and rec and not _is_inside(rec[2], target_base):
-                                self.status_var.set(
-                                    f"Warning: script moved to '{self._drag_target_group}' but its path is outside the group's base directory."
-                                )
-                    self._refresh()
-            elif card in (self._fav_pipeline_cards if is_pipeline else self._fav_cards):
-                # Favorites reorder: within the card's own group's shared order.
-                if is_pipeline:
-                    self.db.reorder_pipeline(card.pipeline_id, card._group_name,
-                                             self._drag_insert_before)
-                else:
-                    self.db.reorder_script(card.script_id, card._group_name,
-                                           self._drag_insert_before)
-                self._refresh_cards()
-            elif self._active_group is not None:
-                if is_pipeline:
-                    self.db.reorder_pipeline(card.pipeline_id, self._active_group,
-                                             self._drag_insert_before)
-                else:
-                    self.db.reorder_script(card.script_id, self._active_group,
-                                           self._drag_insert_before)
-                self._refresh_cards()
+        is_pipeline = isinstance(card, PipelineCard)
+        fav_pool = self._fav_pipeline_cards if is_pipeline else self._fav_cards
+        # A ghost only exists once the drag passed the threshold, so its
+        # absence is what distinguishes a drag from a plain click.
+        action = resolve_drop(dragged=self._drag_ghost is not None,
+                              target_group=self._drag_target_group,
+                              card_group=card._group_name,
+                              in_favorites=card in fav_pool,
+                              active_group=self._active_group,
+                              insert_before=self._drag_insert_before)
+        if action.kind == MOVE_TO_GROUP:
+            self._move_card_to_group(card, is_pipeline, action.group)
+            self._refresh()
+        elif action.kind == REORDER:
+            if is_pipeline:
+                self.db.reorder_pipeline(card.pipeline_id, action.group,
+                                         action.before_id)
+            else:
+                self.db.reorder_script(card.script_id, action.group,
+                                       action.before_id)
+            self._refresh_cards()
         self._clear_drag_state()
+
+    def _move_card_to_group(self, card, is_pipeline: bool, group: str) -> None:
+        """Move one card into another group, warning if the path escapes its base dir."""
+        if is_pipeline:
+            self.db.move_pipeline_to_group(card.pipeline_id, group)
+            return
+        self.db.move_to_group(card.script_id, group)
+        target_base = self.db.get_group_base_dir(group)
+        rec = self.db.get(card.script_id)
+        if target_base and rec and not _is_inside(rec[2], target_base):
+            self.status_var.set(
+                f"Warning: script moved to '{group}' but its path is outside "
+                f"the group's base directory."
+            )
 
     def _clear_drag_state(self):
         if self._drag_ghost:

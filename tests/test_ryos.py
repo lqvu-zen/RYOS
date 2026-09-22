@@ -32,6 +32,10 @@ sys.modules.setdefault("tkinter.simpledialog", mock.MagicMock())
 
 from ryos.db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
+from ryos.dragdrop import (  # noqa: E402
+    MOVE_TO_GROUP, NOTHING, REORDER, compute_insertion, first_rect_at,
+    passed_threshold, resolve_drop, shows_insertion_indicator,
+)
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
     ADVANCED_KEYS, BUILTIN_THEMES, PRESETS_DIR, REFERENCE, SEEDS, THEME_LABELS,
@@ -2658,7 +2662,6 @@ class TestSearchFilterRefreshRealTk(unittest.TestCase):
         )
 
 
-from ryos.dragdrop import compute_insertion, first_rect_at  # noqa: E402
 
 
 class TestComputeInsertion(unittest.TestCase):
@@ -5760,3 +5763,115 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         both = sorted(self._scope() & set(self.EXCLUDED))
         self.assertEqual(both, [],
                          f"listed in [tool.mypy] but also marked excluded: {both}")
+
+
+class TestDragDropRules(unittest.TestCase):
+    """The decisions a drag makes, now that they are out of RYOSApp.
+
+    These were four nested branches inside _card_drag_release, reachable only
+    through real Tk events -- which this environment cannot synthesise, so they
+    had no direct coverage at all. Extracted for the Qt migration
+    (docs/plans/qt-migration.md phase 1.1); the rules outlive the toolkit.
+    """
+
+    def test_a_click_is_not_a_drag(self):
+        # No ghost means the press never passed the threshold. Reordering on a
+        # plain click would shuffle the list every time someone runs a script.
+        action = resolve_drop(dragged=False, target_group="B", card_group="A",
+                              in_favorites=False, active_group="A",
+                              insert_before=7)
+        self.assertEqual(action.kind, NOTHING)
+
+    def test_dropping_on_another_tab_moves_the_card(self):
+        action = resolve_drop(dragged=True, target_group="B", card_group="A",
+                              in_favorites=False, active_group="A",
+                              insert_before=None)
+        self.assertEqual((action.kind, action.group), (MOVE_TO_GROUP, "B"))
+
+    def test_dropping_on_its_own_tab_does_nothing(self):
+        # Not a redundant write -- a no-op, so the card does not jump.
+        action = resolve_drop(dragged=True, target_group="A", card_group="A",
+                              in_favorites=False, active_group="A",
+                              insert_before=None)
+        self.assertEqual(action.kind, NOTHING)
+
+    def test_a_favorite_reorders_within_its_own_group(self):
+        # Favorites span groups, so the reorder targets the card's group, not
+        # whichever tab happens to be open.
+        action = resolve_drop(dragged=True, target_group=None, card_group="A",
+                              in_favorites=True, active_group="B",
+                              insert_before=3)
+        self.assertEqual((action.kind, action.group, action.before_id),
+                         (REORDER, "A", 3))
+
+    def test_a_favorite_reorders_even_in_the_all_view(self):
+        action = resolve_drop(dragged=True, target_group=None, card_group="A",
+                              in_favorites=True, active_group=None,
+                              insert_before=None)
+        self.assertEqual((action.kind, action.group), (REORDER, "A"))
+
+    def test_a_normal_card_reorders_within_the_open_group(self):
+        action = resolve_drop(dragged=True, target_group=None, card_group="A",
+                              in_favorites=False, active_group="A",
+                              insert_before=5)
+        self.assertEqual((action.kind, action.group, action.before_id),
+                         (REORDER, "A", 5))
+
+    def test_a_normal_card_cannot_reorder_in_the_all_view(self):
+        # The All view interleaves groups, so there is no single order to
+        # insert into.
+        action = resolve_drop(dragged=True, target_group=None, card_group="A",
+                              in_favorites=False, active_group=None,
+                              insert_before=2)
+        self.assertEqual(action.kind, NOTHING)
+
+    def test_none_before_id_means_append(self):
+        action = resolve_drop(dragged=True, target_group=None, card_group="A",
+                              in_favorites=False, active_group="A",
+                              insert_before=None)
+        self.assertEqual((action.kind, action.before_id), (REORDER, None))
+
+    # -- the threshold gate ------------------------------------------------
+    def test_threshold_needs_only_one_axis(self):
+        self.assertTrue(passed_threshold(0, 9, 8))
+        self.assertTrue(passed_threshold(9, 0, 8))
+        self.assertTrue(passed_threshold(-9, 0, 8))
+
+    def test_threshold_is_inclusive(self):
+        self.assertTrue(passed_threshold(8, 0, 8))
+        self.assertFalse(passed_threshold(7, 7, 8))
+
+    def test_no_movement_is_not_a_drag(self):
+        self.assertFalse(passed_threshold(0, 0, 8))
+
+    # -- when an insertion line makes sense ---------------------------------
+    def test_indicator_hidden_with_nothing_to_drop_against(self):
+        self.assertFalse(shows_insertion_indicator(
+            in_favorites=True, active_group="A", has_targets=False))
+
+    def test_indicator_hidden_for_a_normal_card_in_the_all_view(self):
+        self.assertFalse(shows_insertion_indicator(
+            in_favorites=False, active_group=None, has_targets=True))
+
+    def test_indicator_shown_for_a_favorite_in_the_all_view(self):
+        self.assertTrue(shows_insertion_indicator(
+            in_favorites=True, active_group=None, has_targets=True))
+
+    def test_indicator_shown_inside_a_group(self):
+        self.assertTrue(shows_insertion_indicator(
+            in_favorites=False, active_group="A", has_targets=True))
+
+    def test_indicator_agrees_with_the_drop_rule(self):
+        # If no indicator is shown, releasing must not reorder -- otherwise the
+        # card moves somewhere the user was never shown.
+        for in_favs in (True, False):
+            for group in ("A", None):
+                with self.subTest(in_favorites=in_favs, active_group=group):
+                    shown = shows_insertion_indicator(
+                        in_favorites=in_favs, active_group=group,
+                        has_targets=True)
+                    action = resolve_drop(
+                        dragged=True, target_group=None, card_group="A",
+                        in_favorites=in_favs, active_group=group,
+                        insert_before=1)
+                    self.assertEqual(shown, action.kind == REORDER)
