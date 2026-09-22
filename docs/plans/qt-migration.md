@@ -163,7 +163,13 @@ needs Qt's network stack (the GitHub update check uses `urllib`) or SVG.
 | 1.2 Quick Run controller | **done 2026-09-22** — index extracted to `quickrun_index.py`, 17 tests, +1 smoke check; `app.py` 3,145 → 3,033 |
 | 1.3 Jobs into `JobController` | **done 2026-09-22** — launch preflight extracted as LaunchPlan/Refusal, 13 tests; `app.py` 3,033 → 3,017 |
 | 1.4 Group controller | **done 2026-09-22** — CRUD rules into `grouping.py`, 20 tests; `app.py` 3,017 → 3,014 |
-| 2.x Qt port | **unblocked** — Phase 1 complete 2026-09-22 |
+| 2.0 Packaging measured | **done 2026-09-22** — 23.3 MB zipped when tuned; see Packaging |
+| 2.1 `theme.py` → QSS | **done 2026-09-22** — `qtui/stylesheet.py`, 13 unit tests + `tests/qt_smoke.py` |
+| 2.2 `widgets.py` | not started |
+| 2.3 `cards.py` | not started |
+| 2.4 `dialogs.py` | not started |
+| 2.5 `pipeline.py`, `theme_editor.py` | not started |
+| 2.6 The shell | not started |
 
 **1.1 note — the extraction did not shrink ** (3,145 → 3,153). The decisions were small; what they were tangled in is widget code that stays until the port. Expect the same shape from 1.2–1.4: the line count falls less than the seam table suggests, because that table measures whole methods while only their decisions move. The real win is UI-free, tested rules that survive the rewrite — treat the ~1,200-line target as optimistic.
 
