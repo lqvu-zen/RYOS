@@ -5771,6 +5771,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
                                 "typecheck job does not install; checked by "
                                 "tests/qt_smoke.py instead",
         "ryos/qtui/cards.py": "imports PySide6; same reason as qtui/widgets.py",
+        "ryos/qtui/dialogs.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
