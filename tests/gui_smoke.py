@@ -242,6 +242,89 @@ def check_spacer_does_not_look_like_a_button(app):
         app._refresh_cards()
 
 
+
+def check_quick_run_bar(app):
+    """Drive the real Quick Run bar: build it, index, suggest, submit.
+
+    Quick Run was the last major subsystem with no end-to-end check
+    (docs/tech-debt-2026-09-21.md item 2). quickrun.py was well covered as pure
+    logic, but nothing exercised the bar itself.
+
+    One limit, and it is pre-existing rather than a property of this check:
+    the background index posts results back with `after(0, ...)` from a worker
+    thread, and this harness pumps `update()` manually instead of running
+    `mainloop()`, so that hop raises "main thread is not in main loop" here.
+    Verified against the pre-extraction code too -- it behaves identically. So
+    the index is primed synchronously below rather than waited for, and the
+    async hop stays covered by TestQuickRunIndexController instead. Qt's
+    cross-thread signals would remove the caveat entirely.
+    """
+    from ryos.quickrun_index import scan
+
+    group = "smoke-qr-grp"
+    tmpdir = tempfile.mkdtemp()
+    for name in ("alpha_tool.py", "beta_tool.py", "notes.txt"):
+        Path(tmpdir, name).write_text("print('qr')\n", encoding="utf-8")
+
+    prev_group = app._active_group
+    try:
+        app.db.create_group(group, base_dir=tmpdir)
+        app._settings["quick_run_enabled"] = True
+        # The bar is built with the group banner, which only renders for the
+        # active group.
+        app._active_group = group
+        app._refresh()
+        app.update_idletasks()
+        app.update()
+
+        bar = app._quick_run_bars.get(group)
+        assert bar is not None, "no Quick Run bar was built for the group"
+        assert bar["base_dir"] == tmpdir, (
+            f"bar points at {bar['base_dir']!r}, not the group's base dir")
+
+        app._show_quick_run_bar(group)
+        app.update_idletasks()
+        app.update()
+        assert app._quick_run_open_group == group, "bar did not open"
+
+        # Prime the index synchronously (see the docstring), then check the
+        # app's own suggestion path reads it.
+        entries, _ = scan(tmpdir, set(), 5000)
+        app._qr_index._on_index_ready(tmpdir, time.monotonic(), entries)
+        hits = app._quick_run_compute_suggestions(tmpdir, "alpha")
+        assert any("alpha_tool" in h for h in hits), (
+            f"'alpha' did not suggest alpha_tool.py: {hits}")
+
+        # The bar's own refresh path must run against a real widget.
+        bar["var"].set("alpha")
+        bar["is_placeholder"][0] = False
+        app._quick_run_refresh_suggestions(group)
+        app.update_idletasks()
+        app.update()
+
+        # Submitting creates the script and launches it.
+        before = {r[0] for r in app.db.list_all()}
+        bar["var"].set("beta_tool.py")
+        bar["is_placeholder"][0] = False
+        app._quick_run_submit(group)
+        pump_until(app, lambda: not app._jobreg.all(), timeout=TIMEOUT)
+        made = [r for r in app.db.list_all()
+                if r[0] not in before and r[1] == "beta_tool"]
+        assert made, "submitting did not create the script"
+        print(f"  [ok] quick-run: bar built, suggested {len(hits)}, "
+              f"submit created and ran '{made[0][1]}'")
+    finally:
+        app._active_group = prev_group
+        for rec in list(app.db.list_all()):
+            if (rec[8] or "") == group:
+                app.db.delete(rec[0])
+        try:
+            app.db.delete_group(group)
+        except Exception:
+            pass
+        app._refresh()
+
+
 def check_card_run(app):
     """Run a script the way a user does: through the card's own Run button.
 
@@ -787,6 +870,7 @@ def main():
         check_card_button_alignment(app)
         check_spacer_does_not_look_like_a_button(app)
         check_card_run(app)
+        check_quick_run_bar(app)
         check_failed_run_button_becomes_retry(app)
         check_run_history(app)
         check_output_search_and_filter(app)

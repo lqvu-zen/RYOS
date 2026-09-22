@@ -1,6 +1,5 @@
 """Main RYOS window: header, tabs, card list, output panel, and run engine."""
 import ctypes
-import hashlib
 import json
 import os
 import queue
@@ -36,11 +35,12 @@ from ..grouping import bucket_by_group
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
 from ..search import compute_hint, find_spans, matches, normalize_query, step_match
-from ..settings import QR_INDEX_DIR, _BASE, _PACKAGED, _load_settings, _save_settings
+from ..settings import _BASE, _PACKAGED, _load_settings, _save_settings
 from ..tray import TrayIcon
+from ..quickrun_index import QuickRunIndex
 from ..quickrun import (
-    _SKIP_DIRS, _is_inside, build_entry, deserialize_index, display_relpath, parse_input,
-    rank_suggestions, resolve, serialize_index, should_index,
+    _is_inside, display_relpath, parse_input,
+    resolve,
 )
 from ..job_controller import JobController
 from ..jobs import Job as _Job, JobRegistry, format_elapsed, split_by_capacity
@@ -70,56 +70,9 @@ _BaseWindow = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
 MAX_PARALLEL_JOBS = 10
 _QUICK_RUN_INDEX_TTL = 300.0  # fallback TTL (seconds) when the setting is missing
-_QR_INDEX_VERSION = 2  # on-disk index format; bump to invalidate older caches
 # How often due schedules are swept. 30s keeps a minute-granularity
 # schedule punctual without the tick itself becoming background load.
 SCHEDULE_TICK_MS = 30_000
-
-
-def _qr_index_path(base_dir: str) -> Path:
-    key = os.path.normcase(os.path.normpath(base_dir))
-    h = hashlib.md5(key.encode()).hexdigest()[:12]
-    return QR_INDEX_DIR / f"qr_index_{h}.json"
-
-
-def _quick_run_load_disk_index(base_dir: str, ttl: float) -> "tuple[float, list] | None":
-    import json as _json
-    import time
-    try:
-        t0 = time.monotonic()
-        raw = _qr_index_path(base_dir).read_text(encoding="utf-8")
-        data = _json.loads(raw)
-        # Reject caches written by an older format (e.g. the verbose 4-tuple
-        # layout); they'll simply be rebuilt in the compact form.
-        if data.get("v") != _QR_INDEX_VERSION:
-            return None
-        # Hash-collision guard: verify the stored base_dir matches exactly.
-        if data["base_dir"] != base_dir:
-            return None
-        # Reject if the on-disk index is older than the configured TTL.
-        if time.time() - data["ts"] >= ttl:
-            return None
-        paths = deserialize_index(data["paths"])
-        _log.info("Quick Run index: loaded %d entries from disk in %.0f ms (%s)",
-                  len(paths), (time.monotonic() - t0) * 1000, base_dir)
-        return (data["ts"], paths)
-    except (OSError, ValueError, KeyError, TypeError) as e:
-        _log.debug("Quick Run index cache unreadable for %s: %s", base_dir, e)
-        return None
-
-
-def _quick_run_save_disk_index(base_dir: str, wall_ts: float, paths: list) -> None:
-    import json as _json
-    try:
-        dest = _qr_index_path(base_dir)
-        tmp = Path(str(dest) + ".tmp")
-        payload = {"v": _QR_INDEX_VERSION, "base_dir": base_dir, "ts": wall_ts,
-                   "paths": serialize_index(paths)}
-        tmp.write_text(_json.dumps(payload), encoding="utf-8")
-        # Atomic swap so a concurrent read never sees a partial file.
-        os.replace(tmp, dest)
-    except OSError as e:
-        _log.debug("Could not write Quick Run index cache for %s: %s", base_dir, e)
 
 
 class RYOSApp(_BaseWindow):
@@ -199,13 +152,16 @@ class RYOSApp(_BaseWindow):
         self._quick_run_buttons: dict[str, tk.Button] = {}
         self._quick_run_bars: dict[str, dict] = {}
         self._quick_run_open_group: str | None = None
-        self._quick_run_index_cache: dict[str, tuple[float, list]] = {}
-        self._quick_run_disk_loaded: set[str] = set()
+        # Quick Run's file index lives in a UI-free controller; this class
+        # only supplies the thread hop and the refresh callback.
+        self._qr_index = QuickRunIndex(
+            schedule=lambda fn: self.after(0, fn),
+            on_ready=self._quick_run_on_index_ready,
+        )
         # Base dirs with a load/scan worker in flight, so we never spawn a
         # second full-tree scan while one is already running (a scan can take
         # many seconds on a large tree, and every keystroke would otherwise
         # kick off another).
-        self._quick_run_indexing: set[str] = set()
 
         groups = self.db.list_groups()
         if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
@@ -2228,101 +2184,26 @@ class RYOSApp(_BaseWindow):
         self.status_var.set(f"Launched: {job.name}")
         self._finish_job(job)
 
-    def _quick_run_get_index(self, base_dir: str) -> list | None:
-        import time
-        ttl = self._settings.get("quick_run_index_ttl", _QUICK_RUN_INDEX_TTL)
-        cached = self._quick_run_index_cache.get(base_dir)
-        if cached is not None:
-            if time.monotonic() - cached[0] > ttl:
-                self._quick_run_build_index_async(base_dir, try_disk=False)  # rebuild in background
-            return cached[1]  # return stale data while rebuild runs
-        # Nothing in memory yet. Build off-thread so reading a large on-disk
-        # cache — or a full rescan — never blocks the UI; the bar shows
-        # "Indexing files…" until _quick_run_on_index_ready posts results back.
-        # The disk-loaded gate is flipped here on the main thread so two rapid
-        # keystrokes can't both decide to read disk.
-        try_disk = base_dir not in self._quick_run_disk_loaded
-        if try_disk:
-            self._quick_run_disk_loaded.add(base_dir)
-        self._quick_run_build_index_async(base_dir, try_disk=try_disk)
-        return None
+    def _qr_index_args(self) -> dict:
+        """Index settings, snapshotted on the UI thread for the worker."""
+        return {
+            "ttl": self._settings.get("quick_run_index_ttl", _QUICK_RUN_INDEX_TTL),
+            "allowed_exts": {e.lower() for e in
+                             (self._settings.get("quick_run_index_extensions") or [])},
+            "max_files": self._settings.get("quick_run_index_max_files", 5000),
+        }
 
-    def _quick_run_build_index_async(self, base_dir: str, try_disk: bool = False) -> None:
-        import time
-        # Single-flight: if a load/scan for this base dir is already running,
-        # don't start another. Without this, every keystroke during a slow scan
-        # would spawn its own full-tree scan and they'd pile up, each slowing
-        # the others down. Checked/mutated only on the main thread.
-        if base_dir in self._quick_run_indexing:
-            return
-        self._quick_run_indexing.add(base_dir)
-        # Snapshot settings on the main thread; the worker must never read
-        # shared settings state from its own thread.
-        ttl = self._settings.get("quick_run_index_ttl", _QUICK_RUN_INDEX_TTL)
-        allowed_exts = {e.lower() for e in (self._settings.get("quick_run_index_extensions") or [])}
-        max_files = self._settings.get("quick_run_index_max_files", 5000)
-
-        def _worker():
-            try:
-                # Prefer a fresh on-disk cache before walking the whole tree. A
-                # stale cache is still posted first (so the UI has something)
-                # before the rescan replaces it.
-                if try_disk:
-                    disk = _quick_run_load_disk_index(base_dir, ttl)
-                    if disk is not None:
-                        wall_ts, paths = disk
-                        age = time.time() - wall_ts
-                        mono_ts = time.monotonic() - age
-                        self.after(0, lambda: self._quick_run_on_index_ready(base_dir, mono_ts, paths))
-                        if age <= ttl:
-                            return  # cache still fresh; no rescan needed
-                paths = []
-                t0 = time.monotonic()
-                capped = False
-                # os.walk (not rglob) so we can prune skipped directories in
-                # place — rglob would still descend into and enumerate every
-                # file under node_modules/.git/etc. before we could discard it.
-                for root, dirs, files in os.walk(base_dir):
-                    dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
-                    for fn in files:
-                        if not should_index(fn, allowed_exts):
-                            continue
-                        full = os.path.join(root, fn)
-                        try:
-                            rel_str = os.path.relpath(full, base_dir)
-                        except ValueError:
-                            rel_str = fn
-                        paths.append(build_entry(rel_str, fn))
-                        if max_files and len(paths) >= max_files:
-                            capped = True
-                            break
-                    if capped:
-                        break
-                ts = time.monotonic()
-                wall_ts = time.time()
-                _log.info("Quick Run index: scanned %s -> %d entries in %.0f ms%s",
-                          base_dir, len(paths), (ts - t0) * 1000, " (capped)" if capped else "")
-                _quick_run_save_disk_index(base_dir, wall_ts, paths)
-                self.after(0, lambda: self._quick_run_on_index_ready(base_dir, ts, paths))
-            finally:
-                # Clear the in-flight flag on the main thread once fully done
-                # (covers both the fresh-disk early return and the rescan path).
-                self.after(0, lambda: self._quick_run_indexing.discard(base_dir))
-        threading.Thread(target=_worker, daemon=True).start()
-
-    def _quick_run_on_index_ready(self, base_dir: str, ts: float, paths: list) -> None:
-        self._quick_run_index_cache[base_dir] = (ts, paths)
+    def _quick_run_on_index_ready(self, base_dir: str) -> None:
+        """A background build finished: refresh whichever bar is showing it."""
         for gn, bar in self._quick_run_bars.items():
-            if bar.get("base_dir") == base_dir:
-                if self._quick_run_open_group == gn:
-                    self._quick_run_refresh_suggestions(gn)
+            if bar.get("base_dir") == base_dir and self._quick_run_open_group == gn:
+                self._quick_run_refresh_suggestions(gn)
 
     def _quick_run_compute_suggestions(self, base_dir: str, query: str) -> list:
-        max_n = self._settings.get("quick_run_max_suggestions", 10)
-        index = self._quick_run_get_index(base_dir)
-        if index is None:
-            return []
-        return rank_suggestions(index, query, max_n)
+        return self._qr_index.suggestions(
+            base_dir, query,
+            max_n=self._settings.get("quick_run_max_suggestions", 10),
+            **self._qr_index_args())
 
     def _quick_run_refresh_suggestions(self, group_name: str) -> None:
         if not self._settings.get("quick_run_autocomplete", True):
@@ -2342,8 +2223,7 @@ class RYOSApp(_BaseWindow):
             self._quick_run_hide_suggestions(group_name)
             return
         base_dir = bar["base_dir"]
-        cached = self._quick_run_index_cache.get(base_dir)
-        if cached is None:
+        if self._qr_index.cached(base_dir) is None:
             self._quick_run_show_suggestions(group_name, ["Indexing files…"])
             return
         items = self._quick_run_compute_suggestions(base_dir, head)
@@ -2496,7 +2376,7 @@ class RYOSApp(_BaseWindow):
         bar["entry"].focus_set()
         self._quick_run_open_group = group_name
         if self._settings.get("quick_run_autocomplete", True):
-            self._quick_run_get_index(bar["base_dir"])
+            self._qr_index.get(bar["base_dir"], **self._qr_index_args())
         btn = self._quick_run_buttons.get(group_name)
         if btn:
             try:
@@ -3044,7 +2924,7 @@ class RYOSApp(_BaseWindow):
         # disrupt running jobs, so the tab is disabled while any job is active.
         AdvancedOptionsDialog(self, self._settings, _apply,
                               on_appearance=self._apply_appearance,
-                              on_clear_qr_cache=self._quick_run_index_cache.clear,
+                              on_clear_qr_cache=self._qr_index.clear,
                               jobs_running=bool(self._jobreg))
 
     def _on_unmap(self, event):

@@ -270,6 +270,30 @@ Pure helpers behind the Quick Run bar. An index entry is the tuple
 
 ---
 
+## `ryos.quickrun_index`
+
+State around the Quick Run index. `quickrun.py` decides *what* to index and how
+to rank; this module owns the caches and the background rebuild. UI-free: the
+caller injects `schedule` (a function that runs its argument on the UI thread)
+and an optional `on_ready` callback.
+
+| Name | Returns | Purpose |
+| --- | --- | --- |
+| `index_path(base_dir)` | `Path` | Where that directory's on-disk cache lives. |
+| `load_disk_index(base_dir, ttl)` | `tuple[float, list] \| None` | Cached entries, or None if absent, stale, or written by an older `INDEX_VERSION`. |
+| `save_disk_index(base_dir, wall_ts, paths)` | — | Atomic write, so a concurrent read never sees a partial file. |
+| `scan(base_dir, allowed_exts, max_files)` | `tuple[list, bool]` | `(entries, capped)`. Uses `os.walk` rather than `rglob` so skipped directories are pruned in place. |
+| `QuickRunIndex.get(base_dir, *, ttl, allowed_exts, max_files)` | `list \| None` | Entries now, or None while the first build runs. Stale entries are returned immediately and refreshed in the background. |
+| `QuickRunIndex.suggestions(base_dir, query, *, max_n, …)` | `list` | Ranked matches, or `[]` while indexing. |
+| `QuickRunIndex.build_async(base_dir, …)` | — | Starts a background build, **single-flight** — without it every keystroke during a slow scan would spawn its own full-tree walk. |
+| `QuickRunIndex.cached(base_dir)` | `list \| None` | What is in memory, without triggering a build. |
+| `QuickRunIndex.is_indexing(base_dir)` / `.clear()` | | |
+
+Constants: `INDEX_VERSION` (bump to invalidate on-disk caches), `SKIP_DIRS`
+(shared with `quickrun.resolve()` so the two cannot disagree).
+
+---
+
 ## `ryos.settings`
 
 Resolves the per-user data directory and creates it on import.

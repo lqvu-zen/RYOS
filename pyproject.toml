@@ -71,6 +71,7 @@ files = [
     "ryos/interpreter.py",
     "ryos/settings.py",
     "ryos/quickrun.py",
+    "ryos/quickrun_index.py",
     "ryos/jobs.py",
     "ryos/runner.py",
     "ryos/job_controller.py",

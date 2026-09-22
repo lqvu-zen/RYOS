@@ -32,6 +32,12 @@ sys.modules.setdefault("tkinter.simpledialog", mock.MagicMock())
 
 from ryos.db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
+import time  # noqa: E402
+from ryos import quickrun_index  # noqa: E402
+from ryos.quickrun_index import (  # noqa: E402
+    INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
+    save_disk_index, scan,
+)
 from ryos.dragdrop import (  # noqa: E402
     MOVE_TO_GROUP, NOTHING, REORDER, compute_insertion, first_rect_at,
     passed_threshold, resolve_drop, shows_insertion_indicator,
@@ -1027,21 +1033,44 @@ class TestBatchUvExecution(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestQuickRunIndexTTL(unittest.TestCase):
-    """Verify the stale-while-revalidate TTL comparison without needing Tkinter."""
+    """Stale-while-revalidate, against the real index.
 
-    _TTL = 30.0
+    This used to build a dict literal and assert arithmetic about
+    time.monotonic() -- it exercised no RYOS code at all, because the logic was
+    unreachable inside RYOSApp. QuickRunIndex made it testable for real
+    (docs/plans/qt-migration.md phase 1.2).
+    """
 
-    def test_stale_entry_triggers_rebuild(self):
-        import time
-        cache = {"fake_dir": (time.monotonic() - 35, [])}
-        ts, _ = cache["fake_dir"]
-        self.assertTrue(time.monotonic() - ts > self._TTL)
+    def setUp(self):
+        self.builds = []
+        self.tmp = tempfile.mkdtemp()
+        Path(self.tmp, "a.py").write_text("x", encoding="utf-8")
+        self.idx = QuickRunIndex(schedule=lambda fn: fn(),
+                                 spawn=self._spawn)
 
-    def test_fresh_entry_does_not_trigger_rebuild(self):
-        import time
-        cache = {"fake_dir": (time.monotonic(), [])}
-        ts, _ = cache["fake_dir"]
-        self.assertFalse(time.monotonic() - ts > self._TTL)
+    def _spawn(self, fn):
+        self.builds.append(fn)
+        fn()
+
+    def test_a_fresh_entry_does_not_trigger_a_rebuild(self):
+        self.idx.get(self.tmp, ttl=300, allowed_exts=set(), max_files=5000)
+        before = len(self.builds)
+        self.idx.get(self.tmp, ttl=300, allowed_exts=set(), max_files=5000)
+        self.assertEqual(len(self.builds), before, "a fresh index was rebuilt")
+
+    def test_a_stale_entry_triggers_a_rebuild(self):
+        self.idx.get(self.tmp, ttl=300, allowed_exts=set(), max_files=5000)
+        before = len(self.builds)
+        self.idx.get(self.tmp, ttl=-1, allowed_exts=set(), max_files=5000)
+        self.assertEqual(len(self.builds), before + 1,
+                         "a stale index was not rebuilt")
+
+    def test_a_stale_entry_is_still_served_during_the_rebuild(self):
+        self.idx.get(self.tmp, ttl=300, allowed_exts=set(), max_files=5000)
+        served = self.idx.get(self.tmp, ttl=-1, allowed_exts=set(),
+                              max_files=5000)
+        self.assertIsNotNone(served,
+                             "suggestions went blank while reindexing")
 
 # ---------------------------------------------------------------------------
 # Update-check version parsing (ryos.notifications._parse_version)
@@ -5875,3 +5904,159 @@ class TestDragDropRules(unittest.TestCase):
                         in_favorites=in_favs, active_group=group,
                         insert_before=1)
                     self.assertEqual(shown, action.kind == REORDER)
+
+
+class TestQuickRunIndexController(unittest.TestCase):
+    """The Quick Run index's caching and single-flight rules.
+
+    These lived inside RYOSApp, tangled with `self.after` and a background
+    thread, so none of them had a test. Extracted for the Qt migration
+    (docs/plans/qt-migration.md phase 1.2).
+
+    Both injection points are exercised synchronously here: `spawn` runs the
+    worker inline and `schedule` runs the callback inline, so a test sees the
+    finished state without sleeping or polling.
+    """
+
+    def setUp(self):
+        self.ready = []
+        self.idx = QuickRunIndex(
+            schedule=lambda fn: fn(),          # "UI thread" is this thread
+            on_ready=self.ready.append,
+            spawn=lambda fn: fn(),             # run the worker inline
+        )
+        self.tmp = tempfile.mkdtemp()
+        for name in ("a.py", "b.py", "c.txt"):
+            Path(self.tmp, name).write_text("x", encoding="utf-8")
+        self.args = dict(ttl=300, allowed_exts=set(), max_files=5000)
+
+    def test_first_get_returns_none_then_fills(self):
+        # Nothing cached yet, so the first call starts a build and reports
+        # nothing -- the bar shows "Indexing files..." on the strength of this.
+        first = self.idx.get(self.tmp, **self.args)
+        self.assertIsNone(first)
+        # spawn/schedule ran inline, so by now it is populated.
+        self.assertIsNotNone(self.idx.cached(self.tmp))
+        self.assertEqual(self.ready, [self.tmp])
+
+    def test_second_get_serves_the_cache(self):
+        self.idx.get(self.tmp, **self.args)
+        again = self.idx.get(self.tmp, **self.args)
+        self.assertIsNotNone(again)
+
+    def test_a_stale_entry_is_served_while_it_rebuilds(self):
+        # Showing slightly old suggestions beats showing none during a rescan.
+        self.idx.get(self.tmp, **self.args)
+        before = self.idx.cached(self.tmp)
+        self.assertIsNotNone(before)
+        stale = dict(self.args, ttl=-1)         # everything is stale
+        served = self.idx.get(self.tmp, **stale)
+        self.assertIsNotNone(served, "a stale index was withheld")
+
+    def test_single_flight_while_a_build_runs(self):
+        # Without this, every keystroke during a slow scan spawns its own
+        # full-tree walk and they pile up.
+        spawned = []
+        idx = QuickRunIndex(schedule=lambda fn: fn(),
+                            spawn=lambda fn: spawned.append(fn))  # never runs
+        idx.get(self.tmp, **self.args)
+        idx.get(self.tmp, **self.args)
+        idx.get(self.tmp, **self.args)
+        self.assertEqual(len(spawned), 1, "concurrent builds were started")
+        self.assertTrue(idx.is_indexing(self.tmp))
+
+    def test_the_in_flight_flag_clears_when_the_build_finishes(self):
+        self.idx.get(self.tmp, **self.args)
+        self.assertFalse(self.idx.is_indexing(self.tmp))
+
+    def test_disk_is_read_only_once_per_directory(self):
+        # The disk-loaded gate is flipped on the UI thread so two rapid
+        # keystrokes cannot both decide to read disk.
+        reads = []
+        idx = QuickRunIndex(schedule=lambda fn: fn(), spawn=lambda fn: fn())
+        real = quickrun_index.load_disk_index
+
+        def counting(base, ttl):
+            reads.append(base)
+            return real(base, ttl)
+
+        quickrun_index.load_disk_index = counting
+        try:
+            idx.get(self.tmp, **self.args)
+            idx.clear()                        # memory only; gate stays set
+            idx.get(self.tmp, **self.args)
+        finally:
+            quickrun_index.load_disk_index = real
+        self.assertEqual(len(reads), 1,
+                         f"read disk {len(reads)} times; clearing the cache "
+                         f"must not reload it from disk")
+
+    def test_clear_forgets_everything(self):
+        self.idx.get(self.tmp, **self.args)
+        self.idx.clear()
+        self.assertIsNone(self.idx.cached(self.tmp))
+
+    def test_suggestions_are_empty_until_the_index_exists(self):
+        idx = QuickRunIndex(schedule=lambda fn: fn(),
+                            spawn=lambda fn: None)   # build never completes
+        self.assertEqual(idx.suggestions(self.tmp, "a", max_n=5, **self.args), [])
+
+    def test_suggestions_rank_once_the_index_exists(self):
+        self.idx.get(self.tmp, **self.args)
+        hits = self.idx.suggestions(self.tmp, "a", max_n=5, **self.args)
+        self.assertTrue(any("a.py" in h for h in hits), hits)
+
+    # -- the scan itself ---------------------------------------------------
+    def test_scan_honours_the_extension_filter(self):
+        entries, _ = scan(self.tmp, {".py"}, 5000)
+        names = {e[0] for e in entries}
+        self.assertIn("a.py", names)
+        self.assertNotIn("c.txt", names)
+
+    def test_scan_caps_and_reports_it(self):
+        entries, capped = scan(self.tmp, set(), 2)
+        self.assertEqual(len(entries), 2)
+        self.assertTrue(capped)
+
+    def test_scan_prunes_skipped_directories(self):
+        junk = Path(self.tmp, "node_modules")
+        junk.mkdir()
+        (junk / "huge.py").write_text("x", encoding="utf-8")
+        entries, _ = scan(self.tmp, set(), 5000)
+        self.assertFalse(any("node_modules" in e[0] for e in entries))
+
+    # -- the on-disk round trip --------------------------------------------
+    def test_disk_round_trip(self):
+        entries, _ = scan(self.tmp, set(), 5000)
+        save_disk_index(self.tmp, time.time(), entries)
+        loaded = load_disk_index(self.tmp, ttl=300)
+        self.assertIsNotNone(loaded)
+        self.assertEqual(len(loaded[1]), len(entries))
+
+    def test_an_expired_disk_index_is_rejected(self):
+        entries, _ = scan(self.tmp, set(), 5000)
+        save_disk_index(self.tmp, time.time() - 1000, entries)
+        self.assertIsNone(load_disk_index(self.tmp, ttl=10))
+
+    def test_an_older_format_is_rejected_rather_than_misread(self):
+        entries, _ = scan(self.tmp, set(), 5000)
+        save_disk_index(self.tmp, time.time(), entries)
+        fp = index_path(self.tmp)
+        data = json.loads(fp.read_text(encoding="utf-8"))
+        data["v"] = INDEX_VERSION - 1
+        fp.write_text(json.dumps(data), encoding="utf-8")
+        self.assertIsNone(load_disk_index(self.tmp, ttl=300))
+
+    def test_a_hash_collision_is_caught(self):
+        # The filename is an md5 prefix; the stored base_dir is what proves it.
+        entries, _ = scan(self.tmp, set(), 5000)
+        save_disk_index(self.tmp, time.time(), entries)
+        fp = index_path(self.tmp)
+        data = json.loads(fp.read_text(encoding="utf-8"))
+        data["base_dir"] = self.tmp + "_someone_else"
+        fp.write_text(json.dumps(data), encoding="utf-8")
+        self.assertIsNone(load_disk_index(self.tmp, ttl=300))
+
+    def test_unreadable_cache_is_not_fatal(self):
+        index_path(self.tmp).write_text("{not json", encoding="utf-8")
+        self.assertIsNone(load_disk_index(self.tmp, ttl=300))
