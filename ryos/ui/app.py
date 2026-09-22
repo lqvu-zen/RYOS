@@ -23,8 +23,7 @@ from ..db import ScriptDB
 from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE
 from ..scheduling import resolve_due
 from ..history import parse_stamp
-from ..interpreter import (build_command, build_run_spec, detect_interpreter,
-                           resolve_interpreter)
+from ..interpreter import (detect_interpreter)
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
@@ -1798,27 +1797,27 @@ class RYOSApp(_BaseWindow):
         PipelineEditorDialog(self, self.db, pipeline_id, name,
                              self._active_group or "", self._refresh_cards)
 
+    def _show_refusal(self, refusal) -> None:
+        """Show why a launch was refused, in the register the decision asked for.
+
+        Hitting the job cap is a notice, not an error; only the toolkit knows
+        how to draw each, so the severity travels with the message.
+        """
+        show = (messagebox.showinfo if refusal.severity == "info"
+                else messagebox.showerror)
+        show(refusal.title, refusal.message, parent=self)
+
     def _run_pipeline(self, pipeline_id: int, pipeline_name: str,
                       trigger=SOURCE_MANUAL):
-        max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        if self._jobctl.at_capacity(max_jobs):
-            messagebox.showinfo("Too many jobs",
-                                f"Maximum of {max_jobs} parallel jobs reached.\n"
-                                "Stop a running job before launching another.",
-                                parent=self)
+        plan = self._jobctl.plan_pipeline(
+            pipeline_id,
+            max_jobs=self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS),
+            active_group=self._active_group,
+            candidate_groups=list(self._running_slots))
+        if not plan.ok:
+            self._show_refusal(plan.refusal)
             return
-        steps = self.db.list_pipeline_steps(pipeline_id)
-        if not steps:
-            messagebox.showinfo("Empty Pipeline",
-                                "This pipeline has no steps.\nClick ⚙ to add scripts.",
-                                parent=self)
-            return
-        # Resolve group for this pipeline
-        group = self._active_group or ""
-        for gname in self._running_slots:
-            if any(p_id == pipeline_id for p_id, *_ in self.db.list_pipelines(gname)):
-                group = gname
-                break
+        steps, group = plan.steps, plan.group
         job = self._jobctl.new_job(
             "pipeline", script_id=None, pipeline_id=pipeline_id,
             name=f"⚡ {pipeline_name}", group=group,
@@ -2113,29 +2112,14 @@ class RYOSApp(_BaseWindow):
 
     def _run_script(self, script_id, name, path, params, interpreter,
                     trigger=SOURCE_MANUAL):
-        max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        if self._jobctl.at_capacity(max_jobs):
-            messagebox.showinfo("Too many jobs",
-                                f"Maximum of {max_jobs} parallel jobs reached.\n"
-                                "Stop a running job before launching another.")
+        plan = self._jobctl.plan_script(
+            script_id, path, params, interpreter,
+            max_jobs=self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS),
+            active_group=self._active_group)
+        if not plan.ok:
+            self._show_refusal(plan.refusal)
             return
-
-        if not Path(path).exists():
-            messagebox.showerror("File Not Found", f"File does not exist:\n{path}")
-            return
-
-        final_interp = resolve_interpreter(path, interpreter)
-        try:
-            cmd = build_command(path, params, final_interp)
-        except ValueError as e:
-            messagebox.showerror("Parameter Error", f"Could not parse parameters:\n{e}")
-            return
-
-        rec = self.db.get(script_id)
-        group = (rec[5] or "") if rec else (self._active_group or "")
-        spec = build_run_spec(cmd,
-                              work_dir=(rec[8] if rec else "") or "",
-                              env_vars=rec[7] if rec else None)
+        cmd, spec, group = plan.cmd, plan.spec, plan.group
         job = self._jobctl.new_job("script", script_id=script_id, pipeline_id=None,
                             name=name, group=group, trigger=trigger)
         job.start_time = datetime.now()

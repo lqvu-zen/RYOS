@@ -12,6 +12,7 @@ increment (running-row teardown).
 from __future__ import annotations
 
 import queue
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -78,6 +79,50 @@ def should_run_step(step, *, failed: bool, stopping: bool) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class Refusal:
+    """Why a launch will not happen, in the words the user should see.
+
+    Kept as data rather than a messagebox call so the decision is testable and
+    does not name a toolkit -- the Qt port shows the same strings through a
+    different dialog (docs/plans/qt-migration.md).
+    """
+
+    title: str
+    message: str
+    # "info" for a limit the user simply needs to know about, "error" for
+    # something genuinely wrong with what they asked for. The caller maps this
+    # onto its own dialog; getting it wrong shows an error icon for an
+    # ordinary "you have hit the job cap" notice.
+    severity: str = "error"
+
+
+@dataclass(frozen=True)
+class LaunchPlan:
+    """Everything needed to start a run, or the reason not to.
+
+    ``ok`` is the only thing callers should branch on; the rest is only
+    meaningful when it is True.
+    """
+
+    refusal: Refusal | None = None
+    spec: object = None          # RunSpec, for a script
+    steps: list | None = None    # step rows, for a pipeline
+    group: str = ""
+    cmd: list | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.refusal is None
+
+
+def _too_many_jobs(max_jobs: int) -> Refusal:
+    return Refusal("Too many jobs",
+                   f"Maximum of {max_jobs} parallel jobs reached.\n"
+                   "Stop a running job before launching another.",
+                   severity="info")
+
+
 class JobController:
     """Drives job allocation, pipeline stepping, and per-job completion.
 
@@ -117,6 +162,58 @@ class JobController:
     def at_capacity(self, max_jobs: int) -> bool:
         """True when a positive cap is set and the registry is already that full."""
         return max_jobs > 0 and len(self._registry) >= max_jobs
+
+    def plan_script(self, script_id: int, path: str, params: str,
+                    interpreter: str, *, max_jobs: int,
+                    active_group: str | None) -> LaunchPlan:
+        """Decide whether a script can run, and with what.
+
+        Every refusal the UI can show for an ad-hoc run is decided here, in
+        the order a user would expect: the cap first (cheapest, and the most
+        common), then the file, then the parameters.
+        """
+        if self.at_capacity(max_jobs):
+            return LaunchPlan(refusal=_too_many_jobs(max_jobs))
+        if not Path(path).exists():
+            return LaunchPlan(refusal=Refusal(
+                "File Not Found", f"File does not exist:\n{path}"))
+        final_interp = resolve_interpreter(path, interpreter)
+        try:
+            cmd = build_command(path, params, final_interp)
+        except ValueError as e:
+            return LaunchPlan(refusal=Refusal(
+                "Parameter Error", f"Could not parse parameters:\n{e}"))
+        rec = self._db.get(script_id)
+        group = (rec[5] or "") if rec else (active_group or "")
+        spec = build_run_spec(cmd,
+                              work_dir=(rec[8] if rec else "") or "",
+                              env_vars=rec[7] if rec else None)
+        return LaunchPlan(spec=spec, group=group, cmd=cmd)
+
+    def plan_pipeline(self, pipeline_id: int, *, max_jobs: int,
+                      active_group: str | None,
+                      candidate_groups=()) -> LaunchPlan:
+        """Decide whether a pipeline can run, and which group owns it.
+
+        ``candidate_groups`` are the groups with a visible running section; the
+        pipeline's own group wins over whichever tab happens to be open, so a
+        run started from the All view still lands in the right section.
+        """
+        if self.at_capacity(max_jobs):
+            return LaunchPlan(refusal=_too_many_jobs(max_jobs))
+        steps = self._db.list_pipeline_steps(pipeline_id)
+        if not steps:
+            return LaunchPlan(refusal=Refusal(
+                "Empty Pipeline",
+                "This pipeline has no steps.\nClick \u2699 to add scripts.",
+                severity="info"))
+        group = active_group or ""
+        for gname in candidate_groups:
+            if any(p_id == pipeline_id
+                   for p_id, *_ in self._db.list_pipelines(gname)):
+                group = gname
+                break
+        return LaunchPlan(steps=list(steps), group=group)
 
     def new_job(
         self,

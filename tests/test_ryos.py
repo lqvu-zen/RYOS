@@ -6060,3 +6060,134 @@ class TestQuickRunIndexController(unittest.TestCase):
     def test_unreadable_cache_is_not_fatal(self):
         index_path(self.tmp).write_text("{not json", encoding="utf-8")
         self.assertIsNone(load_disk_index(self.tmp, ttl=300))
+
+
+class TestLaunchPlanning(unittest.TestCase):
+    """Why a run is refused, decided away from the messagebox.
+
+    These were three early returns in _run_script and two in _run_pipeline,
+    each calling messagebox directly -- so the conditions could not be tested
+    without a display, and the choice between an info and an error dialog was
+    invisible. Extracted for the Qt migration (phase 1.3); the Qt port shows
+    the same strings through a different dialog.
+    """
+
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("G")
+        self.tmp = tempfile.mkdtemp()
+        self.script = Path(self.tmp, "ok.py")
+        self.script.write_text("print(1)\n", encoding="utf-8")
+        self.sid = self.db.add("ok", str(self.script), "", sys.executable, "G")
+        self.reg = JobRegistry()
+        self.ctl = JobController(
+            self.reg, _queue.Queue(), self.db,
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda *a: None, on_started=lambda *a: None,
+            on_finish=lambda *a: None, on_rename=lambda *a: None,
+            launch=lambda *a, **k: None,
+        )
+
+    def _fill(self, n):
+        for i in range(n):
+            self.reg.add(Job(self.reg.new_id(), "script", None, None,
+                             f"j{i}", f"job:{i}", "G"))
+
+    # -- scripts -----------------------------------------------------------
+    def test_a_runnable_script_plans_cleanly(self):
+        plan = self.ctl.plan_script(self.sid, str(self.script), "", "",
+                                    max_jobs=4, active_group="G")
+        self.assertTrue(plan.ok)
+        self.assertEqual(plan.group, "G")
+        self.assertTrue(plan.cmd)
+        self.assertIsNotNone(plan.spec)
+
+    def test_the_job_cap_refuses_as_a_notice_not_an_error(self):
+        # Hitting the cap is ordinary; showing a red error icon for it is not.
+        self._fill(4)
+        plan = self.ctl.plan_script(self.sid, str(self.script), "", "",
+                                    max_jobs=4, active_group="G")
+        self.assertFalse(plan.ok)
+        self.assertEqual(plan.refusal.title, "Too many jobs")
+        self.assertEqual(plan.refusal.severity, "info")
+
+    def test_zero_max_jobs_means_no_cap(self):
+        self._fill(50)
+        plan = self.ctl.plan_script(self.sid, str(self.script), "", "",
+                                    max_jobs=0, active_group="G")
+        self.assertTrue(plan.ok, "a zero cap was treated as a limit of zero")
+
+    def test_a_missing_file_is_an_error(self):
+        plan = self.ctl.plan_script(self.sid, str(Path(self.tmp, "gone.py")),
+                                    "", "", max_jobs=4, active_group="G")
+        self.assertFalse(plan.ok)
+        self.assertEqual(plan.refusal.title, "File Not Found")
+        self.assertEqual(plan.refusal.severity, "error")
+
+    def test_unparseable_parameters_are_an_error(self):
+        plan = self.ctl.plan_script(self.sid, str(self.script), 'a "unclosed',
+                                    "", max_jobs=4, active_group="G")
+        self.assertFalse(plan.ok)
+        self.assertEqual(plan.refusal.title, "Parameter Error")
+
+    def test_the_cap_is_checked_before_the_file(self):
+        # Cheapest check first, and the one the user is likeliest to hit.
+        self._fill(4)
+        plan = self.ctl.plan_script(self.sid, str(Path(self.tmp, "gone.py")),
+                                    "", "", max_jobs=4, active_group="G")
+        self.assertEqual(plan.refusal.title, "Too many jobs")
+
+    def test_the_group_comes_from_the_record_not_the_open_tab(self):
+        plan = self.ctl.plan_script(self.sid, str(self.script), "", "",
+                                    max_jobs=4, active_group="SomethingElse")
+        self.assertEqual(plan.group, "G")
+
+    def test_an_unknown_script_falls_back_to_the_open_tab(self):
+        plan = self.ctl.plan_script(9999, str(self.script), "", "",
+                                    max_jobs=4, active_group="G")
+        self.assertTrue(plan.ok)
+        self.assertEqual(plan.group, "G")
+
+    # -- pipelines ---------------------------------------------------------
+    def test_a_pipeline_with_steps_plans_cleanly(self):
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.sid)
+        plan = self.ctl.plan_pipeline(pid, max_jobs=4, active_group="G",
+                                      candidate_groups=["G"])
+        self.assertTrue(plan.ok)
+        self.assertEqual(len(plan.steps), 1)
+        self.assertEqual(plan.group, "G")
+
+    def test_an_empty_pipeline_refuses_as_a_notice(self):
+        pid = self.db.create_pipeline("P", "G")
+        plan = self.ctl.plan_pipeline(pid, max_jobs=4, active_group="G",
+                                      candidate_groups=["G"])
+        self.assertFalse(plan.ok)
+        self.assertEqual(plan.refusal.title, "Empty Pipeline")
+        self.assertEqual(plan.refusal.severity, "info")
+
+    def test_a_pipeline_lands_in_its_own_group_from_the_all_view(self):
+        # active_group is None in the All view; the pipeline's real group wins,
+        # so the run shows up in the right running section.
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.sid)
+        plan = self.ctl.plan_pipeline(pid, max_jobs=4, active_group=None,
+                                      candidate_groups=["G"])
+        self.assertEqual(plan.group, "G")
+
+    def test_the_pipeline_cap_refuses_before_the_step_lookup(self):
+        pid = self.db.create_pipeline("P", "G")
+        self._fill(2)
+        plan = self.ctl.plan_pipeline(pid, max_jobs=2, active_group="G",
+                                      candidate_groups=["G"])
+        self.assertEqual(plan.refusal.title, "Too many jobs")
+
+    def test_steps_are_copied_not_aliased(self):
+        # The job mutates its queue as it advances; handing it the db's list
+        # would be a surprise waiting to happen.
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.sid)
+        plan = self.ctl.plan_pipeline(pid, max_jobs=4, active_group="G",
+                                      candidate_groups=["G"])
+        plan.steps.clear()
+        self.assertEqual(len(self.db.list_pipeline_steps(pid)), 1)
