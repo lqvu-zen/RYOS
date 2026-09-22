@@ -167,7 +167,7 @@ needs Qt's network stack (the GitHub update check uses `urllib`) or SVG.
 | 2.1 `theme.py` → QSS | **done 2026-09-22** — `qtui/stylesheet.py`, 13 unit tests + `tests/qt_smoke.py` |
 | 2.2 `widgets.py` | **done 2026-09-22** — Tooltip/HoverPreview mostly deleted; marquee maths shared via `ryos/marquee.py`, 13 tests |
 | 2.3 `cards.py` | **done 2026-09-22** — rules shared via `ryos/cardstyle.py`; Qt cards + smoke check pinning #3, #4, #7 |
-| 2.4 `dialogs.py` | not started |
+| 2.4 `dialogs.py` | **done 2026-09-22** — validation + settings schema extracted (36 tests, dialogs.py’s first coverage); Qt options form generated from the schema |
 | 2.5 `pipeline.py`, `theme_editor.py` | not started |
 | 2.6 The shell | not started |
 
