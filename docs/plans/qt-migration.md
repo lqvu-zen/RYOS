@@ -165,7 +165,7 @@ needs Qt's network stack (the GitHub update check uses `urllib`) or SVG.
 | 1.4 Group controller | **done 2026-09-22** — CRUD rules into `grouping.py`, 20 tests; `app.py` 3,017 → 3,014 |
 | 2.0 Packaging measured | **done 2026-09-22** — 23.3 MB zipped when tuned; see Packaging |
 | 2.1 `theme.py` → QSS | **done 2026-09-22** — `qtui/stylesheet.py`, 13 unit tests + `tests/qt_smoke.py` |
-| 2.2 `widgets.py` | not started |
+| 2.2 `widgets.py` | **done 2026-09-22** — Tooltip/HoverPreview mostly deleted; marquee maths shared via `ryos/marquee.py`, 13 tests |
 | 2.3 `cards.py` | not started |
 | 2.4 `dialogs.py` | not started |
 | 2.5 `pipeline.py`, `theme_editor.py` | not started |
