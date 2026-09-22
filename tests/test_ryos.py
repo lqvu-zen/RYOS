@@ -5778,6 +5778,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/pipeline.py": "imports PySide6; same reason",
         "ryos/qtui/shell.py": "imports PySide6; same reason",
         "ryos/qtui/jobs.py": "imports PySide6; same reason",
+        "ryos/qtui/running.py": "imports PySide6; same reason",
     }
 
     def _scope(self):

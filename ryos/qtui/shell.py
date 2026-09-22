@@ -5,9 +5,14 @@ the cards, the dialogs and the pipeline editor. Output routing and the
 buffer-trim rule come from `ryos.outputpanel`, search from `ryos.search`, and
 grouping from `ryos.grouping` — all shared with the Tk shell.
 
-This is a shell in both senses: it is the window, and it is not yet wired to
-the job machinery. `RYOSApp` still owns running scripts; flipping `__main__`
-over is the last step of the migration and has not happened.
+`attach_jobs()` connects a `JobBridge`, after which the window runs scripts
+and shows them in the running section. It is optional and separate from
+`__init__` so the window can be built and checked without the job machinery.
+
+`RYOSApp` still owns the shipping app and `__main__` still starts it; flipping
+over is the last step of the migration and has not happened. Quick Run,
+drag-and-drop reordering, the tray, schedules, run history and seven of the
+ten dialogs do not exist here yet.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMainWindow,
 from .. import outputpanel, search
 from ..themes import REFERENCE
 from .cards import PipelineCard, ScriptCard
+from .running import RunningSection
 from .stylesheet import stylesheet
 
 #: Matches the Tk placeholder, so the two shells prompt identically.
@@ -78,6 +84,8 @@ class MainWindow(QMainWindow):
                     self._settings.get("window_height", 640))
         self.setStyleSheet(stylesheet(self._palette))
 
+        self.running = RunningSection(self._palette, on_stop=self._stop_job)
+
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._build_top())
         splitter.addWidget(self._build_output())
@@ -108,6 +116,7 @@ class MainWindow(QMainWindow):
         self.group_tabs = QTabWidget()
         self.group_tabs.setObjectName("groupTabs")
         col.addWidget(self.group_tabs, 1)
+        col.addWidget(self.running)
         return top
 
     def _build_output(self) -> QWidget:
@@ -207,6 +216,37 @@ class MainWindow(QMainWindow):
         for key in outputpanel.target_tabs(tab_key, self.active_output_key(),
                                            self._output_tabs):
             self._output_tabs[key].append(text, max_lines, scroll=scroll)
+
+    # -- jobs --------------------------------------------------------------
+    def attach_jobs(self, bridge) -> None:
+        """Wire a JobBridge in: output, status, and the running list.
+
+        Kept separate from __init__ so the window can be built and checked
+        without the job machinery, which is how tests/qt_smoke.py exercises
+        the two independently.
+        """
+        self._bridge = bridge
+        bridge.output.connect(
+            lambda tab_key, text, _tag=None: self.append_output(text, tab_key))
+        bridge.status.connect(self.statusBar().showMessage)
+        bridge.started.connect(self._on_job_started)
+        bridge.finished.connect(self.running.remove)
+
+    def _on_job_started(self, job) -> None:
+        self.add_output_tab(job.tab_key, job.name)
+        self.running.add(job)
+
+    def _stop_job(self, job) -> None:
+        """Stop one job. The row stays until the job actually finishes."""
+        job.stopped = True
+        if getattr(job, "pipeline_queue", None):
+            job.pipeline_queue.clear()
+        for proc in job.active_processes():
+            try:
+                proc.terminate()
+            except OSError:
+                pass   # already gone
+        self.statusBar().showMessage("Stopped.")
 
     # -- theming -----------------------------------------------------------
     def apply_palette(self, palette: dict) -> None:
