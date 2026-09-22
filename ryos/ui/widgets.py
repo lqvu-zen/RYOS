@@ -2,6 +2,7 @@
 import tkinter as tk
 import tkinter.font as tkfont
 
+from .. import marquee
 from .placement import place_near
 from .theme import C
 
@@ -198,11 +199,16 @@ class HoverPreview:
 
 
 class ScrollingLabel(tk.Canvas):
-    """Clips and horizontally scrolls text that is wider than the widget."""
-    _IDLE_MS = 1500
-    _SPEED   = 1
-    _TICK_MS = 25
-    _GAP     = 80
+    """Clips and horizontally scrolls text that is wider than the widget.
+
+    The scroll arithmetic lives in ``ryos.marquee`` so the Qt front-end runs
+    the same rules rather than a second implementation of them.
+    """
+
+    _IDLE_MS = marquee.IDLE_MS
+    _SPEED   = marquee.SPEED
+    _TICK_MS = marquee.TICK_MS
+    _GAP     = marquee.GAP
 
     def __init__(self, parent, text, fg, bg, height=22):
         super().__init__(parent, bg=bg, highlightthickness=0, height=height)
@@ -233,18 +239,17 @@ class ScrollingLabel(tk.Canvas):
 
     def _schedule(self):
         self._cancel()
-        if self._tw > self.winfo_width():
+        if marquee.needs_scroll(self._tw, self.winfo_width()):
             self._job = self.after(self._IDLE_MS, self._tick)
 
     def _tick(self):
-        self._offset += self._SPEED
+        self._offset, wrapped = marquee.advance(
+            self._offset, self._tw, gap=self._GAP, speed=self._SPEED)
         self._draw()
-        if self._offset >= self._tw + self._GAP:
-            self._offset = 0
-            self._draw()
-            self._job = self.after(self._IDLE_MS, self._tick)
-        else:
-            self._job = self.after(self._TICK_MS, self._tick)
+        self._job = self.after(
+            marquee.next_delay(wrapped, idle_ms=self._IDLE_MS,
+                               tick_ms=self._TICK_MS),
+            self._tick)
 
     def _pause(self):
         self._cancel()

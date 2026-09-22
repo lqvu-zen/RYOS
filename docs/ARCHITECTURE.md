@@ -80,6 +80,7 @@ could be tested in isolation.
 | `ryos/grouping.py` | Group ordering, collapse state, and the rules for moving an item between groups. | yes |
 | `ryos/dragdrop.py` | Where a dragged card lands — index maths and the legality of a drop, separated from Tk's drag events. | yes |
 | `ryos/screens.py` | Pure monitor geometry: `clamp_to_work_area`, `center_on_rect`, `anchored_position` (flip, then clamp). Knows nothing about Tk or Win32. | yes |
+| `ryos/marquee.py` | Scroll arithmetic for a marquee label — when to scroll, one step, how long to wait, steps per pass. Shared by the Tk and Qt `ScrollingLabel` so the two cannot animate differently. Pure: no widget, no timer. | yes |
 | `ryos/ui/placement.py` | Applies `screens.py` to real windows — `work_area_for_widget`, `center_over_parent`, `place_near`. Uses Win32 `MonitorFromPoint` / `GetMonitorInfoW` where available, with a documented Tk-only fallback. This is what keeps dialogs on the monitor the app is on. | yes |
 | `ryos/qtui/` | The PySide6 front-end, built alongside `ryos/ui/` and not yet shipping (docs/plans/qt-migration.md). `stylesheet.py` turns a palette into one Qt stylesheet — pure, no Qt import, so it is unit-tested in the main suite; whether the CSS reaches real widgets is checked by `tests/qt_smoke.py`. PySide6 is optional: nothing else imports this package. | yes |
 | `ryos/themes.py` | The built-in theme gallery and WCAG `contrast_ratio()`, used to keep generated colours legible. | yes |

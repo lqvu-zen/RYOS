@@ -38,6 +38,7 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
+from ryos import marquee  # noqa: E402
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -5766,6 +5767,9 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/ui/theme_editor.py": "widget-driven; same",
         "ryos/startup.py": "Windows-only (winreg); fails --platform linux, "
                            "which is where the typecheck job runs",
+        "ryos/qtui/widgets.py": "imports PySide6, an optional dependency the "
+                                "typecheck job does not install; checked by "
+                                "tests/qt_smoke.py instead",
     }
 
     def _scope(self):
@@ -6392,3 +6396,84 @@ class TestQtStylesheet(unittest.TestCase):
         for name in ("light", "dark"):
             with self.subTest(theme=name):
                 self.assertIn("QMainWindow", qss_for(name))
+
+
+class TestMarquee(unittest.TestCase):
+    """Scroll arithmetic shared by the Tk and Qt marquee widgets.
+
+    It lived inline in a tk.Canvas subclass, where it could only be exercised
+    by running the animation. Extracted for the Qt port (phase 2.2) so both
+    toolkits run one implementation rather than two that drift.
+    """
+
+    def test_text_that_fits_does_not_scroll(self):
+        self.assertFalse(marquee.needs_scroll(100, 200))
+
+    def test_text_exactly_as_wide_does_not_scroll(self):
+        # Nudging it would hide the last pixel for no reason.
+        self.assertFalse(marquee.needs_scroll(200, 200))
+
+    def test_text_one_pixel_too_wide_scrolls(self):
+        self.assertTrue(marquee.needs_scroll(201, 200))
+
+    def test_a_step_moves_by_the_speed(self):
+        self.assertEqual(marquee.advance(0, 500, speed=3), (3, False))
+
+    def test_a_pass_wraps_back_to_the_start(self):
+        offset, wrapped = marquee.advance(500 + marquee.GAP - 1, 500, speed=1)
+        self.assertEqual((offset, wrapped), (0, True))
+
+    def test_the_gap_is_traversed_before_wrapping(self):
+        # The blank run after the text is what stops the wrap looking like a
+        # jump cut.
+        offset, wrapped = marquee.advance(500, 500, gap=80, speed=1)
+        self.assertFalse(wrapped)
+        self.assertEqual(offset, 501)
+
+    def test_wrapping_pauses_and_stepping_does_not(self):
+        self.assertEqual(marquee.next_delay(True), marquee.IDLE_MS)
+        self.assertEqual(marquee.next_delay(False), marquee.TICK_MS)
+
+    def test_a_full_pass_wraps_exactly_once(self):
+        width, offset, wraps = 300, 0, 0
+        for _ in range(marquee.pass_steps(width) + 2):
+            offset, wrapped = marquee.advance(offset, width)
+            wraps += wrapped
+        self.assertEqual(wraps, 1)
+
+    def test_pass_steps_covers_the_text_plus_the_gap(self):
+        self.assertEqual(marquee.pass_steps(100, gap=20, speed=1), 120)
+
+    def test_pass_steps_rounds_up_for_a_coarse_speed(self):
+        # 120 pixels at 7 per step is 17.1 steps; a 17th step must exist or
+        # the label never returns to the start.
+        self.assertEqual(marquee.pass_steps(100, gap=20, speed=7), 18)
+
+    def test_a_zero_speed_is_rejected(self):
+        with self.assertRaises(ValueError):
+            marquee.pass_steps(100, speed=0)
+
+    def test_the_tk_widget_takes_its_constants_from_here(self):
+        # Checked in the source rather than on the class: this suite mocks
+        # tkinter, so ScrollingLabel subclasses a MagicMock and attribute
+        # lookup falls through to it rather than finding the real values.
+        root = Path(__file__).resolve().parents[1]
+        src = (root / "ryos/ui/widgets.py").read_text(encoding="utf-8")
+        for const in ("IDLE_MS", "SPEED", "TICK_MS", "GAP"):
+            with self.subTest(const=const):
+                self.assertIn(f"marquee.{const}", src,
+                              f"ScrollingLabel hardcodes {const} instead of "
+                              f"taking it from ryos.marquee")
+
+    def test_neither_front_end_reimplements_the_maths(self):
+        # The point of the module is that there is one implementation. Both
+        # widgets must call it rather than inline the arithmetic again.
+        root = Path(__file__).resolve().parents[1]
+        for rel in ("ryos/ui/widgets.py", "ryos/qtui/widgets.py"):
+            fp = root / rel
+            if not fp.exists():
+                continue
+            with self.subTest(module=rel):
+                src = fp.read_text(encoding="utf-8")
+                self.assertIn("marquee", src,
+                              f"{rel} does not use ryos.marquee")
