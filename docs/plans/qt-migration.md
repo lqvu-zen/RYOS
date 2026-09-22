@@ -106,7 +106,7 @@ Expensive to reverse, so take them before writing the shell.
 | Phase | State |
 | --- | --- |
 | 1.1 Drag & drop extraction | **done 2026-09-22** (`8f589fb`) — rules extracted, 16 tests; `app.py` unchanged in size, see note |
-| 1.2 Quick Run controller | not started |
+| 1.2 Quick Run controller | **done 2026-09-22** — index extracted to `quickrun_index.py`, 17 tests, +1 smoke check; `app.py` 3,145 → 3,033 |
 | 1.3 Jobs into `JobController` | not started |
 | 1.4 Group controller | not started |
 | 2.x Qt port | blocked on Phase 1 |
