@@ -94,6 +94,7 @@ files = [
     "ryos/cardstyle.py",
     "ryos/scriptform.py",
     "ryos/settings_schema.py",
+    "ryos/pipelinesteps.py",
     "ryos/themes.py",
     "ryos/tray.py",
     "ryos/single_instance.py",

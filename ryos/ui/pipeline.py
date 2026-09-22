@@ -5,30 +5,9 @@ from tkinter import messagebox, ttk
 
 from ..db import (FAIL_CONTINUE, FAIL_STOP, TRIGGER_AFTER, TRIGGER_WITH,
                   WHEN_ALWAYS, WHEN_ON_FAILURE, WHEN_ON_SUCCESS, ScriptDB)
+from .. import pipelinesteps
 from .placement import center_over_parent
 from .theme import C, set_button_enabled
-
-
-def _policy_marks(step) -> str:
-    """Compact suffix showing a step's non-default policy, or "" if all default.
-
-    Only deviations are marked, so an ordinary pipeline's rows look exactly as
-    they did before any of this existed.
-    """
-    marks = []
-    if len(step) > 10 and step[10] == FAIL_CONTINUE:
-        marks.append("!")
-    if len(step) > 11 and step[11]:
-        marks.append(f"↻{step[11]}")
-    if len(step) > 12 and step[12] == WHEN_ON_SUCCESS:
-        marks.append("?ok")
-    elif len(step) > 12 and step[12] == WHEN_ON_FAILURE:
-        marks.append("?fail")
-    if len(step) > 13 and step[13]:
-        # Not a policy the editor sets -- it comes from the script -- but the
-        # list is where you'd wonder why a step doesn't hold the pipeline up.
-        marks.append("→launch")
-    return ("   " + " ".join(marks)) if marks else ""
 
 
 class PipelineEditorDialog(tk.Toplevel):
@@ -307,14 +286,7 @@ class PipelineEditorDialog(tk.Toplevel):
         self._reloading = True
         self._steps = list(self.db.list_pipeline_steps(self.pipeline_id))
         self._listbox.delete(0, tk.END)
-        for i, step in enumerate(self._steps):
-            (step_id, sid, name, path, params, interp,
-             params_override, trigger_mode) = step[:8]
-            prefix = "∥ " if trigger_mode == TRIGGER_WITH else "  "
-            label = f"{prefix}{i + 1}.  {name}"
-            if params_override is not None:
-                label += f"  [{params_override}]"
-            label += _policy_marks(step)
+        for label in pipelinesteps.step_labels(self._steps):
             self._listbox.insert(tk.END, label)
         self._reloading = False
 
@@ -353,25 +325,24 @@ class PipelineEditorDialog(tk.Toplevel):
         self._on_step_select()
 
     def _move_up(self):
-        idx = self._selected_index()
-        if idx is None or idx == 0:
-            return
-        ids = [s[0] for s in self._steps]
-        ids[idx], ids[idx - 1] = ids[idx - 1], ids[idx]
-        self.db.reorder_pipeline_steps(self.pipeline_id, ids)
-        self._reload_steps()
-        self._listbox.selection_set(idx - 1)
-        self._on_step_select()      # step 1 can't be "with prev"; refresh the button
+        self._move(-1)
 
     def _move_down(self):
+        self._move(+1)
+
+    def _move(self, delta: int):
+        """Move the selected step by one place, if it can go there."""
         idx = self._selected_index()
-        if idx is None or idx >= len(self._steps) - 1:
+        # can_move already rejects None, but say so here so the narrowing is
+        # visible to a reader and to the type checker.
+        if idx is None or not pipelinesteps.can_move(idx, len(self._steps),
+                                                     delta):
             return
-        ids = [s[0] for s in self._steps]
-        ids[idx], ids[idx + 1] = ids[idx + 1], ids[idx]
+        ids = pipelinesteps.reorder([s[0] for s in self._steps], idx, delta)
         self.db.reorder_pipeline_steps(self.pipeline_id, ids)
         self._reload_steps()
-        self._listbox.selection_set(idx + 1)
+        self._listbox.selection_set(idx + delta)
+        # Step 1 can't be "with prev", so the button has to be re-evaluated.
         self._on_step_select()
 
     def _save(self):

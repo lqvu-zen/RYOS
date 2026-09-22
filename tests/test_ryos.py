@@ -38,7 +38,8 @@ from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
 )
-from ryos import marquee, scriptform, settings_schema  # noqa: E402
+from ryos import (marquee, pipelinesteps, scriptform,  # noqa: E402
+                  settings_schema)
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -4697,7 +4698,9 @@ from ryos.db import (  # noqa: E402
 from ryos.job_controller import (  # noqa: E402
     should_run_step, step_on_failure, step_retries, step_run_when,
 )
-from ryos.ui.pipeline import _policy_marks  # noqa: E402
+# Moved to ryos.pipelinesteps for the Qt editor (phase 2.5); the existing
+# tests below follow it rather than being duplicated.
+from ryos.pipelinesteps import policy_marks as _policy_marks  # noqa: E402
 
 
 def _policy_step(name="s", *, mode=TRIGGER_AFTER, on_failure=FAIL_STOP,
@@ -5772,6 +5775,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
                                 "tests/qt_smoke.py instead",
         "ryos/qtui/cards.py": "imports PySide6; same reason as qtui/widgets.py",
         "ryos/qtui/dialogs.py": "imports PySide6; same reason",
+        "ryos/qtui/pipeline.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -6707,3 +6711,105 @@ class TestSettingsSchema(unittest.TestCase):
         self.assertIn("settings_schema.coerce", src)
         self.assertNotIn("max(100, int(", src)
         self.assertNotIn("max(400, int(", src)
+
+
+class TestPipelineStepRows(unittest.TestCase):
+    """How a step reads in the editor list, and what reordering does.
+
+    The label was built inline while filling a Tk listbox and the two move
+    handlers each rebuilt the id list by hand, so neither could be tested
+    without a display. Extracted for the Qt editor (phase 2.5).
+    """
+
+    def _step(self, sid=1, name="build", override=None, trigger=TRIGGER_AFTER,
+              on_failure=FAIL_STOP, retries=0, run_when=WHEN_ALWAYS,
+              detached=0):
+        return (sid, sid, name, "/x.py", "", "", override, trigger,
+                None, "", on_failure, retries, run_when, detached)
+
+    # -- labels ------------------------------------------------------------
+    def test_a_plain_step_is_numbered_from_one(self):
+        self.assertEqual(pipelinesteps.step_label(self._step(), 0),
+                         "  1.  build")
+
+    def test_a_concurrent_step_is_marked_and_stays_aligned(self):
+        # The two-space prefix on ordinary rows lines their numbers up under
+        # the ∥, so a mixed list does not look ragged.
+        with_prev = pipelinesteps.step_label(
+            self._step(trigger=TRIGGER_WITH), 1)
+        plain = pipelinesteps.step_label(self._step(), 1)
+        self.assertTrue(with_prev.startswith("∥ 2."))
+        self.assertTrue(plain.startswith("  2."))
+        self.assertEqual(len(with_prev.split("2.")[0]),
+                         len(plain.split("2.")[0]))
+
+    def test_a_params_override_is_shown(self):
+        label = pipelinesteps.step_label(self._step(override="--fast"), 0)
+        self.assertIn("[--fast]", label)
+
+    def test_an_empty_override_is_still_shown(self):
+        # "" is a deliberate override meaning "no parameters", distinct from
+        # None meaning "use the script's own".
+        self.assertIn("[]", pipelinesteps.step_label(self._step(override=""), 0))
+
+    def test_policy_marks_ride_along(self):
+        label = pipelinesteps.step_label(
+            self._step(on_failure=FAIL_CONTINUE, retries=2), 0)
+        self.assertIn("!", label)
+        self.assertIn("↻2", label)
+
+    def test_labels_are_numbered_in_order(self):
+        steps = [self._step(sid=i, name=f"s{i}") for i in range(3)]
+        labels = pipelinesteps.step_labels(steps)
+        self.assertEqual([lab.strip()[:2] for lab in labels],
+                         ["1.", "2.", "3."])
+
+    def test_a_short_row_from_an_older_schema_still_labels(self):
+        self.assertEqual(
+            pipelinesteps.step_label((1, 1, "old", "/x.py", "", "", None,
+                                      TRIGGER_AFTER), 0),
+            "  1.  old")
+
+    # -- reordering --------------------------------------------------------
+    def test_moving_up_swaps_with_the_one_above(self):
+        self.assertEqual(pipelinesteps.reorder([10, 20, 30], 1, -1),
+                         [20, 10, 30])
+
+    def test_moving_down_swaps_with_the_one_below(self):
+        self.assertEqual(pipelinesteps.reorder([10, 20, 30], 1, +1),
+                         [10, 30, 20])
+
+    def test_the_first_step_cannot_move_up(self):
+        self.assertFalse(pipelinesteps.can_move(0, 3, -1))
+        self.assertEqual(pipelinesteps.reorder([10, 20], 0, -1), [10, 20])
+
+    def test_the_last_step_cannot_move_down(self):
+        self.assertFalse(pipelinesteps.can_move(2, 3, +1))
+        self.assertEqual(pipelinesteps.reorder([10, 20, 30], 2, +1),
+                         [10, 20, 30])
+
+    def test_nothing_selected_cannot_move(self):
+        self.assertFalse(pipelinesteps.can_move(None, 3, -1))
+        self.assertEqual(pipelinesteps.reorder([10, 20], None, -1), [10, 20])
+
+    def test_reorder_does_not_mutate_the_caller_s_list(self):
+        # The caller hands the result straight to the database; mutating in
+        # place would leave the editor inconsistent if that write failed.
+        original = [10, 20, 30]
+        pipelinesteps.reorder(original, 0, +1)
+        self.assertEqual(original, [10, 20, 30])
+
+    def test_a_single_step_cannot_move_either_way(self):
+        self.assertFalse(pipelinesteps.can_move(0, 1, -1))
+        self.assertFalse(pipelinesteps.can_move(0, 1, +1))
+
+    def test_moving_is_reversible(self):
+        ids = [10, 20, 30]
+        once = pipelinesteps.reorder(ids, 0, +1)
+        back = pipelinesteps.reorder(once, 1, -1)
+        self.assertEqual(back, ids)
+
+    def test_run_with_previous_is_meaningless_on_the_first_step(self):
+        self.assertTrue(pipelinesteps.first_step_cannot_run_with_previous(0))
+        self.assertTrue(pipelinesteps.first_step_cannot_run_with_previous(None))
+        self.assertFalse(pipelinesteps.first_step_cannot_run_with_previous(1))
