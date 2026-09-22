@@ -168,7 +168,7 @@ needs Qt's network stack (the GitHub update check uses `urllib`) or SVG.
 | 2.2 `widgets.py` | **done 2026-09-22** — Tooltip/HoverPreview mostly deleted; marquee maths shared via `ryos/marquee.py`, 13 tests |
 | 2.3 `cards.py` | **done 2026-09-22** — rules shared via `ryos/cardstyle.py`; Qt cards + smoke check pinning #3, #4, #7 |
 | 2.4 `dialogs.py` | **done 2026-09-22** — validation + settings schema extracted (36 tests, dialogs.py’s first coverage); Qt options form generated from the schema |
-| 2.5 `pipeline.py`, `theme_editor.py` | not started |
+| 2.5 `pipeline.py`, `theme_editor.py` | **done 2026-09-22** — step rules + theme-form rules extracted (33 tests); Qt pipeline editor; `verdict.py` consolidates three copies of the same shape |
 | 2.6 The shell | not started |
 
 **1.1 note — the extraction did not shrink ** (3,145 → 3,153). The decisions were small; what they were tangled in is widget code that stays until the port. Expect the same shape from 1.2–1.4: the line count falls less than the seam table suggests, because that table measures whole methods while only their decisions move. The real win is UI-free, tested rules that survive the rewrite — treat the ~1,200-line target as optimistic.
