@@ -98,6 +98,7 @@ files = [
     "ryos/verdict.py",
     "ryos/themeform.py",
     "ryos/outputpanel.py",
+    "ryos/scheduleform.py",
     "ryos/themes.py",
     "ryos/tray.py",
     "ryos/single_instance.py",

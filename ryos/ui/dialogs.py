@@ -9,10 +9,10 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from ..db import ScriptDB
 from ..history import format_run_row, header_row, summarize
-from ..scheduling import (CATCH_UP_ALL, CATCH_UP_ONCE, CATCH_UP_SKIP, DAILY,
-                          INTERVAL, SPEC_TYPES, WEEKLY, next_occurrence,
-                          normalize_spec, preview)
-from .. import scriptform, settings_schema
+from ..scheduling import (CATCH_UP_ONCE, DAILY,
+                          INTERVAL, WEEKLY, next_occurrence,
+                          normalize_spec)
+from .. import scheduleform, scriptform, settings_schema
 from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
@@ -753,17 +753,16 @@ class ParamPickerDialog(tk.Toplevel):
         body = ttk.Frame(self, padding=16)
         body.pack(fill="both", expand=True)
 
-        self._choice = tk.StringVar(value="__default__")
+        self._choice = tk.StringVar(value=scriptform.DEFAULT_OPTION)
 
-        options = [("__default__", "Default", default_params)] + \
-                  [(str(pid), lbl, prm) for pid, lbl, prm in presets]
+        options = scriptform.param_options(default_params, presets)
 
         for val, lbl, prm in options:
             row = tk.Frame(body, bg=C["card_bg"], pady=3)
             row.pack(fill="x")
             tk.Radiobutton(
                 row, variable=self._choice, value=val,
-                text=lbl if lbl != prm else prm,
+                text=lbl,
                 bg=C["card_bg"], fg=C["name_fg"],
                 selectcolor=C["card_bg"],
                 activebackground=C["card_bg"],
@@ -1643,11 +1642,8 @@ class ScheduleDialog(tk.Toplevel):
     seen written down.
     """
 
-    _CATCH_UP_LABELS = {
-        CATCH_UP_ONCE: "Run once",
-        CATCH_UP_SKIP: "Skip them",
-        CATCH_UP_ALL: "Run every missed one",
-    }
+    # Shared with the Qt schedule dialog (ryos/scheduleform.py).
+    _CATCH_UP_LABELS = scheduleform.CATCH_UP_LABELS
 
     def __init__(self, parent, db: ScriptDB, *, script_id: int | None = None,
                  pipeline_id: int | None = None, title: str = "", on_save=None):
@@ -1701,7 +1697,7 @@ class ScheduleDialog(tk.Toplevel):
                         value=WEEKLY).grid(row=3, column=0, sticky="nw", **pad)
         days_row = ttk.Frame(frame)
         days_row.grid(row=3, column=1, columnspan=2, sticky="w", **pad)
-        for d, label in enumerate(("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")):
+        for d, label in enumerate(scheduleform.DAY_NAMES):
             ttk.Checkbutton(days_row, text=label, variable=self._days[d]).pack(side="left")
 
         ttk.Label(frame, text="If missed:").grid(row=4, column=0, sticky="w", **pad)
@@ -1743,42 +1739,28 @@ class ScheduleDialog(tk.Toplevel):
     def _load_existing(self) -> None:
         if not self._existing:
             return
-        spec_type, raw, catch_up = self._existing[4], self._existing[5], self._existing[7]
-        try:
-            spec = json.loads(raw)
-        except (TypeError, ValueError):
-            spec = {}
-        if spec_type in SPEC_TYPES:
-            self._mode.set(spec_type)
-        if spec_type == INTERVAL:
-            self._minutes.set(str(spec.get("minutes", 30)))
-        else:
-            self._at.set(str(spec.get("at", "09:00")))
-            if spec_type == WEEKLY:
-                chosen = set(spec.get("days") or [])
-                for d, var in self._days.items():
-                    var.set(d in chosen)
-        self._catch_up.set(self._CATCH_UP_LABELS.get(catch_up,
-                                                     self._CATCH_UP_LABELS[CATCH_UP_ONCE]))
+        # Decoded by ryos.scheduleform so the Qt dialog loads identically --
+        # including tolerating a stored spec that no longer parses.
+        values = scheduleform.form_values(self._existing)
+        self._mode.set(values["mode"])
+        self._minutes.set(values["minutes"])
+        self._at.set(values["at"])
+        if values["mode"] == WEEKLY:
+            chosen = set(values["days"])
+            for d, var in self._days.items():
+                var.set(d in chosen)
+        self._catch_up.set(self._CATCH_UP_LABELS[values["catch_up"]])
 
     def _current_spec(self):
         """(spec_type, normalized_spec) for the form, or (type, None) if invalid."""
         mode = self._mode.get()
-        if mode == INTERVAL:
-            raw = {"minutes": self._minutes.get().strip()}
-        elif mode == DAILY:
-            raw = {"at": self._at.get().strip()}
-        else:
-            raw = {"at": self._at.get().strip(),
-                   "days": [d for d, v in self._days.items() if v.get()]}
+        raw = scheduleform.raw_spec(
+            mode, minutes=self._minutes.get(), at=self._at.get(),
+            days=[d for d, v in self._days.items() if v.get()])
         return mode, normalize_spec(mode, raw)
 
     def _current_catch_up(self) -> str:
-        label = self._catch_up.get()
-        for key, text in self._CATCH_UP_LABELS.items():
-            if text == label:
-                return key
-        return CATCH_UP_ONCE
+        return scheduleform.catch_up_from_label(self._catch_up.get())
 
     # ---------------------------------------------------------------- actions
 
@@ -1787,19 +1769,14 @@ class ScheduleDialog(tk.Toplevel):
         if spec is None:
             self._preview.config(text="—  check the values above")
             return
-        runs = preview(spec_type, spec, datetime.now(), 5)
-        self._preview.config(
-            text="\n".join(r.strftime("%a %d %b  %H:%M") for r in runs) or "—")
+        lines = scheduleform.preview_lines(spec_type, spec)
+        self._preview.config(text="\n".join(lines) or "—")
 
     def _save(self) -> None:
         spec_type, spec = self._current_spec()
-        if spec is None:
-            messagebox.showwarning(
-                "Check the schedule",
-                "That schedule can't run.\n\n"
-                "Interval needs at least 1 minute, times look like 09:00, "
-                "and a weekly schedule needs at least one day.",
-                parent=self)
+        check = scheduleform.check(spec)
+        if not check.ok:
+            messagebox.showwarning(check.title, check.message, parent=self)
             return
         enabled = bool(self._enabled.get())
         raw = json.dumps(spec)
@@ -1828,13 +1805,12 @@ class ScheduleDialog(tk.Toplevel):
         declining is remembered by simply never asking again unless run-at-login
         is still off and another schedule is enabled.
         """
-        if sys.platform != "win32" or _startup_enabled():
+        if not scheduleform.should_offer_run_at_login(
+                enabled=True, platform=sys.platform,
+                startup_enabled=_startup_enabled()):
             return
-        if messagebox.askyesno(
-                "Start RYOS at login?",
-                "Schedules only run while RYOS is open.\n\n"
-                "Start RYOS automatically when you log in?",
-                parent=self):
+        ask = scheduleform.RUN_AT_LOGIN
+        if messagebox.askyesno(ask.title, ask.message, parent=self):
             try:
                 _set_startup(True)
             except OSError:

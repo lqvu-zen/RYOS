@@ -39,7 +39,8 @@ from ryos.quickrun_index import (  # noqa: E402
     save_disk_index, scan,
 )
 from ryos import (marquee, outputpanel, pipelinesteps,  # noqa: E402
-                  scriptform, settings_schema, themeform, verdict)
+                  scheduleform, scriptform, settings_schema, themeform,
+                  verdict)
 from ryos.qtui.stylesheet import (  # noqa: E402
     REQUIRED_KEYS as QSS_REQUIRED_KEYS,
     MissingPaletteKeys,
@@ -5779,6 +5780,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/shell.py": "imports PySide6; same reason",
         "ryos/qtui/jobs.py": "imports PySide6; same reason",
         "ryos/qtui/running.py": "imports PySide6; same reason",
+        "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7019,3 +7021,199 @@ class TestOutputRouting(unittest.TestCase):
     def test_a_section_shows_when_something_in_it_matches(self):
         self.assertTrue(outputpanel.section_is_visible(
             query_active=True, has_cards=True, any_match=True))
+
+
+class TestScheduleForm(unittest.TestCase):
+    """The schedule dialog's form rules, shared by the Tk and Qt dialogs.
+
+    These lived inside the Tk ScheduleDialog: which fields make up a spec per
+    mode, how a stored schedule loads back into the form, and when to offer
+    starting RYOS at login. Extracted for the Qt port.
+    """
+
+    # -- building a spec from the form -------------------------------------
+    def test_interval_takes_only_minutes(self):
+        self.assertEqual(scheduleform.raw_spec("interval", minutes=" 15 ",
+                                               at="09:00", days=[1]),
+                         {"minutes": "15"})
+
+    def test_daily_takes_only_the_time(self):
+        self.assertEqual(scheduleform.raw_spec("daily", minutes="15",
+                                               at=" 07:30 ", days=[1]),
+                         {"at": "07:30"})
+
+    def test_weekly_takes_time_and_days(self):
+        self.assertEqual(scheduleform.raw_spec("weekly", at="07:30",
+                                               days=[4, 1, 4]),
+                         {"at": "07:30", "days": [1, 4]})
+
+    def test_switching_mode_carries_nothing_stale(self):
+        # Only the fields the mode uses are included, so a weekday picked
+        # before switching to interval cannot leak into the saved spec.
+        self.assertNotIn("days", scheduleform.raw_spec("interval",
+                                                        minutes="5", days=[3]))
+
+    def test_weekly_drops_impossible_days(self):
+        self.assertEqual(scheduleform.raw_spec("weekly", at="07:00",
+                                               days=[0, 7, -1, 6])["days"],
+                         [0, 6])
+
+    # -- loading a stored schedule ----------------------------------------
+    def test_no_schedule_opens_on_the_defaults(self):
+        self.assertEqual(scheduleform.form_values(None),
+                         scheduleform.DEFAULT_FORM)
+
+    def test_defaults_are_not_shared_between_calls(self):
+        # A caller editing the days list must not edit the defaults.
+        v = scheduleform.form_values(None)
+        v["days"].append(3)
+        self.assertEqual(scheduleform.form_values(None)["days"], [0])
+
+    def _row(self, spec_type, spec, enabled=1, catch_up="skip"):
+        return (1, "script", 1, None, spec_type, spec, enabled, catch_up,
+                None, None, "2026-01-01")
+
+    def test_a_weekly_schedule_loads_back(self):
+        v = scheduleform.form_values(self._row(
+            "weekly", '{"at": "07:45", "days": [4, 1]}'))
+        self.assertEqual((v["mode"], v["at"], v["days"], v["catch_up"],
+                          v["enabled"]),
+                         ("weekly", "07:45", [1, 4], "skip", True))
+
+    def test_an_interval_schedule_keeps_the_default_time(self):
+        v = scheduleform.form_values(self._row("interval", '{"minutes": 5}'))
+        self.assertEqual((v["mode"], v["minutes"], v["at"]),
+                         ("interval", "5", "09:00"))
+
+    def test_a_broken_spec_still_opens(self):
+        # The dialog is how someone repairs a bad schedule, so it must load.
+        v = scheduleform.form_values(self._row("daily", "not json"))
+        self.assertEqual((v["mode"], v["at"]), ("daily", "09:00"))
+
+    def test_a_stored_spec_that_is_not_an_object_still_opens(self):
+        v = scheduleform.form_values(self._row("weekly", "[1, 2]"))
+        self.assertEqual(v["mode"], "weekly")
+        self.assertEqual(v["days"], [])
+
+    def test_garbage_days_are_dropped_not_fatal(self):
+        v = scheduleform.form_values(self._row(
+            "weekly", '{"at": "07:00", "days": [4, "x", 9, null, 1]}'))
+        self.assertEqual(v["days"], [1, 4])
+
+    def test_an_unknown_catch_up_becomes_once(self):
+        v = scheduleform.form_values(self._row("daily", '{"at": "07:00"}',
+                                               catch_up="bogus"))
+        self.assertEqual(v["catch_up"], "once")
+
+    def test_an_unknown_mode_keeps_the_default(self):
+        v = scheduleform.form_values(self._row("fortnightly", "{}"))
+        self.assertEqual(v["mode"], "interval")
+
+    # -- labels and previews --------------------------------------------------
+    def test_catch_up_labels_round_trip(self):
+        for key, label in scheduleform.CATCH_UP_LABELS.items():
+            with self.subTest(key=key):
+                self.assertEqual(scheduleform.catch_up_from_label(label), key)
+
+    def test_an_unknown_catch_up_label_means_once(self):
+        # The gentlest reading: neither drops missed runs nor floods the queue.
+        self.assertEqual(scheduleform.catch_up_from_label("??"), "once")
+
+    def test_day_names_are_the_scheduling_modules(self):
+        # One copy: the Tk dialog used to carry its own tuple.
+        from ryos import scheduling
+        self.assertIs(scheduleform.DAY_NAMES, scheduling._DAY_NAMES)
+
+    def test_a_bad_spec_previews_nothing(self):
+        self.assertEqual(scheduleform.preview_lines("daily", None), [])
+
+    def test_a_good_spec_previews_the_requested_count(self):
+        from datetime import datetime
+        lines = scheduleform.preview_lines(
+            "interval", {"minutes": 30}, datetime(2026, 1, 5, 12, 0), 3)
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(lines[0].startswith("Mon 05 Jan"))
+
+    def test_a_bad_spec_is_refused_as_a_warning(self):
+        v = scheduleform.check(None)
+        self.assertFalse(v.ok)
+        self.assertEqual(v.severity, verdict.WARNING)
+
+    def test_a_good_spec_proceeds(self):
+        self.assertTrue(scheduleform.check({"minutes": 30}).ok)
+
+    # -- run at login ----------------------------------------------------------
+    def test_login_is_offered_for_an_enabled_schedule_on_windows(self):
+        self.assertTrue(scheduleform.should_offer_run_at_login(
+            enabled=True, platform="win32", startup_enabled=False))
+
+    def test_login_is_not_offered_for_a_disabled_schedule(self):
+        self.assertFalse(scheduleform.should_offer_run_at_login(
+            enabled=False, platform="win32", startup_enabled=False))
+
+    def test_login_is_not_offered_off_windows(self):
+        self.assertFalse(scheduleform.should_offer_run_at_login(
+            enabled=True, platform="linux", startup_enabled=False))
+
+    def test_login_is_not_offered_when_already_on(self):
+        # Asking someone to turn on what is already on is noise.
+        self.assertFalse(scheduleform.should_offer_run_at_login(
+            enabled=True, platform="win32", startup_enabled=True))
+
+
+class TestParamOptions(unittest.TestCase):
+    """What the parameter picker offers, shared by both pickers."""
+
+    def test_default_comes_first(self):
+        opts = scriptform.param_options("--all", [])
+        self.assertEqual(opts, [(scriptform.DEFAULT_OPTION, "Default", "--all")])
+
+    def test_presets_follow_in_order_with_string_keys(self):
+        opts = scriptform.param_options("", [(7, "Fast", "--fast"),
+                                             (9, "Slow", "--slow")])
+        self.assertEqual([o[0] for o in opts],
+                         [scriptform.DEFAULT_OPTION, "7", "9"])
+
+    def test_a_label_that_is_its_params_is_shown_once(self):
+        opts = scriptform.param_options("", [(1, "--dry", "--dry")])
+        self.assertEqual(opts[1], ("1", "--dry", "--dry"))
+
+    def test_a_distinct_label_is_kept(self):
+        opts = scriptform.param_options("", [(1, "Fast", "--fast")])
+        self.assertEqual(opts[1][1], "Fast")
+
+
+class TestDocumentedHarnessesAreTracked(unittest.TestCase):
+    """Every test harness the docs point people at must be in the repo.
+
+    tests/ is ignored by default in .gitignore, with named files allowlisted
+    back in. tests/qt_smoke.py was never added to that list, so for the whole
+    of Qt migration phase 2 it existed only on one disk while the docs and a
+    dozen commit messages described it as part of the repository. Nothing
+    failed, because an ignored file is simply invisible.
+    """
+
+    ROOT = Path(__file__).resolve().parents[1]
+
+    def test_every_documented_tests_file_is_allowlisted(self):
+        gitignore = (self.ROOT / ".gitignore").read_text(encoding="utf-8")
+        allowed = {line.strip()[1:] for line in gitignore.splitlines()
+                   if line.strip().startswith("!tests/")}
+        docs = ""
+        for rel in ("docs/ARCHITECTURE.md", "CLAUDE.md",
+                    "docs/plans/qt-migration.md"):
+            fp = self.ROOT / rel
+            if fp.exists():
+                docs += fp.read_text(encoding="utf-8")
+        named = set(re.findall(r"tests/[A-Za-z0-9_]+\.(?:py|bat)", docs))
+        missing = sorted(n for n in named
+                         if (self.ROOT / n).exists() and n not in allowed)
+        self.assertEqual(missing, [],
+                         f"documented but gitignored: {missing}. Add "
+                         f"'!<path>' to the tests/ allowlist in .gitignore.")
+
+    def test_every_smoke_harness_is_allowlisted(self):
+        gitignore = (self.ROOT / ".gitignore").read_text(encoding="utf-8")
+        for fp in sorted((self.ROOT / "tests").glob("*_smoke.py")):
+            with self.subTest(harness=fp.name):
+                self.assertIn(f"!tests/{fp.name}", gitignore)

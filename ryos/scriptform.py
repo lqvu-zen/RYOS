@@ -21,7 +21,8 @@ from .verdict import CONFIRM, OK, REFUSE
 #: Re-exported so callers can compare `check.kind` without importing two
 #: modules. Named in __all__ because they are otherwise unused here, and a
 #: lint pass would remove them.
-__all__ = ["CONFIRM", "Check", "OK", "REFUSE", "resolve_path", "validate"]
+__all__ = ["CONFIRM", "Check", "DEFAULT_OPTION", "OK", "REFUSE",
+           "param_options", "resolve_path", "validate"]
 
 #: The verdict shape is shared with the theme editor and the launch preflight
 #: (ryos/verdict.py). Kept under the name this module already used, so its
@@ -79,3 +80,21 @@ def validate(*, name: str, path: str, interpreter: str, base_dir: str = "",
         return Check(CONFIRM, "Warning",
                      f"File not found:\n{path}\n\nSave anyway?")
     return _OK
+
+
+#: The picker key for "use the script's own parameters".
+DEFAULT_OPTION = "__default__"
+
+
+def param_options(default_params: str, presets) -> list[tuple[str, str, str]]:
+    """What the parameter picker offers: ``(key, label, params)`` per row.
+
+    The script's own parameters come first under "Default", then each saved
+    preset. A preset whose label is just its parameters shows the parameters
+    once rather than twice -- "--fast" labelled "--fast" is one idea, not two.
+    """
+    options = [(DEFAULT_OPTION, "Default", default_params)]
+    for pid, label, params in presets:
+        options.append((str(pid), label, params))
+    return [(key, params if label == params else label, params)
+            for key, label, params in options]
