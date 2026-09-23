@@ -34,6 +34,8 @@ from ryos.db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
 import time  # noqa: E402
 from ryos import quickrun_index  # noqa: E402
+from ryos import quickrun as qr_mod  # noqa: E402
+from ryos import quickrun_actions as qra  # noqa: E402
 from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
@@ -5781,6 +5783,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/jobs.py": "imports PySide6; same reason",
         "ryos/qtui/running.py": "imports PySide6; same reason",
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
+        "ryos/qtui/quickrun.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7217,3 +7220,148 @@ class TestDocumentedHarnessesAreTracked(unittest.TestCase):
         for fp in sorted((self.ROOT / "tests").glob("*_smoke.py")):
             with self.subTest(harness=fp.name):
                 self.assertIn(f"!tests/{fp.name}", gitignore)
+
+
+class TestQuickRunBarRules(unittest.TestCase):
+    """How the Quick Run bar behaves, shared by the Tk and Qt bars."""
+
+    def test_empty_text_hides_suggestions(self):
+        self.assertIsNone(qr_mod.suggestion_query("   "))
+
+    def test_a_name_is_searched_for(self):
+        self.assertEqual(qr_mod.suggestion_query("  build "), "build")
+
+    def test_typing_parameters_hides_suggestions(self):
+        # A filename list popping up over the parameters would be in the way.
+        self.assertIsNone(qr_mod.suggestion_query("build.py --fast"))
+
+    def test_the_indexing_placeholder_is_never_accepted(self):
+        self.assertFalse(qr_mod.is_selectable(qr_mod.INDEXING))
+        self.assertFalse(qr_mod.is_selectable(""))
+        self.assertTrue(qr_mod.is_selectable("tools/build.py"))
+
+    def test_down_from_nothing_selects_the_first(self):
+        self.assertEqual(qr_mod.move_selection(None, 5, +1), 0)
+
+    def test_up_from_nothing_selects_the_last(self):
+        self.assertEqual(qr_mod.move_selection(None, 5, -1), 4)
+
+    def test_movement_clamps_rather_than_wraps(self):
+        self.assertEqual(qr_mod.move_selection(4, 5, +1), 4)
+        self.assertEqual(qr_mod.move_selection(0, 5, -1), 0)
+
+    def test_an_empty_list_has_nothing_to_select(self):
+        self.assertIsNone(qr_mod.move_selection(None, 0, +1))
+
+    def test_tab_leaves_room_for_parameters(self):
+        self.assertEqual(qr_mod.accepted_text("b.py", submit=False), "b.py ")
+
+    def test_return_runs_the_name_as_it_stands(self):
+        self.assertEqual(qr_mod.accepted_text("b.py", submit=True), "b.py")
+
+    def test_escape_closes_one_layer_at_a_time(self):
+        self.assertEqual(qr_mod.escape_action(True), qr_mod.CLOSE_SUGGESTIONS)
+        self.assertEqual(qr_mod.escape_action(False), qr_mod.CLOSE_BAR)
+
+    def test_no_bar_hardcodes_the_placeholder_text(self):
+        # It used to be written out in four places in app.py; a reworded
+        # placeholder in one of them would become an acceptable "file".
+        root = Path(__file__).resolve().parents[1]
+        for rel in ("ryos/ui/app.py", "ryos/qtui/quickrun.py"):
+            with self.subTest(module=rel):
+                src = (root / rel).read_text(encoding="utf-8")
+                self.assertNotIn("Indexing files", src)
+
+
+class TestQuickRunSubmit(unittest.TestCase):
+    """From typed text to a registered script, shared by both bars."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp()
+        for rel in ("build.py", "deploy.py", os.path.join("sub", "build.py")):
+            path = Path(self.base, rel)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("print(1)\n", encoding="utf-8")
+        self.db = _make_db()
+        self.db.create_group("G", base_dir=self.base)
+
+    # -- the plan ----------------------------------------------------------
+    def test_nothing_typed_does_nothing(self):
+        self.assertEqual(qra.plan_submit("   ", self.base).kind, qra.NOTHING)
+
+    def test_a_unique_match_runs(self):
+        plan = qra.plan_submit("deploy --fast", self.base)
+        self.assertEqual(plan.kind, qra.RUN)
+        self.assertTrue(plan.abs_path.endswith("deploy.py"))
+        self.assertEqual((plan.params, plan.params_explicit), ("--fast", True))
+
+    def test_several_matches_ask_which(self):
+        plan = qra.plan_submit("build", self.base)
+        self.assertEqual(plan.kind, qra.CHOOSE)
+        self.assertEqual(len(plan.candidates), 2)
+
+    def test_no_match_says_why(self):
+        plan = qra.plan_submit("nothing_like_it", self.base)
+        self.assertEqual(plan.kind, qra.ERROR)
+        self.assertTrue(plan.error)
+
+    def test_a_chosen_candidate_resolves_under_the_base(self):
+        got = qra.chosen_path(self.base, os.path.join("sub", "build.py"))
+        self.assertEqual(Path(got), Path(self.base, "sub", "build.py"))
+
+    # -- ensure_script ---------------------------------------------------------
+    def _path(self, rel):
+        return str(Path(self.base, rel))
+
+    def test_a_new_path_is_registered_with_its_parameters(self):
+        got = qra.ensure_script(self.db, self._path("deploy.py"), "G",
+                                "--fast", True)
+        self.assertTrue(got.created)
+        rec = self.db.get(got.script_id)
+        self.assertEqual((rec[1], rec[3], rec[5]), ("deploy", "--fast", "G"))
+        self.assertEqual([p[2] for p in self.db.list_param_presets(got.script_id)],
+                         ["--fast"])
+
+    def test_a_known_path_is_reused_not_duplicated(self):
+        first = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False)
+        again = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False)
+        self.assertEqual(first.script_id, again.script_id)
+        self.assertFalse(again.created)
+        self.assertEqual(len(self.db.list_all()), 1)
+
+    def test_the_same_file_in_another_group_is_a_separate_script(self):
+        self.db.create_group("H")
+        a = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False)
+        b = qra.ensure_script(self.db, self._path("deploy.py"), "H", "", False)
+        self.assertNotEqual(a.script_id, b.script_id)
+
+    def test_untyped_parameters_leave_the_saved_ones_alone(self):
+        # Running "build.py" must not wipe the "--release" saved last week.
+        first = qra.ensure_script(self.db, self._path("deploy.py"), "G",
+                                  "--release", True)
+        again = qra.ensure_script(self.db, self._path("deploy.py"), "G",
+                                  "", False)
+        self.assertEqual(again.params, "--release")
+        self.assertFalse(again.changed)
+        self.assertEqual(self.db.get(first.script_id)[3], "--release")
+
+    def test_typed_parameters_win_and_are_remembered_once(self):
+        sid = qra.ensure_script(self.db, self._path("deploy.py"), "G",
+                                "--a", True).script_id
+        for _ in range(3):
+            got = qra.ensure_script(self.db, self._path("deploy.py"), "G",
+                                    "--b", True)
+        self.assertEqual(got.params, "--b")
+        self.assertEqual(self.db.get(sid)[3], "--b")
+        presets = [p[2] for p in self.db.list_param_presets(sid)]
+        self.assertEqual(presets.count("--b"), 1, presets)
+        self.assertIn("--a", presets)
+
+    def test_reusing_a_script_keeps_its_launcher_flag(self):
+        # update() is called with None for the fields it should not touch;
+        # a regression there would quietly turn a launcher back into a
+        # blocking step.
+        sid = self.db.add("deploy", self._path("deploy.py"), "", "", "G",
+                          detached=1)
+        qra.ensure_script(self.db, self._path("deploy.py"), "G", "--x", True)
+        self.assertTrue(self.db.is_detached(sid))

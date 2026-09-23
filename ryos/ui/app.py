@@ -39,10 +39,14 @@ from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
 from ..search import compute_hint, find_spans, matches, normalize_query, step_match
 from ..settings import _BASE, _PACKAGED, _load_settings, _save_settings
 from ..tray import TrayIcon
+from .. import quickrun as qr
+from ..quickrun_actions import CHOOSE as QR_CHOOSE
+from ..quickrun_actions import ERROR as QR_ERROR
+from ..quickrun_actions import NOTHING as QR_NOTHING
+from ..quickrun_actions import chosen_path, ensure_script, plan_submit
 from ..quickrun_index import QuickRunIndex
 from ..quickrun import (
-    _is_inside, display_relpath, parse_input,
-    resolve,
+    _is_inside, display_relpath,
 )
 from ..job_controller import JobController
 from ..jobs import Job as _Job, JobRegistry, format_elapsed, split_by_capacity
@@ -1476,32 +1480,22 @@ class RYOSApp(_BaseWindow):
             after_id = bar.get("suggest_after_id")
             if after_id:
                 self.after_cancel(after_id)
-            bar["suggest_after_id"] = self.after(120, lambda g=_g: self._quick_run_refresh_suggestions(g))
+            bar["suggest_after_id"] = self.after(
+                qr.SUGGEST_DEBOUNCE_MS,
+                lambda g=_g: self._quick_run_refresh_suggestions(g))
         entry.bind("<KeyRelease>", _on_key_release)
 
         def _on_down(e, _g=_gn):
             bar = self._quick_run_bars.get(_g)
             if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                lb = bar["suggest_lb"]
-                sel = lb.curselection()
-                nxt = (sel[0] + 1) if sel else 0
-                if nxt < lb.size():
-                    lb.selection_clear(0, "end")
-                    lb.selection_set(nxt)
-                    lb.see(nxt)
+                self._quick_run_move(bar["suggest_lb"], +1)
                 return "break"
         entry.bind("<Down>", _on_down)
 
         def _on_up(e, _g=_gn):
             bar = self._quick_run_bars.get(_g)
             if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
-                lb = bar["suggest_lb"]
-                sel = lb.curselection()
-                prev = (sel[0] - 1) if sel else lb.size() - 1
-                if prev >= 0:
-                    lb.selection_clear(0, "end")
-                    lb.selection_set(prev)
-                    lb.see(prev)
+                self._quick_run_move(bar["suggest_lb"], -1)
                 return "break"
         entry.bind("<Up>", _on_up)
 
@@ -1512,7 +1506,7 @@ class RYOSApp(_BaseWindow):
                 sel = lb.curselection()
                 if sel:
                     rel = lb.get(sel[0])
-                    if rel != "Indexing files…":
+                    if qr.is_selectable(rel):
                         self._quick_run_accept_suggestion(_g, rel, submit=False)
                 return "break"
         entry.bind("<Tab>", _on_tab)
@@ -1524,7 +1518,7 @@ class RYOSApp(_BaseWindow):
                 sel = lb.curselection()
                 if sel:
                     rel = lb.get(sel[0])
-                    if rel != "Indexing files…":
+                    if qr.is_selectable(rel):
                         self._quick_run_accept_suggestion(_g, rel, submit=True)
                         return "break"
             self._quick_run_submit(_g)
@@ -1533,10 +1527,12 @@ class RYOSApp(_BaseWindow):
 
         def _on_escape(e, _g=_gn):
             bar = self._quick_run_bars.get(_g)
-            if bar and bar.get("suggest_win") and bar["suggest_win"].winfo_exists():
+            is_open = bool(bar and bar.get("suggest_win")
+                           and bar["suggest_win"].winfo_exists())
+            if qr.escape_action(is_open) == qr.CLOSE_SUGGESTIONS:
                 self._quick_run_hide_suggestions(_g)
-                return "break"
-            self._hide_quick_run_bar(_g)
+            else:
+                self._hide_quick_run_bar(_g)
             return "break"
         entry.bind("<Escape>", _on_escape)
 
@@ -2196,17 +2192,13 @@ class RYOSApp(_BaseWindow):
         if bar["is_placeholder"][0]:
             self._quick_run_hide_suggestions(group_name)
             return
-        full = bar["var"].get().strip()
-        if not full:
-            self._quick_run_hide_suggestions(group_name)
-            return
-        head = full.split(None, 1)[0]
-        if " " in full:
+        head = qr.suggestion_query(bar["var"].get())
+        if head is None:
             self._quick_run_hide_suggestions(group_name)
             return
         base_dir = bar["base_dir"]
         if self._qr_index.cached(base_dir) is None:
-            self._quick_run_show_suggestions(group_name, ["Indexing files…"])
+            self._quick_run_show_suggestions(group_name, [qr.INDEXING])
             return
         items = self._quick_run_compute_suggestions(base_dir, head)
         if not items:
@@ -2245,7 +2237,8 @@ class RYOSApp(_BaseWindow):
         win.geometry(f"{w}x{visible * 18 + 2}+{x}+{y}")
         win.deiconify()
         win.lift()
-        if items and items[0] != "Indexing files…":
+        if items and qr.is_selectable(items[0]):
+            # Pre-select the best match so Return runs it straight away.
             lb.selection_set(0)
 
     def _quick_run_hide_suggestions(self, group_name: str) -> None:
@@ -2273,14 +2266,21 @@ class RYOSApp(_BaseWindow):
         if focused is not lb and focused is not bar["entry"]:
             self._quick_run_hide_suggestions(group_name)
 
+    def _quick_run_move(self, lb, delta: int) -> None:
+        """Move the suggestion highlight; clamps at the ends (quickrun rule)."""
+        sel = lb.curselection()
+        nxt = qr.move_selection(sel[0] if sel else None, lb.size(), delta)
+        if nxt is None:
+            return
+        lb.selection_clear(0, "end")
+        lb.selection_set(nxt)
+        lb.see(nxt)
+
     def _quick_run_accept_suggestion(self, group_name: str, rel: str, submit: bool) -> None:
         bar = self._quick_run_bars.get(group_name)
         if bar is None:
             return
-        if submit:
-            bar["var"].set(rel)
-        else:
-            bar["var"].set(rel + " ")
+        bar["var"].set(qr.accepted_text(rel, submit=submit))
         bar["entry"].config(fg=C["name_fg"])
         bar["is_placeholder"][0] = False
         bar["entry"].icursor("end")
@@ -2298,7 +2298,7 @@ class RYOSApp(_BaseWindow):
         sel = lb.curselection()
         if sel:
             rel = lb.get(sel[0])
-            if rel != "Indexing files…":
+            if qr.is_selectable(rel):
                 self._quick_run_accept_suggestion(group_name, rel, submit=True)
 
     def _quick_run_pick(self, base_dir: str, candidates: list[str]) -> str | None:
@@ -2394,72 +2394,33 @@ class RYOSApp(_BaseWindow):
             return
         if bar["is_placeholder"][0]:
             return
-        raw = bar["var"].get().strip()
-        if not raw:
-            return
-        query, typed_params, params_explicitly_set = parse_input(raw)
-        if not query:
-            return
         base_dir = self.db.get_group_base_dir(group_name) or bar["base_dir"]
-        self._hide_quick_run_bar(group_name)
-
-        abs_path, candidates, err = resolve(base_dir, query)
-        if err:
-            messagebox.showerror("Quick Run", err, parent=self)
+        # Parsing and resolving are shared with the Qt bar (quickrun_actions).
+        plan = plan_submit(bar["var"].get(), base_dir)
+        if plan.kind == QR_NOTHING:
             return
-        if candidates:
-            chosen = self._quick_run_pick(base_dir, candidates)
+        self._hide_quick_run_bar(group_name)
+        if plan.kind == QR_ERROR:
+            messagebox.showerror("Quick Run", plan.error, parent=self)
+            return
+        abs_path = plan.abs_path
+        if plan.kind == QR_CHOOSE:
+            chosen = self._quick_run_pick(base_dir, list(plan.candidates))
             if not chosen:
                 return
-            abs_path = str(Path(base_dir) / chosen)
+            abs_path = chosen_path(base_dir, chosen)
+        typed_params, params_explicitly_set = plan.params, plan.params_explicit
 
         display = display_relpath(abs_path, base_dir)
 
-        existing_id = None
-        existing_name = ""
-        existing_params = ""
-        existing_interp = ""
-        abs_path_p = Path(abs_path)
-        for rec in self.db.list_all():
-            if Path(rec[2]) == abs_path_p and (rec[8] or "") == (group_name or ""):
-                existing_id = rec[0]
-                existing_name = rec[1]
-                existing_params = rec[3] or ""
-                existing_interp = rec[4] or ""
-                break
-
-        if existing_id is not None:
-            script_id = existing_id
-            interpreter = existing_interp
-            params = typed_params if params_explicitly_set else existing_params
-            if params_explicitly_set:
-                presets = self.db.list_param_presets(existing_id)
-                preset_values = {p[2] for p in presets}
-                if typed_params not in preset_values:
-                    self.db.replace_param_presets(
-                        existing_id,
-                        [(p[1], p[2]) for p in presets] + [(typed_params, typed_params)],
-                    )
-                if typed_params != existing_params:
-                    self.db.update(existing_id, existing_name, abs_path, typed_params, existing_interp, group_name or "")
-                self._refresh_cards()
-            elif not any(c.script_id == existing_id for c in self._cards):
-                self._refresh_cards()
-        else:
-            interpreter = detect_interpreter(abs_path)
-            script_id = self.db.add(
-                name=Path(abs_path).stem,
-                path=abs_path,
-                params=typed_params,
-                interpreter=interpreter,
-                group_name=group_name or "",
-            )
-            params = typed_params
-            if typed_params:
-                self.db.replace_param_presets(script_id, [(typed_params, typed_params)])
+        # Reuse or register the script: shared with the Qt bar.
+        got = ensure_script(self.db, abs_path, group_name, typed_params,
+                            params_explicitly_set)
+        if got.changed or not any(c.script_id == got.script_id
+                                  for c in self._cards):
             self._refresh_cards()
-
-        self._run_script(script_id, display, abs_path, params, interpreter)
+        self._run_script(got.script_id, display, abs_path, got.params,
+                         got.interpreter)
 
     def _run_subprocess(self, job: "_Job", spec, name, script_id, step_token=None):
         run_subprocess(self.output_queue, job, spec, name, script_id,

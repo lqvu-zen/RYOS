@@ -183,7 +183,7 @@ release is to be the Qt one, so everything below has to exist before
 
 | Missing on Qt | Size in the Tk app | Notes |
 | --- | --- | --- |
-| Quick Run bar | ~490 lines | Index and ranking are already shared (`quickrun_index.py`, `quickrun.py`); the bar and its suggestion list are the port. |
+| ~~Quick Run bar~~ | — | **Done 2026-09-23.** Bar rules in `quickrun.py`, submit flow in `quickrun_actions.py`, both shared with Tk. The Qt bar's index hand-off uses `MainThreadInvoker`; `QTimer.singleShot` was tried and verified never to fire from the worker thread. |
 | Drag-and-drop reordering | ~220 lines | Rules shared (`dragdrop.py`); Qt's drag events replace the Tk ghost-window machinery. |
 | Tray icon | `tray.py` + ~45 app refs | `QSystemTrayIcon` retires `pystray` and `pillow`. |
 | Schedule tick | ~60 lines | Dialog done; the 30-second timer that fires due schedules is not wired. |

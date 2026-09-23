@@ -959,6 +959,171 @@ def check_small_dialogs(app):
           "history and schedules on a real DB, refusals warn")
 
 
+
+
+def check_quick_run(app):
+    """The Qt Quick Run bar, end to end, with the real background index.
+
+    The Tk harness could never check the index's worker-thread hand-off: its
+    after(0, ...) raises when no mainloop is running, so check_quick_run_bar
+    in gui_smoke.py primes the index by hand. Here the index is built on its
+    real worker thread and the result has to arrive on the UI thread through
+    MainThreadInvoker -- which is the part most likely to be silently broken,
+    since the obvious QTimer.singleShot would simply never fire.
+    """
+    import tempfile
+    import time as _time
+
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    from ryos import quickrun as qr
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    for name in ("alpha_tool.py", "alpine.py", "beta_tool.py"):
+        (tmp / name).write_text("print('qr ran')\n", encoding="utf-8")
+    (tmp / "sub").mkdir()
+    (tmp / "sub" / "alpha_tool.py").write_text("print(2)\n", encoding="utf-8")
+
+    db = ScriptDB(tmp / "qr.db")
+    db.create_group("G", base_dir=str(tmp))
+    win = MainWindow(REFERENCE["dark"],
+                     settings={"quick_run_enabled": True,
+                               "quick_run_autocomplete": True,
+                               "quick_run_max_suggestions": 10,
+                               "quick_run_index_extensions": [],
+                               "max_parallel_jobs": 4})
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.set_cards("G", [], base_dir=str(tmp))
+    win.show()
+    app.processEvents()
+
+    def pump_until(predicate, timeout=20.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    def key(k):
+        app.sendEvent(bar.entry, QKeyEvent(QEvent.Type.KeyPress, k,
+                                           Qt.KeyboardModifier.NoModifier))
+        app.processEvents()
+
+    bar = win.quick_run_bars.get("G")
+    if bar is None:
+        PROBLEMS.append("a group with a base folder got no Quick Run bar")
+        return
+    bar.open()
+
+    # The real worker thread builds the index; its result must come back.
+    if not pump_until(lambda: win._qr_index.cached(str(tmp)) is not None):
+        PROBLEMS.append("the background index never reached the UI thread -- "
+                        "the cross-thread hand-off is broken")
+        return
+
+    # Typing shows ranked suggestions, top one pre-selected.
+    bar.entry.setText("alp")
+    bar.refresh()
+    shown = [bar.suggestions.item(i).text()
+             for i in range(bar.suggestions.count())]
+    if not shown or not any("alpha_tool" in s for s in shown):
+        PROBLEMS.append(f"'alp' suggested {shown}")
+    if bar.suggestions.currentRow() != 0:
+        PROBLEMS.append("the best match was not pre-selected")
+
+    # Typing parameters hides the list.
+    bar.entry.setText("alpine.py --x")
+    bar.refresh()
+    if bar.suggestions_open:
+        PROBLEMS.append("suggestions stayed open while typing parameters")
+
+    # Down/Up clamp at the ends rather than wrapping.
+    bar.entry.setText("alp")
+    bar.refresh()
+    last = bar.suggestions.count() - 1
+    for _ in range(last + 3):
+        key(Qt.Key.Key_Down)
+    if bar.suggestions.currentRow() != last:
+        PROBLEMS.append("Down wrapped past the last suggestion")
+    for _ in range(last + 3):
+        key(Qt.Key.Key_Up)
+    if bar.suggestions.currentRow() != 0:
+        PROBLEMS.append("Up wrapped past the first suggestion")
+
+    # Tab completes and leaves room for parameters; focus stays in the box.
+    key(Qt.Key.Key_Tab)
+    if not bar.entry.text().endswith(" ") or bar.suggestions_open:
+        PROBLEMS.append(f"Tab left {bar.entry.text()!r}, list open="
+                        f"{bar.suggestions_open}")
+
+    # Escape closes one layer per press: the list, then the bar.
+    bar.entry.setText("alp")
+    bar.refresh()
+    key(Qt.Key.Key_Escape)
+    if bar.suggestions_open or not bar.isVisible():
+        PROBLEMS.append("first Escape did not close only the list")
+    key(Qt.Key.Key_Escape)
+    if bar.isVisible():
+        PROBLEMS.append("second Escape did not close the bar")
+
+    # The placeholder shown while indexing is never accepted.
+    bar.open()
+    bar.show_suggestions([qr.INDEXING])
+    if bar.suggestions.currentRow() != -1:
+        PROBLEMS.append("the 'indexing' placeholder was pre-selected")
+    before = bar.entry.text()
+    bar.accept_suggestion(qr.INDEXING, submit=True)
+    if bar.entry.text() != before:
+        PROBLEMS.append("the 'indexing' placeholder was accepted")
+
+    # Several matches ask; declining runs nothing.
+    finished: list = []
+    bridge.finished.connect(finished.append)
+    asked: list = []
+    started = win.quick_run_submit("G", str(tmp), "alpha_tool",
+                                   choose=lambda c: asked.append(c) or None)
+    if not asked or started:
+        PROBLEMS.append("an ambiguous name did not ask which, or ran anyway")
+
+    # A miss says why and runs nothing.
+    errors: list = []
+    if win.quick_run_submit("G", str(tmp), "nothing_like_it",
+                            on_error=errors.append) or not errors:
+        PROBLEMS.append("an unknown script neither refused nor said why")
+
+    # One match registers the script and runs it, with typed parameters.
+    before = len(db.list_all())
+    if not win.quick_run_submit("G", str(tmp), "beta_tool.py --fast"):
+        PROBLEMS.append("a unique match did not start")
+    elif not pump_until(lambda: len(finished) >= 1):
+        PROBLEMS.append("the Quick Run job never finished")
+    made = [r for r in db.list_all() if r[1] == "beta_tool"]
+    if len(db.list_all()) != before + 1 or not made:
+        PROBLEMS.append("submitting did not register the script")
+    elif made[0][3] != "--fast":
+        PROBLEMS.append(f"typed parameters were saved as {made[0][3]!r}")
+
+    # Running it again reuses the record instead of adding a second.
+    finished.clear()
+    win.quick_run_submit("G", str(tmp), "beta_tool.py")
+    pump_until(lambda: len(finished) >= 1)
+    if len([r for r in db.list_all() if r[1] == "beta_tool"]) != 1:
+        PROBLEMS.append("running the same script twice registered it twice")
+
+    bridge.stop()
+    print(f"  [ok] quick run: real index thread, {len(shown)} suggestions, "
+          f"keys clamp, Esc one layer, ambiguity asks, reuse not duplicate")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -977,6 +1142,7 @@ def main() -> int:
     check_jobs_run(app)
     check_running_section(app)
     check_small_dialogs(app)
+    check_quick_run(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

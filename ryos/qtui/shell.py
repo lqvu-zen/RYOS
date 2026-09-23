@@ -9,10 +9,12 @@ grouping from `ryos.grouping` — all shared with the Tk shell.
 and shows them in the running section. It is optional and separate from
 `__init__` so the window can be built and checked without the job machinery.
 
+A group given a base folder in `set_cards()` gets a Quick Run bar, which
+submits through the same `quickrun_actions` flow as the Tk bar.
+
 `RYOSApp` still owns the shipping app and `__main__` still starts it; flipping
-over is the last step of the migration and has not happened. Quick Run,
-drag-and-drop reordering, the tray, schedules, run history and seven of the
-ten dialogs do not exist here yet.
+over is the last step of the migration and has not happened. What the shell
+still lacks is listed in docs/plans/qt-migration.md under "Parity".
 """
 
 from __future__ import annotations
@@ -22,12 +24,13 @@ from typing import Callable
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                               QPlainTextEdit, QScrollArea, QSplitter,
-                               QTabWidget, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QPushButton, QScrollArea,
+                               QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import outputpanel, search
 from ..themes import REFERENCE
 from .cards import PipelineCard, ScriptCard
+from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from .stylesheet import stylesheet
 
@@ -78,6 +81,9 @@ class MainWindow(QMainWindow):
         self._on_run = on_run
         self._cards: list = []
         self._output_tabs: dict[str, OutputPane] = {}
+        self._bridge = None
+        self.quick_run_bars: dict[str, QuickRunBar] = {}
+        self._qr_index = None
 
         self.setWindowTitle("RYOS")
         self.resize(self._settings.get("window_width", 540),
@@ -135,7 +141,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(quit_action)
 
     # -- cards -------------------------------------------------------------
-    def set_cards(self, group_name: str, records) -> None:
+    def set_cards(self, group_name: str, records, base_dir: str = "") -> None:
         """Replace one group tab's cards."""
         page = QWidget()
         col = QVBoxLayout(page)
@@ -166,8 +172,111 @@ class MainWindow(QMainWindow):
         scroll.setWidget(page)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self.group_tabs.addTab(scroll, group_name)
+
+        holder = QWidget()
+        hcol = QVBoxLayout(holder)
+        hcol.setContentsMargins(0, 0, 0, 0)
+        hcol.setSpacing(2)
+        if base_dir and self._settings.get("quick_run_enabled", True):
+            hcol.addWidget(self._build_quick_run(group_name, base_dir))
+        hcol.addWidget(scroll, 1)
+        self.group_tabs.addTab(holder, group_name)
         self._cards.extend(made)
+
+    # -- quick run ---------------------------------------------------------
+    def _quick_run_index(self):
+        """One index for the window, shared by every group's bar.
+
+        Results come back through MainThreadInvoker, not QTimer.singleShot,
+        which would never fire when called from the index's worker thread.
+        """
+        if self._qr_index is None:
+            from ..quickrun_index import QuickRunIndex
+            self._invoker = MainThreadInvoker(self)
+            self._qr_index = QuickRunIndex(schedule=self._invoker,
+                                           on_ready=self._on_qr_index_ready)
+        return self._qr_index
+
+    def _qr_index_args(self) -> dict:
+        s = self._settings
+        return {
+            "ttl": s.get("quick_run_index_ttl", 300),
+            "allowed_exts": {e.lower() for e in
+                             (s.get("quick_run_index_extensions") or [])},
+            "max_files": s.get("quick_run_index_max_files", 5000),
+        }
+
+    def _on_qr_index_ready(self, base_dir: str) -> None:
+        for bar in self.quick_run_bars.values():
+            bar.on_index_ready(base_dir)
+
+    def _build_quick_run(self, group_name: str, base_dir: str) -> QWidget:
+        box = QWidget()
+        col = QVBoxLayout(box)
+        col.setContentsMargins(0, 0, 0, 0)
+        toggle = QPushButton("⚡ Quick Run")
+        toggle.setObjectName("dark")
+        bar = QuickRunBar(
+            base_dir=base_dir, index=self._quick_run_index(),
+            index_args=self._qr_index_args,
+            max_suggestions=self._settings.get("quick_run_max_suggestions", 10),
+            autocomplete=self._settings.get("quick_run_autocomplete", True))
+        bar.hide()
+        toggle.clicked.connect(
+            lambda: bar.close_bar() if bar.isVisible() else bar.open())
+        bar.submitted.connect(
+            lambda raw, g=group_name, b=base_dir: self.quick_run_submit(g, b, raw))
+        col.addWidget(toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        col.addWidget(bar)
+        self.quick_run_bars[group_name] = bar
+        return box
+
+    def quick_run_submit(self, group_name: str, base_dir: str, raw: str, *,
+                         choose=None, on_error=None) -> bool:
+        """Resolve, register and run what was typed. True when it started.
+
+        The same flow as the Tk bar, through `quickrun_actions`: nothing typed
+        does nothing; no match says why; several matches ask which; one match
+        is reused or registered and then run. ``choose`` and ``on_error`` are
+        injectable so the flow can be exercised without modal dialogs.
+        """
+        from ..quickrun import display_relpath
+        from ..quickrun_actions import (CHOOSE, ERROR, NOTHING, chosen_path,
+                                        ensure_script, plan_submit)
+
+        plan = plan_submit(raw, base_dir)
+        if plan.kind == NOTHING:
+            return False
+        bar = self.quick_run_bars.get(group_name)
+        if bar is not None:
+            bar.close_bar()
+        if plan.kind == ERROR:
+            (on_error or self._show_quick_run_error)(plan.error)
+            return False
+        abs_path = plan.abs_path
+        if plan.kind == CHOOSE:
+            pick = (choose or self._choose_candidate)(list(plan.candidates))
+            if not pick:
+                return False
+            abs_path = chosen_path(base_dir, pick)
+        if self._bridge is None:
+            return False
+        got = ensure_script(self._bridge.db, abs_path, group_name,
+                            plan.params, plan.params_explicit)
+        return self._bridge.run_script(
+            got.script_id, display_relpath(abs_path, base_dir), abs_path,
+            got.params, got.interpreter, active_group=group_name)
+
+    def _show_quick_run_error(self, message: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(self, "Quick Run", message)
+
+    def _choose_candidate(self, candidates: list) -> str | None:
+        from PySide6.QtWidgets import QInputDialog
+        pick, ok = QInputDialog.getItem(self, "Quick Run",
+                                        "Several scripts match — which one?",
+                                        candidates, 0, False)
+        return pick if ok else None
 
     # -- search ------------------------------------------------------------
     def _apply_search(self, raw: str) -> None:

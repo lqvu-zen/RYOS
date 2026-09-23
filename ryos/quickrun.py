@@ -169,3 +169,66 @@ def display_relpath(abs_path: str, base_dir: str) -> str:
         return str(Path(abs_path).resolve().relative_to(Path(base_dir).resolve()))
     except ValueError:
         return Path(abs_path).name
+
+
+# --- the bar's behaviour -------------------------------------------------------
+# Shared by the Tk and Qt bars, so typing in either behaves identically.
+
+#: Shown in the suggestion list while the file index is still being built.
+#: Not a suggestion: it can be highlighted but never accepted.
+INDEXING = "Indexing files…"
+
+#: How long typing must pause before suggestions refresh, in milliseconds.
+SUGGEST_DEBOUNCE_MS = 120
+
+
+def suggestion_query(text: str) -> "str | None":
+    """What to search the index for, or None when suggestions should hide.
+
+    Suggestions are for the script name only. Once the text contains a space
+    the user is typing parameters, and a list of filenames popping up over
+    them would be in the way -- so the list hides rather than going stale.
+    """
+    full = (text or "").strip()
+    if not full or " " in full:
+        return None
+    return full
+
+
+def is_selectable(item: str) -> bool:
+    """Whether a suggestion row may be accepted."""
+    return bool(item) and item != INDEXING
+
+
+def move_selection(current: "int | None", count: int, delta: int) -> "int | None":
+    """The highlighted row after Up (-1) or Down (+1), or None if there is none.
+
+    Clamps rather than wraps, matching the Tk bar: Down from nothing selects
+    the first row, Up from nothing the last, and neither moves past an end --
+    wrapping from the last row back to the first is easy to overshoot when
+    holding a key.
+    """
+    if count <= 0:
+        return None
+    if current is None:
+        return 0 if delta > 0 else count - 1
+    return max(0, min(count - 1, current + delta))
+
+
+def accepted_text(rel: str, *, submit: bool) -> str:
+    """What the entry holds after a suggestion is taken.
+
+    Tab (submit=False) leaves a trailing space so the user can go straight on
+    to typing parameters; Return (submit=True) runs it as it stands.
+    """
+    return rel if submit else rel + " "
+
+
+#: What Escape does, depending on whether the suggestion list is open.
+CLOSE_SUGGESTIONS = "close_suggestions"
+CLOSE_BAR = "close_bar"
+
+
+def escape_action(suggestions_open: bool) -> str:
+    """Escape closes the list first, the bar second -- one layer per press."""
+    return CLOSE_SUGGESTIONS if suggestions_open else CLOSE_BAR

@@ -66,6 +66,7 @@ could be tested in isolation.
 | `ryos/db.py` | `ScriptDB` — all SQLite: scripts, groups, pipelines, presets, export/import, `PRAGMA user_version` migrations. | yes |
 | `ryos/quickrun.py` | Pure Quick Run helpers: path-containment guard, file-index entry shape, suggestion ranking, name resolution, input parsing. | yes |
 | `ryos/quickrun_index.py` | The Quick Run file index: in-memory cache, on-disk cache, single-flight background rebuild. UI-free — the caller injects a `schedule` function for the thread hop, so the same controller works under Tk's `after(0, ...)` or Qt's `QTimer.singleShot`. | yes |
+| `ryos/quickrun_actions.py` | What submitting the Quick Run bar does: `plan_submit` parses and resolves the typed text (run, choose between several matches, or say why not), and `ensure_script` reuses or registers the script — keeping saved parameters unless new ones were typed, and remembering typed ones as a preset exactly once. Shared by both bars. | yes |
 | `ryos/jobs.py` | `Job` state container, `JobRegistry` (storage + id allocation), `format_elapsed` time label. | yes |
 | `ryos/runner.py` | Subprocess execution worker (`run_subprocess`) and output-queue protocol decoding (`decode_output_item` / `OutputAction`). UI-free; talks to the app only via the queue. | yes |
 | `ryos/job_controller.py` | `JobController` — pipeline sequencing (`run_next_pipeline_step`) and step completion (`handle_step_done`). UI-free; reaches the window only through injected callbacks. See `docs/adr/0001`. | yes |
