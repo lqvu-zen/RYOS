@@ -167,10 +167,39 @@ needs Qt's network stack (the GitHub update check uses `urllib`) or SVG.
 | 2.1 `theme.py` → QSS | **done 2026-09-22** — `qtui/stylesheet.py`, 13 unit tests + `tests/qt_smoke.py` |
 | 2.2 `widgets.py` | **done 2026-09-22** — Tooltip/HoverPreview mostly deleted; marquee maths shared via `ryos/marquee.py`, 13 tests |
 | 2.3 `cards.py` | **done 2026-09-22** — rules shared via `ryos/cardstyle.py`; Qt cards + smoke check pinning #3, #4, #7 |
-| 2.4 `dialogs.py` | **done 2026-09-22** — validation + settings schema extracted (36 tests, dialogs.py’s first coverage); Qt options form generated from the schema |
+| 2.4 `dialogs.py` | **done 2026-09-23** — validation + settings schema extracted (36 tests, dialogs.py’s first coverage); Qt options form generated from the schema; the remaining seven dialogs in `qtui/smalldialogs.py`, with `scheduleform.py` shared (29 tests) |
 | 2.5 `pipeline.py`, `theme_editor.py` | **done 2026-09-22** — step rules + theme-form rules extracted (33 tests); Qt pipeline editor; `verdict.py` consolidates three copies of the same shape |
-| 2.6 The shell | **running 2026-09-22** — window, tabs, cards, search, output panel, re-theming, and `JobBridge`: real scripts and pipelines run through Qt |
+| 2.6 The shell | **in progress** — window, tabs, cards, search, output panel, re-theming, `JobBridge` (real scripts and pipelines run through Qt), and the running-jobs section with stop |
+| 2.7 Parity | **not started** — see below |
+| 2.8 Flip `__main__` | blocked on 2.7 |
 
 **1.1 note — the extraction did not shrink ** (3,145 → 3,153). The decisions were small; what they were tangled in is widget code that stays until the port. Expect the same shape from 1.2–1.4: the line count falls less than the seam table suggests, because that table measures whole methods while only their decisions move. The real win is UI-free, tested rules that survive the rewrite — treat the ~1,200-line target as optimistic.
+
+### Parity: what the Qt shell still lacks
+
+Recorded 2026-09-23. The Qt side runs scripts and pipelines, but the next
+release is to be the Qt one, so everything below has to exist before
+`__main__` flips.
+
+| Missing on Qt | Size in the Tk app | Notes |
+| --- | --- | --- |
+| Quick Run bar | ~490 lines | Index and ranking are already shared (`quickrun_index.py`, `quickrun.py`); the bar and its suggestion list are the port. |
+| Drag-and-drop reordering | ~220 lines | Rules shared (`dragdrop.py`); Qt's drag events replace the Tk ghost-window machinery. |
+| Tray icon | `tray.py` + ~45 app refs | `QSystemTrayIcon` retires `pystray` and `pillow`. |
+| Schedule tick | ~60 lines | Dialog done; the 30-second timer that fires due schedules is not wired. |
+| Context menus on cards and tabs | ~40 lines | Rename, clone, delete, move, colour. |
+| Select mode / run selected | ~40 lines | `jobs.split_by_capacity` is already shared. |
+| Group management from the shell | — | Dialogs exist; nothing opens them yet. |
+| Single-instance handoff | `single_instance.py` | Candidate for `QLocalServer`, which is cross-platform. |
+| Update check and notifications | `notifications.py` | Toolkit-free already; needs wiring. |
+| Window geometry, snap-to-corner, multi-monitor | `screens.py`, `placement.py` | `QScreen` replaces most of the ctypes work. |
+| Theme editor | `ui/theme_editor.py` | Rules shared (`themeform.py`); the dialog is not ported. |
+
+**A process note, recorded because it cost something.** `tests/` is ignored
+by default in `.gitignore`, with named files allowlisted back in, and
+`tests/qt_smoke.py` was never added — so for the whole of phase 2 the Qt
+smoke existed only on one machine while the commit history described it as
+committed. It was tracked in `7b4bdcd`, and `TestDocumentedHarnessesAreTracked`
+now fails if a documented harness is ignored again.
 
 _Update this table as steps land, and record any measurement that contradicts the plan — the seam table above is a snapshot and will drift as `app.py` shrinks._
