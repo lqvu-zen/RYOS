@@ -746,3 +746,66 @@ THEME_MODES: dict[str, str] = {name: SEEDS[name]["mode"] for name in THEME_ORDER
 
 # Built-in theme palettes the UI selects among, keyed by id.
 BUILTIN_THEMES: dict[str, dict] = {name: _builtin_palette(name) for name in THEME_ORDER}
+
+
+# --- Per-item highlight colours ----------------------------------------------
+# Card labels can be tinted so a script or pipeline stands out in a long list.
+# These are *seeds*, not final colours: readable_highlight() shades a seed toward
+# white or black until it clears WCAG AA against the surface it will be drawn
+# on, so one palette stays legible on every built-in, preset and custom theme
+# instead of needing a hand-tuned variant per theme.
+HIGHLIGHT_SEEDS: dict[str, str] = {
+    "red":    "#e05252",
+    "orange": "#e08a3c",
+    "yellow": "#d4a72c",
+    "green":  "#3fa45b",
+    "teal":   "#2aa3a8",
+    "blue":   "#4a90d9",
+    "purple": "#a06ee0",
+}
+
+HIGHLIGHT_MIN_RATIO = 4.5
+
+# Enough 8% steps to reach near-white/near-black from any seed. Themes whose
+# card_hover is unusually bright for a dark palette (sunset-boulevard) need
+# ~20 of them; the seeds stay saturated on ordinary themes, which converge in
+# two or three.
+_HIGHLIGHT_MAX_STEPS = 30
+
+# Keyed by (seed, surfaces) — a theme switch changes the surfaces, so entries
+# never go stale and there is nothing to invalidate on a theme change.
+_highlight_cache: dict[tuple, str] = {}
+
+
+def _readable_on(color: str, surfaces: tuple[str, ...]) -> str:
+    """Shade `color` away from `surfaces` until it clears AA on all of them.
+
+    Lightens on a dark surface, darkens on a light one. The loop is capped and
+    returns its last value either way, so the function always yields a usable
+    colour rather than failing on a pathological theme.
+    """
+    cached = _highlight_cache.get((color, surfaces))
+    if cached is not None:
+        return cached
+    step = 0.08 if _rel_luminance(surfaces[0]) < 0.45 else -0.08
+    cur = color
+    for _ in range(_HIGHLIGHT_MAX_STEPS):
+        if all(contrast_ratio(cur, s) >= HIGHLIGHT_MIN_RATIO for s in surfaces):
+            break
+        cur = _shade(cur, step)
+    _highlight_cache[(color, surfaces)] = cur
+    return cur
+
+
+def readable_highlight(key: str | None, *surfaces: str) -> str | None:
+    """Readable text colour for a highlight key on ``surfaces``, or None.
+
+    Unknown keys return None -- the caller falls back to the normal label
+    colour -- so a value left in the database by a future palette never
+    renders as an invisible or garbage colour. Pass every surface the label
+    can sit on (the card and its hover shade), so it stays readable on each.
+    """
+    seed = HIGHLIGHT_SEEDS.get(key or "")
+    if seed is None or not surfaces:
+        return None
+    return _readable_on(seed, tuple(surfaces))

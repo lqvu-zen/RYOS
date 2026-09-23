@@ -93,6 +93,7 @@ files = [
     "ryos/qtui/__init__.py",
     "ryos/qtui/stylesheet.py",
     "ryos/marquee.py",
+    "ryos/cardmenu.py",
     "ryos/cardstyle.py",
     "ryos/scriptform.py",
     "ryos/settings_schema.py",

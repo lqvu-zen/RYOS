@@ -37,6 +37,7 @@ from ryos import quickrun_index  # noqa: E402
 from ryos import quickrun as qr_mod  # noqa: E402
 from ryos import quickrun_actions as qra  # noqa: E402
 from ryos import schedule_runner  # noqa: E402
+from ryos import cardmenu, grouping, themes  # noqa: E402
 import types  # noqa: E402
 from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
@@ -5789,6 +5790,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
         "ryos/qtui/dragdrop.py": "imports PySide6; same reason",
+        "ryos/qtui/menus.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7346,6 +7348,172 @@ class TestScheduleRunner(unittest.TestCase):
         pid = self.db.create_pipeline("loose", "")
         self.assertEqual(schedule_runner.pipeline_name(self.db, pid), "loose")
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
+
+
+class TestCardMenu(unittest.TestCase):
+    """The right-click menus as data, and the actions behind them."""
+
+    def keys(self, items):
+        return [i.key for i in items]
+
+    def test_script_menu_order_matches_what_tk_always_showed(self):
+        items = cardmenu.script_menu(favorite=False, color=None,
+                                     can_move_up=True, can_move_down=True)
+        self.assertEqual(self.keys(items), [
+            cardmenu.FAVORITE, cardmenu.HIGHLIGHT, None, cardmenu.MOVE_TOP,
+            cardmenu.MOVE_UP, cardmenu.MOVE_DOWN, None, cardmenu.SCHEDULE,
+            cardmenu.HISTORY, cardmenu.CLONE, None, cardmenu.DELETE])
+        self.assertTrue(items[-1].danger)
+
+    def test_moves_disable_at_the_ends(self):
+        items = {i.key: i for i in cardmenu.script_menu(
+            favorite=False, color=None, can_move_up=False, can_move_down=True)}
+        self.assertFalse(items[cardmenu.MOVE_UP].enabled)
+        self.assertFalse(items[cardmenu.MOVE_TOP].enabled)
+        self.assertTrue(items[cardmenu.MOVE_DOWN].enabled)
+
+    def test_favorite_label_follows_state(self):
+        on = cardmenu.pipeline_menu(favorite=True, color=None)[0]
+        off = cardmenu.pipeline_menu(favorite=False, color=None)[0]
+        self.assertIn("Remove", on.label)
+        self.assertIn("Add", off.label)
+
+    def test_highlight_submenu_marks_the_current_colour(self):
+        sub = cardmenu.pipeline_menu(favorite=False, color="teal")[1]
+        marked = [c.key for c in sub.children if c.label.startswith("\u25cf")]
+        self.assertEqual(marked, [cardmenu.highlight_key("teal")])
+
+    def test_unknown_stored_colour_marks_none(self):
+        sub = cardmenu.pipeline_menu(favorite=False, color="chartreuse")[1]
+        marked = [c.key for c in sub.children if c.label.startswith("\u25cf")]
+        self.assertEqual(marked, [cardmenu.highlight_key(None)])
+
+    def test_picked_highlight_round_trips(self):
+        for color in [None, *cardmenu.HIGHLIGHTS]:
+            self.assertEqual(cardmenu.picked_highlight(
+                cardmenu.highlight_key(color)), (True, color))
+        self.assertEqual(cardmenu.picked_highlight("highlight:nope"), (True, None))
+        self.assertEqual(cardmenu.picked_highlight(cardmenu.CLONE), (False, None))
+
+    def test_every_highlight_has_a_seed(self):
+        self.assertEqual(set(cardmenu.HIGHLIGHTS), set(themes.HIGHLIGHT_SEEDS))
+
+    def test_neighbours(self):
+        self.assertEqual(cardmenu.neighbours([1, 2, 3], 1), (None, 2))
+        self.assertEqual(cardmenu.neighbours([1, 2, 3], 3), (2, None))
+        self.assertEqual(cardmenu.neighbours([1, 2, 3], 9), (None, None))
+
+    def test_move_refuses_without_a_neighbour(self):
+        db = _make_db()
+        a = db.add("a", "/a.py", "", "", "G")
+        self.assertFalse(cardmenu.move(db, cardmenu.MOVE_UP, a))
+        self.assertFalse(cardmenu.move(db, cardmenu.CLONE, a, up_id=a))
+
+    def test_move_up_and_to_top(self):
+        db = _make_db()
+        a, b, c = (db.add(n, f"/{n}.py", "", "", "G") for n in "abc")
+        self.assertTrue(cardmenu.move(db, cardmenu.MOVE_UP, c, up_id=b))
+        self.assertEqual([r[0] for r in db.list_all()], [a, c, b])
+        self.assertTrue(cardmenu.move(db, cardmenu.MOVE_TOP, b, up_id=c))
+        self.assertEqual([r[0] for r in db.list_all()][0], b)
+
+    def test_clone_keeps_how_a_script_runs(self):
+        db = _make_db()
+        sid = db.add("L", "/l.py", "-x", "py", "G", 1, 1,
+                     env_vars="A=1", work_dir="/w")
+        copy = cardmenu.clone(db, cardmenu.SCRIPT, sid)
+        rec = db.get(copy)
+        self.assertEqual(tuple(rec[1:9]), ("L (copy)", "/l.py", "-x", "py",
+                                           "G", 1, "A=1", "/w"))
+        self.assertTrue(db.is_detached(copy))
+
+    def test_clone_of_a_missing_script_is_none(self):
+        self.assertIsNone(cardmenu.clone(_make_db(), cardmenu.SCRIPT, 999))
+
+    def test_favorite_highlight_delete_by_kind(self):
+        db = _make_db()
+        sid = db.add("s", "/s.py", "", "", "G")
+        pid = db.create_pipeline("p", "G")
+        cardmenu.set_favorite(db, cardmenu.SCRIPT, sid, True)
+        cardmenu.set_favorite(db, cardmenu.PIPELINE, pid, True)
+        cardmenu.set_highlight(db, cardmenu.PIPELINE, pid, "red")
+        self.assertEqual(db.list_all()[0][10], 1)
+        self.assertEqual(tuple(db.list_pipelines("G")[0][2:]), (1, "red"))
+        cardmenu.delete(db, cardmenu.PIPELINE, pid)
+        cardmenu.delete(db, cardmenu.SCRIPT, sid)
+        self.assertEqual((db.list_all(), db.list_pipelines("G")), ([], []))
+
+    def test_delete_prompts_name_the_item(self):
+        self.assertEqual(cardmenu.delete_prompt(cardmenu.PIPELINE, "P"),
+                         ("Delete Pipeline", "Delete pipeline 'P'?"))
+        self.assertIn("'G'", cardmenu.delete_group_prompt("G")[1])
+
+
+class TestGroupMenuRules(unittest.TestCase):
+    """Rename and base-folder decisions, shared by the Tk and Qt tab menus."""
+
+    def test_rename_nothing_to_do(self):
+        for answer in (None, "", "   ", "G", " G "):
+            self.assertEqual(grouping.rename_target("G", answer, ["G", "H"]),
+                             (None, None))
+
+    def test_rename_clash_is_a_problem(self):
+        new, problem = grouping.rename_target("G", "H", ["G", "H"])
+        self.assertIsNone(new)
+        self.assertIn("already exists", problem)
+
+    def test_rename_strips(self):
+        self.assertEqual(grouping.rename_target("G", " New ", ["G"]),
+                         ("New", None))
+
+    def test_base_dir_no_change(self):
+        self.assertIsNone(grouping.base_dir_change("G", "/a", None))
+        self.assertIsNone(grouping.base_dir_change("G", "/a", "/a"))
+        self.assertIsNone(grouping.base_dir_change("G", "", ""))
+
+    def test_base_dir_clear_always_confirms(self):
+        change = grouping.base_dir_change("G", "/a", "")
+        self.assertEqual(change.kind, grouping.BASE_DIR_CLEAR)
+        self.assertEqual(change.confirm[0], "Clear base directory")
+
+    def test_base_dir_first_set_needs_no_confirm(self):
+        change = grouping.base_dir_change("G", "", "/b")
+        self.assertEqual((change.kind, change.confirm),
+                         (grouping.BASE_DIR_SET, None))
+
+    def test_base_dir_move_confirms_the_remap(self):
+        change = grouping.base_dir_change("G", "/a", "/b")
+        self.assertEqual(change.confirm[0], "Re-map paths")
+        self.assertIn("/a", change.confirm[1])
+
+    def test_apply_reports_untouched_paths(self):
+        base = tempfile.mkdtemp()
+        db = _make_db()
+        db.create_group("G", base_dir=base)
+        db.add("in", os.path.join(base, "x.py"), "", "", "G")
+        db.add("out", os.path.join(tempfile.mkdtemp(), "y.py"), "", "", "G")
+        moved = tempfile.mkdtemp()
+        status, warning = grouping.apply_base_dir_change(
+            db, "G", grouping.base_dir_change("G", base, moved))
+        self.assertIn("1 path(s) remapped", status)
+        self.assertEqual(warning[0], "Some paths not remapped")
+        status, warning = grouping.apply_base_dir_change(
+            db, "G", grouping.base_dir_change("G", moved, ""))
+        self.assertIn("cleared", status)
+        self.assertIsNone(warning)
+        self.assertEqual(db.get_group_base_dir("G"), "")
+
+
+class TestReadableHighlight(unittest.TestCase):
+    def test_toolkit_free_and_same_as_tk(self):
+        from ryos.ui.theme import highlight_fg
+        for key in cardmenu.HIGHLIGHTS:
+            self.assertEqual(themes.readable_highlight(key, "#1d232d"),
+                             highlight_fg(key, "#1d232d"))
+
+    def test_needs_a_surface_and_a_known_key(self):
+        self.assertIsNone(themes.readable_highlight("red"))
+        self.assertIsNone(themes.readable_highlight("nope", "#000000"))
 
 
 class TestApplyDrop(unittest.TestCase):

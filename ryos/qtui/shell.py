@@ -12,6 +12,11 @@ and shows them in the running section. It is optional and separate from
 A group given a base folder in `set_cards()` gets a Quick Run bar, which
 submits through the same `quickrun_actions` flow as the Tk bar.
 
+Right-click menus on cards and group tabs are the `cardmenu` menus, drawn by
+`menus.build_menu`. Every question they ask -- confirm, name, folder, file --
+goes through an attribute (`ask_yes_no`, `ask_text`, ...) holding the real
+dialog, so a test can answer in its place.
+
 `RYOSApp` still owns the shipping app and `__main__` still starts it; flipping
 over is the last step of the migration and has not happened. What the shell
 still lacks is listed in docs/plans/qt-migration.md under "Parity".
@@ -21,16 +26,17 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                QPlainTextEdit, QPushButton, QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import outputpanel, search
-from ..themes import REFERENCE
+from .. import cardmenu, grouping, outputpanel, search
+from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
+from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from .stylesheet import stylesheet
@@ -87,6 +93,18 @@ class MainWindow(QMainWindow):
         self._qr_index = None
         self._db = None
         self.card_lists: dict[str, CardList] = {}
+        # (kind, id) -> (record, group), for the menus.
+        self._records: dict[tuple, tuple] = {}
+
+        # Everything a menu action may ask. Real dialogs by default; a test
+        # replaces them, since each of these blocks until a person answers.
+        self.ask_yes_no: Callable[[str, str], bool] = self._ask_yes_no
+        self.ask_text: Callable[[str, str, str], str | None] = self._ask_text
+        self.warn: Callable[[str, str], None] = self._warn
+        self.ask_save_path: Callable[[str, str], str | None] = self._ask_save_path
+        self.run_dialog: Callable[[object], None] = lambda dlg: dlg.exec()
+        self.popup: Callable[[object, QPoint], None] = \
+            lambda menu, pos: menu.exec(pos)
 
         self.setWindowTitle("RYOS")
         self.resize(self._settings.get("window_width", 540),
@@ -128,6 +146,7 @@ class MainWindow(QMainWindow):
         self.group_tab_bar = GroupTabBar()
         self.group_tabs.setTabBar(self.group_tab_bar)
         self.group_tab_bar.dropped_on_group.connect(self._on_drop_on_group)
+        self.group_tab_bar.menu_requested.connect(self._show_group_menu)
         col.addWidget(self.group_tabs, 1)
         col.addWidget(self.running)
         return top
@@ -163,23 +182,38 @@ class MainWindow(QMainWindow):
         size = self._settings.get("card_size", "medium")
         made = []
         for rec in records:
+            shade = readable_highlight(rec.get("color"),
+                                       self._palette["card_bg"],
+                                       self._palette["card_hover"])
             if rec.get("kind") == "pipeline":
                 card = PipelineCard(pipeline_id=rec["id"], name=rec["name"],
                                     step_count=rec.get("steps", 0),
                                     palette=self._palette, compact=compact,
                                     size=size,
+                                    is_favorite=bool(rec.get("favorite")),
+                                    label_color=shade,
                                     last_status=rec.get("status"))
             else:
                 card = ScriptCard(script_id=rec["id"], name=rec["name"],
                                   path=rec.get("path", ""),
                                   palette=self._palette, compact=compact,
-                                  size=size, last_status=rec.get("status"))
+                                  size=size,
+                                  is_favorite=bool(rec.get("favorite")),
+                                  label_color=shade,
+                                  last_status=rec.get("status"))
             if self._on_run is not None:
                 card.run_requested.connect(self._on_run)
             elif "run" in rec:
                 card.run_requested.connect(lambda _id, go=rec["run"]: go())
             kind = "pipeline" if rec.get("kind") == "pipeline" else "script"
             page.add_card(card, kind, rec["id"])
+            self._records[(kind, rec["id"])] = (rec, group_name)
+            card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            card.customContextMenuRequested.connect(
+                lambda pos, c=card, k=kind, i=rec["id"]:
+                    self._show_card_menu(k, i, c.mapToGlobal(pos)))
+            card.favorite_toggled.connect(
+                lambda item_id, fav, k=kind: self._set_favorite(k, item_id, fav))
             made.append(card)
 
         scroll = QScrollArea()
@@ -319,13 +353,15 @@ class MainWindow(QMainWindow):
                 sid, sname, path, params, interp = rec[0], rec[1], rec[2], rec[3], rec[4]
                 records.append({
                     "id": sid, "name": sname, "path": path, "status": rec[7],
+                    "favorite": bool(rec[10]), "color": rec[11],
                     "run": (lambda s=sid, n=sname, pth=path, prm=params,
                             i=interp, g=name: self._run_script_record(
                                 s, n, pth, prm or "", i or "", g)),
                 })
-            for pid, pname, _fav, _color in db.list_pipelines(name):
+            for pid, pname, fav, color in db.list_pipelines(name):
                 records.append({
                     "id": pid, "kind": "pipeline", "name": pname,
+                    "favorite": bool(fav), "color": color,
                     "steps": len(db.list_pipeline_steps(pid)),
                     "status": statuses.get(pid),
                     "run": (lambda p=pid, n=pname, g=name:
@@ -346,6 +382,7 @@ class MainWindow(QMainWindow):
             widget.deleteLater()
         self._cards.clear()
         self.card_lists.clear()
+        self._records.clear()
         self.quick_run_bars.clear()
 
     def current_group(self) -> str | None:
@@ -400,6 +437,190 @@ class MainWindow(QMainWindow):
                                       action.group)
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
+
+    # -- right-click menus ------------------------------------------------------
+    def card_menu_items(self, kind: str, item_id: int) -> list:
+        """The menu for one card, by the shared definition."""
+        rec, group = self._records[(kind, item_id)]
+        if kind == cardmenu.PIPELINE:
+            return cardmenu.pipeline_menu(favorite=bool(rec.get("favorite")),
+                                          color=rec.get("color"))
+        up, down = self._script_neighbours(item_id, group)
+        return cardmenu.script_menu(favorite=bool(rec.get("favorite")),
+                                    color=rec.get("color"),
+                                    can_move_up=up is not None,
+                                    can_move_down=down is not None)
+
+    def _script_neighbours(self, item_id: int, group: str) -> tuple:
+        page = self.card_lists.get(group)
+        ids = [c.drag_payload.item_id for c in (page.cards if page else [])
+               if c.drag_payload.kind == cardmenu.SCRIPT]
+        return cardmenu.neighbours(ids, item_id)
+
+    def _show_card_menu(self, kind: str, item_id: int, pos: QPoint) -> None:
+        menu = build_menu(self, self.card_menu_items(kind, item_id),
+                          lambda key: self.on_card_menu(kind, item_id, key),
+                          self._palette)
+        self.popup(menu, pos)
+
+    def on_card_menu(self, kind: str, item_id: int, key: str) -> None:
+        """Carry out one card-menu entry."""
+        if self._db is None or (kind, item_id) not in self._records:
+            return
+        db = self._db
+        rec, group = self._records[(kind, item_id)]
+        name = rec.get("name", "")
+        is_pick, color = cardmenu.picked_highlight(key)
+        if is_pick:
+            cardmenu.set_highlight(db, kind, item_id, color)
+        elif key == cardmenu.FAVORITE:
+            cardmenu.set_favorite(db, kind, item_id, not rec.get("favorite"))
+        elif key in (cardmenu.MOVE_TOP, cardmenu.MOVE_UP, cardmenu.MOVE_DOWN):
+            up, down = self._script_neighbours(item_id, group)
+            if not cardmenu.move(db, key, item_id, up_id=up, down_id=down):
+                return
+        elif key == cardmenu.CLONE:
+            cardmenu.clone(db, kind, item_id)
+        elif key == cardmenu.DELETE:
+            if not self.ask_yes_no(*cardmenu.delete_prompt(kind, name)):
+                return
+            cardmenu.delete(db, kind, item_id)
+        elif key in (cardmenu.SCHEDULE, cardmenu.HISTORY):
+            from .smalldialogs import RunHistoryDialog, ScheduleDialog
+            ids = ({"pipeline_id": item_id} if kind == cardmenu.PIPELINE
+                   else {"script_id": item_id})
+            if key == cardmenu.SCHEDULE:
+                self.run_dialog(ScheduleDialog(self, db=db, title=name,
+                                               on_save=self._defer_reload, **ids))
+            else:
+                self.run_dialog(RunHistoryDialog(self, db=db, title=name, **ids))
+            return
+        elif key == cardmenu.EDIT and kind == cardmenu.PIPELINE:
+            self._edit_pipeline(item_id, name)
+            return
+        else:
+            return
+        self._defer_reload()
+
+    def _set_favorite(self, kind: str, item_id: int, favorite: bool) -> None:
+        if self._db is not None:
+            cardmenu.set_favorite(self._db, kind, item_id, favorite)
+            self._defer_reload()
+
+    def _edit_pipeline(self, pipeline_id: int, name: str) -> None:
+        from .pipeline import PipelineEditorDialog
+        db = self._db
+        dlg = PipelineEditorDialog(
+            pipeline_id, name, db.list_pipeline_steps(pipeline_id), self,
+            on_reorder=lambda ids: db.reorder_pipeline_steps(pipeline_id, ids),
+            on_policy=lambda step_id, policy: db.set_step_policy(step_id,
+                                                                 **policy))
+        self.run_dialog(dlg)
+        self._defer_reload()
+
+    def _defer_reload(self) -> None:
+        # A menu action runs inside the menu's own event handling, on a card
+        # the reload is about to replace; rebuilding on the next turn is safe.
+        QTimer.singleShot(0, self.reload)
+
+    # -- the group-tab menu --------------------------------------------------------
+    def _show_group_menu(self, group: str, pos: QPoint) -> None:
+        if not group:
+            return                  # "Ungrouped" is not a group to rename
+        menu = build_menu(self, cardmenu.group_menu(),
+                          lambda key: self.on_group_menu(group, key),
+                          self._palette)
+        self.popup(menu, pos)
+
+    def on_group_menu(self, group: str, key: str) -> None:
+        """Carry out one group-tab menu entry."""
+        if self._db is None or not group:
+            return
+        db = self._db
+        status = None
+        show = self.current_group()
+        if key == cardmenu.RENAME_GROUP:
+            new, problem = grouping.rename_target(
+                group, self.ask_text("Rename Group", f"New name for '{group}':",
+                                     group), db.list_groups())
+            if problem:
+                self.warn("Rename Group", problem)
+            if new is None:
+                return
+            db.rename_group(group, new)
+            show = grouping.active_after_rename(show, group, new)
+        elif key == cardmenu.CLONE_GROUP:
+            existing = db.list_groups()
+            new = self.ask_text("Clone Group", f"Name for clone of '{group}':",
+                                grouping.unique_clone_name(group, existing))
+            if new is None:
+                return
+            problem = grouping.validate_group_name(new, existing)
+            if problem:
+                if new.strip():     # blank means they just cleared the box
+                    self.warn("Clone Group", problem)
+                return
+            scripts_n, pipes_n = db.clone_group(group, new.strip())
+            show = new.strip()
+            status = (f"Cloned '{group}' → '{show}' ({scripts_n} scripts, "
+                      f"{pipes_n} pipelines).")
+        elif key == cardmenu.BASE_DIR:
+            from .smalldialogs import GroupBaseDirDialog
+            current = db.get_group_base_dir(group)
+            dlg = GroupBaseDirDialog(self, group_name=group, current_dir=current)
+            self.run_dialog(dlg)
+            change = grouping.base_dir_change(group, current, dlg.result)
+            if change is None:
+                return
+            if change.confirm and not self.ask_yes_no(*change.confirm):
+                return
+            status, warning = grouping.apply_base_dir_change(db, group, change)
+            if warning:
+                self.warn(*warning)
+        elif key == cardmenu.EXPORT_GROUP:
+            path = self.ask_save_path(f"Export Group: {group}",
+                                      f"ryos_{group}.json")
+            if not path:
+                return
+            try:
+                n_scripts, n_pipes = db.export_to_file(path, group_name=group)
+            except Exception as exc:            # noqa: BLE001 - shown to the user
+                self.warn("Export Failed", str(exc))
+                return
+            self.statusBar().showMessage(
+                f"Exported {n_scripts} script(s), {n_pipes} pipeline(s).")
+            return
+        elif key == cardmenu.DELETE_GROUP:
+            if not self.ask_yes_no(*cardmenu.delete_group_prompt(group)):
+                return
+            db.delete_group(group)
+            show = grouping.active_after_delete(show, group, db.list_groups())
+        else:
+            return
+        QTimer.singleShot(0, lambda: (self.reload(), self.show_group(show)))
+        if status:
+            self.statusBar().showMessage(status)
+
+    # -- the real prompts ------------------------------------------------------------
+    def _ask_yes_no(self, title: str, question: str) -> bool:
+        from PySide6.QtWidgets import QMessageBox
+        return QMessageBox.question(self, title, question) == \
+            QMessageBox.StandardButton.Yes
+
+    def _ask_text(self, title: str, prompt: str, initial: str) -> str | None:
+        from PySide6.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getText(self, title, prompt, text=initial)
+        return text if ok else None
+
+    def _warn(self, title: str, message: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.warning(self, title, message)
+
+    def _ask_save_path(self, title: str, initial: str) -> str | None:
+        from PySide6.QtWidgets import QFileDialog
+        path, _filter = QFileDialog.getSaveFileName(
+            self, title, initial, "JSON (*.json);;All Files (*.*)")
+        return path or None
 
     # -- search ------------------------------------------------------------
     def _apply_search(self, raw: str) -> None:

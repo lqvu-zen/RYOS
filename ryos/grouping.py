@@ -9,6 +9,7 @@ testable and means they survive the Qt migration
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable
 
 
@@ -63,6 +64,19 @@ def validate_group_name(name, existing) -> str | None:
     return None
 
 
+def rename_target(old: str, answer, existing) -> tuple:
+    """(new name, problem) for renaming ``old`` to what the user typed.
+
+    (None, None) means there is nothing to do: cancelled, blank, or the same
+    name. A clash with another group is a problem to show -- the database
+    enforces unique names, so letting it through would raise, not merge.
+    """
+    if answer is None or not answer.strip() or answer.strip() == old:
+        return None, None
+    problem = validate_group_name(answer, [g for g in existing if g != old])
+    return (None, problem) if problem else (answer.strip(), None)
+
+
 def active_after_rename(active: str | None, old: str, new: str) -> str | None:
     """Which group stays selected when ``old`` is renamed to ``new``."""
     return new if active == old else active
@@ -79,3 +93,60 @@ def active_after_delete(active: str | None, deleted: str,
     if active != deleted:
         return active
     return remaining[0] if remaining else None
+
+
+# --- changing a group's base directory -----------------------------------------
+# The dialog returns the new folder, "" to clear it, or None when cancelled.
+# What happens next -- and what the user is asked on the way -- is decided
+# here, so the Tk and Qt flows cannot drift apart.
+
+BASE_DIR_CLEAR = "clear"
+BASE_DIR_SET = "set"
+
+
+@dataclass(frozen=True)
+class BaseDirChange:
+    """What to do with a base-directory answer, and what to confirm first."""
+
+    kind: str
+    new_dir: str
+    confirm: "tuple[str, str] | None"      # (title, question), or None
+
+
+def base_dir_change(group: str, current: str,
+                    answer: "str | None") -> "BaseDirChange | None":
+    """The change a base-directory dialog answer asks for, or None for none.
+
+    Clearing always confirms. Moving an existing folder confirms, because it
+    rewrites stored script paths; setting a first folder does not.
+    """
+    if answer is None or answer == current:
+        return None
+    if not answer:
+        return BaseDirChange(BASE_DIR_CLEAR, "", (
+            "Clear base directory",
+            f"Remove base directory restriction for '{group}'?\n\n"
+            "Existing script paths will not be changed."))
+    confirm = None
+    if current:
+        confirm = ("Re-map paths",
+                   f"Re-map script paths from\n{current}\nto\n{answer}?\n\n"
+                   "Paths already outside the old base will be left unchanged.")
+    return BaseDirChange(BASE_DIR_SET, answer, confirm)
+
+
+def apply_base_dir_change(db, group: str, change: BaseDirChange
+                          ) -> "tuple[str, tuple[str, str] | None]":
+    """Store ``change``. Returns (status line, warning (title, text) or None)."""
+    if change.kind == BASE_DIR_CLEAR:
+        db.set_group_base_dir(group, "")
+        return f"Base directory cleared for '{group}'.", None
+    remapped, untouched = db.set_group_base_dir(group, change.new_dir)
+    warning = None
+    if untouched:
+        warning = ("Some paths not remapped",
+                   f"{len(untouched)} script(s) have paths outside the old "
+                   "base directory and were not remapped:\n"
+                   + "\n".join(untouched[:10]))
+    return (f"Base directory set for '{group}'. {remapped} path(s) remapped.",
+            warning)

@@ -29,9 +29,10 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import outputpanel
+from .. import cardmenu, outputpanel
 from ..grouping import (active_after_delete, active_after_rename,
-                        bucket_by_group, unique_clone_name,
+                        apply_base_dir_change, base_dir_change,
+                        bucket_by_group, rename_target, unique_clone_name,
                         validate_group_name)
 from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
                        relocate_geometry, work_area_at_point)
@@ -49,7 +50,7 @@ from ..quickrun import (
 )
 from ..job_controller import JobController
 from ..jobs import Job as _Job, JobRegistry, format_elapsed, split_by_capacity
-from .cards import PipelineCard, ScriptCard
+from .cards import PipelineCard, ScriptCard, _popup_menu
 from .dialogs import (
     AdvancedOptionsDialog, CloseToTrayPromptDialog, GroupBaseDirDialog,
     NewGroupDialog, ScriptDialog,
@@ -841,19 +842,18 @@ class RYOSApp(_BaseWindow):
     def _rename_group(self, old: str):
         new = simpledialog.askstring("Rename Group", f"New name for '{old}':",
                                      initialvalue=old, parent=self)
-        if new and new.strip() and new.strip() != old:
-            self.db.rename_group(old, new.strip())
-            _log.info("Group renamed: %s -> %s", old, new.strip())
-            self._active_group = active_after_rename(self._active_group, old,
-                                                     new.strip())
-            self._refresh()
+        new, problem = rename_target(old, new, self.db.list_groups())
+        if problem:
+            messagebox.showerror("Rename Group", problem, parent=self)
+        if new is None:
+            return
+        self.db.rename_group(old, new)
+        _log.info("Group renamed: %s -> %s", old, new)
+        self._active_group = active_after_rename(self._active_group, old, new)
+        self._refresh()
 
     def _delete_group(self, name: str):
-        if messagebox.askyesno(
-            "Delete Group",
-            f"Delete group '{name}'?\n\nScripts in this group will be moved to ungrouped.",
-            parent=self,
-        ):
+        if messagebox.askyesno(*cardmenu.delete_group_prompt(name), parent=self):
             self.db.delete_group(name)
             _log.info("Group deleted: %s", name)
             self._active_group = active_after_delete(
@@ -882,52 +882,27 @@ class RYOSApp(_BaseWindow):
         current = self.db.get_group_base_dir(group)
         dlg = GroupBaseDirDialog(self, group, current)
         self.wait_window(dlg)
-        if dlg.result is None:
+        change = base_dir_change(group, current, dlg.result)
+        if change is None:
             return
-        new_dir = dlg.result
-        if new_dir == current:
+        if change.confirm and not messagebox.askyesno(*change.confirm, parent=self):
             return
-        if not new_dir:
-            if not messagebox.askyesno(
-                "Clear base directory",
-                f"Remove base directory restriction for '{group}'?\n\nExisting script paths will not be changed.",
-                parent=self,
-            ):
-                return
-            self.db.set_group_base_dir(group, "")
-            self.status_var.set(f"Base directory cleared for '{group}'.")
-        else:
-            if current:
-                if not messagebox.askyesno(
-                    "Re-map paths",
-                    f"Re-map script paths from\n{current}\nto\n{new_dir}?\n\n"
-                    "Paths already outside the old base will be left unchanged.",
-                    parent=self,
-                ):
-                    return
-            remapped, untouched = self.db.set_group_base_dir(group, new_dir)
-            if untouched:
-                messagebox.showwarning(
-                    "Some paths not remapped",
-                    f"{len(untouched)} script(s) have paths outside the old base directory and were not remapped:\n"
-                    + "\n".join(untouched[:10]),
-                    parent=self,
-                )
-            self.status_var.set(f"Base directory set for '{group}'. {remapped} path(s) remapped.")
+        status, warning = apply_base_dir_change(self.db, group, change)
+        if warning:
+            messagebox.showwarning(*warning, parent=self)
+        self.status_var.set(status)
         self._refresh()
 
     def _tab_context_menu(self, event, group: str):
-        menu = tk.Menu(self, tearoff=0, bg=C["menu_bg"], fg=C["fg_on_dark"],
-                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
-                       font=("Segoe UI", 10))
-        menu.add_command(label="✏  Rename", command=lambda: self._rename_group(group))
-        menu.add_command(label="📋  Clone Group", command=lambda: self._clone_group(group))
-        menu.add_command(label="📁  Base directory…", command=lambda: self._manage_group_base_dir(group))
-        menu.add_command(label="📤  Export group", command=lambda: self._export_config(group_name=group))
-        menu.add_separator()
-        menu.add_command(label="🗑  Delete Group", command=lambda: self._delete_group(group),
-                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
-        menu.tk_popup(event.x_root, event.y_root)
+        handlers = {
+            cardmenu.RENAME_GROUP: lambda: self._rename_group(group),
+            cardmenu.CLONE_GROUP: lambda: self._clone_group(group),
+            cardmenu.BASE_DIR: lambda: self._manage_group_base_dir(group),
+            cardmenu.EXPORT_GROUP: lambda: self._export_config(group_name=group),
+            cardmenu.DELETE_GROUP: lambda: self._delete_group(group),
+        }
+        _popup_menu(self, cardmenu.group_menu(),
+                    lambda key: handlers[key]()).tk_popup(event.x_root, event.y_root)
 
     # ------------------------------------------------------------------
     # Appearance / theme
@@ -1106,9 +1081,9 @@ class RYOSApp(_BaseWindow):
                 return lambda sid2, fav: _toggle(sid2, fav)
             card = ScriptCard(
                 fav_content, r, self.db, self._run_script, self._refresh_cards,
-                on_move_up   = self._make_move_cb(sid, up_id)   if up_id   else lambda: None,
-                on_move_down = self._make_move_cb(sid, down_id) if down_id else lambda: None,
-                on_move_top  = self._make_top_cb(sid)           if up_id   else lambda: None,
+                on_move_up   = self._make_move_cb(sid, up_id)   if up_id   else None,
+                on_move_down = self._make_move_cb(sid, down_id) if down_id else None,
+                on_move_top  = self._make_top_cb(sid)           if up_id   else None,
                 group_base_dir=group_base_dir,
                 on_toggle_favorite=make_fav_toggle_script(sid),
                 scheduled=sid in self._scheduled_ids()[0],
@@ -1173,9 +1148,9 @@ class RYOSApp(_BaseWindow):
                 return lambda s_id2, fav: _toggle(s_id2, fav)
             card = ScriptCard(
                 scr_content, rec, self.db, self._run_script, self._refresh,
-                on_move_up      = self._make_move_cb(sid, up_id)   if up_id   else lambda: None,
-                on_move_down    = self._make_move_cb(sid, down_id) if down_id else lambda: None,
-                on_move_top     = self._make_top_cb(sid)           if up_id   else lambda: None,
+                on_move_up      = self._make_move_cb(sid, up_id)   if up_id   else None,
+                on_move_down    = self._make_move_cb(sid, down_id) if down_id else None,
+                on_move_top     = self._make_top_cb(sid)           if up_id   else None,
                 group_base_dir  = group_base_dir,
                 on_toggle_favorite = make_toggle_fav_script(sid),
                 scheduled       = sid in self._scheduled_ids()[0],

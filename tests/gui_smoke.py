@@ -792,6 +792,65 @@ def check_favorites_reorder(app):
         app._refresh_cards()
 
 
+def check_card_menus(app):
+    """The Tk menus are built from the shared `cardmenu` definitions.
+
+    `tk_popup` blocks until a real click on Windows, so it is swapped for a
+    recorder; the menu itself, its entry states and the invoked command are
+    the real ones.
+    """
+    import types
+    import tkinter as tk
+    from ryos import cardmenu
+
+    pa = _write_script("print('ma')\n")
+    pb = _write_script("print('mb')\n")
+    a = app.db.add("menu-A", pa, "", sys.executable)
+    b = app.db.add("menu-B", pb, "", sys.executable)
+    app.db.set_favorite_script(a, True)
+    app.db.set_favorite_script(b, True)
+    captured = []
+    real_popup = tk.Menu.tk_popup
+    tk.Menu.tk_popup = lambda self, x, y, entry="": captured.append(self)
+    try:
+        app._active_group = None
+        app._refresh_cards()
+        app.update()
+        cards = {w.script_id: w for content in app._fav_contents
+                 for w in content.winfo_children()
+                 if getattr(w, "script_id", None) in (a, b)}
+        cards[a]._card_context_menu(types.SimpleNamespace(x_root=0, y_root=0))
+        menu = captured[-1]
+        labels = [menu.entrycget(i, "label") if menu.type(i) != "separator" else None
+                  for i in range(menu.index("end") + 1)]
+        want = [i.label or None for i in cardmenu.script_menu(
+            favorite=True, color=None, can_move_up=False, can_move_down=True)]
+        assert labels == want, f"Tk card menu {labels} != shared {want}"
+        state = {menu.entrycget(i, "label"): menu.entrycget(i, "state")
+                 for i in range(menu.index("end") + 1) if menu.type(i) == "command"}
+        assert state["⤒  Move to Top"] == "disabled", "first card could Move to Top"
+        assert state["▼  Move Down"] == "normal", "first card could not Move Down"
+        menu.invoke(labels.index("▼  Move Down"))
+        app.update()
+        order = [r[0] for r in app.db.list_all()]
+        assert order.index(b) < order.index(a), "Move Down from the menu did nothing"
+
+        app._tab_context_menu(types.SimpleNamespace(x_root=0, y_root=0), "G")
+        tab = captured[-1]
+        tab_labels = [tab.entrycget(i, "label") if tab.type(i) != "separator" else None
+                      for i in range(tab.index("end") + 1)]
+        assert tab_labels == [i.label or None for i in cardmenu.group_menu()], \
+            f"Tk tab menu was {tab_labels}"
+        print("  [ok] card-menus: Tk menus match the shared definitions; ends disabled; Move Down works")
+    finally:
+        tk.Menu.tk_popup = real_popup
+        app.db.delete(a)
+        app.db.delete(b)
+        os.unlink(pa)
+        os.unlink(pb)
+        app._refresh_cards()
+
+
 def check_favorites_drag_reorder(app):
     """A favorites drag-drop release reorders within the group's shared order.
 
@@ -898,6 +957,7 @@ def main():
         check_favorites_reorder(app)
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)
+        check_card_menus(app)
         check_run_to_completion(app)
         check_stop_running_job(app)
     finally:

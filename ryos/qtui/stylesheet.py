@@ -35,6 +35,7 @@ REQUIRED_KEYS = (
     "out_bg", "out_stdout", "out_stderr", "out_tabbar",
     "tooltip_bg", "tooltip_border",
     "error", "ok", "running",
+    "menu_bg", "fg_on_dark",
 )
 
 
@@ -152,6 +153,18 @@ QScrollBar:vertical {{ background: {c['bg']}; width: 12px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 6px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: {c['accent_wash']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+
+/* --- context menus ------------------------------------------------- */
+QMenu {{
+    background: {c['menu_bg']};
+    color: {c['fg_on_dark']};
+    border: 1px solid {c['border']};
+    padding: 4px 0;
+}}
+QMenu::item {{ padding: 5px 22px 5px 12px; background: transparent; }}
+QMenu::item:selected {{ background: {c['accent']}; color: {c['fg_on_dark']}; }}
+QMenu::item:disabled {{ color: {c['btn_disabled_fg']}; }}
+QMenu::separator {{ height: 1px; background: {c['border']}; margin: 4px 8px; }}
 
 /* --- drag and drop ------------------------------------------------- */
 QFrame#dropIndicator {{ background: {c['accent']}; border: none; }}

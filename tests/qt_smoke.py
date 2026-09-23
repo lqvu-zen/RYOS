@@ -1390,6 +1390,243 @@ def check_schedules(app):
           "refusal reported")
 
 
+
+
+def check_context_menus(app):
+    """Right-click a card and a tab, then pick entries from the real menus.
+
+    The menu comes from a real QContextMenuEvent and each entry is picked by
+    triggering its QAction, so the path from click to database is the one a
+    user takes. Only the prompts are answered by the test.
+    """
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QContextMenuEvent
+
+    from ryos import cardmenu
+    from ryos.db import ScriptDB
+    from ryos.qtui.menus import actions_by_key
+    from ryos.qtui.pipeline import PipelineEditorDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import (GroupBaseDirDialog, RunHistoryDialog,
+                                        ScheduleDialog)
+    from ryos.themes import REFERENCE, readable_highlight
+
+    tmp = Path(tempfile.mkdtemp())
+    base = tmp / "base"
+    base.mkdir()
+    db = ScriptDB(tmp / "menus.db")
+    db.create_group("G", base_dir=str(base))
+    db.create_group("H")
+    a = db.add("a", str(base / "a.py"), "", _sys.executable, "G",
+               detached=1, env_vars="K=V", work_dir=str(tmp))
+    b = db.add("b", str(base / "b.py"), "", _sys.executable, "G")
+    c = db.add("c", str(base / "c.py"), "", _sys.executable, "G")
+    pid = db.create_pipeline("p", "G")
+    db.add_pipeline_step(pid, a)
+
+    palette = REFERENCE["dark"]
+    win = MainWindow(palette, settings={"quick_run_enabled": False})
+    win.resize(700, 600)
+    win.show()
+    win.load_from_db(db)
+    app.processEvents()
+
+    shown: list = []
+    win.popup = lambda menu, pos: shown.append(menu)
+    asked: list = []
+    answers = {"yes": True, "text": None}
+    win.ask_yes_no = lambda title, q: asked.append(title) or answers["yes"]
+    win.ask_text = lambda title, prompt, initial: answers["text"]
+    warned: list = []
+    win.warn = lambda title, msg: warned.append((title, msg))
+    dialogs: list = []
+    win.run_dialog = lambda dlg: dialogs.append(dlg)
+
+    def settle():
+        for _ in range(3):
+            app.processEvents()
+
+    def card_for(kind, item_id):
+        for group_page in win.card_lists.values():
+            for card in group_page.cards:
+                if (card.drag_payload.kind, card.drag_payload.item_id) == (kind, item_id):
+                    return card
+        raise AssertionError(f"no card for {kind} {item_id}")
+
+    def right_click(widget, pos):
+        shown.clear()
+        app.sendEvent(widget, QContextMenuEvent(
+            QContextMenuEvent.Reason.Mouse, pos, widget.mapToGlobal(pos)))
+        return actions_by_key(shown[-1]) if shown else {}
+
+    def pick(kind, item_id, key):
+        acts = right_click(card_for(kind, item_id), QPoint(30, 10))
+        if key not in acts:
+            PROBLEMS.append(f"{kind} menu had no {key!r}: {sorted(acts)}")
+            return
+        acts[key].trigger()
+        settle()
+
+    def order():
+        return [r[0] for r in db.list_all() if r[8] == "G"]
+
+    # -- what the menus contain ------------------------------------------------
+    acts = right_click(card_for("script", a), QPoint(30, 10))
+    if not acts:
+        PROBLEMS.append("right-clicking a card opened no menu")
+    else:
+        if acts[cardmenu.MOVE_UP].isEnabled() or acts[cardmenu.MOVE_TOP].isEnabled():
+            PROBLEMS.append("the first card offered Move Up / Move to Top")
+        if not acts[cardmenu.MOVE_DOWN].isEnabled():
+            PROBLEMS.append("the first card could not Move Down")
+        swatches = [k for k, act in acts.items()
+                    if k.startswith("highlight:") and not act.icon().isNull()]
+        if len(swatches) != len(cardmenu.HIGHLIGHTS):
+            PROBLEMS.append(f"highlight entries with swatches: {swatches}")
+    acts = right_click(card_for("script", c), QPoint(30, 10))
+    if acts and acts[cardmenu.MOVE_DOWN].isEnabled():
+        PROBLEMS.append("the last card offered Move Down")
+    acts = right_click(card_for("pipeline", pid), QPoint(30, 10))
+    if cardmenu.EDIT not in acts or cardmenu.MOVE_UP in acts:
+        PROBLEMS.append(f"the pipeline menu was wrong: {sorted(acts)}")
+
+    # -- card actions ------------------------------------------------------------
+    pick("script", a, cardmenu.MOVE_DOWN)
+    if order() != [b, a, c]:
+        PROBLEMS.append(f"Move Down gave {order()}")
+    pick("script", c, cardmenu.MOVE_TOP)
+    if order()[0] != c:
+        PROBLEMS.append(f"Move to Top gave {order()}")
+
+    pick("script", b, cardmenu.FAVORITE)
+    if not next(r for r in db.list_all() if r[0] == b)[10]:
+        PROBLEMS.append("Add to Favorites did not store the favourite")
+    card_for("script", b).fav_button.click()      # the star button too
+    settle()
+    if next(r for r in db.list_all() if r[0] == b)[10]:
+        PROBLEMS.append("the star button did not remove the favourite")
+
+    pick("script", b, cardmenu.highlight_key("red"))
+    want = readable_highlight("red", palette["card_bg"], palette["card_hover"])
+    if want not in card_for("script", b).name_label.styleSheet():
+        PROBLEMS.append("a red highlight did not colour the card's name")
+    acts = right_click(card_for("script", b), QPoint(30, 10))
+    if not acts[cardmenu.highlight_key("red")].text().startswith("●"):
+        PROBLEMS.append("the menu did not mark the current highlight")
+
+    before = len(db.list_all())
+    pick("script", a, cardmenu.CLONE)
+    copy = max(r[0] for r in db.list_all())
+    rec = db.get(copy)
+    if len(db.list_all()) != before + 1 or rec[1] != "a (copy)":
+        PROBLEMS.append("Clone did not add 'a (copy)'")
+    elif not db.is_detached(copy) or rec[7] != "K=V" or rec[8] != str(tmp):
+        PROBLEMS.append("Clone lost detached / env vars / working folder")
+
+    answers["yes"] = False
+    pick("script", copy, cardmenu.DELETE)
+    if db.get(copy) is None or asked[-1:] != ["Delete"]:
+        PROBLEMS.append("declining the delete prompt still deleted")
+    answers["yes"] = True
+    pick("script", copy, cardmenu.DELETE)
+    if db.get(copy) is not None:
+        PROBLEMS.append("confirming the delete prompt did not delete")
+
+    dialogs.clear()
+    pick("script", a, cardmenu.SCHEDULE)
+    pick("pipeline", pid, cardmenu.HISTORY)
+    pick("pipeline", pid, cardmenu.EDIT)
+    kinds = [type(d) for d in dialogs]
+    if kinds != [ScheduleDialog, RunHistoryDialog, PipelineEditorDialog]:
+        PROBLEMS.append(f"dialogs opened from the menu: {kinds}")
+
+    # -- the group-tab menu ----------------------------------------------------------
+    bar = win.group_tab_bar
+    keys = [bar.tabData(i) for i in range(bar.count())]
+
+    def tab_click(group):
+        return right_click(bar, bar.tabRect(keys.index(group)).center())
+
+    db.add("loose", str(tmp / "loose.py"), "", _sys.executable, "")
+    win.reload()
+    settle()
+    keys = [bar.tabData(i) for i in range(bar.count())]
+    tab_click("")
+    if shown:
+        PROBLEMS.append("the Ungrouped tab offered a group menu")
+
+    answers["text"] = "H"                     # clashes with another group
+    tab_click("G")[cardmenu.RENAME_GROUP].trigger()
+    settle()
+    if "G" not in db.list_groups() or not warned:
+        PROBLEMS.append("renaming onto an existing group was not refused")
+
+    answers["text"] = "G2"
+    win.show_group("G")
+    tab_click("G")[cardmenu.RENAME_GROUP].trigger()
+    settle()
+    keys = [bar.tabData(i) for i in range(bar.count())]
+    if "G2" not in db.list_groups() or win.current_group() != "G2":
+        PROBLEMS.append("rename did not rename, or lost the selected group")
+
+    answers["text"] = None                    # accept nothing: cancelled
+    tab_click("G2")[cardmenu.CLONE_GROUP].trigger()
+    settle()
+    if len(db.list_groups()) != 2:
+        PROBLEMS.append("cancelling Clone Group still cloned")
+    answers["text"] = "G2 (copy)"
+    keys = [bar.tabData(i) for i in range(bar.count())]
+    tab_click("G2")[cardmenu.CLONE_GROUP].trigger()
+    settle()
+    if "G2 (copy)" not in db.list_groups() or win.current_group() != "G2 (copy)":
+        PROBLEMS.append("Clone Group did not clone and show the copy")
+
+    moved = tmp / "moved"
+    moved.mkdir()
+
+    def answer_base_dir(dlg):
+        dialogs.append(dlg)
+        if isinstance(dlg, GroupBaseDirDialog):
+            dlg.e_dir.setText(str(moved))
+            dlg.accept_form()
+    win.run_dialog = answer_base_dir
+    asked.clear()
+    keys = [bar.tabData(i) for i in range(bar.count())]
+    tab_click("G2")[cardmenu.BASE_DIR].trigger()
+    settle()
+    if db.get_group_base_dir("G2") != str(moved) or asked != ["Re-map paths"]:
+        PROBLEMS.append(f"moving the base folder: stored "
+                        f"{db.get_group_base_dir('G2')!r}, asked {asked}")
+    if "remapped" not in win.statusBar().currentMessage():
+        PROBLEMS.append("the base folder change reported nothing")
+
+    out = tmp / "export.json"
+    win.ask_save_path = lambda title, initial: str(out)
+    keys = [bar.tabData(i) for i in range(bar.count())]
+    tab_click("G2")[cardmenu.EXPORT_GROUP].trigger()
+    settle()
+    if not out.exists() or "Exported" not in win.statusBar().currentMessage():
+        PROBLEMS.append("Export group wrote nothing")
+
+    keys = [bar.tabData(i) for i in range(bar.count())]
+    tab_click("G2 (copy)")[cardmenu.DELETE_GROUP].trigger()
+    settle()
+    if "G2 (copy)" in db.list_groups():
+        PROBLEMS.append("Delete Group did not delete")
+    if win.current_group() not in db.list_groups() + [""]:
+        PROBLEMS.append(f"after deleting, showing {win.current_group()!r}")
+
+    print("  [ok] context menus: right-click opens the shared menus, moves "
+          "disabled at the ends, swatches, favourite/highlight/move/clone/"
+          "delete, dialogs, and the tab menu's rename/clone/base dir/export/"
+          "delete with their prompts")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -1411,6 +1648,7 @@ def main() -> int:
     check_quick_run(app)
     check_drag_and_drop(app)
     check_schedules(app)
+    check_context_menus(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

@@ -3,14 +3,14 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from .. import cardstyle
+from .. import cardmenu, cardstyle
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
                       _PresetEntryDialog, _TempParamDialog)
 from .placement import place_near
 from ..themes import ink_on
-from .theme import C, HIGHLIGHT_LABELS, highlight_fg
+from .theme import C, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
 
 _COMPACT: bool = False
@@ -79,30 +79,39 @@ def _status_badge(parent, status: str) -> "tk.Label | None":
                     padx=5, pady=1)
 
 
-def _add_highlight_menu(menu: tk.Menu, current, on_pick) -> tk.Menu:
-    """Attach the colour-picker submenu shared by the script and pipeline cards.
+def _popup_menu(owner: tk.Misc, items, on_pick) -> tk.Menu:
+    """A Tk menu built from `cardmenu` entries; picking one calls on_pick(key).
 
-    Swatch colours are resolved against the *menu* background, not the card's,
-    so the entries stay readable in the dark popup menu even when the cards
-    behind it are light.
+    Highlight swatches are resolved against the *menu* background, not the
+    card's, so they stay readable in the dark popup even over light cards.
     """
-    sub = tk.Menu(menu, tearoff=0,
-                  bg=C["menu_bg"], fg=C["fg_on_dark"],
-                  activebackground=C["accent"], activeforeground=C["fg_on_dark"],
-                  font=("Segoe UI", 10))
+    style = dict(tearoff=0, bg=C["menu_bg"], fg=C["fg_on_dark"],
+                 activebackground=C["accent"], activeforeground=C["fg_on_dark"],
+                 font=("Segoe UI", 10))
+    menu = tk.Menu(owner, **style)
 
-    def _mark(key):
-        return "●  " if (current or None) == key else "○  "
+    def fill(target: tk.Menu, entries) -> None:
+        for item in entries:
+            if item.key is None:
+                target.add_separator()
+            elif item.children:
+                sub = tk.Menu(target, **style)
+                fill(sub, item.children)
+                target.add_cascade(label=item.label, menu=sub)
+            else:
+                extra = {}
+                if item.danger:
+                    extra = dict(foreground=C["menu_danger"],
+                                 activeforeground=C["menu_danger"])
+                elif item.highlight:
+                    extra = dict(foreground=highlight_fg(item.highlight, C["menu_bg"]),
+                                 activeforeground=C["fg_on_dark"])
+                target.add_command(
+                    label=item.label, command=lambda k=item.key: on_pick(k),
+                    state="normal" if item.enabled else "disabled", **extra)
 
-    sub.add_command(label=f"{_mark(None)}None", command=lambda: on_pick(None))
-    sub.add_separator()
-    for key, label in HIGHLIGHT_LABELS.items():
-        sub.add_command(label=f"{_mark(key)}{label}",
-                        foreground=highlight_fg(key, C["menu_bg"]),
-                        activeforeground=C["fg_on_dark"],
-                        command=lambda k=key: on_pick(k))
-    menu.add_cascade(label="🎨  Highlight", menu=sub)
-    return sub
+    fill(menu, items)
+    return menu
 
 
 class ScriptCard(tk.Frame):
@@ -331,25 +340,30 @@ class ScriptCard(tk.Frame):
             self._bind_right_click(child)
 
     def _card_context_menu(self, event):
-        menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
-                       bg=C["menu_bg"], fg=C["fg_on_dark"],
-                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
-                       font=("Segoe UI", 10))
-        fav_label = "☆ Remove from Favorites" if self._is_favorite else "★ Add to Favorites"
-        menu.add_command(label=fav_label, command=self._toggle_favorite)
-        self._hl_menu = _add_highlight_menu(menu, self._label_color, self._set_label_color)
-        menu.add_separator()
-        menu.add_command(label="⤒  Move to Top", command=self._on_move_top)
-        menu.add_command(label="▲  Move Up",     command=self._on_move_up)
-        menu.add_command(label="▼  Move Down",   command=self._on_move_down)
-        menu.add_separator()
-        menu.add_command(label="🕒  Schedule…", command=self._show_schedule)
-        menu.add_command(label="🕘  Run History…", command=self._show_history)
-        menu.add_command(label="⧉  Clone",       command=self._clone)
-        menu.add_separator()
-        menu.add_command(label="🗑  Delete",      command=self._delete_card,
-                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
-        menu.tk_popup(event.x_root, event.y_root)
+        items = cardmenu.script_menu(
+            favorite=self._is_favorite, color=self._label_color,
+            can_move_up=self._on_move_up is not None,
+            can_move_down=self._on_move_down is not None)
+        _popup_menu(self.winfo_toplevel(), items, self._on_menu).tk_popup(
+            event.x_root, event.y_root)
+
+    def _on_menu(self, key: str) -> None:
+        is_pick, color = cardmenu.picked_highlight(key)
+        if is_pick:
+            self._set_label_color(color)
+            return
+        handler = {
+            cardmenu.FAVORITE: self._toggle_favorite,
+            cardmenu.MOVE_TOP: self._on_move_top,
+            cardmenu.MOVE_UP: self._on_move_up,
+            cardmenu.MOVE_DOWN: self._on_move_down,
+            cardmenu.SCHEDULE: self._show_schedule,
+            cardmenu.HISTORY: self._show_history,
+            cardmenu.CLONE: self._clone,
+            cardmenu.DELETE: self._delete_card,
+        }.get(key)
+        if handler is not None:
+            handler()
 
     def _modify(self):
         ScriptDialog(self.winfo_toplevel(), self.db,
@@ -358,15 +372,13 @@ class ScriptCard(tk.Frame):
                      group_base_dirs={name: bd for name, bd in self.db.list_groups_with_meta()})
 
     def _clone(self):
-        rec = self.db.get(self.script_id)
-        if rec:
-            _, name, path, params, interp, grp, temp_param = rec[:7]
-            self.db.add(f"{name} (copy)", path, params, interp, grp, temp_param)
+        if cardmenu.clone(self.db, cardmenu.SCRIPT, self.script_id) is not None:
             self.on_refresh()
 
     def _delete_card(self):
-        if messagebox.askyesno("Delete", f"Delete '{self._name}'?", parent=self):
-            self.db.delete(self.script_id)
+        title, question = cardmenu.delete_prompt(cardmenu.SCRIPT, self._name)
+        if messagebox.askyesno(title, question, parent=self):
+            cardmenu.delete(self.db, cardmenu.SCRIPT, self.script_id)
             self.on_refresh()
 
     def _show_history(self):
@@ -713,30 +725,33 @@ class PipelineCard(tk.Frame):
             self.on_refresh()
 
     def _context_menu(self, event):
-        menu = tk.Menu(self.winfo_toplevel(), tearoff=0,
-                       bg=C["menu_bg"], fg=C["fg_on_dark"],
-                       activebackground=C["accent"], activeforeground=C["fg_on_dark"],
-                       font=("Segoe UI", 10))
-        pipe_fav_label = "☆ Remove from Favorites" if self._is_favorite else "★ Add to Favorites"
-        menu.add_command(label=pipe_fav_label, command=self._toggle_favorite)
-        self._hl_menu = _add_highlight_menu(menu, self._label_color, self._set_label_color)
-        menu.add_separator()
-        menu.add_command(label="⚙  Edit",
-                         command=lambda: self.on_edit(self.pipeline_id, self._name))
-        menu.add_command(label="🕒  Schedule…", command=self._show_schedule)
-        menu.add_command(label="🕘  Run History…", command=self._show_history)
-        menu.add_command(label="⧉  Clone", command=self._clone)
-        menu.add_separator()
-        menu.add_command(label="🗑  Delete", command=self._delete,
-                         foreground=C["menu_danger"], activeforeground=C["menu_danger"])
-        menu.tk_popup(event.x_root, event.y_root)
+        items = cardmenu.pipeline_menu(favorite=self._is_favorite,
+                                       color=self._label_color)
+        _popup_menu(self.winfo_toplevel(), items, self._on_menu).tk_popup(
+            event.x_root, event.y_root)
+
+    def _on_menu(self, key: str) -> None:
+        is_pick, color = cardmenu.picked_highlight(key)
+        if is_pick:
+            self._set_label_color(color)
+            return
+        handler = {
+            cardmenu.FAVORITE: self._toggle_favorite,
+            cardmenu.EDIT: lambda: self.on_edit(self.pipeline_id, self._name),
+            cardmenu.SCHEDULE: self._show_schedule,
+            cardmenu.HISTORY: self._show_history,
+            cardmenu.CLONE: self._clone,
+            cardmenu.DELETE: self._delete,
+        }.get(key)
+        if handler is not None:
+            handler()
 
     def _clone(self):
         self.db.clone_pipeline(self.pipeline_id)
         self.on_refresh()
 
     def _delete(self):
-        if messagebox.askyesno("Delete Pipeline",
-                                f"Delete pipeline '{self._name}'?", parent=self):
-            self.db.delete_pipeline(self.pipeline_id)
+        title, question = cardmenu.delete_prompt(cardmenu.PIPELINE, self._name)
+        if messagebox.askyesno(title, question, parent=self):
+            cardmenu.delete(self.db, cardmenu.PIPELINE, self.pipeline_id)
             self.on_refresh()

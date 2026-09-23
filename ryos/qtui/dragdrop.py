@@ -175,6 +175,7 @@ class GroupTabBar(QTabBar):
     """The group tabs, accepting a card dropped onto a tab to move it there."""
 
     dropped_on_group = Signal(object, str)   # (CardPayload, group name)
+    menu_requested = Signal(str, QPoint)     # (group key, global position)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -193,6 +194,13 @@ class GroupTabBar(QTabBar):
             return None
         key = self.tabData(index)
         return key if isinstance(key, str) else self.tabText(index)
+
+    def contextMenuEvent(self, event) -> None:        # noqa: N802
+        group = self.group_at(event.pos())
+        if group is None:
+            event.ignore()
+            return
+        self.menu_requested.emit(group, event.globalPos())
 
     def dragEnterEvent(self, event) -> None:          # noqa: N802
         if payload_from(event.mimeData()) is not None:

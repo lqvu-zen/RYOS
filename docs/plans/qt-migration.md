@@ -187,9 +187,10 @@ release is to be the Qt one, so everything below has to exist before
 | ~~Drag-and-drop reordering~~ | — | **Done 2026-09-23.** Rules and the database side (`apply_move`, `apply_reorder`, `outside_base_warning`) shared in `dragdrop.py`; `qtui/dragdrop.py` uses real `QDrag`. Tabs are keyed by group, so dropping on "Ungrouped" moves to `""`. The reload after a drop is deferred a turn, since it replaces the widget still handling the event. Favourites are not a drop target yet: the Qt shell has no favourites section. |
 | Tray icon | `tray.py` + ~45 app refs | `QSystemTrayIcon` retires `pystray` and `pillow`. |
 | ~~Schedule tick~~ | — | **Done 2026-09-23.** The sweep is `schedule_runner.run_due`, shared with Tk; `JobBridge` runs it on its own `QTimer`. A scheduled refusal goes to the status line, not a modal box. Found on the way: the Qt bridge never unregistered finished jobs (they held the cap and blocked their schedules), and Tk disabled schedules on ungrouped pipelines as "missing". Both fixed. |
-| Context menus on cards and tabs | ~40 lines | Rename, clone, delete, move, colour. |
+| ~~Context menus on cards and tabs~~ | — | **Done 2026-09-23.** The menus are data in `cardmenu.py`, drawn by both toolkits; the group-menu decisions live in `grouping.py`. The ☆ button now works too. Qt cannot colour one menu entry red, so Delete relies on its glyph and its prompt. Found on the way: Tk's Clone dropped `detached`, env vars and working folder (issue #5 again for a cloned launcher), and renaming a group onto an existing name raised `IntegrityError` in Tk. Both fixed. |
 | Select mode / run selected | ~40 lines | `jobs.split_by_capacity` is already shared. |
-| Group management from the shell | — | Dialogs exist; nothing opens them yet. |
+| Group management from the shell | — | Rename, clone, base folder, export and delete are on the tab menu. Still missing: New Group, reordering tabs by drag, Import, and Delete All. |
+| Pipeline editor persistence | — | Opens from the menu and saves reordering. Remove, "with previous", adding a step and the step policy combos change nothing in the database yet (`on_policy` is never called). |
 | Single-instance handoff | `single_instance.py` | Candidate for `QLocalServer`, which is cross-platform. |
 | Update check and notifications | `notifications.py` | Toolkit-free already; needs wiring. |
 | Window geometry, snap-to-corner, multi-monitor | `screens.py`, `placement.py` | `QScreen` replaces most of the ctypes work. |

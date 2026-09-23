@@ -7,11 +7,13 @@ and owns the tkinter-facing helpers (ttk styles, flat buttons, window snapping).
 import tkinter as tk
 from tkinter import ttk
 
+from ..cardmenu import HIGHLIGHTS
 from ..screens import work_area_at_point
-from ..themes import (
-    BUILTIN_THEMES, SEEDS, THEME_LABELS, THEME_MODES, THEME_ORDER,
-    _rel_luminance, _shade, build_palette, contrast_ratio,
-    disabled_pair, disambiguate_custom_labels,
+from ..themes import (  # noqa: F401 - re-exported for existing callers
+    BUILTIN_THEMES, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, SEEDS, THEME_LABELS,
+    THEME_MODES, THEME_ORDER, _rel_luminance, _shade, build_palette,
+    contrast_ratio, disabled_pair, disambiguate_custom_labels,
+    readable_highlight,
 )
 
 # Named theme palettes, sourced from the engine. Kept here so existing
@@ -90,57 +92,10 @@ def apply_theme(theme_name: str, accent: str | None = None) -> None:
 
 
 # --- Per-item highlight colours ----------------------------------------------
-# Card labels can be tinted so a script or pipeline stands out in a long list.
-# These are *seeds*, not final colours: highlight_fg() shades a seed toward
-# white or black until it clears WCAG AA against the surface it will be drawn
-# on, so one palette stays legible on every built-in, preset and custom theme
-# instead of needing a hand-tuned variant per theme.
-HIGHLIGHT_SEEDS: dict[str, str] = {
-    "red":    "#e05252",
-    "orange": "#e08a3c",
-    "yellow": "#d4a72c",
-    "green":  "#3fa45b",
-    "teal":   "#2aa3a8",
-    "blue":   "#4a90d9",
-    "purple": "#a06ee0",
-}
-
-HIGHLIGHT_LABELS: dict[str, str] = {
-    "red": "Red", "orange": "Orange", "yellow": "Yellow", "green": "Green",
-    "teal": "Teal", "blue": "Blue", "purple": "Purple",
-}
-
-HIGHLIGHT_MIN_RATIO = 4.5
-
-# Enough 8% steps to reach near-white/near-black from any seed. Themes whose
-# card_hover is unusually bright for a dark palette (sunset-boulevard) need
-# ~20 of them; the seeds stay saturated on ordinary themes, which converge in
-# two or three.
-_HIGHLIGHT_MAX_STEPS = 30
-
-# Keyed by (seed, surfaces) — a theme switch changes the surfaces, so entries
-# never go stale and there is nothing to invalidate on apply_theme().
-_highlight_cache: dict[tuple, str] = {}
-
-
-def _readable_on(color: str, surfaces: tuple[str, ...]) -> str:
-    """Shade `color` away from `surfaces` until it clears AA on all of them.
-
-    Lightens on a dark surface, darkens on a light one. The loop is capped and
-    returns its last value either way, so the function always yields a usable
-    colour rather than failing on a pathological theme.
-    """
-    cached = _highlight_cache.get((color, surfaces))
-    if cached is not None:
-        return cached
-    step = 0.08 if _rel_luminance(surfaces[0]) < 0.45 else -0.08
-    cur = color
-    for _ in range(_HIGHLIGHT_MAX_STEPS):
-        if all(contrast_ratio(cur, s) >= HIGHLIGHT_MIN_RATIO for s in surfaces):
-            break
-        cur = _shade(cur, step)
-    _highlight_cache[(color, surfaces)] = cur
-    return cur
+# The seeds and the contrast shading live in `themes` (toolkit-free, shared
+# with Qt); only the default surfaces -- the live `C` palette -- are Tk's.
+# What the menu lists is defined in `cardmenu`.
+HIGHLIGHT_LABELS: dict[str, str] = HIGHLIGHTS
 
 
 def highlight_fg(key: str | None, *surfaces: str) -> str | None:
@@ -153,10 +108,7 @@ def highlight_fg(key: str | None, *surfaces: str) -> str | None:
     Defaults to the live card surfaces, including the hover shade, so a
     highlighted label stays readable while the card is moused over too.
     """
-    seed = HIGHLIGHT_SEEDS.get(key or "")
-    if seed is None:
-        return None
-    return _readable_on(seed, surfaces or (C["card_bg"], C["card_hover"]))
+    return readable_highlight(key, *(surfaces or (C["card_bg"], C["card_hover"])))
 
 
 def _flat_button(parent, text, bg, hover_bg, command, width=9, fg=None):
