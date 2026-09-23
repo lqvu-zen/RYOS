@@ -1124,6 +1124,162 @@ def check_quick_run(app):
     win.deleteLater()
 
 
+
+
+def check_drag_and_drop(app):
+    """Reorder by dropping in the list, move by dropping on a tab.
+
+    Drops are real QDropEvents delivered to the real widgets, against a real
+    database, so what is checked is the whole path from event to stored order.
+    Starting a drag is checked with QDrag.exec swapped for a recorder, since
+    the real one blocks until a physical mouse button is released.
+    """
+    import tempfile
+
+    from PySide6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt
+    from PySide6.QtGui import (QDragEnterEvent, QDragMoveEvent, QDropEvent,
+                               QMouseEvent)
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.dragdrop import MIME, CardPayload
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    inside = tmp / "base"
+    inside.mkdir()
+    db = ScriptDB(tmp / "dnd.db")
+    db.create_group("G", base_dir=str(inside))
+    db.create_group("H", base_dir=str(tmp / "elsewhere"))
+    ids = [db.add(n, str(inside / f"{n}.py"), "", "", "G")
+           for n in ("a", "b", "c")]
+    loose = db.add("loose", str(tmp / "loose.py"), "", "", "")
+    p1 = db.create_pipeline("p1", "G")
+    p2 = db.create_pipeline("p2", "G")
+
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.resize(700, 600)
+    win.show()
+    win.load_from_db(db)
+    app.processEvents()
+
+    def order(group):
+        return [r[0] for r in db.list_all() if (r[8] or "") == group]
+
+    def drag_to(widget, pos, raw):
+        """Enter, move, drop -- Qt refuses a drop that no enter accepted."""
+        mime = QMimeData()
+        mime.setData(MIME, raw)
+        args = (Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(widget, QDragEnterEvent(pos, *args))
+        app.sendEvent(widget, QDragMoveEvent(pos, *args))
+        app.sendEvent(widget, QDropEvent(QPointF(pos), *args))
+        app.processEvents()      # the reload is deferred to the next turn
+        app.processEvents()
+
+    def drop_on(widget, pos, payload):
+        drag_to(widget, pos, payload.encode())
+
+    # Tabs are keyed by group, so "Ungrouped" maps back to "".
+    keys = [win.group_tab_bar.tabData(i) for i in range(win.group_tabs.count())]
+    labels = [win.group_tabs.tabText(i) for i in range(win.group_tabs.count())]
+    if keys != ["G", "H", ""] or labels[-1] != "Ungrouped":
+        PROBLEMS.append(f"tabs were {list(zip(labels, keys))}")
+
+    # -- reorder: drop "c" above "a" -----------------------------------------
+    win.show_group("G")
+    app.processEvents()
+    lst = win.card_lists["G"]
+    card_a = next(c for c in lst.cards if c.drag_payload.item_id == ids[0])
+    above_a = QPoint(10, card_a.geometry().y() + 2)
+    drop_on(lst, above_a, CardPayload("script", ids[2], "G"))
+    if order("G") != [ids[2], ids[0], ids[1]]:
+        PROBLEMS.append(f"dropping c above a gave order {order('G')}")
+    if win.current_group() != "G":
+        PROBLEMS.append("reloading after a drop switched away from the group")
+
+    # Pipelines reorder among pipelines, not against scripts.
+    lst = win.card_lists["G"]
+    card_p1 = next(c for c in lst.cards if c.drag_payload.kind == "pipeline"
+                   and c.drag_payload.item_id == p1)
+    drop_on(lst, QPoint(10, card_p1.geometry().y() + 2),
+            CardPayload("pipeline", p2, "G"))
+    if [p[0] for p in db.list_pipelines("G")] != [p2, p1]:
+        PROBLEMS.append("pipelines did not reorder among themselves")
+
+    # A card from another group is refused by this list.
+    before = order("G")
+    drop_on(win.card_lists["G"], QPoint(10, 5),
+            CardPayload("script", loose, ""))
+    if order("G") != before or order("") != [loose]:
+        PROBLEMS.append("a drop from another group was accepted by the list")
+
+    # -- move: drop "b" on tab H, whose folder does not hold it ----------------
+    bar = win.group_tab_bar
+    h_index = keys.index("H")
+    drop_on(bar, bar.tabRect(h_index).center(), CardPayload("script", ids[1], "G"))
+    if ids[1] not in order("H"):
+        PROBLEMS.append("dropping on tab H did not move the script there")
+    if "outside" not in win.statusBar().currentMessage():
+        PROBLEMS.append("moving a script outside the new group's folder did "
+                        f"not warn: {win.statusBar().currentMessage()!r}")
+
+    # Dropping on its own tab changes nothing.
+    before_g = order("G")
+    g_index = [win.group_tab_bar.tabData(i)
+               for i in range(win.group_tabs.count())].index("G")
+    drop_on(win.group_tab_bar, win.group_tab_bar.tabRect(g_index).center(),
+            CardPayload("script", ids[0], "G"))
+    if order("G") != before_g:
+        PROBLEMS.append("dropping a card on its own tab changed the order")
+
+    # Dropping on "Ungrouped" moves to "", not to a group named "Ungrouped".
+    u_index = [win.group_tab_bar.tabData(i)
+               for i in range(win.group_tabs.count())].index("")
+    drop_on(win.group_tab_bar, win.group_tab_bar.tabRect(u_index).center(),
+            CardPayload("script", ids[0], "G"))
+    if ids[0] not in order("") or "Ungrouped" in db.list_groups():
+        PROBLEMS.append("dropping on 'Ungrouped' did not ungroup the script")
+
+    # A payload that is not ours is ignored everywhere.
+    snapshot = {g: order(g) for g in ("G", "H", "")}
+    drag_to(bar, bar.tabRect(h_index).center(), b"not json")
+    if {g: order(g) for g in ("G", "H", "")} != snapshot:
+        PROBLEMS.append("a malformed drag payload changed something")
+
+    # -- starting a drag: the threshold decides, the payload travels ------------
+    win.show_group("H")
+    app.processEvents()
+    card = win.card_lists["H"].cards[0]
+    started: list = []
+    card.drag_runner = lambda drag: started.append(
+        CardPayload.decode(drag.mimeData().data(MIME).data()))
+
+    def mouse(kind, pos, buttons):
+        ev = QMouseEvent(kind, QPointF(pos), QPointF(card.mapToGlobal(pos)),
+                         Qt.MouseButton.LeftButton, buttons,
+                         Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(card, ev)
+
+    press = QPoint(20, 10)
+    mouse(QEvent.Type.MouseButtonPress, press, Qt.MouseButton.LeftButton)
+    mouse(QEvent.Type.MouseMove, press + QPoint(3, 2), Qt.MouseButton.LeftButton)
+    if started:
+        PROBLEMS.append("a 3-pixel twitch started a drag")
+    mouse(QEvent.Type.MouseMove, press + QPoint(0, 12), Qt.MouseButton.LeftButton)
+    if len(started) != 1 or started[0] != card.drag_payload:
+        PROBLEMS.append(f"a real drag did not start with the card's payload: "
+                        f"{started}")
+    mouse(QEvent.Type.MouseButtonRelease, press, Qt.MouseButton.NoButton)
+
+    print("  [ok] drag and drop: reorder (scripts and pipelines apart), move "
+          "to tab with folder warning, own tab no-op, Ungrouped maps to '', "
+          "threshold respected")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -1143,6 +1299,7 @@ def main() -> int:
     check_running_section(app)
     check_small_dialogs(app)
     check_quick_run(app)
+    check_drag_and_drop(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

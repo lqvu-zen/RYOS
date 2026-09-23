@@ -105,3 +105,52 @@ def first_rect_at(x: int, y: int, rects: list[tuple]):
         if left <= x <= left + width and top <= y <= top + height:
             return key
     return None
+
+
+#: Pixels the pointer must travel with the button down before a press becomes
+#: a drag. Shared so a click that twitches behaves the same in both UIs.
+DRAG_THRESHOLD = 6
+
+
+def outside_base_warning(path: str, group: str, base_dir: str) -> "str | None":
+    """The warning for a script moved into a group whose folder doesn't hold it.
+
+    Moving is still allowed -- the group's base folder is a convenience for
+    relative paths, not a fence -- but the user should know the script now
+    lives somewhere its new group does not expect. None when there is nothing
+    to say: no base folder, or the path is inside it.
+    """
+    from .quickrun import _is_inside
+
+    if not base_dir or not path or _is_inside(path, base_dir):
+        return None
+    return (f"Warning: script moved to '{group}' but its path is outside "
+            f"the group's base directory.")
+
+
+# --- applying a drop ------------------------------------------------------------
+# The database side of a drop, shared by both UIs. UI-independent: takes the
+# ScriptDB and plain values, returns what to tell the user.
+
+SCRIPT = "script"
+PIPELINE = "pipeline"
+
+
+def apply_move(db, kind: str, item_id: int, group: str) -> "str | None":
+    """Move one card into ``group``. Returns a warning to show, or None."""
+    if kind == PIPELINE:
+        db.move_pipeline_to_group(item_id, group)
+        return None
+    db.move_to_group(item_id, group)
+    rec = db.get(item_id)
+    return outside_base_warning(rec[2] if rec else "", group,
+                                db.get_group_base_dir(group))
+
+
+def apply_reorder(db, kind: str, item_id: int, group: str,
+                  before_id: "int | None") -> None:
+    """Place one card before ``before_id`` in ``group`` (None appends)."""
+    if kind == PIPELINE:
+        db.reorder_pipeline(item_id, group, before_id)
+    else:
+        db.reorder_script(item_id, group, before_id)

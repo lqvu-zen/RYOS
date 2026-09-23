@@ -55,8 +55,10 @@ from ryos.grouping import (  # noqa: E402
     validate_group_name,
 )
 from ryos.dragdrop import (  # noqa: E402
-    MOVE_TO_GROUP, NOTHING, REORDER, compute_insertion, first_rect_at,
-    passed_threshold, resolve_drop, shows_insertion_indicator,
+    DRAG_THRESHOLD, MOVE_TO_GROUP, NOTHING, PIPELINE, REORDER, SCRIPT,
+    apply_move, apply_reorder, compute_insertion, first_rect_at,
+    outside_base_warning, passed_threshold, resolve_drop,
+    shows_insertion_indicator,
 )
 from ryos.screens import relocate_geometry  # noqa: E402
 from ryos.themes import (  # noqa: E402
@@ -5784,6 +5786,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/running.py": "imports PySide6; same reason",
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
+        "ryos/qtui/dragdrop.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7271,6 +7274,67 @@ class TestQuickRunBarRules(unittest.TestCase):
             with self.subTest(module=rel):
                 src = (root / rel).read_text(encoding="utf-8")
                 self.assertNotIn("Indexing files", src)
+
+
+class TestApplyDrop(unittest.TestCase):
+    """The database side of a drop, shared by the Tk and Qt card lists."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp()
+        self.db = _make_db()
+        self.db.create_group("G", base_dir=self.base)
+        self.db.create_group("H", base_dir=os.path.join(self.base, "other"))
+        self.ids = [self.db.add(n, os.path.join(self.base, n + ".py"), "", "", "G")
+                    for n in ("a", "b", "c")]
+
+    def order(self, group):
+        return [r[0] for r in self.db.list_all() if (r[8] or "") == group]
+
+    def test_threshold_is_the_one_tk_always_used(self):
+        self.assertEqual(DRAG_THRESHOLD, 6)
+
+    def test_reorder_places_before_the_target(self):
+        a, b, c = self.ids
+        apply_reorder(self.db, SCRIPT, c, "G", a)
+        self.assertEqual(self.order("G"), [c, a, b])
+
+    def test_reorder_to_none_appends(self):
+        a, b, c = self.ids
+        apply_reorder(self.db, SCRIPT, a, "G", None)
+        self.assertEqual(self.order("G"), [b, c, a])
+
+    def test_pipelines_reorder_in_their_own_ordering(self):
+        p1 = self.db.create_pipeline("p1", "G")
+        p2 = self.db.create_pipeline("p2", "G")
+        apply_reorder(self.db, PIPELINE, p2, "G", p1)
+        self.assertEqual([p[0] for p in self.db.list_pipelines("G")], [p2, p1])
+        self.assertEqual(self.order("G"), self.ids)
+
+    def test_move_inside_the_folder_says_nothing(self):
+        self.db.create_group("Inner", base_dir=self.base)
+        self.assertIsNone(apply_move(self.db, SCRIPT, self.ids[0], "Inner"))
+        self.assertIn(self.ids[0], self.order("Inner"))
+
+    def test_move_outside_the_folder_warns_but_still_moves(self):
+        warning = apply_move(self.db, SCRIPT, self.ids[0], "H")
+        self.assertIn("outside", warning or "")
+        self.assertIn("'H'", warning or "")
+        self.assertEqual(self.order("H"), [self.ids[0]])
+
+    def test_move_to_ungrouped_has_no_folder_to_warn_about(self):
+        self.assertIsNone(apply_move(self.db, SCRIPT, self.ids[0], ""))
+        self.assertEqual(self.order(""), [self.ids[0]])
+
+    def test_pipeline_move_never_warns(self):
+        pid = self.db.create_pipeline("p", "G")
+        self.assertIsNone(apply_move(self.db, PIPELINE, pid, "H"))
+        self.assertEqual([p[0] for p in self.db.list_pipelines("H")], [pid])
+
+    def test_outside_base_warning_edges(self):
+        self.assertIsNone(outside_base_warning("", "G", self.base))
+        self.assertIsNone(outside_base_warning("/x/y.py", "G", ""))
+        self.assertIsNone(outside_base_warning(
+            os.path.join(self.base, "deep", "z.py"), "G", self.base))
 
 
 class TestQuickRunSubmit(unittest.TestCase):

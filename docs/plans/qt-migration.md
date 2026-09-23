@@ -184,7 +184,7 @@ release is to be the Qt one, so everything below has to exist before
 | Missing on Qt | Size in the Tk app | Notes |
 | --- | --- | --- |
 | ~~Quick Run bar~~ | — | **Done 2026-09-23.** Bar rules in `quickrun.py`, submit flow in `quickrun_actions.py`, both shared with Tk. The Qt bar's index hand-off uses `MainThreadInvoker`; `QTimer.singleShot` was tried and verified never to fire from the worker thread. |
-| Drag-and-drop reordering | ~220 lines | Rules shared (`dragdrop.py`); Qt's drag events replace the Tk ghost-window machinery. |
+| ~~Drag-and-drop reordering~~ | — | **Done 2026-09-23.** Rules and the database side (`apply_move`, `apply_reorder`, `outside_base_warning`) shared in `dragdrop.py`; `qtui/dragdrop.py` uses real `QDrag`. Tabs are keyed by group, so dropping on "Ungrouped" moves to `""`. The reload after a drop is deferred a turn, since it replaces the widget still handling the event. Favourites are not a drop target yet: the Qt shell has no favourites section. |
 | Tray icon | `tray.py` + ~45 app refs | `QSystemTrayIcon` retires `pystray` and `pillow`. |
 | Schedule tick | ~60 lines | Dialog done; the 30-second timer that fires due schedules is not wired. |
 | Context menus on cards and tabs | ~40 lines | Rename, clone, delete, move, colour. |

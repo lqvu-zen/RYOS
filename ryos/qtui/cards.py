@@ -49,6 +49,33 @@ class _CardBase(QFrame):
         self._row.setContentsMargins(padx, pady, padx, pady)
         self._row.setSpacing(6)
 
+    # -- dragging -----------------------------------------------------------
+    #: Runs the drag once it starts. None means QDrag.exec, which blocks until
+    #: a real mouse button is released; tests put a recorder here.
+    drag_runner = None
+    #: Set by the CardList that holds the card; a card outside one is inert.
+    drag_payload = None
+    _press_pos = None
+
+    def mousePressEvent(self, event) -> None:          # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:           # noqa: N802
+        if (self.drag_payload is not None and self._press_pos is not None
+                and event.buttons() & Qt.MouseButton.LeftButton):
+            from .dragdrop import start_drag
+            if start_drag(self, self.drag_payload, self._press_pos,
+                          event.position().toPoint(), run=self.drag_runner):
+                self._press_pos = None
+                return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:        # noqa: N802
+        self._press_pos = None
+        super().mouseReleaseEvent(event)
+
     # -- button strip ------------------------------------------------------
     def _button(self, glyph: str, tooltip: str = "",
                 object_name: str = "") -> QPushButton:
@@ -145,8 +172,9 @@ class ScriptCard(_CardBase):
         if not compact:
             self.path_label = QLabel(path)
             self.path_label.setObjectName("cardPath")
-            self.path_label.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse)
+            # Not text-selectable, matching the Tk card: a selectable label
+            # takes the mouse for itself, so dragging the card by its path
+            # would select text instead of moving the card.
             text.addWidget(self.path_label)
         self._row.addLayout(text, 1)
 

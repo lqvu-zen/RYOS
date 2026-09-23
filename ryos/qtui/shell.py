@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                QPlainTextEdit, QPushButton, QScrollArea,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMainWindow,
 from .. import outputpanel, search
 from ..themes import REFERENCE
 from .cards import PipelineCard, ScriptCard
+from .dragdrop import CardList, GroupTabBar
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from .stylesheet import stylesheet
@@ -84,6 +85,8 @@ class MainWindow(QMainWindow):
         self._bridge = None
         self.quick_run_bars: dict[str, QuickRunBar] = {}
         self._qr_index = None
+        self._db = None
+        self.card_lists: dict[str, CardList] = {}
 
         self.setWindowTitle("RYOS")
         self.resize(self._settings.get("window_width", 540),
@@ -121,6 +124,10 @@ class MainWindow(QMainWindow):
 
         self.group_tabs = QTabWidget()
         self.group_tabs.setObjectName("groupTabs")
+        # Must be set before any tab is added.
+        self.group_tab_bar = GroupTabBar()
+        self.group_tabs.setTabBar(self.group_tab_bar)
+        self.group_tab_bar.dropped_on_group.connect(self._on_drop_on_group)
         col.addWidget(self.group_tabs, 1)
         col.addWidget(self.running)
         return top
@@ -141,12 +148,17 @@ class MainWindow(QMainWindow):
         file_menu.addAction(quit_action)
 
     # -- cards -------------------------------------------------------------
-    def set_cards(self, group_name: str, records, base_dir: str = "") -> None:
-        """Replace one group tab's cards."""
-        page = QWidget()
-        col = QVBoxLayout(page)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(4)
+    def set_cards(self, group_name: str, records, base_dir: str = "", *,
+                  label: str | None = None) -> None:
+        """Add one group tab with its cards.
+
+        ``group_name`` is the database key ("" for ungrouped); ``label`` is
+        what the tab shows. The key is stored on the tab, so a card dropped
+        on "Ungrouped" moves to "" rather than to a group named "Ungrouped".
+        """
+        page = CardList(group_name)
+        page.dropped.connect(self._on_drop_in_list)
+        self.card_lists[group_name] = page
         compact = bool(self._settings.get("compact_mode", False))
         size = self._settings.get("card_size", "medium")
         made = []
@@ -164,9 +176,11 @@ class MainWindow(QMainWindow):
                                   size=size, last_status=rec.get("status"))
             if self._on_run is not None:
                 card.run_requested.connect(self._on_run)
-            col.addWidget(card)
+            elif "run" in rec:
+                card.run_requested.connect(lambda _id, go=rec["run"]: go())
+            kind = "pipeline" if rec.get("kind") == "pipeline" else "script"
+            page.add_card(card, kind, rec["id"])
             made.append(card)
-        col.addStretch(1)
 
         scroll = QScrollArea()
         scroll.setWidget(page)
@@ -180,7 +194,9 @@ class MainWindow(QMainWindow):
         if base_dir and self._settings.get("quick_run_enabled", True):
             hcol.addWidget(self._build_quick_run(group_name, base_dir))
         hcol.addWidget(scroll, 1)
-        self.group_tabs.addTab(holder, group_name)
+        index = self.group_tabs.addTab(
+            holder, label if label is not None else group_name)
+        self.group_tab_bar.setTabData(index, group_name)
         self._cards.extend(made)
 
     # -- quick run ---------------------------------------------------------
@@ -277,6 +293,113 @@ class MainWindow(QMainWindow):
                                         "Several scripts match — which one?",
                                         candidates, 0, False)
         return pick if ok else None
+
+    # -- loading from the database ------------------------------------------
+    UNGROUPED_LABEL = "Ungrouped"
+
+    def load_from_db(self, db) -> None:
+        """Build every group tab from the database, replacing what is shown.
+
+        Keeps whichever group was in front, so a reload after a drop does not
+        throw the user back to the first tab.
+        """
+        self._db = db
+        current = self.current_group()
+        self._clear_groups()
+        statuses = db.last_pipeline_status()
+        scripts = db.list_all()
+        groups = [(name, base) for name, base in db.list_groups_with_meta()]
+        if any((rec[8] or "") == "" for rec in scripts) or db.list_pipelines(""):
+            groups.append(("", ""))
+        for name, base in groups:
+            records = []
+            for rec in scripts:
+                if (rec[8] or "") != name:
+                    continue
+                sid, sname, path, params, interp = rec[0], rec[1], rec[2], rec[3], rec[4]
+                records.append({
+                    "id": sid, "name": sname, "path": path, "status": rec[7],
+                    "run": (lambda s=sid, n=sname, pth=path, prm=params,
+                            i=interp, g=name: self._run_script_record(
+                                s, n, pth, prm or "", i or "", g)),
+                })
+            for pid, pname, _fav, _color in db.list_pipelines(name):
+                records.append({
+                    "id": pid, "kind": "pipeline", "name": pname,
+                    "steps": len(db.list_pipeline_steps(pid)),
+                    "status": statuses.get(pid),
+                    "run": (lambda p=pid, n=pname, g=name:
+                            self._run_pipeline_record(p, n, g)),
+                })
+            self.set_cards(name, records, base,
+                           label=name or self.UNGROUPED_LABEL)
+        self.show_group(current)
+
+    def reload(self) -> None:
+        if self._db is not None:
+            self.load_from_db(self._db)
+
+    def _clear_groups(self) -> None:
+        while self.group_tabs.count():
+            widget = self.group_tabs.widget(0)
+            self.group_tabs.removeTab(0)
+            widget.deleteLater()
+        self._cards.clear()
+        self.card_lists.clear()
+        self.quick_run_bars.clear()
+
+    def current_group(self) -> str | None:
+        index = self.group_tabs.currentIndex()
+        if index < 0:
+            return None
+        key = self.group_tab_bar.tabData(index)
+        return key if isinstance(key, str) else None
+
+    def show_group(self, group: str | None) -> None:
+        for i in range(self.group_tabs.count()):
+            if self.group_tab_bar.tabData(i) == group:
+                self.group_tabs.setCurrentIndex(i)
+                return
+
+    def _run_script_record(self, sid, name, path, params, interp, group) -> None:
+        if self._bridge is not None:
+            self._bridge.run_script(sid, name, path, params, interp,
+                                    active_group=group)
+
+    def _run_pipeline_record(self, pid, name, group) -> None:
+        if self._bridge is not None:
+            self._bridge.run_pipeline(pid, name, active_group=group,
+                                      candidate_groups=list(self.card_lists))
+
+    # -- drag and drop -------------------------------------------------------
+    def _on_drop_in_list(self, payload, before_id) -> None:
+        """A card dropped among its siblings: reorder, by the shared rule."""
+        from .. import dragdrop
+        action = dragdrop.resolve_drop(
+            dragged=True, target_group=None, card_group=payload.group,
+            in_favorites=False, active_group=payload.group,
+            insert_before=before_id)
+        if action.kind != dragdrop.REORDER or self._db is None:
+            return
+        dragdrop.apply_reorder(self._db, payload.kind, payload.item_id,
+                               action.group, action.before_id)
+        # Deferred: this runs inside the dropped-on widget's own dropEvent,
+        # and reload() replaces that widget.
+        QTimer.singleShot(0, self.reload)
+
+    def _on_drop_on_group(self, payload, group: str) -> None:
+        """A card dropped on a group's tab: move it there, by the shared rule."""
+        from .. import dragdrop
+        action = dragdrop.resolve_drop(
+            dragged=True, target_group=group, card_group=payload.group,
+            in_favorites=False, active_group=payload.group,
+            insert_before=None)
+        if action.kind != dragdrop.MOVE_TO_GROUP or self._db is None:
+            return
+        warning = dragdrop.apply_move(self._db, payload.kind, payload.item_id,
+                                      action.group)
+        QTimer.singleShot(0, self.reload)
+        self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
 
     # -- search ------------------------------------------------------------
     def _apply_search(self, raw: str) -> None:

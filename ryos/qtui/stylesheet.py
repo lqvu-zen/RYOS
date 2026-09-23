@@ -153,6 +153,9 @@ QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 6px; mi
 QScrollBar::handle:vertical:hover {{ background: {c['accent_wash']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 
+/* --- drag and drop ------------------------------------------------- */
+QFrame#dropIndicator {{ background: {c['accent']}; border: none; }}
+
 /* --- status colours ------------------------------------------------- */
 QLabel#statusOk {{ color: {c['ok']}; }}
 QLabel#statusError {{ color: {c['error']}; }}

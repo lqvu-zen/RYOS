@@ -27,7 +27,8 @@ from ..interpreter import (detect_interpreter)
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
 from ..runner import run_subprocess
-from ..dragdrop import (MOVE_TO_GROUP, REORDER, compute_insertion,
+from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
+                        SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
 from .. import outputpanel
@@ -1576,7 +1577,7 @@ class RYOSApp(_BaseWindow):
                      default_group=self._active_group or "",
                      group_base_dirs=group_base_dirs)
 
-    _DRAG_THRESHOLD = 6
+    _DRAG_THRESHOLD = DRAG_THRESHOLD      # shared with the Qt cards
 
     def _bind_card_drag(self, card: "ScriptCard"):
         def recurse(w):
@@ -1719,28 +1720,19 @@ class RYOSApp(_BaseWindow):
             self._move_card_to_group(card, is_pipeline, action.group)
             self._refresh()
         elif action.kind == REORDER:
-            if is_pipeline:
-                self.db.reorder_pipeline(card.pipeline_id, action.group,
-                                         action.before_id)
-            else:
-                self.db.reorder_script(card.script_id, action.group,
-                                       action.before_id)
+            apply_reorder(self.db, PIPELINE if is_pipeline else SCRIPT,
+                          card.pipeline_id if is_pipeline else card.script_id,
+                          action.group, action.before_id)
             self._refresh_cards()
         self._clear_drag_state()
 
     def _move_card_to_group(self, card, is_pipeline: bool, group: str) -> None:
         """Move one card into another group, warning if the path escapes its base dir."""
-        if is_pipeline:
-            self.db.move_pipeline_to_group(card.pipeline_id, group)
-            return
-        self.db.move_to_group(card.script_id, group)
-        target_base = self.db.get_group_base_dir(group)
-        rec = self.db.get(card.script_id)
-        if target_base and rec and not _is_inside(rec[2], target_base):
-            self.status_var.set(
-                f"Warning: script moved to '{group}' but its path is outside "
-                f"the group's base directory."
-            )
+        warning = apply_move(
+            self.db, PIPELINE if is_pipeline else SCRIPT,
+            card.pipeline_id if is_pipeline else card.script_id, group)
+        if warning:
+            self.status_var.set(warning)
 
     def _clear_drag_state(self):
         if self._drag_ghost:
