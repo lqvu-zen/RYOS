@@ -38,6 +38,7 @@ from ryos import quickrun as qr_mod  # noqa: E402
 from ryos import quickrun_actions as qra  # noqa: E402
 from ryos import schedule_runner  # noqa: E402
 from ryos import cardmenu, grouping, themes  # noqa: E402
+from ryos import selection  # noqa: E402
 import types  # noqa: E402
 from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
@@ -7348,6 +7349,46 @@ class TestScheduleRunner(unittest.TestCase):
         pid = self.db.create_pipeline("loose", "")
         self.assertEqual(schedule_runner.pipeline_name(self.db, pid), "loose")
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
+
+
+class TestSelection(unittest.TestCase):
+    """Select mode's wording and decisions, shared by both select bars."""
+
+    def test_bar_text(self):
+        self.assertEqual(selection.bar_text(0, 5), selection.HINT)
+        self.assertEqual(selection.bar_text(2, 5), "2 of 5 selected")
+
+    def test_select_all_label_and_target(self):
+        self.assertEqual(selection.select_all_label(3, 3), "Deselect All")
+        self.assertEqual(selection.select_all_label(2, 3), "Select All")
+        self.assertEqual(selection.select_all_label(0, 0), "Select All")
+        self.assertFalse(selection.select_all_target([True, True]))
+        self.assertTrue(selection.select_all_target([True, False]))
+        self.assertTrue(selection.select_all_target([]))
+
+    def test_nothing_selected_explains(self):
+        plan = selection.plan_run(0, 0, 4)
+        self.assertEqual((plan.start, plan.notice), (0, selection.NOTHING_TO_RUN))
+
+    def test_all_fit(self):
+        plan = selection.plan_run(3, 1, 10)
+        self.assertEqual((plan.start, plan.skipped, plan.notice, plan.status),
+                         (3, 0, None, "Started 3 scripts."))
+        self.assertEqual(selection.plan_run(1, 0, 10).status, "Started 1 script.")
+
+    def test_past_the_cap_one_notice_with_counts(self):
+        plan = selection.plan_run(3, 0, 2)
+        self.assertEqual((plan.start, plan.skipped, plan.status), (2, 1, None))
+        self.assertEqual(plan.notice[0], "Job limit reached")
+        self.assertIn("Started 2 of 3", plan.notice[1])
+        self.assertIn("limit of 2", plan.notice[1])
+
+    def test_unlimited_cap(self):
+        self.assertEqual(selection.plan_run(50, 40, 0).start, 50)
+
+    def test_delete_prompt(self):
+        self.assertEqual(selection.delete_prompt(2),
+                         ("Delete Selected", "Delete 2 selected script(s)?"))
 
 
 class TestCardMenu(unittest.TestCase):

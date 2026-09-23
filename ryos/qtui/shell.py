@@ -28,11 +28,12 @@ from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                               QPlainTextEdit, QPushButton, QScrollArea,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
+                               QMainWindow, QPlainTextEdit, QPushButton,
+                               QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import cardmenu, grouping, outputpanel, search
+from .. import cardmenu, grouping, outputpanel, search, selection
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
@@ -101,6 +102,8 @@ class MainWindow(QMainWindow):
         self.ask_yes_no: Callable[[str, str], bool] = self._ask_yes_no
         self.ask_text: Callable[[str, str, str], str | None] = self._ask_text
         self.warn: Callable[[str, str], None] = self._warn
+        self.inform: Callable[[str, str], None] = self._inform
+        self.select_mode = False
         self.ask_save_path: Callable[[str, str], str | None] = self._ask_save_path
         self.run_dialog: Callable[[object], None] = lambda dlg: dlg.exec()
         self.popup: Callable[[object, QPoint], None] = \
@@ -140,8 +143,12 @@ class MainWindow(QMainWindow):
         row.addWidget(self.search_hint)
         col.addLayout(row)
 
+        col.addWidget(self._build_select_bar())
+
         self.group_tabs = QTabWidget()
         self.group_tabs.setObjectName("groupTabs")
+        self.group_tabs.currentChanged.connect(
+            lambda _i: self._update_select_bar())
         # Must be set before any tab is added.
         self.group_tab_bar = GroupTabBar()
         self.group_tabs.setTabBar(self.group_tab_bar)
@@ -165,6 +172,11 @@ class MainWindow(QMainWindow):
         quit_action = QAction("E&xit", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+        options = bar.addMenu("&Options")
+        self.select_action = QAction(selection.ENTER_LABEL, self)
+        self.select_action.triggered.connect(
+            lambda: self.set_select_mode(not self.select_mode))
+        options.addAction(self.select_action)
 
     # -- cards -------------------------------------------------------------
     def set_cards(self, group_name: str, records, base_dir: str = "", *,
@@ -339,6 +351,7 @@ class MainWindow(QMainWindow):
         """
         self._db = db
         current = self.current_group()
+        self.set_select_mode(False)
         self._clear_groups()
         statuses = db.last_pipeline_status()
         scripts = db.list_all()
@@ -401,12 +414,23 @@ class MainWindow(QMainWindow):
     def _run_script_record(self, sid, name, path, params, interp, group) -> None:
         if self._bridge is not None:
             self._bridge.run_script(sid, name, path, params, interp,
-                                    active_group=group)
+                                    active_group=group,
+                                    on_refusal=self._show_refusal)
 
     def _run_pipeline_record(self, pid, name, group) -> None:
         if self._bridge is not None:
             self._bridge.run_pipeline(pid, name, active_group=group,
-                                      candidate_groups=list(self.card_lists))
+                                      candidate_groups=list(self.card_lists),
+                                      on_refusal=self._show_refusal)
+
+    def _show_refusal(self, refusal) -> None:
+        """Say why a run did not start, in the register it asked for.
+
+        Hitting the job cap is a notice, a missing file is an error -- the
+        severity travels with the refusal, as in the Tk app.
+        """
+        show = self.inform if refusal.severity == "info" else self.warn
+        show(refusal.title, refusal.message)
 
     # -- drag and drop -------------------------------------------------------
     def _on_drop_in_list(self, payload, before_id) -> None:
@@ -437,6 +461,98 @@ class MainWindow(QMainWindow):
                                       action.group)
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
+
+    # -- select mode -------------------------------------------------------------
+    def _build_select_bar(self) -> QWidget:
+        self.select_bar = QFrame()
+        self.select_bar.setObjectName("selectBar")
+        row = QHBoxLayout(self.select_bar)
+        row.setContentsMargins(10, 4, 6, 4)
+        self.select_label = QLabel(selection.HINT)
+        self.select_label.setWordWrap(True)
+        row.addWidget(self.select_label, 1)
+        self.select_all_button = QPushButton("Select All")
+        self.select_all_button.clicked.connect(self.toggle_select_all)
+        self.run_selected_button = QPushButton("▶ Run Selected")
+        self.run_selected_button.setObjectName("run")
+        self.run_selected_button.clicked.connect(self.run_selected)
+        self.delete_selected_button = QPushButton("🗑 Delete Selected")
+        self.delete_selected_button.clicked.connect(self.delete_selected)
+        for b in (self.select_all_button, self.run_selected_button,
+                  self.delete_selected_button):
+            row.addWidget(b)
+        self.select_bar.setVisible(False)
+        return self.select_bar
+
+    def selectable_cards(self) -> list:
+        """The script cards select mode acts on: those on the current tab."""
+        page = self.card_lists.get(self.current_group())
+        return [c for c in (page.cards if page else [])
+                if isinstance(c, ScriptCard)]
+
+    def selected_cards(self) -> list:
+        return [c for c in self.selectable_cards() if c.checkbox.isChecked()]
+
+    def set_select_mode(self, on: bool) -> None:
+        if on == self.select_mode:
+            return
+        self.select_mode = on
+        self.select_action.setText(selection.LEAVE_LABEL if on
+                                   else selection.ENTER_LABEL)
+        self.select_bar.setVisible(on)
+        for page in self.card_lists.values():
+            for card in page.cards:
+                if isinstance(card, ScriptCard):
+                    card.checkbox.setChecked(False)
+                    card.checkbox.setVisible(on)
+                    if on:
+                        card.checkbox.toggled.connect(self._update_select_bar)
+                    else:
+                        try:
+                            card.checkbox.toggled.disconnect(
+                                self._update_select_bar)
+                        except (RuntimeError, TypeError):
+                            pass
+        self._update_select_bar()
+
+    def _update_select_bar(self, *_args) -> None:
+        if not self.select_mode:
+            return
+        n, total = len(self.selected_cards()), len(self.selectable_cards())
+        self.select_label.setText(selection.bar_text(n, total))
+        self.select_all_button.setText(selection.select_all_label(n, total))
+
+    def toggle_select_all(self) -> None:
+        cards = self.selectable_cards()
+        target = selection.select_all_target(c.checkbox.isChecked() for c in cards)
+        for card in cards:
+            card.checkbox.setChecked(target)
+        self._update_select_bar()
+
+    def run_selected(self) -> None:
+        """Run every ticked script, up to the job cap, by the shared plan."""
+        from ..settings import _SETTINGS_DEFAULTS
+        cards = self.selected_cards()
+        running = len(self._bridge.registry) if self._bridge is not None else 0
+        max_jobs = self._settings.get("max_parallel_jobs",
+                                      _SETTINGS_DEFAULTS["max_parallel_jobs"])
+        plan = selection.plan_run(len(cards), running, max_jobs)
+        for card in cards[:plan.start]:
+            card.run_requested.emit(card.script_id)
+        if plan.notice:
+            self.inform(*plan.notice)
+        elif plan.status:
+            self.statusBar().showMessage(plan.status)
+
+    def delete_selected(self) -> None:
+        ids = [c.script_id for c in self.selected_cards()]
+        if not ids:
+            self.inform(*selection.NOTHING_TO_DELETE)
+            return
+        if self._db is None or not self.ask_yes_no(*selection.delete_prompt(len(ids))):
+            return
+        self._db.delete_many(ids)
+        self._defer_reload()
 
     # -- right-click menus ------------------------------------------------------
     def card_menu_items(self, kind: str, item_id: int) -> list:
@@ -611,6 +727,10 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QInputDialog
         text, ok = QInputDialog.getText(self, title, prompt, text=initial)
         return text if ok else None
+
+    def _inform(self, title: str, message: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, title, message)
 
     def _warn(self, title: str, message: str) -> None:
         from PySide6.QtWidgets import QMessageBox

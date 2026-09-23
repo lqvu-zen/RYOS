@@ -1627,6 +1627,165 @@ def check_context_menus(app):
     win.deleteLater()
 
 
+
+
+def check_select_mode(app):
+    """Select mode: tick, select all, run past the cap, delete -- for real.
+
+    Runs go through a real JobBridge, so "started 2 of 3" is counted from the
+    registry, not from what the window thinks it asked for.
+    """
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from ryos import selection
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "select.db")
+    db.create_group("G")
+    db.create_group("H")
+    ids = []
+    for i in range(3):
+        script = tmp / f"s{i}.py"
+        script.write_text(f"print('selected {i}')\n", encoding="utf-8")
+        ids.append(db.add(f"s{i}", str(script), "", _sys.executable, "G"))
+    other = tmp / "other.py"
+    other.write_text("print('other')\n", encoding="utf-8")
+    db.add("other", str(other), "", _sys.executable, "H")
+    pid = db.create_pipeline("p", "G")
+    db.add_pipeline_step(pid, ids[0])
+
+    settings = {"quick_run_enabled": False, "max_parallel_jobs": 2}
+    win = MainWindow(REFERENCE["dark"], settings=settings)
+    bridge = JobBridge(db, {"max_parallel_jobs": 2})
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.resize(700, 600)
+    win.show()
+    win.load_from_db(db)
+    win.show_group("G")
+    app.processEvents()
+
+    told: list = []
+    win.inform = lambda title, text: told.append(title)
+    answers = {"yes": False}
+    win.ask_yes_no = lambda title, q: answers["yes"]
+
+    def pump_until(predicate, timeout=25.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    # -- entering ------------------------------------------------------------
+    if win.select_bar.isVisible():
+        PROBLEMS.append("the select bar showed before select mode")
+    win.select_action.trigger()
+    app.processEvents()
+    cards = win.selectable_cards()
+    if (not win.select_bar.isVisible()
+            or win.select_action.text() != selection.LEAVE_LABEL):
+        PROBLEMS.append("Options > Select scripts did not enter select mode")
+    if len(cards) != 3 or not all(c.checkbox.isVisible() for c in cards):
+        PROBLEMS.append(f"{len(cards)} selectable cards; pipelines are not "
+                        "selectable and every script should show a box")
+    if win.select_label.text() != selection.HINT:
+        PROBLEMS.append("the bar did not start with the hint")
+
+    # -- ticking -------------------------------------------------------------
+    cards[0].checkbox.click()
+    cards[1].checkbox.click()
+    if win.select_label.text() != "2 of 3 selected":
+        PROBLEMS.append(f"bar said {win.select_label.text()!r} for 2 of 3")
+    win.select_all_button.click()
+    if (len(win.selected_cards()) != 3
+            or win.select_all_button.text() != "Deselect All"):
+        PROBLEMS.append("Select All did not tick every script")
+    win.select_all_button.click()
+    if win.selected_cards():
+        PROBLEMS.append("Deselect All left something ticked")
+
+    # -- running -------------------------------------------------------------
+    win.run_selected_button.click()
+    if told != [selection.NOTHING_TO_RUN[0]] or len(bridge.registry):
+        PROBLEMS.append("running nothing did not explain itself")
+    told.clear()
+
+    win.select_all_button.click()
+    win.run_selected_button.click()
+    if len(bridge.registry) != 2 or told != ["Job limit reached"]:
+        PROBLEMS.append(f"past the cap: {len(bridge.registry)} started, "
+                        f"told {told}")
+    if len(win.selected_cards()) != 3:
+        PROBLEMS.append("the selection was cleared, so skipped scripts "
+                        "cannot be retried")
+    if not pump_until(lambda: len(bridge.registry) == 0):
+        PROBLEMS.append("the selected runs never finished")
+    told.clear()
+    # The window and the bridge each copy their settings; raise both caps.
+    win._settings["max_parallel_jobs"] = bridge._settings["max_parallel_jobs"] = 10
+    win.run_selected_button.click()
+    if len(bridge.registry) != 3 or told:
+        PROBLEMS.append("under the cap, not every selected script started")
+    if win.statusBar().currentMessage() != "Started 3 scripts.":
+        PROBLEMS.append(f"status after running: "
+                        f"{win.statusBar().currentMessage()!r}")
+    pump_until(lambda: len(bridge.registry) == 0)
+
+    # -- a refused run says why, instead of doing nothing ---------------------
+    warned: list = []
+    win.warn = lambda title, text: warned.append(title)
+    db.add("gone", str(tmp / "missing.py"), "", _sys.executable, "H")
+    win.set_select_mode(False)
+    win.reload()
+    app.processEvents()
+    gone = next(c for c in win.card_lists["H"].cards if c._name == "gone")
+    gone.run_button.click()
+    if not warned or len(bridge.registry):
+        PROBLEMS.append("running a missing script was refused silently")
+    win.set_select_mode(True)
+
+    # -- the tab decides the scope --------------------------------------------
+    win.show_group("H")
+    app.processEvents()
+    if win.select_label.text() != selection.HINT or len(win.selectable_cards()) != 2:
+        PROBLEMS.append("switching tabs did not re-scope the selection")
+    win.show_group("G")
+    app.processEvents()
+
+    # -- deleting ------------------------------------------------------------
+    for c in win.selectable_cards():
+        c.checkbox.setChecked(False)
+    win.selectable_cards()[2].checkbox.click()
+    answers["yes"] = False
+    win.delete_selected_button.click()
+    app.processEvents()
+    if len([r for r in db.list_all() if r[8] == "G"]) != 3:
+        PROBLEMS.append("declining Delete Selected still deleted")
+    answers["yes"] = True
+    win.delete_selected_button.click()
+    for _ in range(3):
+        app.processEvents()
+    left = [r[0] for r in db.list_all() if r[8] == "G"]
+    if left != ids[:2]:
+        PROBLEMS.append(f"Delete Selected left {left}")
+    if win.select_mode or win.select_bar.isVisible():
+        PROBLEMS.append("select mode survived the reload after deleting")
+
+    bridge.stop()
+    print("  [ok] select mode: enters from Options, pipelines excluded, count "
+          "and Select All, one notice past the cap with the selection kept, "
+          "tab re-scopes, delete asks first")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -1649,6 +1808,7 @@ def main() -> int:
     check_drag_and_drop(app)
     check_schedules(app)
     check_context_menus(app)
+    check_select_mode(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

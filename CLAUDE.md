@@ -43,6 +43,7 @@ Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__mai
 | Card search / filtering                        | `ryos/search.py`        |
 | Group ordering and collapse state              | `ryos/grouping.py`      |
 | Card and tab right-click menus (as data)       | `ryos/cardmenu.py`      |
+| Select mode: bar text, run-selected plan       | `ryos/selection.py`     |
 | Drag-and-drop reordering rules                 | `ryos/dragdrop.py`      |
 | Monitor work areas (pure geometry)             | `ryos/screens.py`       |
 | Dialog placement on the right monitor          | `ryos/ui/placement.py`  |

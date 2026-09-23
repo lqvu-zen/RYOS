@@ -36,6 +36,7 @@ REQUIRED_KEYS = (
     "tooltip_bg", "tooltip_border",
     "error", "ok", "running",
     "menu_bg", "fg_on_dark",
+    "warn_bg", "warn_border", "warn_fg",
 )
 
 
@@ -153,6 +154,13 @@ QScrollBar:vertical {{ background: {c['bg']}; width: 12px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 6px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: {c['accent_wash']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+
+/* --- select mode --------------------------------------------------- */
+QFrame#selectBar {{
+    background: {c['warn_bg']};
+    border: 1px solid {c['warn_border']};
+}}
+QFrame#selectBar QLabel {{ background: transparent; color: {c['warn_fg']}; }}
 
 /* --- context menus ------------------------------------------------- */
 QMenu {{

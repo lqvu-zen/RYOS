@@ -29,7 +29,7 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import cardmenu, outputpanel
+from .. import cardmenu, outputpanel, selection
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
@@ -49,7 +49,7 @@ from ..quickrun import (
     _is_inside, display_relpath,
 )
 from ..job_controller import JobController
-from ..jobs import Job as _Job, JobRegistry, format_elapsed, split_by_capacity
+from ..jobs import Job as _Job, JobRegistry, format_elapsed
 from .cards import PipelineCard, ScriptCard, _popup_menu
 from .dialogs import (
     AdvancedOptionsDialog, CloseToTrayPromptDialog, GroupBaseDirDialog,
@@ -360,7 +360,7 @@ class RYOSApp(_BaseWindow):
         self._options_menu = tk.Menu(self, tearoff=0, bg=C["menu_bg"], fg=C["fg_on_dark"],
                                      activebackground=C["accent"], activeforeground=C["fg_on_dark"],
                                      borderwidth=0, relief="flat")
-        self._options_menu.add_command(label="☑  Select scripts",     command=self._toggle_select_mode)
+        self._options_menu.add_command(label=selection.ENTER_LABEL,    command=self._toggle_select_mode)
         self._options_menu.add_separator()
         self._options_menu.add_command(label="📤  Export all groups",  command=self._export_config)
         self._options_menu.add_command(label="📥  Import config",      command=self._import_config)
@@ -378,7 +378,7 @@ class RYOSApp(_BaseWindow):
 
         self._select_btn = None
 
-    _SELECT_HINT = "Tick the checkboxes next to the scripts you want to run or delete."
+    _SELECT_HINT = selection.HINT
 
     def _build_select_bar(self):
         """The multi-select action bar (packed on demand by select mode)."""
@@ -943,7 +943,7 @@ class RYOSApp(_BaseWindow):
         if self._select_mode:
             self._select_mode = False
             self._select_bar.pack_forget()
-            self._options_menu.entryconfig(0, label="☑  Select scripts")
+            self._options_menu.entryconfig(0, label=selection.ENTER_LABEL)
         self._refresh_tabs()
         self._refresh_cards()
 
@@ -1888,13 +1888,13 @@ class RYOSApp(_BaseWindow):
     def _toggle_select_mode(self):
         self._select_mode = not self._select_mode
         if self._select_mode:
-            self._options_menu.entryconfig(0, label="✕  Cancel select")
+            self._options_menu.entryconfig(0, label=selection.LEAVE_LABEL)
             self._select_bar_var.set(self._SELECT_HINT)
             self._select_bar.pack(fill="x", before=self._paned)
             for card in self._cards:
                 card.show_checkbox(self._update_select_count)
         else:
-            self._options_menu.entryconfig(0, label="☑  Select scripts")
+            self._options_menu.entryconfig(0, label=selection.ENTER_LABEL)
             self._select_bar.pack_forget()
             for card in self._cards:
                 card.hide_checkbox()
@@ -1902,17 +1902,13 @@ class RYOSApp(_BaseWindow):
     def _update_select_count(self):
         n = sum(1 for c in self._cards if c.selected.get())
         total = len(self._cards)
-        if n:
-            self._select_bar_var.set(f"{n} of {total} selected")
-        else:
-            self._select_bar_var.set(self._SELECT_HINT)
-        all_selected = n == total and total > 0
-        self._sel_all_btn.config(text="Deselect All" if all_selected else "Select All")
+        self._select_bar_var.set(selection.bar_text(n, total))
+        self._sel_all_btn.config(text=selection.select_all_label(n, total))
 
     def _toggle_select_all(self):
-        all_selected = all(c.selected.get() for c in self._cards) and self._cards
+        target = selection.select_all_target(c.selected.get() for c in self._cards)
         for card in self._cards:
-            card.selected.set(not all_selected)
+            card.selected.set(target)
         self._update_select_count()
 
     def _run_selected(self):
@@ -1924,33 +1920,21 @@ class RYOSApp(_BaseWindow):
         again once something finishes.
         """
         cards = [c for c in self._cards if c.selected.get()]
-        if not cards:
-            messagebox.showinfo(
-                "Nothing Selected",
-                "Tick the checkboxes next to the scripts you want to run.")
-            return
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        can, skipped = split_by_capacity(len(cards), len(self._jobreg), max_jobs)
-        for card in cards[:can]:
+        plan = selection.plan_run(len(cards), len(self._jobreg), max_jobs)
+        for card in cards[:plan.start]:
             card.run()
-        if skipped:
-            messagebox.showinfo(
-                "Job limit reached",
-                f"Started {can} of {len(cards)} selected script"
-                f"{'s' if len(cards) != 1 else ''}.\n\n"
-                f"{skipped} could not start because the limit of {max_jobs} "
-                "parallel jobs was reached. They are still selected — run them "
-                "again once something finishes.")
-        elif can:
-            self.status_var.set(
-                f"Started {can} script{'s' if can != 1 else ''}.")
+        if plan.notice:
+            messagebox.showinfo(*plan.notice)
+        elif plan.status:
+            self.status_var.set(plan.status)
 
     def _delete_selected(self):
         ids = [c.script_id for c in self._cards if c.selected.get()]
         if not ids:
-            messagebox.showinfo("Nothing Selected", "Tick the checkboxes next to the scripts you want to delete.")
+            messagebox.showinfo(*selection.NOTHING_TO_DELETE)
             return
-        if messagebox.askyesno("Delete Selected", f"Delete {len(ids)} selected script(s)?"):
+        if messagebox.askyesno(*selection.delete_prompt(len(ids))):
             self.db.delete_many(ids)
             self._refresh()
 
