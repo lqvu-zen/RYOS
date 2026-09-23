@@ -1280,6 +1280,116 @@ def check_drag_and_drop(app):
     win.deleteLater()
 
 
+
+
+def check_schedules(app):
+    """The bridge's own timer fires due schedules, by the policy Tk uses.
+
+    Nothing here calls the sweep by hand for the first run: the bridge is
+    started and the check waits for its timer, so a sweep that is never
+    armed fails here rather than in a user's overnight job.
+    """
+    import json
+    import sys as _sys
+    import tempfile
+    import time as _time
+    from datetime import datetime, timedelta
+
+    from ryos import schedule_runner
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+
+    tmp = Path(tempfile.mkdtemp())
+    quick = tmp / "quick.py"
+    quick.write_text("print('scheduled')\n", encoding="utf-8")
+    slow = tmp / "slow.py"
+    slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+
+    db = ScriptDB(tmp / "sched.db")
+    db.create_group("G")
+    sid = db.add("quick", str(quick), "", _sys.executable, "G")
+    past = datetime.now() - timedelta(minutes=5)
+    every_hour = json.dumps({"minutes": 60})
+    db.add_schedule("script", script_id=sid, spec_type="interval",
+                            spec=every_hour, enabled=True, next_run_at=past)
+
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    statuses: list = []
+    bridge.status.connect(statuses.append)
+
+    def pump_until(predicate, timeout=25.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    # -- the timer, not the test, fires it ---------------------------------
+    bridge.start()
+    runs = lambda: db.list_runs(script_id=sid)  # noqa: E731
+    if not pump_until(lambda: runs() and runs()[0][6] is not None,
+                      timeout=schedule_runner.FIRST_TICK_MS / 1000 + 20):
+        PROBLEMS.append("the bridge's schedule timer never fired a due run")
+    else:
+        if runs()[0][10] != "schedule":
+            PROBLEMS.append(f"scheduled run tagged {runs()[0][10]!r}")
+        row = db.get_schedule(script_id=sid)
+        if not row[8] or datetime.fromisoformat(row[8]) <= datetime.now():
+            PROBLEMS.append("next_run_at was not advanced past now")
+    if bridge.run_due_schedules() != 0:
+        PROBLEMS.append("a schedule fired twice for one due time")
+
+    # -- an ungrouped pipeline is found, not disabled as missing -------------
+    pid = db.create_pipeline("loose", "")
+    db.add_pipeline_step(pid, sid)
+    db.add_schedule("pipeline", pipeline_id=pid, spec_type="interval",
+                             spec=every_hour, enabled=True, next_run_at=past)
+    if bridge.run_due_schedules() != 1:
+        PROBLEMS.append("a due ungrouped pipeline did not start")
+    if not db.get_schedule(pipeline_id=pid)[6]:
+        PROBLEMS.append("an ungrouped pipeline's schedule was disabled")
+    if not pump_until(lambda: len(bridge.registry) == 0):
+        PROBLEMS.append("finished jobs were never unregistered, so they "
+                        "count toward the cap and block their schedules")
+
+    # -- overlap: never stack a second run on one still going ----------------
+    slow_id = db.add("slow", str(slow), "", _sys.executable, "G")
+    db.add_schedule("script", script_id=slow_id, spec_type="interval",
+                    spec=json.dumps({"minutes": 1}), enabled=True,
+                    next_run_at=past)
+    first = bridge.run_due_schedules()
+    slow_sched = db.get_schedule(script_id=slow_id)[0]
+    db.mark_schedule_fired(slow_sched, past)
+    second = bridge.run_due_schedules()
+    if first != 1 or second != 0 or len(bridge.registry) != 1:
+        PROBLEMS.append("a schedule stacked a second run on a running one")
+
+    # -- a target that has gone disables its schedule ---------------------------
+    gone = db.add("gone", str(quick), "", _sys.executable, "G")
+    db.add_schedule("script", script_id=gone, spec_type="interval",
+                    spec=every_hour, enabled=True, next_run_at=past)
+    db.delete(gone)
+    bridge.run_due_schedules()
+    rows = [r for r in db.list_schedules() if r[2] == gone]
+    if rows and rows[0][6]:
+        PROBLEMS.append("a schedule for a deleted script stayed enabled")
+
+    # -- a refusal reports to the status line, keeps the schedule ---------------
+    broken = db.add("broken", str(tmp / "nope.py"), "", _sys.executable, "G")
+    db.add_schedule("script", script_id=broken, spec_type="interval",
+                    spec=every_hour, enabled=True, next_run_at=past)
+    bridge.run_due_schedules()
+    if not any("Scheduled run refused" in s for s in statuses):
+        PROBLEMS.append(f"a refused scheduled run said nothing: {statuses}")
+    if not db.get_schedule(script_id=broken)[6]:
+        PROBLEMS.append("a refused run disabled its schedule")
+
+    bridge.stop()             # terminates the slow run
+    print("  [ok] schedules: timer fires and tags, advances, no double fire, "
+          "ungrouped pipeline found, no overlap, missing target disabled, "
+          "refusal reported")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -1300,6 +1410,7 @@ def main() -> int:
     check_small_dialogs(app)
     check_quick_run(app)
     check_drag_and_drop(app)
+    check_schedules(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

@@ -36,6 +36,8 @@ import time  # noqa: E402
 from ryos import quickrun_index  # noqa: E402
 from ryos import quickrun as qr_mod  # noqa: E402
 from ryos import quickrun_actions as qra  # noqa: E402
+from ryos import schedule_runner  # noqa: E402
+import types  # noqa: E402
 from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
     save_disk_index, scan,
@@ -7274,6 +7276,76 @@ class TestQuickRunBarRules(unittest.TestCase):
             with self.subTest(module=rel):
                 src = (root / rel).read_text(encoding="utf-8")
                 self.assertNotIn("Indexing files", src)
+
+
+class TestScheduleRunner(unittest.TestCase):
+    """The due-schedule sweep, shared by the Tk app and the Qt bridge."""
+
+    EVERY_HOUR = '{"minutes": 60}'
+
+    def setUp(self):
+        self.db = _make_db()
+        self.now = datetime.datetime(2026, 9, 23, 12, 0)
+        self.past = self.now - datetime.timedelta(minutes=5)
+        self.sid = self.db.add("s", "/x/s.py", "", "", "")
+        self.launched = []
+
+    def schedule(self, **kw):
+        kw.setdefault("script_id", self.sid)
+        kind = "pipeline" if "pipeline_id" in kw else "script"
+        return self.db.add_schedule(kind, spec_type="interval",
+                                    spec=kw.pop("spec", self.EVERY_HOUR),
+                                    enabled=True, next_run_at=self.past, **kw)
+
+    def sweep(self, *, full=False, busy=False, exists=True):
+        def launch(row):
+            if exists:
+                self.launched.append(row[0])
+            return exists
+        return schedule_runner.run_due(
+            self.db, self.now, at_capacity=lambda: full,
+            running=lambda row: busy, launch=launch)
+
+    def row(self, sched_id):
+        return next(r for r in self.db.list_schedules() if r[0] == sched_id)
+
+    def test_fires_once_and_advances(self):
+        sched = self.schedule()
+        self.assertEqual(self.sweep(), 1)
+        self.assertEqual(self.launched, [sched])
+        self.assertGreater(datetime.datetime.fromisoformat(self.row(sched)[8]), self.now)
+        self.assertEqual(self.sweep(), 0)
+
+    def test_skips_at_capacity_but_still_advances(self):
+        sched = self.schedule()
+        self.assertEqual(self.sweep(full=True), 0)
+        self.assertTrue(self.row(sched)[6])
+        self.assertGreater(datetime.datetime.fromisoformat(self.row(sched)[8]), self.now)
+
+    def test_never_stacks_on_a_running_target(self):
+        self.schedule()
+        self.assertEqual(self.sweep(busy=True), 0)
+        self.assertEqual(self.launched, [])
+
+    def test_missing_target_disables(self):
+        sched = self.schedule()
+        self.sweep(exists=False)
+        self.assertFalse(self.row(sched)[6])
+
+    def test_unusable_spec_disables_without_launching(self):
+        sched = self.schedule(spec="not json")
+        self.assertEqual(self.sweep(), 0)
+        self.assertFalse(self.row(sched)[6])
+
+    def test_is_running_matches_by_kind(self):
+        job = types.SimpleNamespace(script_id=7, pipeline_id=None)
+        self.assertTrue(schedule_runner.is_running((1, "script", 7, None), [job]))
+        self.assertFalse(schedule_runner.is_running((1, "pipeline", None, 7), [job]))
+
+    def test_pipeline_name_finds_ungrouped_pipelines(self):
+        pid = self.db.create_pipeline("loose", "")
+        self.assertEqual(schedule_runner.pipeline_name(self.db, pid), "loose")
+        self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
 
 
 class TestApplyDrop(unittest.TestCase):

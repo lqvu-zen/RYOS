@@ -10,6 +10,8 @@ The two toolkit-shaped pieces are both small and both live here:
   the same interval, so output appears at the same rate in both.
 * **Launching.** A worker thread runs ``runner.run_subprocess``; nothing about
   it is Tk- or Qt-specific except which scheduler defers the launcher release.
+* **Schedules.** A second ``QTimer`` runs the sweep in ``schedule_runner``,
+  the same one the Tk app runs on ``after``.
 """
 
 from __future__ import annotations
@@ -21,7 +23,9 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from ..db import SOURCE_MANUAL, ScriptDB
+from .. import schedule_runner
+from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE, ScriptDB
+from ..logger import get_logger
 from ..job_controller import JobController
 from ..jobs import JobRegistry
 from ..runner import run_subprocess
@@ -29,6 +33,8 @@ from ..settings import _SETTINGS_DEFAULTS
 
 #: Same cadence as the Tk drain loop, so output appears at the same rate.
 PUMP_MS = 80
+
+_log = get_logger(__name__)
 
 
 class JobBridge(QObject):
@@ -61,17 +67,21 @@ class JobBridge(QObject):
             on_status=self.status.emit,
             on_notify=lambda title, body: self.notify.emit(title, body),
             on_started=self.started.emit,
-            on_finish=self.finished.emit,
+            on_finish=self._on_finish,
             on_rename=self.renamed.emit,
             launch=self._launch,
         )
         self._timer = QTimer(self)
         self._timer.setInterval(PUMP_MS)
         self._timer.timeout.connect(self.controller.pump)
+        self._schedule_timer = QTimer(self)
+        self._schedule_timer.setSingleShot(True)
+        self._schedule_timer.timeout.connect(self._tick_schedules)
 
     # -- lifecycle ---------------------------------------------------------
     def start(self) -> None:
         self._timer.start()
+        self._schedule_timer.start(schedule_runner.FIRST_TICK_MS)
 
     def stop(self) -> None:
         """Stop draining and terminate anything still running.
@@ -80,6 +90,7 @@ class JobBridge(QObject):
         a worker thread and a subprocess alive with nowhere to report.
         """
         self._timer.stop()
+        self._schedule_timer.stop()
         for job in self.registry.all():
             job.stopped = True
             for proc in job.active_processes():
@@ -87,6 +98,16 @@ class JobBridge(QObject):
                     proc.terminate()
                 except OSError:
                     pass
+
+    def _on_finish(self, job) -> None:
+        """Unregister a finished job, then tell whoever is listening.
+
+        The controller leaves this to its host, as Tk's ``_finish_job`` does.
+        A job left registered still counts toward the cap and still looks
+        "running" to a schedule, which would then never fire again.
+        """
+        self.registry.remove(job.job_id)
+        self.finished.emit(job)
 
     # -- launching ---------------------------------------------------------
     def _launch(self, job, spec, name: str, script_id: int,
@@ -160,4 +181,54 @@ class JobBridge(QObject):
             trigger=trigger)
         job.start_time = datetime.now()
         self.controller.run_next_pipeline_step(job)
+        return True
+
+    # -- schedules ---------------------------------------------------------
+    def _tick_schedules(self) -> None:
+        """Fire whatever is due, then re-arm. One bad row never stops the timer."""
+        try:
+            self.run_due_schedules()
+        except Exception:
+            _log.warning("Schedule tick failed", exc_info=True)
+        finally:
+            self._schedule_timer.start(schedule_runner.TICK_MS)
+
+    def run_due_schedules(self, now: datetime | None = None) -> int:
+        """One sweep of the shared schedule policy. Returns runs started."""
+        max_jobs = self._settings.get(
+            "max_parallel_jobs", _SETTINGS_DEFAULTS["max_parallel_jobs"])
+        return schedule_runner.run_due(
+            self.db, now or datetime.now(),
+            at_capacity=lambda: self.controller.at_capacity(max_jobs),
+            running=lambda row: schedule_runner.is_running(
+                row, self.registry.all()),
+            launch=self._launch_scheduled)
+
+    def _launch_scheduled(self, row) -> bool:
+        """Start one scheduled run. False only when its target is gone.
+
+        A refusal goes to the status line rather than a dialog: nobody clicked
+        anything, and a modal box from a timer would sit over whatever the
+        user is doing.
+        """
+        def refused(refusal) -> None:
+            self.status.emit(f"Scheduled run refused: {refusal.title}")
+
+        script_id, pipeline_id = row[2], row[3]
+        if pipeline_id is not None:
+            name = schedule_runner.pipeline_name(self.db, pipeline_id)
+            if name is None:
+                return False
+            # Every group is a candidate, so the pipeline's own group owns it.
+            self.run_pipeline(pipeline_id, name, trigger=SOURCE_SCHEDULE,
+                              candidate_groups=list(self.db.list_groups()) + [""],
+                              on_refusal=refused)
+            return True
+        rec = self.db.get(script_id)
+        if not rec:
+            return False
+        _, name, path, params, interp = rec[:5]
+        self.run_script(script_id, name, path, params or "", interp or "",
+                        trigger=SOURCE_SCHEDULE, active_group=rec[5] or "",
+                        on_refusal=refused)
         return True

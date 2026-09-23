@@ -1,6 +1,5 @@
 """Main RYOS window: header, tabs, card list, output panel, and run engine."""
 import ctypes
-import json
 import os
 import queue
 import sys
@@ -21,8 +20,7 @@ except ImportError:
 from .. import __version__
 from ..db import ScriptDB
 from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE
-from ..scheduling import resolve_due
-from ..history import parse_stamp
+from .. import schedule_runner
 from ..interpreter import (detect_interpreter)
 from ..logger import get_logger, setup_logging
 from ..notifications import _fetch_latest_release, _parse_version, _show_notification
@@ -79,7 +77,7 @@ MAX_PARALLEL_JOBS = 10
 _QUICK_RUN_INDEX_TTL = 300.0  # fallback TTL (seconds) when the setting is missing
 # How often due schedules are swept. 30s keeps a minute-granularity
 # schedule punctual without the tick itself becoming background load.
-SCHEDULE_TICK_MS = 30_000
+SCHEDULE_TICK_MS = schedule_runner.TICK_MS
 
 
 class RYOSApp(_BaseWindow):
@@ -220,7 +218,7 @@ class RYOSApp(_BaseWindow):
         self._prune_run_history()
         # First sweep shortly after launch: this is where runs that came due
         # while RYOS was closed get settled, per each schedule's catch_up.
-        self.after(2000, self._tick_schedules)
+        self.after(schedule_runner.FIRST_TICK_MS, self._tick_schedules)
 
         if self._settings.get("auto_check_update", True):
             threading.Thread(target=self._check_for_update, daemon=True).start()
@@ -1838,29 +1836,17 @@ class RYOSApp(_BaseWindow):
         self._sync_tray()
 
     def _schedule_is_running(self, row) -> bool:
-        """True when this schedule's script or pipeline is already in flight.
-
-        Overlap policy: skip and log rather than stacking a second copy on top
-        of one that has not finished. A five-minute job on a one-minute
-        schedule would otherwise fork-bomb the job table.
-        """
-        script_id, pipeline_id = row[2], row[3]
-        for job in self._jobreg.all():
-            if script_id is not None and job.script_id == script_id:
-                return True
-            if pipeline_id is not None and job.pipeline_id == pipeline_id:
-                return True
-        return False
+        """True when this schedule's script or pipeline is already in flight."""
+        return schedule_runner.is_running(row, self._jobreg.all())
 
     def _launch_scheduled(self, row) -> bool:
-        """Start one scheduled run. False when it could not be started."""
+        """Start one scheduled run. False when its target no longer exists."""
         script_id, pipeline_id = row[2], row[3]
         if pipeline_id is not None:
-            pipes = [p for g in self.db.list_groups()
-                     for p in self.db.list_pipelines(g) if p[0] == pipeline_id]
-            if not pipes:
+            name = schedule_runner.pipeline_name(self.db, pipeline_id)
+            if name is None:
                 return False
-            self._run_pipeline(pipeline_id, pipes[0][1], trigger=SOURCE_SCHEDULE)
+            self._run_pipeline(pipeline_id, name, trigger=SOURCE_SCHEDULE)
             return True
         rec = self.db.get(script_id)
         if not rec:
@@ -1880,40 +1866,12 @@ class RYOSApp(_BaseWindow):
             self._schedule_timer_id = self.after(SCHEDULE_TICK_MS, self._tick_schedules)
 
     def _run_due_schedules(self) -> None:
-        now = datetime.now()
         max_jobs = self._settings.get("max_parallel_jobs", MAX_PARALLEL_JOBS)
-        for row in self.db.due_schedules(now):
-            sched_id, spec_type, spec_raw, catch_up = row[0], row[4], row[5], row[7]
-            try:
-                spec = json.loads(spec_raw)
-            except (TypeError, ValueError):
-                spec = None
-            times, next_at = resolve_due(spec_type, spec, parse_stamp(row[8]),
-                                         now, catch_up)
-            if next_at is None:
-                # An unusable spec would otherwise be retried every tick
-                # forever; disable it and say so.
-                _log.warning("Disabling schedule %s: unusable spec %r/%r",
-                             sched_id, spec_type, spec_raw)
-                self.db.set_schedule_enabled(sched_id, False)
-                continue
-            fired = 0
-            for _ in range(times):
-                if self._jobctl.at_capacity(max_jobs):
-                    _log.info("Schedule %s skipped: %d parallel jobs already running",
-                              sched_id, max_jobs)
-                    break
-                if self._schedule_is_running(row):
-                    _log.info("Schedule %s skipped: previous run still going", sched_id)
-                    break
-                if not self._launch_scheduled(row):
-                    _log.warning("Schedule %s targets a missing item; disabling", sched_id)
-                    self.db.set_schedule_enabled(sched_id, False)
-                    break
-                fired += 1
-            # next_run_at advances whether or not anything actually launched,
-            # so a skipped run never leaves the schedule permanently overdue.
-            self.db.mark_schedule_fired(sched_id, next_at, now if fired else None)
+        schedule_runner.run_due(
+            self.db, datetime.now(),
+            at_capacity=lambda: self._jobctl.at_capacity(max_jobs),
+            running=self._schedule_is_running,
+            launch=self._launch_scheduled)
 
     def _prune_run_history(self) -> None:
         """Drop history past the retention window. Startup-only and best-effort:

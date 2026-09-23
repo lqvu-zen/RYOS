@@ -38,6 +38,7 @@ Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__mai
 | `Job` state, `JobRegistry`, capacity split     | `ryos/jobs.py`          |
 | Pipeline sequencing, step policies             | `ryos/job_controller.py`|
 | Recurring schedules (pure, naive local time)   | `ryos/scheduling.py`    |
+| Firing due schedules (shared sweep)            | `ryos/schedule_runner.py` |
 | Run-history formatting                         | `ryos/history.py`       |
 | Card search / filtering                        | `ryos/search.py`        |
 | Group ordering and collapse state              | `ryos/grouping.py`      |

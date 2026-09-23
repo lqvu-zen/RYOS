@@ -186,7 +186,7 @@ release is to be the Qt one, so everything below has to exist before
 | ~~Quick Run bar~~ | — | **Done 2026-09-23.** Bar rules in `quickrun.py`, submit flow in `quickrun_actions.py`, both shared with Tk. The Qt bar's index hand-off uses `MainThreadInvoker`; `QTimer.singleShot` was tried and verified never to fire from the worker thread. |
 | ~~Drag-and-drop reordering~~ | — | **Done 2026-09-23.** Rules and the database side (`apply_move`, `apply_reorder`, `outside_base_warning`) shared in `dragdrop.py`; `qtui/dragdrop.py` uses real `QDrag`. Tabs are keyed by group, so dropping on "Ungrouped" moves to `""`. The reload after a drop is deferred a turn, since it replaces the widget still handling the event. Favourites are not a drop target yet: the Qt shell has no favourites section. |
 | Tray icon | `tray.py` + ~45 app refs | `QSystemTrayIcon` retires `pystray` and `pillow`. |
-| Schedule tick | ~60 lines | Dialog done; the 30-second timer that fires due schedules is not wired. |
+| ~~Schedule tick~~ | — | **Done 2026-09-23.** The sweep is `schedule_runner.run_due`, shared with Tk; `JobBridge` runs it on its own `QTimer`. A scheduled refusal goes to the status line, not a modal box. Found on the way: the Qt bridge never unregistered finished jobs (they held the cap and blocked their schedules), and Tk disabled schedules on ungrouped pipelines as "missing". Both fixed. |
 | Context menus on cards and tabs | ~40 lines | Rename, clone, delete, move, colour. |
 | Select mode / run selected | ~40 lines | `jobs.split_by_capacity` is already shared. |
 | Group management from the shell | — | Dialogs exist; nothing opens them yet. |

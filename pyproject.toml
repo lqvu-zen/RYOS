@@ -83,6 +83,7 @@ files = [
     "ryos/screens.py",
     "ryos/grouping.py",
     "ryos/history.py",
+    "ryos/schedule_runner.py",
     "ryos/scheduling.py",
     "ryos/ui/__init__.py",
     "ryos/ui/theme.py",
