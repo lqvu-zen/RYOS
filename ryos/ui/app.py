@@ -30,8 +30,8 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import (cardmenu, configio, outputpanel, scriptform, selection,
-               traypolicy)
+from .. import (cardmenu, configio, outputpanel, scriptform, sections,
+               selection, traypolicy)
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
@@ -155,7 +155,7 @@ class RYOSApp(_BaseWindow):
         self._drag_insert_before: int | None = None
         self._drag_target_group: str | None = None
         self._drag_tab_highlight: tuple | None = None
-        self._section_collapsed: dict[str, dict[str, bool]] = {}
+        self._section_collapsed = sections.CollapseState()
         self._output_tabs: dict = {}
         self._active_tab_key: str | None = None
         self._quick_run_buttons: dict[str, tk.Button] = {}
@@ -547,7 +547,7 @@ class RYOSApp(_BaseWindow):
         if not group_jobs and content is not None:
             try:
                 if content.winfo_exists() and not content.winfo_children():
-                    tk.Label(content, text="No script is currently running.",
+                    tk.Label(content, text=sections.EMPTY[sections.RUNNING],
                              bg=C["bg"], fg=C["path_fg"],
                              font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
             except tk.TclError:
@@ -621,7 +621,7 @@ class RYOSApp(_BaseWindow):
             side="left", fill="x", expand=True, padx=(8, 0), pady=4)
 
     def _make_section_header(self, parent, group: str, section: str, label: str) -> tk.Frame:
-        collapsed = self._section_collapsed.get(group, {}).get(section, False)
+        collapsed = self._section_collapsed.is_collapsed(group, section)
 
         section_frame = tk.Frame(parent, bg=C["bg"])
         section_frame.pack(fill="x")
@@ -644,16 +644,12 @@ class RYOSApp(_BaseWindow):
             content.pack(fill="x")
 
         def _toggle(_e=None):
-            is_col = self._section_collapsed.get(group, {}).get(section, False)
-            if group not in self._section_collapsed:
-                self._section_collapsed[group] = {}
-            self._section_collapsed[group][section] = not is_col
-            if is_col:
-                arrow_var.set("▼")
-                content.pack(fill="x")
-            else:
+            if self._section_collapsed.toggle(group, section):
                 arrow_var.set("▶")
                 content.pack_forget()
+            else:
+                arrow_var.set("▼")
+                content.pack(fill="x")
 
         for w in (hdr, arrow_lbl) + tuple(hdr.winfo_children()):
             w.bind("<Button-1>", _toggle)
@@ -999,26 +995,28 @@ class RYOSApp(_BaseWindow):
             w.bind("<Button-1>", _open)
 
     def _render_running_section(self, parent: tk.Frame, gname: str):
-        run_content = self._make_section_header(parent, gname, "running", "Running")
+        run_content = self._make_section_header(parent, gname, sections.RUNNING,
+                                                sections.LABELS[sections.RUNNING])
         self._running_slots[gname] = run_content
         jobs_here = self._running_jobs_in_group(gname)
         if jobs_here:
             for job in jobs_here:
                 self._add_running_row(run_content, job)
         else:
-            tk.Label(run_content, text="No script is currently running.",
+            tk.Label(run_content, text=sections.EMPTY[sections.RUNNING],
                      bg=C["bg"], fg=C["path_fg"],
                      font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
 
     def _render_favorites_section(self, parent: tk.Frame, gname: str, scripts: list,
                                   group_base_dir: str):
-        fav_content = self._make_section_header(parent, gname, "favorites", "★  Favorites")
+        fav_content = self._make_section_header(parent, gname, sections.FAVORITES,
+                                                sections.LABELS[sections.FAVORITES])
         self._fav_contents.append(fav_content)
         fav_scripts = [r for r in scripts if r[10]]
         fav_pipelines = [(p_id, p_name, p_color)
                          for p_id, p_name, p_fav, p_color in self.db.list_pipelines(gname) if p_fav]
         if not fav_scripts and not fav_pipelines:
-            tk.Label(fav_content, text="No favorites yet — click ☆ on a script or pipeline.",
+            tk.Label(fav_content, text=sections.EMPTY[sections.FAVORITES],
                      bg=C["bg"], fg=C["path_fg"],
                      font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
             return
@@ -1071,11 +1069,12 @@ class RYOSApp(_BaseWindow):
             self._fav_cards.append(card)
 
     def _render_pipelines_section(self, parent: tk.Frame, gname: str):
-        pipe_content = self._make_section_header(parent, gname, "pipelines", "Pipelines")
+        pipe_content = self._make_section_header(parent, gname, sections.PIPELINES,
+                                                 sections.LABELS[sections.PIPELINES])
         self._pipe_contents.append(pipe_content)
         pipelines = self.db.list_pipelines(gname)
         if not pipelines:
-            tk.Label(pipe_content, text="No pipelines yet.",
+            tk.Label(pipe_content, text=sections.EMPTY[sections.PIPELINES],
                      bg=C["bg"], fg=C["path_fg"],
                      font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
             return
@@ -1105,10 +1104,11 @@ class RYOSApp(_BaseWindow):
 
     def _render_scripts_section(self, parent: tk.Frame, gname: str, scripts: list,
                                 group_base_dir: str):
-        scr_content = self._make_section_header(parent, gname, "scripts", "Scripts")
+        scr_content = self._make_section_header(parent, gname, sections.SCRIPTS,
+                                                sections.LABELS[sections.SCRIPTS])
         self._scr_contents.append(scr_content)
         if not scripts:
-            tk.Label(scr_content, text="No scripts yet.",
+            tk.Label(scr_content, text=sections.EMPTY[sections.SCRIPTS],
                      bg=C["bg"], fg=C["path_fg"],
                      font=("Segoe UI", 9), padx=6).pack(anchor="w", pady=(2, 4))
             return

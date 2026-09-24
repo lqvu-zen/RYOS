@@ -34,12 +34,13 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import (__version__, cardmenu, configio, grouping, notifications,
-               outputpanel, screens, scriptform, search, selection,
+               outputpanel, screens, scriptform, search, sections, selection,
                traypolicy)
 from . import placement
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
-from .dragdrop import CardList, GroupTabBar
+from .dragdrop import GroupTabBar
+from .sections import GroupPage
 from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
@@ -119,9 +120,10 @@ class MainWindow(QMainWindow):
         self.quick_run_bars: dict[str, QuickRunBar] = {}
         self._qr_index = None
         self._db = None
-        self.card_lists: dict[str, CardList] = {}
+        self.card_lists: dict[str, GroupPage] = {}
         # (kind, id) -> (record, group), for the menus.
         self._records: dict[tuple, tuple] = {}
+        self._collapse = sections.CollapseState()
 
         # Everything a menu action may ask. Real dialogs by default; a test
         # replaces them, since each of these blocks until a person answers.
@@ -244,51 +246,19 @@ class MainWindow(QMainWindow):
         what the tab shows. The key is stored on the tab, so a card dropped
         on "Ungrouped" moves to "" rather than to a group named "Ungrouped".
         """
-        page = CardList(group_name)
-        page.dropped.connect(self._on_drop_in_list)
+        page = GroupPage(group_name, self._collapse)
         self.card_lists[group_name] = page
-        compact = bool(self._settings.get("compact_mode", False))
-        size = self._settings.get("card_size", "medium")
         made = []
-        for rec in records:
-            shade = readable_highlight(rec.get("color"),
-                                       self._palette["card_bg"],
-                                       self._palette["card_hover"])
-            if rec.get("kind") == "pipeline":
-                card = PipelineCard(pipeline_id=rec["id"], name=rec["name"],
-                                    step_count=rec.get("steps", 0),
-                                    palette=self._palette, compact=compact,
-                                    size=size,
-                                    is_favorite=bool(rec.get("favorite")),
-                                    label_color=shade,
-                                    last_status=rec.get("status"))
-            else:
-                card = ScriptCard(script_id=rec["id"], name=rec["name"],
-                                  path=rec.get("path", ""),
-                                  palette=self._palette, compact=compact,
-                                  size=size,
-                                  is_favorite=bool(rec.get("favorite")),
-                                  label_color=shade,
-                                  last_status=rec.get("status"))
-            if self._on_run is not None:
-                card.run_requested.connect(self._on_run)
-            elif "run" in rec:
-                card.run_requested.connect(lambda _id, go=rec["run"]: go())
-            kind = "pipeline" if rec.get("kind") == "pipeline" else "script"
-            page.add_card(card, kind, rec["id"])
-            self._records[(kind, rec["id"])] = (rec, group_name)
-            card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            card.customContextMenuRequested.connect(
-                lambda pos, c=card, k=kind, i=rec["id"]:
-                    self._show_card_menu(k, i, c.mapToGlobal(pos)))
-            card.favorite_toggled.connect(
-                lambda item_id, fav, k=kind: self._set_favorite(k, item_id, fav))
-            if kind == cardmenu.PIPELINE:
-                card.edit_requested.connect(
-                    lambda item_id, n=rec["name"]: self._edit_pipeline(item_id, n))
-            else:
-                card.edit_requested.connect(self.edit_script)
-            made.append(card)
+        by_section = sections.split(
+            [dict(rec, kind=rec.get("kind") or "script") for rec in records])
+        for key in sections.ORDER:
+            section = page.section(key)
+            section.dropped.connect(self._on_drop_in_list)
+            for rec in by_section[key]:
+                card = self._make_card(rec, group_name, key)
+                section.add_card(card, rec["kind"], rec["id"])
+                made.append(card)
+            page.sections[key].refresh()
 
         scroll = QScrollArea()
         scroll.setWidget(page)
@@ -306,6 +276,49 @@ class MainWindow(QMainWindow):
             holder, label if label is not None else group_name)
         self.group_tab_bar.setTabData(index, group_name)
         self._cards.extend(made)
+
+    def _make_card(self, rec: dict, group: str, section: str):
+        """One card for ``rec`` in ``section``, wired to its handlers.
+
+        A favourite is built twice, once for Favorites and once for its own
+        section; ``card.section`` says which, so a move from the menu moves it
+        among the neighbours it is shown with.
+        """
+        compact = bool(self._settings.get("compact_mode", False))
+        size = self._settings.get("card_size", "medium")
+        shade = readable_highlight(rec.get("color"), self._palette["card_bg"],
+                                   self._palette["card_hover"])
+        kind = rec["kind"]
+        if kind == cardmenu.PIPELINE:
+            card = PipelineCard(pipeline_id=rec["id"], name=rec["name"],
+                                step_count=rec.get("steps", 0),
+                                palette=self._palette, compact=compact, size=size,
+                                is_favorite=bool(rec.get("favorite")),
+                                label_color=shade, last_status=rec.get("status"))
+        else:
+            card = ScriptCard(script_id=rec["id"], name=rec["name"],
+                              path=rec.get("path", ""), palette=self._palette,
+                              compact=compact, size=size,
+                              is_favorite=bool(rec.get("favorite")),
+                              label_color=shade, last_status=rec.get("status"))
+        card.section = section
+        if self._on_run is not None:
+            card.run_requested.connect(self._on_run)
+        elif "run" in rec:
+            card.run_requested.connect(lambda _id, go=rec["run"]: go())
+        self._records[(kind, rec["id"])] = (rec, group)
+        card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        card.customContextMenuRequested.connect(
+            lambda pos, c=card, k=kind, i=rec["id"], s=section:
+                self._show_card_menu(k, i, c.mapToGlobal(pos), s))
+        card.favorite_toggled.connect(
+            lambda item_id, fav, k=kind: self._set_favorite(k, item_id, fav))
+        if kind == cardmenu.PIPELINE:
+            card.edit_requested.connect(
+                lambda item_id, n=rec["name"]: self._edit_pipeline(item_id, n))
+        else:
+            card.edit_requested.connect(self.edit_script)
+        return card
 
     # -- quick run ---------------------------------------------------------
     def _quick_run_index(self):
@@ -970,31 +983,38 @@ class MainWindow(QMainWindow):
         self._defer_reload()
 
     # -- right-click menus ------------------------------------------------------
-    def card_menu_items(self, kind: str, item_id: int) -> list:
+    def card_menu_items(self, kind: str, item_id: int,
+                        section: str = sections.SCRIPTS) -> list:
         """The menu for one card, by the shared definition."""
         rec, group = self._records[(kind, item_id)]
         if kind == cardmenu.PIPELINE:
             return cardmenu.pipeline_menu(favorite=bool(rec.get("favorite")),
                                           color=rec.get("color"))
-        up, down = self._script_neighbours(item_id, group)
+        up, down = self._script_neighbours(item_id, group, section)
         return cardmenu.script_menu(favorite=bool(rec.get("favorite")),
                                     color=rec.get("color"),
                                     can_move_up=up is not None,
                                     can_move_down=down is not None)
 
-    def _script_neighbours(self, item_id: int, group: str) -> tuple:
+    def _script_neighbours(self, item_id: int, group: str,
+                           section: str = sections.SCRIPTS) -> tuple:
+        """Neighbours among the scripts shown with it: a favourite moves among
+        favourites, as in Tk, which shares one stored script order."""
         page = self.card_lists.get(group)
-        ids = [c.drag_payload.item_id for c in (page.cards if page else [])
+        cards = page.section(section).cards if page else []
+        ids = [c.drag_payload.item_id for c in cards
                if c.drag_payload.kind == cardmenu.SCRIPT]
         return cardmenu.neighbours(ids, item_id)
 
-    def _show_card_menu(self, kind: str, item_id: int, pos: QPoint) -> None:
-        menu = build_menu(self, self.card_menu_items(kind, item_id),
-                          lambda key: self.on_card_menu(kind, item_id, key),
+    def _show_card_menu(self, kind: str, item_id: int, pos: QPoint,
+                        section: str = sections.SCRIPTS) -> None:
+        menu = build_menu(self, self.card_menu_items(kind, item_id, section),
+                          lambda key: self.on_card_menu(kind, item_id, key, section),
                           self._palette)
         self.popup(menu, pos)
 
-    def on_card_menu(self, kind: str, item_id: int, key: str) -> None:
+    def on_card_menu(self, kind: str, item_id: int, key: str,
+                     section: str = sections.SCRIPTS) -> None:
         """Carry out one card-menu entry."""
         if self._db is None or (kind, item_id) not in self._records:
             return
@@ -1007,7 +1027,7 @@ class MainWindow(QMainWindow):
         elif key == cardmenu.FAVORITE:
             cardmenu.set_favorite(db, kind, item_id, not rec.get("favorite"))
         elif key in (cardmenu.MOVE_TOP, cardmenu.MOVE_UP, cardmenu.MOVE_DOWN):
-            up, down = self._script_neighbours(item_id, group)
+            up, down = self._script_neighbours(item_id, group, section)
             if not cardmenu.move(db, key, item_id, up_id=up, down_id=down):
                 return
         elif key == cardmenu.CLONE:
@@ -1168,14 +1188,17 @@ class MainWindow(QMainWindow):
     def _apply_search(self, raw: str) -> None:
         """Hide cards that do not match, using the shared matcher."""
         query = search.normalize_query(raw, False)
-        shown = 0
+        shown = total = 0
         for card in self._cards:
             name = getattr(card, "_name", "")
             visible = not query or search.matches(name, query)
             card.setVisible(visible)
-            shown += bool(visible)
+            # Count items, not cards: a favourite's copy is the same item.
+            if getattr(card, "section", None) != sections.FAVORITES:
+                total += 1
+                shown += bool(visible)
         if query:
-            self.search_hint.setText(f"{shown} of {len(self._cards)}")
+            self.search_hint.setText(f"{shown} of {total}")
         else:
             self.search_hint.setText("")
 

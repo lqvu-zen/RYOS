@@ -5797,6 +5797,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/scriptdialog.py": "imports PySide6; same reason",
         "ryos/qtui/tray.py": "imports PySide6; same reason",
         "ryos/qtui/placement.py": "imports PySide6; same reason",
+        "ryos/qtui/sections.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7472,6 +7473,52 @@ class TestPipelineEditorRules(unittest.TestCase):
                          {WHEN_ALWAYS, WHEN_ON_SUCCESS, WHEN_ON_FAILURE})
         for mark in ("∥", "!", "↻n", "?ok", "?fail", "→launch"):
             self.assertIn(mark, pipelinesteps.LEGEND)
+
+
+class TestSections(unittest.TestCase):
+    """Which cards go in which section, shared by the Tk and Qt pages."""
+
+    RECS = [{"id": 1, "kind": "script", "favorite": True},
+            {"id": 2, "kind": "pipeline", "favorite": False},
+            {"id": 3, "kind": "script", "favorite": False},
+            {"id": 4, "kind": "pipeline", "favorite": True}]
+
+    def ids(self, recs):
+        return [(r["kind"], r["id"]) for r in recs]
+
+    def test_split(self):
+        from ryos import sections
+        out = sections.split(self.RECS)
+        self.assertEqual(self.ids(out[sections.FAVORITES]),
+                         [("pipeline", 4), ("script", 1)])
+        self.assertEqual(self.ids(out[sections.PIPELINES]),
+                         [("pipeline", 2), ("pipeline", 4)])
+        self.assertEqual(self.ids(out[sections.SCRIPTS]),
+                         [("script", 1), ("script", 3)])
+
+    def test_missing_kind_is_a_script(self):
+        from ryos import sections
+        self.assertEqual(len(sections.split([{"id": 9}])[sections.SCRIPTS]), 1)
+
+    def test_every_section_has_words(self):
+        from ryos import sections
+        for key in (sections.RUNNING, *sections.ORDER):
+            self.assertIn(key, sections.LABELS)
+            self.assertIn(key, sections.EMPTY)
+        self.assertEqual(sections.header_text(sections.SCRIPTS, True), "▶  SCRIPTS")
+        self.assertEqual(sections.header_text(sections.SCRIPTS, False), "▼  SCRIPTS")
+
+    def test_collapse_state(self):
+        from ryos import sections
+        c = sections.CollapseState()
+        self.assertFalse(c.is_collapsed("G", sections.SCRIPTS))
+        self.assertTrue(c.toggle("G", sections.SCRIPTS))
+        self.assertTrue(c.is_collapsed("G", sections.SCRIPTS))
+        self.assertFalse(c.is_collapsed("H", sections.SCRIPTS))
+        self.assertFalse(c.toggle("G", sections.SCRIPTS))
+        c.toggle("G", sections.PIPELINES)
+        c.forget("G")
+        self.assertFalse(c.is_collapsed("G", sections.PIPELINES))
 
 
 class TestWindowPlacement(unittest.TestCase):

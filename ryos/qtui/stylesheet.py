@@ -162,6 +162,20 @@ QFrame#updateBanner {{
 }}
 QFrame#updateBanner QLabel {{ background: transparent; color: {c['name_fg']}; }}
 
+/* --- sections ------------------------------------------------------ */
+QPushButton#sectionHeader {{
+    background: transparent;
+    color: {c['path_fg']};
+    font-size: 8pt;
+    font-weight: 700;
+    text-align: left;
+    padding: 6px 2px 2px 2px;
+    border: none;
+    border-bottom: 1px solid {c['border']};
+    border-radius: 0;
+}}
+QPushButton#sectionHeader:hover {{ color: {c['name_fg']}; }}
+
 /* --- select mode --------------------------------------------------- */
 QFrame#selectBar {{
     background: {c['warn_bg']};

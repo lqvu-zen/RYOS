@@ -1383,7 +1383,7 @@ def check_drag_and_drop(app):
     # -- reorder: drop "c" above "a" -----------------------------------------
     win.show_group("G")
     app.processEvents()
-    lst = win.card_lists["G"]
+    lst = win.card_lists["G"].section("scripts")
     card_a = next(c for c in lst.cards if c.drag_payload.item_id == ids[0])
     above_a = QPoint(10, card_a.geometry().y() + 2)
     drop_on(lst, above_a, CardPayload("script", ids[2], "G"))
@@ -1393,7 +1393,7 @@ def check_drag_and_drop(app):
         PROBLEMS.append("reloading after a drop switched away from the group")
 
     # Pipelines reorder among pipelines, not against scripts.
-    lst = win.card_lists["G"]
+    lst = win.card_lists["G"].section("pipelines")
     card_p1 = next(c for c in lst.cards if c.drag_payload.kind == "pipeline"
                    and c.drag_payload.item_id == p1)
     drop_on(lst, QPoint(10, card_p1.geometry().y() + 2),
@@ -1403,7 +1403,7 @@ def check_drag_and_drop(app):
 
     # A card from another group is refused by this list.
     before = order("G")
-    drop_on(win.card_lists["G"], QPoint(10, 5),
+    drop_on(win.card_lists["G"].section("scripts"), QPoint(10, 5),
             CardPayload("script", loose, ""))
     if order("G") != before or order("") != [loose]:
         PROBLEMS.append("a drop from another group was accepted by the list")
@@ -2540,6 +2540,162 @@ def check_window_placement(app):
           "restore follows the cursor, options apply")
 
 
+
+
+def check_sections_and_favorites(app):
+    """Favorites / Pipelines / Scripts sections, on a real database.
+
+    A favourite shows twice, as in Tk: in Favorites and in its own section.
+    Moving or dropping a favourite in Favorites moves it among favourites.
+    """
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt
+    from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+
+    from ryos import cardmenu, sections
+    from ryos.db import ScriptDB
+    from ryos.qtui.dragdrop import MIME, CardPayload
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "fav.db")
+    db.create_group("G")
+    db.create_group("H")
+    ids = {n: db.add(n, str(tmp / f"{n}.py"), "", _sys.executable, "G")
+           for n in ("alpha", "bravo", "charlie", "delta")}
+    db.set_favorite_script(ids["bravo"], True)
+    db.set_favorite_script(ids["delta"], True)
+    p1 = db.create_pipeline("pipe-one", "G")
+    db.create_pipeline("pipe-two", "G")
+    db.set_favorite_pipeline(p1, True)
+
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.resize(700, 900)
+    shown_menus: list = []
+    win.popup = lambda menu, pos: shown_menus.append(menu)
+    win.show()
+    win.load_from_db(db)
+    win.show_group("G")
+    app.processEvents()
+
+    def settle():
+        for _ in range(3):
+            app.processEvents()
+
+    def names(key, group="G"):
+        return [c._name for c in win.card_lists[group].section(key).cards]
+
+    def order():
+        return [r[1] for r in db.list_all() if r[8] == "G"]
+
+    # -- what each section holds ----------------------------------------------------
+    if names(sections.FAVORITES) != ["pipe-one", "bravo", "delta"]:
+        PROBLEMS.append(f"Favorites held {names(sections.FAVORITES)}")
+    if names(sections.PIPELINES) != ["pipe-one", "pipe-two"]:
+        PROBLEMS.append(f"Pipelines held {names(sections.PIPELINES)}")
+    if names(sections.SCRIPTS) != ["alpha", "bravo", "charlie", "delta"]:
+        PROBLEMS.append(f"Scripts held {names(sections.SCRIPTS)}")
+    page = win.card_lists["G"]
+    headers = [page.sections[k].header.text() for k in sections.ORDER]
+    if headers != [sections.header_text(k, False) for k in sections.ORDER]:
+        PROBLEMS.append(f"section headers {headers}")
+    empty_h = win.card_lists["H"].sections[sections.FAVORITES]
+    if empty_h.empty.isHidden() or not empty_h.cards.isHidden():
+        PROBLEMS.append("an empty section did not say so")
+
+    # -- collapsing survives a reload, and is per group -------------------------------
+    page.sections[sections.SCRIPTS].header.click()
+    if not page.section(sections.SCRIPTS).isHidden():
+        PROBLEMS.append("clicking the Scripts header did not collapse it")
+    win.reload()
+    settle()
+    page = win.card_lists["G"]
+    if not page.section(sections.SCRIPTS).isHidden() \
+            or not page.sections[sections.SCRIPTS].header.text().startswith("▶"):
+        PROBLEMS.append("a collapsed section opened again on reload")
+    if win.card_lists["H"].sections[sections.SCRIPTS].empty.isHidden():
+        PROBLEMS.append("collapsing in one group collapsed another")
+    page.sections[sections.SCRIPTS].header.click()
+    if page.section(sections.SCRIPTS).isHidden():
+        PROBLEMS.append("clicking again did not expand it")
+
+    # -- a move from the menu moves among the section it was shown in ----------------
+    def menu_pick(section, name, key):
+        card = next(c for c in win.card_lists["G"].section(section).cards
+                    if c._name == name)
+        shown_menus.clear()
+        from PySide6.QtGui import QContextMenuEvent
+        app.sendEvent(card, QContextMenuEvent(QContextMenuEvent.Reason.Mouse,
+                                              QPoint(20, 10),
+                                              card.mapToGlobal(QPoint(20, 10))))
+        from ryos.qtui.menus import actions_by_key
+        acts = actions_by_key(shown_menus[-1])
+        return acts, key
+
+    acts, key = menu_pick(sections.FAVORITES, "bravo", cardmenu.MOVE_DOWN)
+    if acts[cardmenu.MOVE_UP].isEnabled():
+        PROBLEMS.append("the first favourite script offered Move Up")
+    acts[key].trigger()
+    settle()
+    if order() != ["alpha", "delta", "charlie", "bravo"]:
+        PROBLEMS.append(f"Move Down in Favorites gave {order()} "
+                        "(it should swap with the next favourite)")
+    acts, key = menu_pick(sections.SCRIPTS, "charlie", cardmenu.MOVE_UP)
+    acts[key].trigger()
+    settle()
+    if order() != ["alpha", "charlie", "delta", "bravo"]:
+        PROBLEMS.append(f"Move Up in Scripts gave {order()}")
+
+    # -- dropping in Favorites reorders the shared script order ------------------------
+    fav = win.card_lists["G"].section(sections.FAVORITES)
+    target = next(c for c in fav.cards if c._name == "delta")
+    mime = QMimeData()
+    mime.setData(MIME, CardPayload("script", ids["bravo"], "G").encode())
+    pos = QPoint(10, target.geometry().y() + 2)
+    args = (Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+    app.sendEvent(fav, QDragEnterEvent(pos, *args))
+    app.sendEvent(fav, QDragMoveEvent(pos, *args))
+    app.sendEvent(fav, QDropEvent(QPointF(pos), *args))
+    settle()
+    if order().index("bravo") > order().index("delta"):
+        PROBLEMS.append(f"dropping bravo above delta in Favorites gave {order()}")
+
+    # -- the star takes it out of Favorites ---------------------------------------------
+    star = next(c for c in win.card_lists["G"].section(sections.SCRIPTS).cards
+                if c._name == "delta")
+    star.fav_button.click()
+    settle()
+    if names(sections.FAVORITES) != ["pipe-one", "bravo"]:
+        PROBLEMS.append(f"unstarring left Favorites as {names(sections.FAVORITES)}")
+
+    # -- search counts items, and shows a favourite in both places ----------------------
+    win.search_box.setText("bravo")
+    app.processEvents()
+    both = [c for c in win._cards if c._name == "bravo"]
+    others = [c for c in win._cards if c._name != "bravo"]
+    if win.search_hint.text() != "1 of 6" or len(both) != 2 \
+            or any(c.isHidden() for c in both) or not all(c.isHidden() for c in others):
+        PROBLEMS.append(f"search: hint {win.search_hint.text()!r}, "
+                        f"{len(both)} bravo cards")
+    win.search_box.clear()
+
+    # -- select mode ticks the group's scripts, not the favourite copies ---------------
+    win.set_select_mode(True)
+    if len(win.selectable_cards()) != 4:
+        PROBLEMS.append(f"select mode offered {len(win.selectable_cards())} cards")
+    win.set_select_mode(False)
+
+    print("  [ok] sections: Favorites / Pipelines / Scripts filled and ordered, "
+          "empty text, collapse per group kept across reload, moves and drops "
+          "among favourites, star, search counts items, select skips copies")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -2567,6 +2723,7 @@ def main() -> int:
     check_tray_and_close(app)
     check_updates_and_notify(app)
     check_window_placement(app)
+    check_sections_and_favorites(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:
