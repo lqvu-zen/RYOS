@@ -5796,6 +5796,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/menus.py": "imports PySide6; same reason",
         "ryos/qtui/scriptdialog.py": "imports PySide6; same reason",
         "ryos/qtui/tray.py": "imports PySide6; same reason",
+        "ryos/qtui/placement.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7471,6 +7472,70 @@ class TestPipelineEditorRules(unittest.TestCase):
                          {WHEN_ALWAYS, WHEN_ON_SUCCESS, WHEN_ON_FAILURE})
         for mark in ("∥", "!", "↻n", "?ok", "?fail", "→launch"):
             self.assertIn(mark, pipelinesteps.LEGEND)
+
+
+class TestWindowPlacement(unittest.TestCase):
+    """Where the main window opens -- every branch Tk's inline code had."""
+
+    A, B = (0, 0, 1000, 800), (1000, 0, 900, 800)
+
+    def place(self, settings, target):
+        from ryos import screens
+        return screens.initial_geometry(
+            settings, size=(540, 640), target=target,
+            work_area_at=lambda x, y: self.A if x < 1000 else self.B)
+
+    def test_no_target_restores_saved_as_is(self):
+        s = {"window_geometry": "540x640+100+50"}
+        self.assertEqual(self.place(s, None), "540x640+100+50")
+
+    def test_no_target_and_nothing_saved_leaves_it(self):
+        self.assertIsNone(self.place({}, None))
+
+    def test_no_target_while_snapping_leaves_it_to_the_snap(self):
+        s = {"window_geometry": "540x640+100+50", "snap_corner": "top-left"}
+        self.assertIsNone(self.place(s, None))
+
+    def test_saved_moves_to_the_target_monitor(self):
+        s = {"window_geometry": "540x640+100+50"}
+        self.assertEqual(self.place(s, self.B), "540x640+1100+50")
+
+    def test_nothing_saved_centres_on_the_target(self):
+        self.assertEqual(self.place({}, self.B), "540x640+1180+80")
+
+    def test_not_remembering_ignores_the_saved_one(self):
+        s = {"window_geometry": "540x640+100+50", "remember_window_geometry": False}
+        self.assertEqual(self.place(s, self.B), "540x640+1180+80")
+        self.assertIsNone(self.place(s, None))
+
+    def test_snapping_only_puts_it_on_the_target_monitor(self):
+        s = {"window_geometry": "540x640+100+50", "snap_corner": "bottom-left"}
+        self.assertEqual(self.place(s, self.B), "540x640+1000+0")
+
+    def test_snap_corner_none_is_no_snap(self):
+        from ryos import screens
+        self.assertEqual(screens.snapping({"snap_corner": "none"}), "")
+        self.assertEqual(screens.snapping({}), "")
+        s = {"window_geometry": "540x640+100+50", "snap_corner": "none"}
+        self.assertEqual(self.place(s, self.B), "540x640+1100+50")
+
+    def test_follows_cursor(self):
+        from ryos import screens
+        self.assertTrue(screens.follows_cursor({}, False))
+        self.assertFalse(screens.follows_cursor({}, True))
+        self.assertFalse(screens.follows_cursor({"open_on_cursor_monitor": False}, False))
+
+    def test_snap_position(self):
+        from ryos import screens
+        self.assertEqual(screens.snap_position("top-left", 540, 640, self.B), (1010, 10))
+        self.assertEqual(screens.snap_position("bottom-right", 540, 640, self.B),
+                         (1350, 150))
+
+    def test_geometry_strings(self):
+        from ryos import screens
+        self.assertEqual(screens.parse_geometry("540x640+-1920+5"), (540, 640, -1920, 5))
+        self.assertIsNone(screens.parse_geometry("540x640"))
+        self.assertEqual(screens.format_geometry(1, 2, -3, 4), "1x2+-3+4")
 
 
 class TestUpdateStatus(unittest.TestCase):

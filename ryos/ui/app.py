@@ -36,8 +36,9 @@ from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
                         validate_group_name)
-from ..screens import (center_in_work_area, cursor_work_area, geometry_origin,
-                       relocate_geometry, work_area_at_point)
+from .. import screens
+from ..screens import (cursor_work_area, geometry_origin, relocate_geometry,
+                       work_area_at_point)
 from ..search import compute_hint, find_spans, matches, normalize_query, step_match
 from ..settings import _BASE, _PACKAGED, _load_settings, _save_settings
 from ..tray import TrayIcon
@@ -245,34 +246,13 @@ class RYOSApp(_BaseWindow):
         saved geometry). Login launch (or the setting off) → restore the saved
         geometry as-is. None target means "use the primary monitor" downstream.
         """
-        remember = self._settings.get("remember_window_geometry", True)
-        saved = self._settings.get("window_geometry") if remember else None
-        follow_cursor = (not self._launched_at_startup
-                         and self._settings.get("open_on_cursor_monitor", True))
-
-        target = cursor_work_area() if follow_cursor else None
-
-        # When snapping, position is set later by _apply_snap_corner; here we
-        # only need to report the target monitor (and nudge onto it if known).
-        corner = self._settings.get("snap_corner") or ""
-        snapping = bool(corner) and corner != "none"
-
-        if target is None:
-            # No cursor monitor (login launch, non-Windows, or detection failed):
-            # restore the saved geometry as-is when not snapping.
-            if not snapping and saved:
-                self.geometry(saved)
-            return target
-
-        if not snapping:
-            if saved:
-                src = work_area_at_point(*geometry_origin(saved)) or target
-                self.geometry(relocate_geometry(saved, src, target))
-            else:
-                self.geometry(center_in_work_area(w, h, target))
-        else:
-            # Nudge onto the target monitor now; the corner snap refines it.
-            self.geometry(f"{w}x{h}+{target[0]}+{target[1]}")
+        follow = screens.follows_cursor(self._settings, self._launched_at_startup)
+        target = cursor_work_area() if follow else None
+        geometry = screens.initial_geometry(self._settings, size=(w, h),
+                                            target=target,
+                                            work_area_at=work_area_at_point)
+        if geometry:
+            self.geometry(geometry)
         return target
 
 

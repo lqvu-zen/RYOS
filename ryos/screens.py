@@ -145,3 +145,67 @@ def center_in_work_area(w: int, h: int, work_area: tuple[int, int, int, int]) ->
     x = left + max(0, (aw - w) // 2)
     y = top + max(0, (ah - h) // 2)
     return f"{w}x{h}+{x}+{y}"
+
+
+# --- where the main window goes: decisions shared by the Tk and Qt shells -----
+# Work areas come in as (x, y, width, height). Tk (DPI-unaware, so Windows
+# virtualises it) and Qt (device-independent pixels) see the same numbers,
+# including on a mixed-scaling multi-monitor desktop, so one saved
+# "WxH+X+Y" means the same place to both.
+
+def parse_geometry(geometry: str):
+    """(w, h, x, y) from 'WxH+X+Y', or None."""
+    m = _GEOMETRY_RE.fullmatch((geometry or "").strip())
+    return tuple(int(g) for g in m.groups()) if m else None
+
+
+def format_geometry(w: int, h: int, x: int, y: int) -> str:
+    return f"{w}x{h}+{x}+{y}"
+
+
+def snapping(settings: dict) -> str:
+    """The snap corner in force, or "" for none."""
+    corner = settings.get("snap_corner") or ""
+    return "" if corner == "none" else corner
+
+
+def follows_cursor(settings: dict, launched_at_startup: bool) -> bool:
+    """A manual launch opens on the cursor's monitor; a login launch does not."""
+    return (not launched_at_startup
+            and bool(settings.get("open_on_cursor_monitor", True)))
+
+
+def saved_geometry(settings: dict) -> str | None:
+    if not settings.get("remember_window_geometry", True):
+        return None
+    return settings.get("window_geometry") or None
+
+
+def initial_geometry(settings: dict, *, size: tuple[int, int], target,
+                     work_area_at) -> str | None:
+    """Where the window opens, as 'WxH+X+Y', or None to leave it be.
+
+    ``target`` is the cursor monitor's work area, or None (login launch, the
+    setting off, or detection failed). ``work_area_at(x, y)`` finds the work
+    area the saved geometry was on. With a snap corner the corner decides the
+    position later; this only puts the window on the right monitor first.
+    """
+    w, h = size
+    saved = saved_geometry(settings)
+    if target is None:
+        return saved if saved and not snapping(settings) else None
+    if snapping(settings):
+        return format_geometry(w, h, target[0], target[1])
+    if saved:
+        src = work_area_at(*geometry_origin(saved)) or target
+        return relocate_geometry(saved, src, target)
+    return center_in_work_area(w, h, target)
+
+
+def snap_position(corner: str, w: int, h: int, work_area,
+                  margin: int = 10) -> tuple[int, int]:
+    """Top-left that puts a w x h window in ``corner`` of ``work_area``."""
+    ax, ay, aw, ah = work_area
+    x = ax + margin if "left" in corner else ax + aw - w - margin
+    y = ay + margin if "top" in corner else ay + ah - h - margin
+    return x, y

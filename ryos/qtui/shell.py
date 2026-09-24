@@ -34,7 +34,9 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import (__version__, cardmenu, configio, grouping, notifications,
-               outputpanel, scriptform, search, selection, traypolicy)
+               outputpanel, screens, scriptform, search, selection,
+               traypolicy)
+from . import placement
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
@@ -94,6 +96,11 @@ class MainWindow(QMainWindow):
         self._fetch_release = fetch_release or (lambda: None)
         self.open_url: Callable[[str], None] = self._open_url
         self.update_banner = None
+        # Monitor lookups, injectable so placement can be checked against a
+        # made-up desktop rather than whatever screens the test machine has.
+        self.cursor_area: Callable[[], object] = placement.cursor_work_area
+        self.area_at: Callable[[int, int], object] = placement.work_area_at
+        self._last_normal_geometry: str | None = None
         # Both inert unless the real entry point passes the real ones, so a
         # test that closes a window can never write the user's settings or
         # end the application.
@@ -218,6 +225,10 @@ class MainWindow(QMainWindow):
         self.delete_all_action = QAction("🗑  Delete All", self)
         self.delete_all_action.triggered.connect(self.delete_all)
         options.addAction(self.delete_all_action)
+        options.addSeparator()
+        self.options_action = QAction("⚙  Advanced options…", self)
+        self.options_action.triggered.connect(self.open_options)
+        options.addAction(self.options_action)
         options.addSeparator()
         self.update_action = QAction("🔔  Check for updates", self)
         self.update_action.triggered.connect(
@@ -513,6 +524,79 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
 
+    # -- where the window goes -------------------------------------------------------
+    def geometry_string(self) -> str:
+        return screens.format_geometry(self.width(), self.height(), self.x(), self.y())
+
+    def set_geometry_string(self, geometry: str) -> None:
+        parsed = screens.parse_geometry(geometry)
+        if parsed is not None:
+            w, h, x, y = parsed
+            self.resize(w, h)
+            self.move(x, y)
+
+    def apply_placement(self, launched_at_startup: bool = False) -> None:
+        """Open where the Tk app would: saved, moved to the cursor's monitor,
+        or centred there; then snap to a corner and set always-on-top."""
+        s = self._settings
+        target = (self.cursor_area()
+                  if screens.follows_cursor(s, launched_at_startup) else None)
+        size = (int(s.get("window_width", 540)), int(s.get("window_height", 640)))
+        geometry = screens.initial_geometry(s, size=size, target=target,
+                                            work_area_at=self.area_at)
+        if geometry:
+            self.set_geometry_string(geometry)
+        self.apply_topmost()
+        self.snap_to_corner(target)
+
+    def snap_to_corner(self, work_area=None) -> None:
+        corner = screens.snapping(self._settings)
+        if not corner:
+            return
+        area = work_area or self.area_at(self.x() + self.width() // 2,
+                                         self.y() + self.height() // 2)
+        if area is not None:
+            self.move(*screens.snap_position(corner, self.width(), self.height(), area))
+
+    def apply_topmost(self) -> None:
+        on = bool(self._settings.get("always_on_top", False))
+        if bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) != on:
+            visible = self.isVisible()
+            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
+            if visible:
+                self.show()       # changing a window flag hides the window
+
+    def _remember_normal(self) -> None:
+        if self.isVisible() and self.windowState() == Qt.WindowState.WindowNoState:
+            self._last_normal_geometry = self.geometry_string()
+
+    def moveEvent(self, event) -> None:                   # noqa: N802
+        super().moveEvent(event)
+        self._remember_normal()
+
+    def resizeEvent(self, event) -> None:                 # noqa: N802
+        super().resizeEvent(event)
+        self._remember_normal()
+
+    def open_options(self) -> None:
+        from .dialogs import OptionsDialog
+        self.run_dialog(OptionsDialog(dict(self._settings), self,
+                                      on_save=self.apply_settings))
+
+    def apply_settings(self, new: dict) -> None:
+        """Take saved options, as Tk's _apply does: store, log level, window."""
+        from ..logger import setup_logging
+        self._settings.update(new)
+        self._save_settings(self._settings)
+        setup_logging(self._settings.get("logging_enabled", True),
+                      self._settings.get("log_level", "INFO"))
+        self.apply_topmost()
+        self.resize(int(self._settings.get("window_width", self.width())),
+                    int(self._settings.get("window_height", self.height())))
+        self.snap_to_corner()
+        # Compact mode and card size are read when cards are built.
+        self._defer_reload()
+
     # -- notifications and updates ------------------------------------------------
     def _on_job_notify(self, title: str, body: str) -> None:
         """A job finished: toast, gated by the same setting as Tk."""
@@ -630,8 +714,13 @@ class MainWindow(QMainWindow):
         self.hide()
 
     def restore_from_tray(self, follow_cursor: bool = False) -> None:
-        # follow_cursor is honoured once the multi-monitor placement is ported
-        # (docs/plans/qt-migration.md); until then it restores in place.
+        if follow_cursor and self._settings.get("open_on_cursor_monitor"):
+            target = self.cursor_area()
+            if target is not None:
+                saved = self._last_normal_geometry or self.geometry_string()
+                src = self.area_at(*screens.geometry_origin(saved)) or target
+                self.set_geometry_string(
+                    screens.relocate_geometry(saved, src, target))
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -685,6 +774,12 @@ class MainWindow(QMainWindow):
                 return False
         if self._bridge is not None:
             self._bridge.stop()             # terminates what is still running
+        if self._settings.get("remember_window_geometry", True):
+            geometry = (self.geometry_string()
+                        if self.isVisible() and not self.isMinimized()
+                        else self._last_normal_geometry)
+            if geometry:
+                self._settings["window_geometry"] = geometry
         self._save_settings(self._settings)
         if self._tray is not None:
             self._tray.stop()

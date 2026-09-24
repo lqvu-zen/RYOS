@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from ..cardmenu import HIGHLIGHTS
-from ..screens import work_area_at_point
+from ..screens import snap_position, work_area_at_point
 from ..themes import (  # noqa: F401 - re-exported for existing callers
     BUILTIN_THEMES, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, SEEDS, THEME_LABELS,
     THEME_MODES, THEME_ORDER, _rel_luminance, _shade, build_palette,
@@ -240,11 +240,7 @@ def _apply_snap_corner(window, corner: str, margin: int = 10, work_area=None) ->
     if work_area is None:
         work_area = work_area_at_point(window.winfo_rootx() + w // 2,
                                        window.winfo_rooty() + h // 2)
-    if work_area is not None:
-        ax, ay, aw, ah = work_area
-    else:
-        ax, ay = 0, 0
-        aw, ah = window.winfo_screenwidth(), window.winfo_screenheight()
-    x = ax + margin if "left" in corner else ax + aw - w - margin
-    y = ay + margin if "top"  in corner else ay + ah - h - margin
+    if work_area is None:
+        work_area = (0, 0, window.winfo_screenwidth(), window.winfo_screenheight())
+    x, y = snap_position(corner, w, h, work_area, margin)
     window.geometry(f"+{x}+{y}")

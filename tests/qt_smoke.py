@@ -2418,6 +2418,128 @@ def check_updates_and_notify(app):
     win.deleteLater()
 
 
+
+
+def check_window_placement(app):
+    """Where the window opens, snaps, is remembered, and restores to.
+
+    A made-up two-monitor desktop is injected, so the numbers are the same on
+    any machine: A is (0, 0, 1000, 800), B is (1000, 0, 900, 800).
+    """
+    from PySide6.QtCore import Qt
+
+    from ryos.qtui.dialogs import OptionsDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    A, B = (0, 0, 1000, 800), (1000, 0, 900, 800)
+
+    def area_at(x, y):
+        return A if x < 1000 else B
+
+    def window(settings, cursor=B, **kw):
+        base = {"quick_run_enabled": False, "window_width": 540,
+                "window_height": 640, "open_on_cursor_monitor": True,
+                "remember_window_geometry": True}
+        base.update(settings)
+        saved: list = []
+        win = MainWindow(REFERENCE["dark"], settings=base,
+                         save_settings=lambda s: saved.append(dict(s)))
+        win.cursor_area = lambda: cursor
+        win.area_at = area_at
+        win.show()
+        app.processEvents()
+        win.apply_placement(**kw)
+        app.processEvents()
+        return win, saved
+
+    def at(win):
+        return (win.x(), win.y(), win.width(), win.height())
+
+    # Saved on A, cursor on B: same offset, moved to B.
+    win, _ = window({"window_geometry": "540x640+100+50"})
+    if at(win) != (1100, 50, 540, 640):
+        PROBLEMS.append(f"saved geometry moved to the cursor monitor at {at(win)}")
+    win.deleteLater()
+
+    # A login launch restores exactly where it was, whatever the cursor.
+    win, _ = window({"window_geometry": "540x640+100+50"}, launched_at_startup=True)
+    if at(win) != (100, 50, 540, 640):
+        PROBLEMS.append(f"a login launch opened at {at(win)}")
+    win.deleteLater()
+
+    # Nothing saved: centred on the cursor's monitor.
+    win, _ = window({"remember_window_geometry": False,
+                     "window_geometry": "540x640+100+50"})
+    if at(win) != (1180, 80, 540, 640):
+        PROBLEMS.append(f"centring on the cursor monitor gave {at(win)}")
+    win.deleteLater()
+
+    # Snap to a corner of the cursor's monitor, and always on top.
+    win, saved = window({"snap_corner": "bottom-right", "always_on_top": True})
+    if (win.x(), win.y()) != (1350, 150):
+        PROBLEMS.append(f"bottom-right snap on B gave {(win.x(), win.y())}")
+    if not win.windowFlags() & Qt.WindowType.WindowStaysOnTopHint or not win.isVisible():
+        PROBLEMS.append("always-on-top was not applied, or hid the window")
+    win.deleteLater()
+
+    # -- remembered on quit, even from the tray --------------------------------------
+    win, saved = window({})
+    win.move(200, 60)
+    app.processEvents()
+    win.hide_to_tray()
+    win.quit_app()
+    if not saved or saved[-1].get("window_geometry") != "540x640+200+60":
+        PROBLEMS.append(f"quitting from the tray saved "
+                        f"{saved[-1].get('window_geometry') if saved else None!r}")
+
+    # -- a second launch restores onto the cursor's monitor ---------------------------
+    win, _ = window({"window_geometry": "540x640+100+50"}, cursor=A)
+    win.cursor_area = lambda: B
+    win.hide_to_tray()
+    win.restore_from_tray(follow_cursor=True)
+    app.processEvents()
+    if (win.x(), win.y()) != (1100, 50) or not win.isVisible():
+        PROBLEMS.append(f"restoring to the cursor monitor gave {at(win)}")
+    win.deleteLater()
+
+    # -- Advanced options opens, and saving applies to the window ---------------------
+    win, saved = window({})
+    dialogs: list = []
+    win.run_dialog = dialogs.append
+    win.options_action.trigger()
+    if len(dialogs) != 1 or not isinstance(dialogs[0], OptionsDialog):
+        PROBLEMS.append("Options > Advanced options did not open the dialog")
+    else:
+        win.apply_settings({"window_width": 600, "always_on_top": True,
+                            "snap_corner": "top-left"})
+        app.processEvents()
+        if win.width() != 600 or (win.x(), win.y()) != (1010, 10):
+            PROBLEMS.append(f"applied options left the window at {at(win)}")
+        if not win.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
+            PROBLEMS.append("applied options did not set always-on-top")
+        if not saved or saved[-1].get("window_width") != 600:
+            PROBLEMS.append("applied options were not saved")
+        # Compact cards take effect on the rebuilt card list.
+        import tempfile
+        from ryos.db import ScriptDB
+        db = ScriptDB(Path(tempfile.mkdtemp()) / "opts.db")
+        db.create_group("G")
+        db.add("s", "/x/s.py", "", "", "G")
+        win.load_from_db(db)
+        path_shown = hasattr(win.card_lists["G"].cards[0], "path_label")
+        win.apply_settings({"compact_mode": True})
+        for _ in range(3):
+            app.processEvents()
+        if not path_shown or hasattr(win.card_lists["G"].cards[0], "path_label"):
+            PROBLEMS.append("turning on compact cards did not rebuild them")
+    win.deleteLater()
+
+    print("  [ok] window placement: moved to the cursor monitor, login restores "
+          "in place, centred, corner snap, on top, remembered from the tray, "
+          "restore follows the cursor, options apply")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -2444,6 +2566,7 @@ def main() -> int:
     check_group_management(app)
     check_tray_and_close(app)
     check_updates_and_notify(app)
+    check_window_placement(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:
