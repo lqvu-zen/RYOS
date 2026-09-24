@@ -7473,6 +7473,29 @@ class TestPipelineEditorRules(unittest.TestCase):
             self.assertIn(mark, pipelinesteps.LEGEND)
 
 
+class TestUpdateStatus(unittest.TestCase):
+    """What an update-check result means, shared by the Tk and Qt banners."""
+
+    def test_statuses(self):
+        from ryos import notifications as n
+        self.assertEqual(n.update_status(None, "1.2.3"), (n.UNREACHABLE, "", ""))
+        self.assertEqual(n.update_status(("v1.2.4", "u"), "1.2.3"), (n.NEWER, "v1.2.4", "u"))
+        self.assertEqual(n.update_status(("v1.2.3", "u"), "1.2.3")[0], n.CURRENT)
+        self.assertEqual(n.update_status(("v1.2.2", "u"), "1.2.3")[0], n.CURRENT)
+        self.assertEqual(n.update_status(("v1.10.0", "u"), "1.9.9")[0], n.NEWER)
+
+    def test_unparseable_tag_is_never_newer(self):
+        from ryos import notifications as n
+        self.assertEqual(n.update_status(("nightly", "u"), "1.0.0")[0], n.CURRENT)
+
+    def test_wording(self):
+        from ryos import notifications as n
+        self.assertEqual(n.up_to_date_notice("1.2.3"),
+                         ("Up to date", "You are running the latest version (1.2.3)."))
+        self.assertIn("v2.0.0", n.banner_text("v2.0.0", "1.0.0"))
+        self.assertIn("you have v1.0.0", n.banner_text("v2.0.0", "1.0.0"))
+
+
 class TestTrayPolicy(unittest.TestCase):
     """Tray contents and the window's life, shared by pystray and Qt trays."""
 

@@ -23,7 +23,8 @@ from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE
 from .. import schedule_runner
 from ..interpreter import (detect_interpreter)
 from ..logger import get_logger, setup_logging
-from ..notifications import _fetch_latest_release, _parse_version, _show_notification
+from .. import notifications
+from ..notifications import _fetch_latest_release, _show_notification
 from ..runner import run_subprocess
 from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
@@ -2691,11 +2692,9 @@ class RYOSApp(_BaseWindow):
         self.after(80, self._drain_output_queue)
 
     def _check_for_update(self):
-        result = _fetch_latest_release()
-        if result is None:
-            return
-        tag, url = result
-        if _parse_version(tag) > _parse_version(__version__):
+        status, tag, url = notifications.update_status(_fetch_latest_release(),
+                                                       __version__)
+        if status == notifications.NEWER:
             self.after(0, lambda: self._show_update_banner(tag, url))
 
     def _show_update_banner(self, tag: str, url: str):
@@ -2705,7 +2704,7 @@ class RYOSApp(_BaseWindow):
         banner.pack(fill="x", before=self._paned)
         self._update_banner = banner
 
-        tk.Label(banner, text=f"🔔  Update available: {tag}  (you have v{__version__})",
+        tk.Label(banner, text=notifications.banner_text(tag, __version__),
                  bg="#1a3a5c", fg="#90cdf4",
                  font=("Segoe UI", 9)).pack(side="left")
         tk.Button(banner, text="Download", bg="#2b6cb0", fg=C["fg_on_dark"],
@@ -2721,21 +2720,15 @@ class RYOSApp(_BaseWindow):
 
     def _manual_update_check(self):
         def _check():
-            result = _fetch_latest_release()
-            if result is None:
-                self.after(0, lambda: messagebox.showinfo(
-                    "Update Check",
-                    "Could not reach GitHub. Check your internet connection.",
-                    parent=self))
-                return
-            tag, url = result
-            if _parse_version(tag) > _parse_version(__version__):
+            status, tag, url = notifications.update_status(
+                _fetch_latest_release(), __version__)
+            if status == notifications.NEWER:
                 self.after(0, lambda: self._show_update_banner(tag, url))
-            else:
-                self.after(0, lambda: messagebox.showinfo(
-                    "Up to date",
-                    f"You are running the latest version ({__version__}).",
-                    parent=self))
+                return
+            notice = (notifications.UNREACHABLE_NOTICE
+                      if status == notifications.UNREACHABLE
+                      else notifications.up_to_date_notice(__version__))
+            self.after(0, lambda: messagebox.showinfo(*notice, parent=self))
         threading.Thread(target=_check, daemon=True).start()
 
     def _open_advanced_options(self):

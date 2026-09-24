@@ -877,6 +877,41 @@ def check_script_dialog_round_trip(app):
         os.unlink(path)
 
 
+def check_manual_update_check(app):
+    """Options > Check for updates: banner, up-to-date, or unreachable.
+
+    The fetch is patched -- no network in CI. The worker runs inline: it hands
+    back with after(), which Tk only accepts from another thread while
+    mainloop() is running, and this harness pumps with update() instead.
+    """
+    import unittest.mock as mock
+    from ryos import __version__
+
+    class Inline:
+        def __init__(self, target, daemon=None):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    def run(reply):
+        with mock.patch.object(appmod, "_fetch_latest_release", return_value=reply), \
+                mock.patch.object(appmod.threading, "Thread", Inline), \
+                mock.patch.object(appmod.messagebox, "showinfo") as info:
+            app._manual_update_check()
+            pump_until(app, lambda: info.called or getattr(app, "_update_banner", None),
+                       timeout=5)
+            return [c.args[0] for c in info.call_args_list]
+
+    assert run(None) == ["Update Check"], "unreachable GitHub said nothing"
+    assert run((f"v{__version__}", "u")) == ["Up to date"], "current version misreported"
+    assert run(("v999.0.0", "u")) == [], "a newer release showed a notice, not the banner"
+    assert getattr(app, "_update_banner", None) is not None, "no update banner"
+    app._update_banner.destroy()
+    app._update_banner = None
+    print("  [ok] update-check: unreachable, up to date, and newer (banner)")
+
+
 def check_card_menus(app):
     """The Tk menus are built from the shared `cardmenu` definitions.
 
@@ -1043,6 +1078,7 @@ def main():
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)
         check_card_menus(app)
+        check_manual_update_check(app)
         check_script_dialog_round_trip(app)
         check_delete_all_counts_everything(app)
         check_run_to_completion(app)

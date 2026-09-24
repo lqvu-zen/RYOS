@@ -65,3 +65,33 @@ def _fetch_latest_release() -> tuple[str, str] | None:
         # update check is optional, so log and skip rather than surface an error.
         _log.debug("Update check failed: %s", e)
         return None
+
+
+# --- what an update check means, for both UIs -----------------------------------
+# The fetch is above; these decide what its result means and what to say, so the
+# Tk banner and the Qt banner cannot disagree about when an update exists.
+
+NEWER = "newer"
+CURRENT = "current"
+UNREACHABLE = "unreachable"
+
+UNREACHABLE_NOTICE = ("Update Check",
+                      "Could not reach GitHub. Check your internet connection.")
+
+
+def update_status(result, current: str) -> tuple:
+    """(NEWER / CURRENT / UNREACHABLE, tag, url) for a `_fetch_latest_release` result."""
+    if result is None:
+        return UNREACHABLE, "", ""
+    tag, url = result
+    if _parse_version(tag) > _parse_version(current):
+        return NEWER, tag, url
+    return CURRENT, tag, url
+
+
+def up_to_date_notice(current: str) -> tuple[str, str]:
+    return "Up to date", f"You are running the latest version ({current})."
+
+
+def banner_text(tag: str, current: str) -> str:
+    return f"🔔  Update available: {tag}  (you have v{current})"

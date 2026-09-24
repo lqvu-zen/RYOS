@@ -2302,6 +2302,122 @@ def check_tray_and_close(app):
     win.deleteLater()
 
 
+
+
+def check_updates_and_notify(app):
+    """The update banner and notices, and job-finished toasts.
+
+    The fetch and the toast are injected: the real ones call GitHub and pop a
+    Windows toast. What is checked is everything around them -- that the
+    fetch runs off the UI thread, and what each result shows.
+    """
+    import sys as _sys
+    import tempfile
+    import threading
+    import time as _time
+
+    from ryos import __version__, notifications
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def pump_until(predicate, timeout=10.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    reply = {"value": ("v999.0.0", "https://example.invalid/r")}
+    threads: list = []
+
+    def fetch():
+        threads.append(threading.current_thread() is threading.main_thread())
+        return reply["value"]
+
+    toasts: list = []
+    settings = {"quick_run_enabled": False, "notify_on_complete": True}
+    win = MainWindow(REFERENCE["dark"], settings=settings, fetch_release=fetch,
+                     notifier=lambda title, body: toasts.append(title))
+    told: list = []
+    win.inform = lambda title, text: told.append(title)
+    opened: list = []
+    win.open_url = opened.append
+    win.show()
+
+    # -- a newer release: a banner, once, that opens the release page ---------------
+    win.check_for_updates()
+    if not pump_until(lambda: win.update_banner is not None):
+        PROBLEMS.append("a newer release never showed the banner")
+        return
+    if threads != [False]:
+        PROBLEMS.append("the update fetch ran on the UI thread")
+    if win.update_label.text() != notifications.banner_text("v999.0.0", __version__):
+        PROBLEMS.append(f"banner said {win.update_label.text()!r}")
+    win.update_download.click()
+    if opened != ["https://example.invalid/r"]:
+        PROBLEMS.append(f"Download opened {opened}")
+    banner = win.update_banner
+    win.check_for_updates(manual=True)
+    pump_until(lambda: len(threads) == 2)
+    app.processEvents()
+    if win.update_banner is not banner or told:
+        PROBLEMS.append("a second check added a second banner, or a notice")
+    win.dismiss_update_banner()
+    app.processEvents()
+    if win.update_banner is not None:
+        PROBLEMS.append("✕ did not dismiss the banner")
+
+    # -- manual checks say when there is nothing, automatic ones stay quiet ---------
+    reply["value"] = (f"v{__version__}", "https://example.invalid/r")
+    win.update_action.trigger()
+    pump_until(lambda: told)
+    if told != ["Up to date"] or win.update_banner is not None:
+        PROBLEMS.append(f"current version, manual: told {told}")
+    told.clear()
+    reply["value"] = None
+    win.check_for_updates(manual=True)
+    pump_until(lambda: told)
+    if told != [notifications.UNREACHABLE_NOTICE[0]]:
+        PROBLEMS.append(f"unreachable, manual: told {told}")
+    told.clear()
+    before = len(threads)
+    win.check_for_updates()
+    pump_until(lambda: len(threads) > before)
+    app.processEvents()
+    if told:
+        PROBLEMS.append("an automatic check that failed said something")
+
+    # -- a finished job toasts, unless the setting is off ----------------------------
+    tmp = Path(tempfile.mkdtemp())
+    quick = tmp / "q.py"
+    quick.write_text("print('done')\n", encoding="utf-8")
+    db = ScriptDB(tmp / "notify.db")
+    db.create_group("G")
+    sid = db.add("q", str(quick), "", _sys.executable, "G")
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win.attach_jobs(bridge)
+    bridge.start()
+    bridge.run_script(sid, "q", str(quick), "", _sys.executable)
+    if not pump_until(lambda: toasts, 20):
+        PROBLEMS.append("a finished job sent no notification")
+    toasts.clear()
+    win._settings["notify_on_complete"] = False
+    bridge.run_script(sid, "q", str(quick), "", _sys.executable)
+    pump_until(lambda: len(bridge.registry) == 0, 20)
+    app.processEvents()
+    if toasts:
+        PROBLEMS.append("notify_on_complete off still sent a notification")
+    bridge.stop()
+
+    print("  [ok] updates and notify: fetch off the UI thread, one banner that "
+          "opens the release, manual up-to-date / unreachable notices, quiet "
+          "automatic failure, job toasts follow the setting")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -2327,6 +2443,7 @@ def main() -> int:
     check_select_mode(app)
     check_group_management(app)
     check_tray_and_close(app)
+    check_updates_and_notify(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

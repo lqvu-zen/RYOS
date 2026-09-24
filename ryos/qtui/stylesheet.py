@@ -155,6 +155,13 @@ QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 6px; mi
 QScrollBar::handle:vertical:hover {{ background: {c['accent_wash']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 
+/* --- update banner ------------------------------------------------- */
+QFrame#updateBanner {{
+    background: {c['accent_wash']};
+    border: 1px solid {c['accent']};
+}}
+QFrame#updateBanner QLabel {{ background: transparent; color: {c['name_fg']}; }}
+
 /* --- select mode --------------------------------------------------- */
 QFrame#selectBar {{
     background: {c['warn_bg']};

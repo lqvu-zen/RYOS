@@ -33,8 +33,8 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import (cardmenu, configio, grouping, outputpanel, scriptform, search,
-               selection, traypolicy)
+from .. import (__version__, cardmenu, configio, grouping, notifications,
+               outputpanel, scriptform, search, selection, traypolicy)
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
@@ -84,8 +84,16 @@ class MainWindow(QMainWindow):
     def __init__(self, palette: dict | None = None, *,
                  settings: dict | None = None,
                  on_run: Callable[[int], None] | None = None,
-                 save_settings: Callable[[dict], None] | None = None):
+                 save_settings: Callable[[dict], None] | None = None,
+                 notifier: Callable[[str, str], None] | None = None,
+                 fetch_release: Callable[[], object] | None = None):
         super().__init__()
+        # Like save_settings: inert unless the entry point passes the real
+        # ones, so tests pop no toasts and make no network calls.
+        self._notifier = notifier or (lambda _t, _b: None)
+        self._fetch_release = fetch_release or (lambda: None)
+        self.open_url: Callable[[str], None] = self._open_url
+        self.update_banner = None
         # Both inert unless the real entry point passes the real ones, so a
         # test that closes a window can never write the user's settings or
         # end the application.
@@ -159,6 +167,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.add_script_button)
         col.addLayout(row)
 
+        self._top_col = col
         col.addWidget(self._build_select_bar())
 
         self.group_tabs = QTabWidget()
@@ -209,6 +218,11 @@ class MainWindow(QMainWindow):
         self.delete_all_action = QAction("🗑  Delete All", self)
         self.delete_all_action.triggered.connect(self.delete_all)
         options.addAction(self.delete_all_action)
+        options.addSeparator()
+        self.update_action = QAction("🔔  Check for updates", self)
+        self.update_action.triggered.connect(
+            lambda: self.check_for_updates(manual=True))
+        options.addAction(self.update_action)
 
     # -- cards -------------------------------------------------------------
     def set_cards(self, group_name: str, records, base_dir: str = "", *,
@@ -498,6 +512,66 @@ class MainWindow(QMainWindow):
                                       action.group)
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
+
+    # -- notifications and updates ------------------------------------------------
+    def _on_job_notify(self, title: str, body: str) -> None:
+        """A job finished: toast, gated by the same setting as Tk."""
+        if self._settings.get("notify_on_complete", True):
+            self._notifier(title, body)
+
+    def check_for_updates(self, manual: bool = False) -> None:
+        """Ask GitHub for the latest release, off the UI thread.
+
+        The automatic check shows a banner only when there is something new;
+        a manual one also says when there is nothing, or when GitHub could not
+        be reached -- the same rules as the Tk app.
+        """
+        if not hasattr(self, "_update_invoker"):
+            self._update_invoker = MainThreadInvoker(self)
+
+        def work():
+            result = self._fetch_release()
+            self._update_invoker(lambda: self._update_result(result, manual))
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_result(self, result, manual: bool) -> None:
+        status, tag, url = notifications.update_status(result, __version__)
+        if status == notifications.NEWER:
+            self.show_update_banner(tag, url)
+        elif manual:
+            self.inform(*(notifications.UNREACHABLE_NOTICE
+                          if status == notifications.UNREACHABLE
+                          else notifications.up_to_date_notice(__version__)))
+
+    def show_update_banner(self, tag: str, url: str) -> None:
+        if self.update_banner is not None:
+            return
+        banner = QFrame()
+        banner.setObjectName("updateBanner")
+        row = QHBoxLayout(banner)
+        row.setContentsMargins(10, 4, 6, 4)
+        self.update_label = QLabel(notifications.banner_text(tag, __version__))
+        row.addWidget(self.update_label, 1)
+        self.update_download = QPushButton("Download")
+        self.update_download.setObjectName("primary")
+        self.update_download.clicked.connect(lambda: self.open_url(url))
+        row.addWidget(self.update_download)
+        dismiss = QPushButton("✕")
+        dismiss.clicked.connect(self.dismiss_update_banner)
+        row.addWidget(dismiss)
+        self._top_col.insertWidget(0, banner)
+        self.update_banner = banner
+
+    def dismiss_update_banner(self) -> None:
+        if self.update_banner is not None:
+            self.update_banner.deleteLater()
+            self.update_banner = None
+
+    def _open_url(self, url: str) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(url))
 
     # -- tray, second launches, and closing ---------------------------------------
     def attach_tray(self, tray) -> None:
@@ -1059,6 +1133,7 @@ class MainWindow(QMainWindow):
         bridge.finished.connect(self.running.remove)
         for sig in (bridge.started, bridge.finished, bridge.renamed):
             sig.connect(lambda _job: self._sync_tray())
+        bridge.notify.connect(self._on_job_notify)
 
     def _on_job_started(self, job) -> None:
         self.add_output_tab(job.tab_key, job.name)
