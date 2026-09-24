@@ -792,6 +792,43 @@ def check_favorites_reorder(app):
         app._refresh_cards()
 
 
+def check_delete_all_counts_everything(app):
+    """Delete All's prompt names every script it will delete.
+
+    delete_all() empties the whole table, but the prompt used to count only
+    the cards on screen -- so viewing a one-script group asked "Delete all 1
+    scripts?" and then deleted every group's scripts. Declined here, so the
+    smoke's own data survives.
+    """
+    import unittest.mock as mock
+
+    app.db.create_group("smoke-da")
+    sid = app.db.add("smoke-da-1", "/nonexistent/da.py", "", sys.executable,
+                     "smoke-da")
+    # One more outside the group, so the tab and the database disagree.
+    other = app.db.add("smoke-da-2", "/nonexistent/db.py", "", sys.executable)
+    try:
+        app._active_group = "smoke-da"
+        app._refresh_cards()
+        app.update()
+        total = len(app.db.list_all())
+        with mock.patch.object(appmod.messagebox, "askyesno",
+                               return_value=False) as ask:
+            app._delete_all()
+        assert ask.called, "Delete All did not ask"
+        question = ask.call_args[0][1]
+        assert f"all {total} script" in question, \
+            f"asked {question!r} with {total} scripts in the database"
+        assert len(app.db.list_all()) == total, "declining still deleted"
+        print(f"  [ok] delete-all: prompt names all {total} scripts, not the tab's")
+    finally:
+        app.db.delete(sid)
+        app.db.delete(other)
+        app.db.delete_group("smoke-da")
+        app._active_group = None
+        app._refresh()
+
+
 def check_card_menus(app):
     """The Tk menus are built from the shared `cardmenu` definitions.
 
@@ -958,6 +995,7 @@ def main():
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)
         check_card_menus(app)
+        check_delete_all_counts_everything(app)
         check_run_to_completion(app)
         check_stop_running_job(app)
     finally:

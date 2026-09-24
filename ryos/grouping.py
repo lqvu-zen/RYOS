@@ -77,6 +77,15 @@ def rename_target(old: str, answer, existing) -> tuple:
     return (None, problem) if problem else (answer.strip(), None)
 
 
+def group_order(tab_keys) -> list[str]:
+    """The stored group order for tabs in ``tab_keys`` order.
+
+    Drops the ungrouped key ``""``: it is not a stored group, and wherever
+    its tab ended up after a drag, it goes back to the end on the next build.
+    """
+    return [k for k in tab_keys if k]
+
+
 def active_after_rename(active: str | None, old: str, new: str) -> str | None:
     """Which group stays selected when ``old`` is renamed to ``new``."""
     return new if active == old else active

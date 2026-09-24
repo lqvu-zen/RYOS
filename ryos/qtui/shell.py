@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import cardmenu, grouping, outputpanel, search, selection
+from .. import cardmenu, configio, grouping, outputpanel, search, selection
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
@@ -105,6 +105,7 @@ class MainWindow(QMainWindow):
         self.inform: Callable[[str, str], None] = self._inform
         self.select_mode = False
         self.ask_save_path: Callable[[str, str], str | None] = self._ask_save_path
+        self.ask_open_path: Callable[[str], str | None] = self._ask_open_path
         self.run_dialog: Callable[[object], None] = lambda dlg: dlg.exec()
         self.popup: Callable[[object, QPoint], None] = \
             lambda menu, pos: menu.exec(pos)
@@ -154,6 +155,11 @@ class MainWindow(QMainWindow):
         self.group_tabs.setTabBar(self.group_tab_bar)
         self.group_tab_bar.dropped_on_group.connect(self._on_drop_on_group)
         self.group_tab_bar.menu_requested.connect(self._show_group_menu)
+        self.group_tab_bar.reordered.connect(self._on_tabs_reordered)
+        self.new_group_button = QPushButton("+")
+        self.new_group_button.setToolTip("New group")
+        self.new_group_button.clicked.connect(self.new_group)
+        self.group_tabs.setCornerWidget(self.new_group_button)
         col.addWidget(self.group_tabs, 1)
         col.addWidget(self.running)
         return top
@@ -177,6 +183,17 @@ class MainWindow(QMainWindow):
         self.select_action.triggered.connect(
             lambda: self.set_select_mode(not self.select_mode))
         options.addAction(self.select_action)
+        options.addSeparator()
+        for label, slot in (("＋  New group…", self.new_group),
+                            ("📤  Export all groups", self.export_all),
+                            ("📥  Import config", self.import_config)):
+            action = QAction(label, self)
+            action.triggered.connect(slot)
+            options.addAction(action)
+        options.addSeparator()
+        self.delete_all_action = QAction("🗑  Delete All", self)
+        self.delete_all_action.triggered.connect(self.delete_all)
+        options.addAction(self.delete_all_action)
 
     # -- cards -------------------------------------------------------------
     def set_cards(self, group_name: str, records, base_dir: str = "", *,
@@ -462,6 +479,65 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
 
+    # -- groups: create, reorder, import, export, delete all ---------------------
+    def new_group(self) -> None:
+        if self._db is None:
+            return
+        from .smalldialogs import NewGroupDialog
+        dlg = NewGroupDialog(self, existing=self._db.list_groups())
+        self.run_dialog(dlg)
+        if not dlg.result:
+            return
+        name, base_dir = dlg.result
+        self._db.create_group(name, base_dir)
+        QTimer.singleShot(0, lambda: (self.reload(), self.show_group(name)))
+
+    def _on_tabs_reordered(self, keys: list) -> None:
+        if self._db is None:
+            return
+        self._db.reorder_groups(grouping.group_order(keys))
+        if "" in keys and keys[-1] != "":
+            self._defer_reload()        # "Ungrouped" goes back to the end
+
+    def export_all(self) -> None:
+        if self._db is None:
+            return
+        path = self.ask_save_path(configio.export_title(None),
+                                  configio.export_filename(None))
+        if not path:
+            return
+        try:
+            n_scripts, n_pipes = self._db.export_to_file(path)
+        except Exception as exc:                # noqa: BLE001 - shown to the user
+            self.warn("Export Failed", str(exc))
+            return
+        self.statusBar().showMessage(configio.export_status(n_scripts, n_pipes,
+                                                            path))
+
+    def import_config(self) -> None:
+        if self._db is None:
+            return
+        path = self.ask_open_path(configio.IMPORT_TITLE)
+        if not path:
+            return
+        replace = self.ask_yes_no(*configio.IMPORT_MODE)
+        try:
+            added, skipped = self._db.import_from_file(path, replace=replace)
+        except Exception as exc:                # noqa: BLE001 - shown to the user
+            self.warn("Import Failed", str(exc))
+            return
+        self._defer_reload()
+        self.statusBar().showMessage(configio.import_status(added, skipped))
+
+    def delete_all(self) -> None:
+        if self._db is None:
+            return
+        prompt = configio.delete_all_prompt(len(self._db.list_all()))
+        if prompt is None or not self.ask_yes_no(*prompt):
+            return
+        self._db.delete_all()
+        self._defer_reload()
+
     # -- select mode -------------------------------------------------------------
     def _build_select_bar(self) -> QWidget:
         self.select_bar = QFrame()
@@ -694,8 +770,8 @@ class MainWindow(QMainWindow):
             if warning:
                 self.warn(*warning)
         elif key == cardmenu.EXPORT_GROUP:
-            path = self.ask_save_path(f"Export Group: {group}",
-                                      f"ryos_{group}.json")
+            path = self.ask_save_path(configio.export_title(group),
+                                      configio.export_filename(group))
             if not path:
                 return
             try:
@@ -704,7 +780,7 @@ class MainWindow(QMainWindow):
                 self.warn("Export Failed", str(exc))
                 return
             self.statusBar().showMessage(
-                f"Exported {n_scripts} script(s), {n_pipes} pipeline(s).")
+                configio.export_status(n_scripts, n_pipes, path))
             return
         elif key == cardmenu.DELETE_GROUP:
             if not self.ask_yes_no(*cardmenu.delete_group_prompt(group)):
@@ -735,6 +811,12 @@ class MainWindow(QMainWindow):
     def _warn(self, title: str, message: str) -> None:
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.warning(self, title, message)
+
+    def _ask_open_path(self, title: str) -> str | None:
+        from PySide6.QtWidgets import QFileDialog
+        path, _filter = QFileDialog.getOpenFileName(
+            self, title, "", "JSON (*.json);;All Files (*.*)")
+        return path or None
 
     def _ask_save_path(self, title: str, initial: str) -> str | None:
         from PySide6.QtWidgets import QFileDialog

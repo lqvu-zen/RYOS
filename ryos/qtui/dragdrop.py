@@ -176,11 +176,26 @@ class GroupTabBar(QTabBar):
 
     dropped_on_group = Signal(object, str)   # (CardPayload, group name)
     menu_requested = Signal(str, QPoint)     # (group key, global position)
+    reordered = Signal(list)                 # tab keys, once a tab drag ends
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setAcceptDrops(True)
+        self.setMovable(True)
         self._hover_index = -1
+        # tabMoved fires on every step of a tab drag; the new order is
+        # reported once, on release, so nothing rebuilds mid-drag.
+        self._moved = False
+        self.tabMoved.connect(lambda _f, _t: setattr(self, "_moved", True))
+
+    def tab_keys(self) -> list:
+        return [self.tabData(i) for i in range(self.count())]
+
+    def mouseReleaseEvent(self, event) -> None:       # noqa: N802
+        super().mouseReleaseEvent(event)
+        if self._moved:
+            self._moved = False
+            self.reordered.emit(self.tab_keys())
 
     def group_at(self, pos: QPoint) -> "str | None":
         """The group under ``pos``: the key stored in the tab, not its label.

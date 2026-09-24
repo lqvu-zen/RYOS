@@ -1786,6 +1786,144 @@ def check_select_mode(app):
     win.deleteLater()
 
 
+
+
+def check_group_management(app):
+    """New group, drag a tab to reorder, export/import, Delete All -- for real.
+
+    The tab reorder is a real press-move-release on the tab bar; the order
+    checked is the one stored in the database.
+    """
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import NewGroupDialog
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "groups.db")
+    for g in ("A", "B", "C"):
+        db.create_group(g)
+    for i, g in enumerate(("A", "A", "B", "C")):
+        db.add(f"s{i}", str(tmp / f"s{i}.py"), "", _sys.executable, g)
+    db.add("loose", str(tmp / "loose.py"), "", _sys.executable, "")
+
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.resize(800, 600)
+    win.show()
+    win.load_from_db(db)
+    app.processEvents()
+
+    asked: list = []
+    answers = {"yes": False}
+    win.ask_yes_no = lambda title, q: asked.append(q) or answers["yes"]
+    warned: list = []
+    win.warn = lambda title, msg: warned.append((title, msg))
+
+    def settle():
+        for _ in range(3):
+            app.processEvents()
+
+    bar = win.group_tab_bar
+
+    # -- new group, from the + button -----------------------------------------
+    def fill_new_group(dlg):
+        if isinstance(dlg, NewGroupDialog):
+            dlg.e_name.setText("  New  ")
+            dlg.e_dir.setText(str(tmp))
+            dlg.accept_form()
+    win.run_dialog = fill_new_group
+    win.new_group_button.click()
+    settle()
+    if db.list_groups()[-1:] != ["New"] or db.get_group_base_dir("New") != str(tmp):
+        PROBLEMS.append(f"+ did not create 'New': {db.list_groups()}")
+    if win.current_group() != "New":
+        PROBLEMS.append("the new group was not brought to the front")
+
+    # -- drag tab C in front of A, with the mouse --------------------------------
+    def mouse(kind, pos, buttons):
+        app.sendEvent(bar, QMouseEvent(
+            kind, QPointF(pos), QPointF(bar.mapToGlobal(pos)),
+            Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier))
+
+    keys = bar.tab_keys()
+    start = bar.tabRect(keys.index("C")).center()
+    end = bar.tabRect(keys.index("A")).center() - QPoint(8, 0)
+    mouse(QEvent.Type.MouseButtonPress, start, Qt.MouseButton.LeftButton)
+    for step in range(1, 11):
+        mouse(QEvent.Type.MouseMove, start + (end - start) * step / 10,
+              Qt.MouseButton.LeftButton)
+    mouse(QEvent.Type.MouseButtonRelease, end, Qt.MouseButton.NoButton)
+    settle()
+    if db.list_groups() != ["C", "A", "B", "New"]:
+        PROBLEMS.append(f"dragging tab C to the front stored {db.list_groups()}")
+
+    # Ungrouped cannot stay anywhere but last.
+    bar.moveTab(bar.tab_keys().index(""), 0)
+    mouse(QEvent.Type.MouseButtonRelease, QPoint(5, 5), Qt.MouseButton.NoButton)
+    settle()
+    if bar.tab_keys()[-1] != "" or db.list_groups() != ["C", "A", "B", "New"]:
+        PROBLEMS.append(f"after moving Ungrouped: tabs {bar.tab_keys()}, "
+                        f"stored {db.list_groups()}")
+
+    # -- export all, then import into another window's database -------------------
+    out = tmp / "all.json"
+    win.ask_save_path = lambda title, initial: str(out)
+    win.export_all()
+    if not out.exists() or "all.json" not in win.statusBar().currentMessage():
+        PROBLEMS.append("Export all groups wrote nothing, or did not say where")
+
+    other_db = ScriptDB(tmp / "other.db")
+    other = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    other.load_from_db(other_db)
+    other.ask_open_path = lambda title: str(out)
+    other.ask_yes_no = lambda title, q: False            # merge
+    other.import_config()
+    settle()
+    if set(other_db.list_groups()) != {"A", "B", "C", "New"}:
+        PROBLEMS.append(f"import brought in {other_db.list_groups()}")
+    if len(other_db.list_all()) != 5 or "5 script(s) added" not in \
+            other.statusBar().currentMessage():
+        PROBLEMS.append(f"import: {len(other_db.list_all())} scripts, "
+                        f"{other.statusBar().currentMessage()!r}")
+    if set(other.card_lists) != {"A", "B", "C", "New", ""}:
+        PROBLEMS.append("the imported groups did not appear as tabs")
+    other.import_config()                                # again: all skipped
+    settle()
+    if len(other_db.list_all()) != 5:
+        PROBLEMS.append("importing the same file twice duplicated scripts")
+    other.deleteLater()
+
+    # -- Delete All counts every script, not the tab on screen ---------------------
+    win.show_group("B")                  # one card showing, five in the database
+    asked.clear()
+    answers["yes"] = False
+    win.delete_all_action.trigger()
+    settle()
+    if not asked or "5 scripts" not in asked[0] or len(db.list_all()) != 5:
+        PROBLEMS.append(f"Delete All asked {asked} with one card on screen")
+    answers["yes"] = True
+    win.delete_all_action.trigger()
+    settle()
+    if db.list_all():
+        PROBLEMS.append("confirming Delete All left scripts behind")
+    asked.clear()
+    win.delete_all_action.trigger()
+    if asked:
+        PROBLEMS.append("Delete All asked with nothing to delete")
+
+    print("  [ok] group management: + makes and shows a group, a mouse drag "
+          "reorders tabs, Ungrouped stays last, export/import round-trips, "
+          "Delete All names the real count")
+    win.hide()
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -1809,6 +1947,7 @@ def main() -> int:
     check_schedules(app)
     check_context_menus(app)
     check_select_mode(app)
+    check_group_management(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

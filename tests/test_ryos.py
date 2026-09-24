@@ -39,6 +39,7 @@ from ryos import quickrun_actions as qra  # noqa: E402
 from ryos import schedule_runner  # noqa: E402
 from ryos import cardmenu, grouping, themes  # noqa: E402
 from ryos import selection  # noqa: E402
+from ryos import configio  # noqa: E402
 import types  # noqa: E402
 from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
@@ -7349,6 +7350,36 @@ class TestScheduleRunner(unittest.TestCase):
         pid = self.db.create_pipeline("loose", "")
         self.assertEqual(schedule_runner.pipeline_name(self.db, pid), "loose")
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
+
+
+class TestConfigIO(unittest.TestCase):
+    """Export / import / Delete All wording, shared by both UIs."""
+
+    def test_export_names(self):
+        self.assertEqual(configio.export_title(None), "Export All Groups")
+        self.assertEqual(configio.export_title("G"), "Export Group: G")
+        self.assertEqual(configio.export_filename(None), "ryos_all.json")
+        self.assertEqual(configio.export_filename("G"), "ryos_G.json")
+
+    def test_export_status_names_the_file_not_the_folder(self):
+        status = configio.export_status(3, 1, os.path.join("x", "y", "out.json"))
+        self.assertIn("3 script(s), 1 pipeline(s)", status)
+        self.assertTrue(status.endswith("out.json"))
+        self.assertNotIn(os.path.join("x", "y"), status)
+
+    def test_import_mode_says_which_answer_replaces(self):
+        title, question = configio.IMPORT_MODE
+        self.assertIn("Yes = Replace", question)
+        self.assertIn("No  = Merge", question)
+
+    def test_delete_all_counts_what_it_deletes(self):
+        self.assertIsNone(configio.delete_all_prompt(0))
+        self.assertIn("all 1 script in", configio.delete_all_prompt(1)[1])
+        self.assertIn("all 5 scripts in every group", configio.delete_all_prompt(5)[1])
+
+    def test_group_order_drops_ungrouped(self):
+        self.assertEqual(grouping.group_order(["", "B", "A"]), ["B", "A"])
+        self.assertEqual(grouping.group_order([]), [])
 
 
 class TestSelection(unittest.TestCase):

@@ -96,6 +96,7 @@ files = [
     "ryos/marquee.py",
     "ryos/cardmenu.py",
     "ryos/cardstyle.py",
+    "ryos/configio.py",
     "ryos/scriptform.py",
     "ryos/settings_schema.py",
     "ryos/pipelinesteps.py",

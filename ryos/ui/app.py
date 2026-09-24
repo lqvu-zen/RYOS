@@ -29,7 +29,7 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import cardmenu, outputpanel, selection
+from .. import cardmenu, configio, outputpanel, selection
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
@@ -1939,19 +1939,18 @@ class RYOSApp(_BaseWindow):
             self._refresh()
 
     def _delete_all(self):
-        if not self._cards:
+        # Counted from the database: delete_all() removes every script, not
+        # just the cards the current group shows.
+        prompt = configio.delete_all_prompt(len(self.db.list_all()))
+        if prompt is None:
             return
-        if messagebox.askyesno("Delete All", f"Delete all {len(self._cards)} scripts? This cannot be undone."):
+        if messagebox.askyesno(*prompt):
             self.db.delete_all()
             self._refresh()
 
     def _export_config(self, group_name: str | None = None):
-        if group_name:
-            initial = f"ryos_{group_name}.json"
-            title   = f"Export Group: {group_name}"
-        else:
-            initial = "ryos_all.json"
-            title   = "Export All Groups"
+        initial = configio.export_filename(group_name)
+        title = configio.export_title(group_name)
         path = filedialog.asksaveasfilename(
             title=title,
             defaultextension=".json",
@@ -1963,31 +1962,24 @@ class RYOSApp(_BaseWindow):
         try:
             n_scripts, n_pipelines = self.db.export_to_file(path, group_name=group_name)
             _log.info("Export: %d scripts, %d pipelines -> %s", n_scripts, n_pipelines, path)
-            self.status_var.set(
-                f"Exported {n_scripts} script(s), {n_pipelines} pipeline(s) → {Path(path).name}"
-            )
+            self.status_var.set(configio.export_status(n_scripts, n_pipelines, path))
         except Exception as e:
             _log.error("Export failed: %s", e)
             messagebox.showerror("Export Failed", str(e))
 
     def _import_config(self):
         path = filedialog.askopenfilename(
-            title="Import Config",
+            title=configio.IMPORT_TITLE,
             filetypes=[("JSON", "*.json"), ("All Files", "*.*")],
         )
         if not path:
             return
         try:
-            replace = messagebox.askyesno(
-                "Import Mode",
-                "How should existing data in the imported groups be handled?\n\n"
-                "Yes = Replace (overwrite scripts/pipelines in the imported groups)\n"
-                "No  = Merge (skip duplicates by path / name)",
-            )
+            replace = messagebox.askyesno(*configio.IMPORT_MODE)
             added, skipped = self.db.import_from_file(path, replace=replace)
             _log.info("Import: %d added, %d skipped from %s", added, skipped, path)
             self._refresh()
-            self.status_var.set(f"Import done — {added} script(s) added, {skipped} skipped.")
+            self.status_var.set(configio.import_status(added, skipped))
         except Exception as e:
             _log.error("Import failed: %s", e)
             messagebox.showerror("Import Failed", str(e))
