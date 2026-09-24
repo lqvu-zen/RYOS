@@ -5798,6 +5798,8 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/tray.py": "imports PySide6; same reason",
         "ryos/qtui/placement.py": "imports PySide6; same reason",
         "ryos/qtui/sections.py": "imports PySide6; same reason",
+        "ryos/qtui/theme_editor.py": "imports PySide6; same reason",
+        "ryos/qtui/appearance.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7473,6 +7475,76 @@ class TestPipelineEditorRules(unittest.TestCase):
                          {WHEN_ALWAYS, WHEN_ON_SUCCESS, WHEN_ON_FAILURE})
         for mark in ("∥", "!", "↻n", "?ok", "?fail", "→launch"):
             self.assertIn(mark, pipelinesteps.LEGEND)
+
+
+class TestPaletteFor(unittest.TestCase):
+    """Theme name + accent -> palette, the same for Tk and Qt."""
+
+    def test_builtins_and_fallbacks(self):
+        self.assertEqual(themes.resolve_palette("dark", {}), themes.BUILTIN_THEMES["dark"])
+        self.assertEqual(themes.resolve_palette("gone", {}), themes.BUILTIN_THEMES["light"])
+
+    def test_resolve_returns_a_copy(self):
+        p = themes.resolve_palette("light", {})
+        p["bg"] = "#000000"
+        self.assertNotEqual(themes.BUILTIN_THEMES["light"]["bg"], "#000000")
+
+    def test_custom_theme(self):
+        seed = dict(themes.SEEDS["dark"], accent="#ff00aa")
+        p = themes.resolve_palette("Mine", {"Mine": seed})
+        self.assertEqual(p, themes.build_palette(seed))
+        self.assertEqual(themes.mode_of("Mine", {"Mine": seed}), "dark")
+        self.assertEqual(themes.mode_of("Mine", {}), "light")
+
+    def test_accent_replaces_the_family(self):
+        p = themes.palette_for("light", "#3366cc", {})
+        for key in ("accent", "btn_mod_bg", "btn_create_bg"):
+            self.assertEqual(p[key], "#3366cc")
+        self.assertEqual(p["btn_mod_hover"], p["accent2"])
+        self.assertNotEqual(p["accent_wash"], themes.BUILTIN_THEMES["light"]["accent_wash"])
+        self.assertEqual(themes.palette_for("light", None, {}), themes.BUILTIN_THEMES["light"])
+
+    def test_wash_follows_the_base(self):
+        light = themes.palette_for("light", "#3366cc", {})["accent_wash"]
+        dark = themes.palette_for("dark", "#3366cc", {})["accent_wash"]
+        self.assertGreater(themes._rel_luminance(light), themes._rel_luminance(dark))
+
+    def test_choices_label_clashing_customs(self):
+        choices = themes.theme_choices({"Dark": dict(themes.SEEDS["dark"])})
+        labels = [label for _id, label in choices]
+        self.assertEqual(len(labels), len(set(labels)))
+        self.assertIn(("Dark", "Dark (custom)"), choices)
+
+
+class TestAppearanceRules(unittest.TestCase):
+    """What the Appearance tab shows and writes, shared by Tk and Qt."""
+
+    def test_seed_and_accent_shown(self):
+        mine = dict(themes.SEEDS["dark"], accent="#ff00aa")
+        customs = {"Mine": mine}
+        self.assertEqual(themeform.current_seed("Mine", customs), mine)
+        self.assertEqual(themeform.current_seed("gone", customs), themes.SEEDS["light"])
+        self.assertEqual(themeform.accent_shown("Mine", None, customs), "#ff00aa")
+        self.assertEqual(themeform.accent_shown("Mine", "#010203", customs), "#010203")
+        self.assertEqual(themeform.accent_shown("dark", None, {}),
+                         themes.BUILTIN_THEMES["dark"]["accent"])
+
+    def test_names(self):
+        taken = themeform.taken_names({"Mine": {}}, exclude=None)
+        self.assertIn("Light", taken)
+        self.assertIn("Mine", taken)
+        self.assertNotIn("Mine", themeform.taken_names({"Mine": {}}, exclude="Mine"))
+        self.assertEqual(themeform.unique_theme_name("mine", {"Mine"}), "mine (2)")
+        self.assertEqual(themeform.unique_theme_name("  ", set()), "Imported theme")
+
+    def test_save_rename_delete_on_disk(self):
+        d = tempfile.mkdtemp()
+        seed = dict(themes.SEEDS["dark"])
+        self.assertEqual(set(themeform.save_theme(d, "A", seed)), {"A"})
+        self.assertEqual(set(themeform.save_theme(d, "B", seed, replacing="A")), {"B"})
+        self.assertEqual(set(themeform.save_theme(d, "B", seed, replacing="B")), {"B"})
+        self.assertEqual(themeform.delete_theme(d, "B"), {})
+        self.assertIn("“B”", themeform.delete_prompt("B")[1])
 
 
 class TestSections(unittest.TestCase):

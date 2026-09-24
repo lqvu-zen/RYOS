@@ -13,7 +13,7 @@ from ..themes import (  # noqa: F401 - re-exported for existing callers
     BUILTIN_THEMES, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, SEEDS, THEME_LABELS,
     THEME_MODES, THEME_ORDER, _rel_luminance, _shade, build_palette,
     contrast_ratio, disabled_pair, disambiguate_custom_labels,
-    readable_highlight,
+    mode_of, palette_for, readable_highlight, resolve_palette, theme_choices,
 )
 
 # Named theme palettes, sourced from the engine. Kept here so existing
@@ -46,48 +46,24 @@ def available_themes() -> list[tuple[str, str]]:
     custom themes. A custom whose name collides with a built-in (or another
     custom) gets a ' (custom)' suffix on its label so the list has no duplicates;
     its id (settings value / filename) is unchanged."""
-    items = [(slug, THEME_LABELS[slug]) for slug in THEME_ORDER]
-    items += disambiguate_custom_labels(
-        _custom_seeds.keys(), THEME_ORDER, THEME_LABELS.values())
-    return items
+    return theme_choices(_custom_seeds)
 
 
 def theme_mode(theme_name: str) -> str:
     """'light' or 'dark' base for a theme id (built-in or custom)."""
-    if theme_name in THEME_MODES:
-        return THEME_MODES[theme_name]
-    seed = _custom_seeds.get(theme_name)
-    return seed.get("mode", "light") if seed else "light"
+    return mode_of(theme_name, _custom_seeds)
 
 
 def _resolve_palette(theme_name: str) -> dict:
     """Full palette for a theme id: a built-in if known, then a custom theme,
     then a built-in seed, otherwise light as a safe fallback."""
-    if theme_name in THEMES:
-        return THEMES[theme_name]
-    if theme_name in _custom_seeds:
-        return build_palette(_custom_seeds[theme_name])
-    seed = SEEDS.get(theme_name)
-    if seed is not None:
-        return build_palette(seed)
-    return THEMES["light"]
+    return resolve_palette(theme_name, _custom_seeds)
 
 
 def apply_theme(theme_name: str, accent: str | None = None) -> None:
     """Switch the live palette to the named theme, optionally overlaying a custom accent."""
     C.clear()
-    C.update(_resolve_palette(theme_name))
-    if accent:
-        # Replace the accent family with the user-chosen color so every widget
-        # that reads C["accent"] automatically picks up the new brand hue.
-        C["accent"]           = accent
-        C["accent2"]          = _shade(accent, -0.15)
-        C["btn_mod_bg"]       = accent
-        C["btn_create_bg"]    = accent
-        C["btn_mod_hover"]    = C["accent2"]
-        C["btn_create_hover"] = C["accent2"]
-        wash_factor = 0.86 if theme_mode(theme_name) == "light" else -0.55
-        C["accent_wash"]      = _shade(accent, wash_factor)
+    C.update(palette_for(theme_name, accent, _custom_seeds))
     _configure_ttk_styles()
 
 

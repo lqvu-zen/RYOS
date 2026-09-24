@@ -809,3 +809,59 @@ def readable_highlight(key: str | None, *surfaces: str) -> str | None:
     if seed is None or not surfaces:
         return None
     return _readable_on(seed, tuple(surfaces))
+
+
+# --- theme name + accent -> palette, for any toolkit ---------------------------
+# The Tk layer used to do this against a module-global custom-theme table and
+# its live `C` dict. These take the custom themes as an argument, so the Qt
+# shell resolves exactly the same palette from the same settings.
+
+def theme_choices(customs) -> list[tuple[str, str]]:
+    """(id, label) for every selectable theme: built-ins in order, then custom
+    themes, labelled so none collides with another."""
+    items = [(slug, THEME_LABELS[slug]) for slug in THEME_ORDER]
+    items += disambiguate_custom_labels(
+        (customs or {}).keys(), THEME_ORDER, THEME_LABELS.values())
+    return items
+
+
+def mode_of(theme_name: str, customs) -> str:
+    """'light' or 'dark' base for a theme id (built-in or custom)."""
+    if theme_name in THEME_MODES:
+        return THEME_MODES[theme_name]
+    seed = (customs or {}).get(theme_name)
+    return seed.get("mode", "light") if seed else "light"
+
+
+def resolve_palette(theme_name: str, customs) -> dict:
+    """Full palette for a theme id: built-in, then custom, then a built-in
+    seed, else light -- a stored name that no longer exists never fails."""
+    if theme_name in BUILTIN_THEMES:
+        return dict(BUILTIN_THEMES[theme_name])
+    customs = customs or {}
+    if theme_name in customs:
+        return build_palette(customs[theme_name])
+    seed = SEEDS.get(theme_name)
+    if seed is not None:
+        return build_palette(seed)
+    return dict(BUILTIN_THEMES["light"])
+
+
+def palette_for(theme_name: str, accent: str | None, customs) -> dict:
+    """The palette a theme and an optional accent override produce.
+
+    The accent replaces the whole accent family, so everything painted in the
+    accent follows it; the wash is lightened on a light base and darkened on a
+    dark one.
+    """
+    p = resolve_palette(theme_name, customs)
+    if accent:
+        p["accent"] = accent
+        p["accent2"] = _shade(accent, -0.15)
+        p["btn_mod_bg"] = accent
+        p["btn_create_bg"] = accent
+        p["btn_mod_hover"] = p["accent2"]
+        p["btn_create_hover"] = p["accent2"]
+        wash = 0.86 if mode_of(theme_name, customs) == "light" else -0.55
+        p["accent_wash"] = _shade(accent, wash)
+    return p

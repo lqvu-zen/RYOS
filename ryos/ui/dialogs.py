@@ -12,7 +12,7 @@ from ..history import format_run_row, header_row, summarize
 from ..scheduling import (CATCH_UP_ONCE, DAILY,
                           INTERVAL, WEEKLY, next_occurrence,
                           normalize_spec)
-from .. import scheduleform, scriptform, settings_schema
+from .. import scheduleform, scriptform, settings_schema, themeform
 from ..settings import (
     _CORNER_CHOICES,
     _CORNER_LABEL_TO_VAL,
@@ -20,11 +20,11 @@ from ..settings import (
 )
 from ..startup import _set_startup, _startup_enabled
 from ..themes import (
-    SEEDS, THEME_LABELS, delete_user_theme, export_theme, import_theme,
-    load_user_themes, resolve_user_themes_dir, save_user_theme,
+    export_theme, import_theme,
+    load_user_themes, resolve_user_themes_dir,
 )
 from .theme import (
-    C, THEMES, _apply_snap_corner, _flat_button, set_button_enabled,
+    C, _apply_snap_corner, _flat_button, set_button_enabled,
     available_themes, custom_themes, set_custom_themes,
 )
 from .placement import center_over_parent, offset_from_parent
@@ -852,13 +852,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
         }
 
     def _current_accent_hex(self) -> str:
-        if self._accent:
-            return self._accent
-        tid = self._theme.get()
-        customs = custom_themes()
-        if tid in customs:
-            return customs[tid]["accent"]
-        return THEMES.get(tid, THEMES["light"])["accent"]
+        return themeform.accent_shown(self._theme.get(), self._accent, custom_themes())
 
     def _refresh_swatch(self) -> None:
         self._swatch.configure(bg=self._current_accent_hex())
@@ -899,20 +893,11 @@ class AdvancedOptionsDialog(tk.Toplevel):
 
     def _current_seed(self) -> dict:
         """The seed to pre-fill the editor with (the selected theme's seed)."""
-        tid = self._theme.get()
-        customs = custom_themes()
-        if tid in customs:
-            return dict(customs[tid])
-        if tid in SEEDS:
-            return dict(SEEDS[tid])
-        return dict(SEEDS["light"])
+        return themeform.current_seed(self._theme.get(), custom_themes())
 
     def _taken_names(self, exclude: str | None = None) -> set:
         """Names a new/edited theme may not use: built-in labels + other customs."""
-        names = set(THEME_LABELS.values()) | set(custom_themes())
-        if exclude:
-            names.discard(exclude)
-        return names
+        return themeform.taken_names(custom_themes(), exclude)
 
     def _create_theme(self) -> None:
         ThemeEditorDialog(self, seed=self._current_seed(), name="",
@@ -933,11 +918,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
         return resolve_user_themes_dir(self._settings.get("themes_dir"))
 
     def _save_custom_theme(self, name: str, seed: dict, replacing: str | None = None) -> None:
-        d = self._themes_dir()
-        if replacing and replacing != name:
-            delete_user_theme(d, replacing)
-        save_user_theme(d, name, seed)
-        set_custom_themes(load_user_themes(d))
+        set_custom_themes(themeform.save_theme(self._themes_dir(), name, seed,
+                                               replacing))
         if self._theme.get() == name:
             self._live_appearance(retheme=True)  # same id: force re-apply + rebuild
         else:
@@ -948,12 +930,9 @@ class AdvancedOptionsDialog(tk.Toplevel):
         customs = custom_themes()
         if tid not in customs:
             return
-        if not messagebox.askyesno("Delete theme",
-                                   f"Delete the “{tid}” theme?", parent=self):
+        if not messagebox.askyesno(*themeform.delete_prompt(tid), parent=self):
             return
-        d = self._themes_dir()
-        delete_user_theme(d, tid)
-        set_custom_themes(load_user_themes(d))
+        set_custom_themes(themeform.delete_theme(self._themes_dir(), tid))
         self._theme.set("light")  # switch off the now-deleted theme
 
     def _browse_themes_dir(self) -> None:
@@ -989,14 +968,7 @@ class AdvancedOptionsDialog(tk.Toplevel):
                                  f"Could not write file:\n{exc}", parent=self)
 
     def _unique_theme_name(self, base: str) -> str:
-        base = base.strip() or "Imported theme"
-        taken = {n.lower() for n in self._taken_names()}
-        if base.lower() not in taken:
-            return base
-        i = 2
-        while f"{base} ({i})".lower() in taken:
-            i += 1
-        return f"{base} ({i})"
+        return themeform.unique_theme_name(base, self._taken_names())
 
     def _import_theme(self) -> None:
         path = filedialog.askopenfilename(

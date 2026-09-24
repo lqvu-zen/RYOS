@@ -102,6 +102,7 @@ class MainWindow(QMainWindow):
         self.cursor_area: Callable[[], object] = placement.cursor_work_area
         self.area_at: Callable[[int, int], object] = placement.work_area_at
         self._last_normal_geometry: str | None = None
+        self._customs: dict | None = None     # custom themes, read on first use
         # Both inert unless the real entry point passes the real ones, so a
         # test that closes a window can never write the user's settings or
         # end the application.
@@ -231,6 +232,9 @@ class MainWindow(QMainWindow):
         self.options_action = QAction("⚙  Advanced options…", self)
         self.options_action.triggered.connect(self.open_options)
         options.addAction(self.options_action)
+        self.appearance_action = QAction("🎨  Appearance…", self)
+        self.appearance_action.triggered.connect(self.open_appearance)
+        options.addAction(self.appearance_action)
         options.addSeparator()
         self.update_action = QAction("🔔  Check for updates", self)
         self.update_action.triggered.connect(
@@ -547,6 +551,22 @@ class MainWindow(QMainWindow):
             w, h, x, y = parsed
             self.resize(w, h)
             self.move(x, y)
+            QTimer.singleShot(0, lambda: self._check_size(w, h))
+
+    def _check_size(self, w: int, h: int) -> None:
+        """Log when the window did not get the size it asked for.
+
+        Seen intermittently on Windows (2026-09-24): asked for 540x640, got
+        542x648, frame grown by 1/8/1/0 px. Saved and reapplied, that would
+        grow the window on every start, so a real occurrence must leave a
+        trace. See docs/plans/qt-migration.md.
+        """
+        if self.isVisible() and (self.width(), self.height()) != (w, h):
+            from ..logger import get_logger
+            get_logger("qtui.shell").warning(
+                "Window asked for %dx%d, got %dx%d (frame margins %s)", w, h,
+                self.width(), self.height(),
+                self.windowHandle().frameMargins() if self.windowHandle() else None)
 
     def apply_placement(self, launched_at_startup: bool = False) -> None:
         """Open where the Tk app would: saved, moved to the cursor's monitor,
@@ -609,6 +629,42 @@ class MainWindow(QMainWindow):
         self.snap_to_corner()
         # Compact mode and card size are read when cards are built.
         self._defer_reload()
+
+    # -- appearance ------------------------------------------------------------------
+    def themes_dir(self):
+        from ..themes import resolve_user_themes_dir
+        return resolve_user_themes_dir(self._settings.get("themes_dir"))
+
+    def custom_themes(self) -> dict:
+        """The custom-theme table, read from the themes folder on first use."""
+        if self._customs is None:
+            from ..themes import load_user_themes
+            self._customs = load_user_themes(self.themes_dir())
+        return dict(self._customs)
+
+    def open_appearance(self) -> None:
+        from .appearance import AppearanceDialog
+        self.run_dialog(AppearanceDialog(
+            self, settings=self._settings, customs=self.custom_themes(),
+            themes_dir=self.themes_dir(),
+            on_preview=lambda s: self.apply_appearance(s, persist=False),
+            on_save=lambda s: self.apply_appearance(s, persist=True),
+            on_customs=self._set_customs))
+
+    def _set_customs(self, table: dict) -> None:
+        self._customs = dict(table)
+
+    def apply_appearance(self, subset: dict, persist: bool = True) -> None:
+        """Theme and accent, applied live: one stylesheet, then the cards,
+        whose highlight colours are shaded against the palette."""
+        from ..themes import palette_for
+        self._settings.update(subset)
+        self.apply_palette(palette_for(self._settings.get("theme", "light"),
+                                       self._settings.get("accent_color"),
+                                       self.custom_themes()))
+        self._defer_reload()
+        if persist:
+            self._save_settings(self._settings)
 
     # -- notifications and updates ------------------------------------------------
     def _on_job_notify(self, title: str, body: str) -> None:

@@ -10,7 +10,9 @@ nothing has been overridden.
 from __future__ import annotations
 
 from . import verdict
-from .themes import build_palette, is_hex_color, validate_seed
+from .themes import (BUILTIN_THEMES, SEEDS, THEME_LABELS, build_palette,
+                     delete_user_theme, is_hex_color, load_user_themes,
+                     save_user_theme, validate_seed)
 
 #: Human labels for each required seed colour, in the order the editor shows
 #: them. Shared so the two editors present the same vocabulary.
@@ -64,3 +66,68 @@ def validate(name: str, seed: dict, taken=()) -> verdict.Verdict:
         return verdict.refuse(
             "Theme editor", "Fix these first:\n• " + "\n• ".join(problems))
     return verdict.PROCEED
+
+
+# --- the Appearance tab: which theme, which accent, custom-theme files ----------
+# Shared by the Tk options dialog and the Qt appearance dialog. ``customs`` is
+# the custom-theme table (name -> seed) as `themes.load_user_themes` returns it.
+
+def is_custom(theme: str, customs) -> bool:
+    return theme in (customs or {})
+
+
+def current_seed(theme: str, customs) -> dict:
+    """The seed to start the editor from: the selected theme's own."""
+    customs = customs or {}
+    if theme in customs:
+        return dict(customs[theme])
+    return dict(SEEDS.get(theme, SEEDS["light"]))
+
+
+def accent_shown(theme: str, accent: str | None, customs) -> str:
+    """The accent swatch: the override if set, else the theme's own accent."""
+    if accent:
+        return accent
+    customs = customs or {}
+    if theme in customs:
+        return customs[theme]["accent"]
+    return BUILTIN_THEMES.get(theme, BUILTIN_THEMES["light"])["accent"]
+
+
+def taken_names(customs, exclude: str | None = None) -> set:
+    """Names a new or renamed theme may not use: built-in labels and other customs."""
+    names = set(THEME_LABELS.values()) | set(customs or {})
+    if exclude:
+        names.discard(exclude)
+    return names
+
+
+def unique_theme_name(base: str, taken) -> str:
+    """``base``, or ``base (2)`` upward, avoiding ``taken`` case-insensitively."""
+    base = (base or "").strip() or "Imported theme"
+    lowered = {str(n).lower() for n in taken}
+    if base.lower() not in lowered:
+        return base
+    i = 2
+    while f"{base} ({i})".lower() in lowered:
+        i += 1
+    return f"{base} ({i})"
+
+
+def save_theme(directory, name: str, seed: dict,
+               replacing: str | None = None) -> dict:
+    """Write a custom theme (renaming ``replacing`` away); returns the reloaded table."""
+    if replacing and replacing != name:
+        delete_user_theme(directory, replacing)
+    save_user_theme(directory, name, seed)
+    return load_user_themes(directory)
+
+
+def delete_theme(directory, name: str) -> dict:
+    """Remove a custom theme; returns the reloaded table."""
+    delete_user_theme(directory, name)
+    return load_user_themes(directory)
+
+
+def delete_prompt(name: str) -> tuple[str, str]:
+    return "Delete theme", f"Delete the “{name}” theme?"

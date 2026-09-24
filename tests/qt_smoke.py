@@ -2459,7 +2459,15 @@ def check_window_placement(app):
     # Saved on A, cursor on B: same offset, moved to B.
     win, _ = window({"window_geometry": "540x640+100+50"})
     if at(win) != (1100, 50, 540, 640):
-        PROBLEMS.append(f"saved geometry moved to the cursor monitor at {at(win)}")
+        # Seen intermittently (2026-09-24): every placement off by x-1, y-8,
+        # w+2, h+8 in one run, clean in the next, never in isolation. The
+        # detail below is so the next occurrence says why.
+        PROBLEMS.append(f"saved geometry moved to the cursor monitor at {at(win)} "
+                        f"(frame {win.frameGeometry().getRect()}, "
+                        f"client {win.geometry().getRect()}, "
+                        f"screen {win.screen().name()} @ {win.devicePixelRatioF()}, "
+                        f"margins {win.windowHandle().frameMargins()}, "
+                        f"active {win.isActiveWindow()})")
     win.deleteLater()
 
     # A login launch restores exactly where it was, whatever the cursor.
@@ -2696,6 +2704,142 @@ def check_sections_and_favorites(app):
     win.deleteLater()
 
 
+
+
+def check_theme_editor_and_appearance(app):
+    """The theme editor, and Options > Appearance applying live.
+
+    Everything is written to a throwaway themes folder, never the user's.
+    """
+    import tempfile
+
+    from ryos.qtui.appearance import AppearanceDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.theme_editor import ThemeEditorDialog
+    from ryos.themes import (ADVANCED_KEYS, SEEDS, build_palette,
+                             load_user_themes, palette_for)
+    from ryos.themes import REFERENCE
+
+    # -- the editor on its own ---------------------------------------------------------
+    saved: list = []
+    ed = ThemeEditorDialog(seed=SEEDS["dark"], taken_names={"Light", "Dark"},
+                           on_save=lambda name, seed: saved.append((name, seed)))
+    warned: list = []
+    ed.warn = lambda title, text: warned.append(text)
+    if ed.save() or "name" not in (warned[-1:] or [""])[0]:
+        PROBLEMS.append("the editor saved a theme with no name")
+    ed.name_edit.setText("dark")
+    if ed.save() or "already exists" not in warned[-1]:
+        PROBLEMS.append("the editor took a built-in theme's name (any case)")
+    ed.ask_color = lambda current, title: "#FF00AA"
+    ed.choose("accent")
+    if ed.seed["accent"] != "#ff00aa" or "#ff00aa" not in ed.swatches["accent"].styleSheet():
+        PROBLEMS.append("choosing the accent did not take")
+    want = build_palette(ed.seed)["btn_mod_bg"]
+    if want not in ed.p_mod.styleSheet():
+        PROBLEMS.append("the preview did not follow the new accent")
+    adv = ADVANCED_KEYS[0][0]
+    ed.ask_color = lambda current, title: "#123456"
+    ed.choose(adv, advanced=True)
+    if ed.seed.get(adv) != "#123456" or not ed.adv_resets[adv].isEnabled():
+        PROBLEMS.append("an advanced override was not set")
+    ed.reset(adv)
+    if adv in ed.seed or ed.adv_resets[adv].isEnabled():
+        PROBLEMS.append("↺ did not reset an advanced colour to auto")
+    light = next(b for b in ed.mode_buttons.buttons() if b.property("mode") == "light")
+    light.click()
+    if ed.seed["mode"] != "light":
+        PROBLEMS.append("the Base radio did not change the mode")
+    ed.ask_color = lambda current, title: ed.seed["bg"]
+    ed.choose("text")                       # text the same as the background
+    if not ed.warnings.text():
+        PROBLEMS.append("unreadable text raised no contrast warning")
+    ed.ask_color = lambda current, title: "#111111"
+    ed.choose("text")
+    ed.name_edit.setText("  Mine  ")
+    if not ed.save() or saved[-1][0] != "Mine":
+        PROBLEMS.append(f"a valid theme did not save: {warned[-1:]}")
+
+    # -- Appearance through the shell --------------------------------------------------
+    tmp = Path(tempfile.mkdtemp())
+    stored: list = []
+    win = MainWindow(REFERENCE["light"],
+                     settings={"quick_run_enabled": False, "theme": "light",
+                               "themes_dir": str(tmp)},
+                     save_settings=lambda s: stored.append(dict(s)))
+    dialogs: list = []
+    win.run_dialog = dialogs.append
+    win.appearance_action.trigger()
+    dlg = dialogs[-1] if dialogs and isinstance(dialogs[-1], AppearanceDialog) else None
+    if dlg is None:
+        PROBLEMS.append("Options > Appearance did not open the dialog")
+        return
+    original_bg = win._palette["bg"]
+
+    dlg.theme_combo.setCurrentIndex(1)            # Dark
+    if dlg.theme != "dark" or win._palette["bg"] != palette_for("dark", None, {})["bg"]:
+        PROBLEMS.append("picking Dark did not preview it live")
+    if stored:
+        PROBLEMS.append("a live preview saved settings")
+    dlg.ask_color = lambda current: "#22AA55"
+    dlg.pick_accent()
+    if win._palette["accent"] != "#22aa55":
+        PROBLEMS.append("the accent did not preview live")
+
+    def fill(editor):
+        editor.name_edit.setText("Mine")
+        editor.save()
+    dlg.run_editor = fill
+    dlg.create_theme()
+    if "Mine" not in load_user_themes(tmp) or dlg.theme != "Mine":
+        PROBLEMS.append("Create did not write and select the theme")
+    if not (dlg.edit_button.isEnabled() and dlg.delete_button.isEnabled()):
+        PROBLEMS.append("Edit/Delete stayed off for a custom theme")
+    if win._palette["bg"] != palette_for("Mine", "#22aa55", win.custom_themes())["bg"]:
+        PROBLEMS.append("the new custom theme was not applied")
+
+    def rename(editor):
+        editor.name_edit.setText("Renamed")
+        editor.save()
+    dlg.run_editor = rename
+    dlg.edit_theme()
+    if set(load_user_themes(tmp)) != {"Renamed"}:
+        PROBLEMS.append(f"renaming left {set(load_user_themes(tmp))}")
+
+    out = tmp / "shared.json"
+    dlg.ask_save_path = lambda initial: str(out)
+    dlg.export_theme()
+    dlg.ask_open_path = lambda: str(out)
+    dlg.import_theme()
+    if set(load_user_themes(tmp)) != {"Renamed", "Renamed (2)"}:
+        PROBLEMS.append(f"import did not add a second copy: {set(load_user_themes(tmp))}")
+
+    dlg.ask_yes_no = lambda title, text: True
+    dlg.delete_theme()
+    if "Renamed (2)" in load_user_themes(tmp) or dlg.theme != "light":
+        PROBLEMS.append("Delete did not remove the theme and fall back to Light")
+
+    # Cancel puts back the look the dialog opened with, and saves nothing.
+    dlg.select_theme("dark")
+    dlg.reject()
+    if win._palette["bg"] != original_bg or win._settings["theme"] != "light" \
+            or win._settings.get("accent_color") or stored:
+        PROBLEMS.append("Cancel did not restore the original appearance")
+
+    # Save keeps it, and stores it.
+    win.appearance_action.trigger()
+    dlg = dialogs[-1]
+    dlg.select_theme("dark")
+    dlg.save()
+    if win._settings["theme"] != "dark" or not stored or stored[-1]["theme"] != "dark":
+        PROBLEMS.append("Save did not keep and store the theme")
+
+    print("  [ok] theme editor and appearance: name rules, colours, advanced "
+          "override/reset, mode, contrast warning, live preview, create/rename/"
+          "export/import/delete, Cancel restores, Save stores")
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -2724,6 +2868,7 @@ def main() -> int:
     check_updates_and_notify(app)
     check_window_placement(app)
     check_sections_and_favorites(app)
+    check_theme_editor_and_appearance(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:
