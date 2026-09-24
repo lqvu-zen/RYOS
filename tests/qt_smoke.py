@@ -379,34 +379,180 @@ def check_options_form(app):
 
 
 def check_script_dialog(app):
-    """The Qt script dialog must reach the same verdicts as the Tk one."""
+    """Add a script from the shell, edit it back, delete it -- on a real database.
+
+    Starts with no groups, so Add Script has to ask for one first, as Tk does.
+    Every field is read back from the database, and reopening checks the load
+    path. The verdicts are `scriptform.validate`, shared with Tk.
+    """
+    import json
+    import sys as _sys
+    import tempfile
+
     from ryos import scriptform
-    from ryos.qtui.dialogs import ScriptDialog
+    from ryos.db import ScriptDB
+    from ryos.qtui.scriptdialog import ScriptDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
 
-    cases = [
-        ({"name": "", "path": "/x/a.py"}, scriptform.REFUSE, "no name"),
-        ({"name": "x", "path": ""}, scriptform.REFUSE, "no path"),
-        ({"name": "x", "path": "/x/a.py"}, scriptform.OK, "valid"),
-        ({"name": "x", "path": "", "interpreter": "python"},
-         scriptform.OK, "interpreter only"),
-    ]
-    for kwargs, want, label in cases:
-        dlg = ScriptDialog(path_exists=lambda p: True, **kwargs)
-        got = dlg.check().kind
-        if got != want:
-            PROBLEMS.append(
-                f"script dialog ({label}): verdict {got!r}, expected {want!r}")
-        dlg.deleteLater()
+    tmp = Path(tempfile.mkdtemp())
+    base = tmp / "base"
+    (base / "sub").mkdir(parents=True)
+    tool = base / "sub" / "tool.py"
+    tool.write_text("print(1)\n", encoding="utf-8")
+    outside = tmp / "outside.py"
+    outside.write_text("print(2)\n", encoding="utf-8")
+    db = ScriptDB(tmp / "scripts.db")
 
-    # A missing file asks rather than refusing.
-    dlg = ScriptDialog(name="x", path="/x/ghost.py",
-                       path_exists=lambda p: False)
-    if not dlg.check().needs_confirmation:
-        PROBLEMS.append("a missing file did not raise a confirmation")
-    dlg.deleteLater()
-    print("  [ok] script dialog: same verdicts as the Tk form")
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    opened: list = []
+    win.run_dialog = opened.append
+    win.ask_text = lambda title, prompt, initial: "First"
 
+    def settle():
+        for _ in range(3):
+            app.processEvents()
 
+    # -- no groups yet: Add Script asks for one, then opens in it --------------------
+    win.add_script_button.click()
+    settle()
+    if db.list_groups() != ["First"] or len(opened) != 1:
+        PROBLEMS.append(f"Add Script with no groups: groups {db.list_groups()}, "
+                        f"{len(opened)} dialog(s)")
+    elif opened[0].e_group.currentText() != "First":
+        PROBLEMS.append("the new script did not default to the group on screen")
+    db.create_group("Based", base_dir=str(base))
+
+    # -- fill in every field ------------------------------------------------------------
+    dlg = ScriptDialog(db=db, default_group="Based")
+    warned: list = []
+    dlg.warn = lambda title, text: warned.append(title)
+    dlg.ask_yes_no = lambda title, text: True
+    if not dlg.rel_row.isVisibleTo(dlg) or dlg.abs_row.isVisibleTo(dlg):
+        PROBLEMS.append("a group with a base folder did not show the relative box")
+    dlg.ask_file = lambda start: str(outside)
+    dlg.browse()
+    if warned != ["Path outside group directory"] or dlg.e_relpath.text():
+        PROBLEMS.append("browsing outside the base folder was not refused")
+    dlg.ask_file = lambda start: str(tool)
+    dlg.browse()
+    if dlg.e_relpath.text() != str(Path("sub") / "tool.py") or dlg.e_name.text() != "tool":
+        PROBLEMS.append(f"browse under the base gave {dlg.e_relpath.text()!r}, "
+                        f"name {dlg.e_name.text()!r}")
+    dlg.e_params.setText("--fast")
+    dlg.add_preset()
+    dlg.add_preset()                                       # the same one again
+    dlg.e_params.setText("--slow")
+    dlg.add_preset()
+    if dlg.preset_params() != ["--fast", "--slow"]:
+        PROBLEMS.append(f"presets {dlg.preset_params()}")
+    dlg.presets.setCurrentRow(0)
+    dlg.use_preset()
+    if dlg.e_params.text() != "--fast":
+        PROBLEMS.append("Use did not copy the preset into Parameters")
+    dlg.e_interp.setCurrentText(_sys.executable)
+    dlg.temp_param.setChecked(True)
+    dlg.launcher.setChecked(True)
+    dlg.ask_dir = lambda start: str(tmp)
+    dlg.browse_workdir()
+    dlg.t_env.setPlainText("A=1\n# a comment\nB=x=y\n")
+    if not dlg.save():
+        PROBLEMS.append(f"a complete form did not save: {warned}")
+    sid = dlg.script_id
+    rec = db.get(sid)
+    if rec is None:
+        PROBLEMS.append("nothing was stored")
+        return
+    if (rec[1], rec[2], rec[3], rec[5], rec[6]) != (
+            "tool", str(tool), "--fast", "Based", 1):
+        PROBLEMS.append(f"stored {rec[:7]}")
+    if json.loads(rec[7]) != {"A": "1", "B": "x=y"} or rec[8] != str(tmp):
+        PROBLEMS.append(f"env/work dir stored as {rec[7]!r}, {rec[8]!r}")
+    if not db.is_detached(sid):
+        PROBLEMS.append("the launcher box was not stored")
+    if [p[2] for p in db.list_param_presets(sid)] != ["--fast", "--slow"]:
+        PROBLEMS.append("presets were not stored")
+
+    # -- the card's gear reopens it with everything loaded ----------------------------
+    win.reload()
+    settle()
+    opened.clear()
+    card = next(c for c in win.card_lists["Based"].cards
+                if c.drag_payload.item_id == sid)
+    card.edit_button.click()
+    if len(opened) != 1 or opened[0].script_id != sid:
+        PROBLEMS.append("the script card's gear did not open its dialog")
+        return
+    dlg = opened[0]
+    if dlg.form() != scriptform.load_form(db, sid):
+        PROBLEMS.append(f"reopening lost something: {dlg.form()} vs "
+                        f"{scriptform.load_form(db, sid)}")
+    if dlg.e_relpath.text() != str(Path("sub") / "tool.py") or dlg.delete_button is None:
+        PROBLEMS.append("editing showed the wrong path, or no Delete")
+
+    # Moving to a group without a folder shows the full path, not the relative one.
+    dlg.e_group.setCurrentText("First")
+    if dlg.e_path.text() != str(tool) or not dlg.abs_row.isVisibleTo(dlg):
+        PROBLEMS.append(f"switching group showed {dlg.e_path.text()!r}")
+    dlg.e_group.setCurrentText("Based")
+
+    # Presets change nothing until Save -- unlike Tk, Cancel means cancel.
+    dlg.e_params.setText("--extra")
+    dlg.add_preset()
+    dlg.reject()
+    if [p[2] for p in db.list_param_presets(sid)] != ["--fast", "--slow"] \
+            or db.get(sid)[3] != "--fast":
+        PROBLEMS.append("Cancel still wrote the new preset or parameters")
+
+    # Clearing the environment really clears it (save_form passes "", which
+    # means "clear"; None would mean "leave it alone" and keep A and B).
+    dlg = ScriptDialog(db=db, script_id=sid)
+    dlg.t_env.setPlainText("")
+    dlg.save()
+    if db.get(sid)[7] or scriptform.load_form(db, sid).env_text:
+        PROBLEMS.append(f"clearing the environment left {db.get(sid)[7]!r}")
+
+    # -- verdicts: refuse, and ask about a missing file ---------------------------------
+    dlg = ScriptDialog(db=db, default_group="First", path_exists=lambda p: False)
+    warned.clear()
+    dlg.warn = lambda title, text: warned.append(title)
+    asked: list = []
+    dlg.ask_yes_no = lambda title, text: asked.append(title) or False
+    if dlg.save() or warned != ["Missing Info"]:
+        PROBLEMS.append("an empty form was not refused")
+    dlg.e_name.setText("ghost")
+    dlg.e_path.setText(str(tmp / "ghost.py"))
+    before = len(db.list_all())
+    if dlg.save() or asked != ["Warning"] or len(db.list_all()) != before:
+        PROBLEMS.append("declining 'file not found' still saved")
+
+    # -- load order: a based group listed first must not swallow the path ----------
+    # The group box selects its first entry before the form loads. That is safe
+    # only while the box is filled before its change signal is connected; if
+    # that order flips, a based first group would put the dialog in relative
+    # mode and the stored absolute path would be lost.
+    plain = db.add("plain", str(outside), "", _sys.executable, "First")
+    db.reorder_groups(["Based", "First"])
+    dlg = ScriptDialog(db=db, script_id=plain)
+    if dlg.current_path() != str(outside) or dlg.e_path.text() != str(outside):
+        PROBLEMS.append(f"loading a script lost its path: {dlg.current_path()!r}")
+
+    # -- delete asks first ------------------------------------------------------------
+    dlg = ScriptDialog(db=db, script_id=sid)
+    dlg.ask_yes_no = lambda title, text: False
+    dlg.delete()
+    if db.get(sid) is None:
+        PROBLEMS.append("declining Delete still deleted")
+    dlg.ask_yes_no = lambda title, text: True
+    dlg.delete()
+    if db.get(sid) is not None:
+        PROBLEMS.append("confirming Delete did not delete")
+
+    print("  [ok] script dialog: first group, relative path under a base, "
+          "browse refusal, presets, launcher/work dir/env stored, gear reloads, "
+          "Cancel writes nothing, verdicts, delete")
+    win.deleteLater()
 
 
 def check_pipeline_editor(app):

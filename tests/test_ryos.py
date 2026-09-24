@@ -5793,6 +5793,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
         "ryos/qtui/dragdrop.py": "imports PySide6; same reason",
         "ryos/qtui/menus.py": "imports PySide6; same reason",
+        "ryos/qtui/scriptdialog.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7350,6 +7351,59 @@ class TestScheduleRunner(unittest.TestCase):
         pid = self.db.create_pipeline("loose", "")
         self.assertEqual(schedule_runner.pipeline_name(self.db, pid), "loose")
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
+
+
+class TestScriptFormLoadSave(unittest.TestCase):
+    """The script dialog's load and save, shared by the Tk and Qt dialogs."""
+
+    def test_blank_form_takes_the_default_group(self):
+        self.assertEqual(scriptform.load_form(_make_db(), None, "G"),
+                         scriptform.ScriptForm(group="G"))
+        self.assertEqual(scriptform.load_form(_make_db(), 999, "G").group, "G")
+
+    def test_round_trip_keeps_every_field(self):
+        db = _make_db()
+        form = scriptform.ScriptForm(
+            name="n", path="/p.py", params="--x", interpreter="python",
+            group="G", temp_param=True, detached=True, work_dir="/w",
+            env_text="A=1\nB=x=y", presets=[("--x", "--x"), ("fast", "--f")])
+        sid = scriptform.save_form(db, None, form)
+        self.assertEqual(scriptform.load_form(db, sid), form)
+        self.assertEqual(scriptform.save_form(db, sid, form), sid)
+        self.assertEqual(scriptform.load_form(db, sid), form)
+
+    def test_save_strips_and_clears(self):
+        db = _make_db()
+        sid = scriptform.save_form(db, None, scriptform.ScriptForm(
+            name=" n ", path=" /p.py ", env_text="A=1"))
+        self.assertEqual(db.get(sid)[1:3], ("n", "/p.py"))
+        scriptform.save_form(db, sid, scriptform.ScriptForm(name="n", path="/p.py"))
+        self.assertFalse(db.get(sid)[7])
+        self.assertEqual(scriptform.load_form(db, sid).env_text, "")
+
+    def test_relative_field(self):
+        base = os.path.join(os.sep, "base")
+        inside = os.path.join(base, "sub", "x.py")
+        self.assertEqual(scriptform.relative_field(inside, base),
+                         os.path.join("sub", "x.py"))
+        self.assertEqual(scriptform.relative_field(os.path.join(os.sep, "o", "y.py"),
+                                                   base), "y.py")
+        self.assertEqual(scriptform.relative_field("", base), "")
+        self.assertIsNone(scriptform.relative_under_base(base, base))
+
+    def test_browse_refusal(self):
+        base = os.path.join(os.sep, "base")
+        self.assertIsNone(scriptform.browse_refusal(os.path.join(base, "a.py"), base))
+        self.assertIsNone(scriptform.browse_refusal("/anywhere.py", ""))
+        refusal = scriptform.browse_refusal(os.path.join(os.sep, "o.py"), base)
+        self.assertEqual(refusal.kind, scriptform.REFUSE)
+
+    def test_small_rules(self):
+        self.assertEqual(scriptform.name_from_path("/a/b/tool.py"), "tool")
+        self.assertEqual(scriptform.name_from_path(""), "")
+        self.assertEqual(scriptform.with_preset([], " --x "), [("--x", "--x")])
+        self.assertIsNone(scriptform.with_preset([("--x", "--x")], "--x"))
+        self.assertIsNone(scriptform.with_preset([], "  "))
 
 
 class TestPipelineEditorRules(unittest.TestCase):

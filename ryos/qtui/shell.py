@@ -33,7 +33,8 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import cardmenu, configio, grouping, outputpanel, search, selection
+from .. import (cardmenu, configio, grouping, outputpanel, scriptform, search,
+               selection)
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
@@ -142,6 +143,10 @@ class MainWindow(QMainWindow):
         self.search_hint = QLabel("")
         self.search_hint.setObjectName("cardPath")
         row.addWidget(self.search_hint)
+        self.add_script_button = QPushButton("＋ Add Script")
+        self.add_script_button.setObjectName("primary")
+        self.add_script_button.clicked.connect(self.add_script)
+        row.addWidget(self.add_script_button)
         col.addLayout(row)
 
         col.addWidget(self._build_select_bar())
@@ -246,6 +251,8 @@ class MainWindow(QMainWindow):
             if kind == cardmenu.PIPELINE:
                 card.edit_requested.connect(
                     lambda item_id, n=rec["name"]: self._edit_pipeline(item_id, n))
+            else:
+                card.edit_requested.connect(self.edit_script)
             made.append(card)
 
         scroll = QScrollArea()
@@ -481,6 +488,33 @@ class MainWindow(QMainWindow):
                                       action.group)
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
+
+    # -- scripts: add and edit ----------------------------------------------------
+    def add_script(self) -> None:
+        """Open the script dialog for a new script in the group on screen.
+
+        With no groups at all, asks for one first, as the Tk app does.
+        """
+        if self._db is None:
+            return
+        if not self._db.list_groups():
+            name = self.ask_text(*scriptform.FIRST_GROUP_PROMPT, "")
+            if not (name and name.strip()):
+                return
+            self._db.create_group(name.strip())
+            self.reload()
+            self.show_group(name.strip())
+        self._open_script_dialog(None, self.current_group() or "")
+
+    def edit_script(self, script_id: int) -> None:
+        if self._db is not None:
+            self._open_script_dialog(script_id, "")
+
+    def _open_script_dialog(self, script_id, group: str) -> None:
+        from .scriptdialog import ScriptDialog
+        dlg = ScriptDialog(self, db=self._db, script_id=script_id,
+                           default_group=group, on_save=self._defer_reload)
+        self.run_dialog(dlg)
 
     # -- groups: create, reorder, import, export, delete all ---------------------
     def new_group(self) -> None:

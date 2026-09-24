@@ -13,14 +13,12 @@ from ..scheduling import (CATCH_UP_ONCE, DAILY,
                           INTERVAL, WEEKLY, next_occurrence,
                           normalize_spec)
 from .. import scheduleform, scriptform, settings_schema
-from ..interpreter import format_env_text, parse_env_text
 from ..settings import (
     _CORNER_CHOICES,
     _CORNER_LABEL_TO_VAL,
     _CORNER_VAL_TO_LABEL,
 )
 from ..startup import _set_startup, _startup_enabled
-from ..quickrun import _is_inside
 from ..themes import (
     SEEDS, THEME_LABELS, delete_user_theme, export_theme, import_theme,
     load_user_themes, resolve_user_themes_dir, save_user_theme,
@@ -41,15 +39,8 @@ def _try_unlink(path) -> bool:
         return False
 
 
-def _relative_under_base(path: str, base: str) -> str | None:
-    """Return the relative path string if path is inside base, else None."""
-    if not path or not base:
-        return None
-    norm_path = os.path.normcase(os.path.normpath(path))
-    norm_base = os.path.normcase(os.path.normpath(base))
-    if norm_path == norm_base or not norm_path.startswith(norm_base + os.sep):
-        return None
-    return os.path.normpath(path)[len(os.path.normpath(base)):].lstrip(os.sep)
+# Moved to scriptform for the Qt dialog; the old name stays for callers.
+_relative_under_base = scriptform.relative_under_base
 
 
 class _PresetEntryDialog(tk.Toplevel):
@@ -165,27 +156,20 @@ class ScriptDialog(tk.Toplevel):
 
         self._build()
 
-        if script_id:
-            rec = db.get(script_id)
-            if rec:
-                (_, name, path, params, interp, grp, temp_param,
-                 env_vars, work_dir) = rec[:9]
-                self.e_name.insert(0, name)
-                self.e_path.insert(0, path)
-                self.e_params.insert(0, params)
-                self.e_interp.set(interp)
-                self.e_group.set(grp or "")
-                self.temp_param_var.set(bool(temp_param))
-                self.launcher_var.set(bool(db.is_detached(script_id)))
-                self.e_workdir.insert(0, work_dir or "")
-                self.t_env.insert("1.0", format_env_text(env_vars))
-            for _, label, pparams in db.list_param_presets(script_id):
-                self._presets.append([label, pparams])
-                self._preset_listbox.insert(tk.END, label)
-            self._refresh_path_inputs()
-        else:
-            self.e_group.set(self.default_group)
-            self._refresh_path_inputs()
+        form = scriptform.load_form(db, script_id, self.default_group)
+        self.e_name.insert(0, form.name)
+        self.e_path.insert(0, form.path)
+        self.e_params.insert(0, form.params)
+        self.e_interp.set(form.interpreter)
+        self.e_group.set(form.group)
+        self.temp_param_var.set(form.temp_param)
+        self.launcher_var.set(form.detached)
+        self.e_workdir.insert(0, form.work_dir)
+        self.t_env.insert("1.0", form.env_text)
+        for label, pparams in form.presets:
+            self._presets.append([label, pparams])
+            self._preset_listbox.insert(tk.END, label)
+        self._refresh_path_inputs()
 
         self.transient(parent)
         center_over_parent(self, parent)
@@ -260,11 +244,10 @@ class ScriptDialog(tk.Toplevel):
         self._preset_listbox.bind("<Button-3>", self._preset_context_menu)
 
         ttk.Label(frame, text="Interpreter:").grid(row=4, column=0, sticky="w", **pad)
-        self.e_interp = ttk.Combobox(frame, width=38, values=[
-            "cmd /c", "powershell -File", "pwsh -File", "python", "node", "bash",
-        ])
+        self.e_interp = ttk.Combobox(frame, width=38,
+                                     values=list(scriptform.INTERPRETER_CHOICES))
         self.e_interp.grid(row=4, column=1, columnspan=2, sticky="ew", **pad)
-        ttk.Label(frame, text="Leave blank for auto-detection, or pick a preset", foreground="#888").grid(
+        ttk.Label(frame, text=scriptform.INTERPRETER_HINT, foreground="#888").grid(
             row=5, column=1, columnspan=2, sticky="w", padx=8
         )
 
@@ -277,13 +260,13 @@ class ScriptDialog(tk.Toplevel):
         self.temp_param_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             frame, variable=self.temp_param_var,
-            text="Ask for a temporary parameter on each run (not saved)",
+            text=scriptform.TEMP_PARAM_LABEL,
         ).grid(row=7, column=1, columnspan=2, sticky="w", **pad)
 
         self.launcher_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             frame, variable=self.launcher_var,
-            text="Launcher — opens an app/project; don't keep in Running",
+            text=scriptform.LAUNCHER_LABEL,
         ).grid(row=8, column=1, columnspan=2, sticky="w", **pad)
 
         ttk.Label(frame, text="Working dir:").grid(row=9, column=0, sticky="w", **pad)
@@ -310,7 +293,7 @@ class ScriptDialog(tk.Toplevel):
         self.t_env.configure(yscrollcommand=_env_scroll.set)
         self.t_env.grid(row=0, column=0, sticky="nsew")
         _env_scroll.grid(row=0, column=1, sticky="ns")
-        ttk.Label(frame, text="One KEY=value per line; blank to inherit only the system environment",
+        ttk.Label(frame, text=scriptform.ENV_HINT,
                   foreground="#888").grid(row=11, column=1, columnspan=2, sticky="w", padx=8)
 
         sep = ttk.Separator(frame, orient="horizontal")
@@ -340,9 +323,8 @@ class ScriptDialog(tk.Toplevel):
             else:
                 candidate = self.e_path.get().strip()
 
-            rel = _relative_under_base(candidate, base_dir)
             self.e_relpath.delete(0, tk.END)
-            self.e_relpath.insert(0, rel if rel is not None else (os.path.basename(candidate) if candidate else ""))
+            self.e_relpath.insert(0, scriptform.relative_field(candidate, base_dir))
             self.e_path.delete(0, tk.END)
 
             self._lbl_basedir_val.configure(text=base_dir)
@@ -378,7 +360,7 @@ class ScriptDialog(tk.Toplevel):
 
     def _preset_add_from_params(self):
         params = self.e_params.get().strip()
-        if params and not any(p[1] == params for p in self._presets):
+        if scriptform.with_preset(self._presets, params) is not None:
             self._presets.append([params, params])
             self._preset_listbox.insert(tk.END, params)
             self._autosave_presets(new_params=params)
@@ -466,23 +448,17 @@ class ScriptDialog(tk.Toplevel):
             return
 
         if base_dir and self.e_relpath.winfo_ismapped():
-            if not _is_inside(path, base_dir):
-                messagebox.showerror(
-                    "Path outside group directory",
-                    f"The selected file\n{path}\nis outside the base directory:\n{base_dir}",
-                    parent=self,
-                )
+            refusal = scriptform.browse_refusal(path, base_dir)
+            if refusal is not None:
+                messagebox.showerror(refusal.title, refusal.message, parent=self)
                 return
-            rel = _relative_under_base(path, base_dir)
             self.e_relpath.delete(0, tk.END)
-            self.e_relpath.insert(0, rel or "")
-            if not self.e_name.get().strip():
-                self.e_name.insert(0, Path(path).stem)
+            self.e_relpath.insert(0, scriptform.relative_under_base(path, base_dir) or "")
         else:
             self.e_path.delete(0, tk.END)
             self.e_path.insert(0, path)
-            if not self.e_name.get().strip():
-                self.e_name.insert(0, Path(path).stem)
+        if not self.e_name.get().strip():
+            self.e_name.insert(0, scriptform.name_from_path(path))
 
     def _browse_workdir(self):
         d = filedialog.askdirectory(
@@ -517,29 +493,19 @@ class ScriptDialog(tk.Toplevel):
             if not messagebox.askyesno(check.title, check.message, parent=self):
                 return
 
-        temp_param = int(self.temp_param_var.get())
-        detached = int(self.launcher_var.get())
-        work_dir = self.e_workdir.get().strip()
-        env_pairs = parse_env_text(self.t_env.get("1.0", tk.END))
-        # "" rather than None: None means "leave untouched" on update, which
-        # would make clearing the field impossible.
-        env_vars = json.dumps(env_pairs) if env_pairs else ""
-        if self.script_id:
-            self.db.update(self.script_id, name, path, params, interp, group_name,
-                           temp_param, detached, env_vars=env_vars, work_dir=work_dir)
-        else:
-            self.script_id = self.db.add(name, path, params, interp, group_name,
-                                         temp_param, detached,
-                                         env_vars=env_vars or None, work_dir=work_dir)
-
-        self.db.replace_param_presets(self.script_id, [(l, p) for l, p in self._presets])
+        self.script_id = scriptform.save_form(self.db, self.script_id, scriptform.ScriptForm(
+            name=name, path=path, params=params, interpreter=interp,
+            group=group_name, temp_param=bool(self.temp_param_var.get()),
+            detached=bool(self.launcher_var.get()),
+            work_dir=self.e_workdir.get(), env_text=self.t_env.get("1.0", tk.END),
+            presets=[(label, p) for label, p in self._presets]))
 
         if self.on_save:
             self.on_save()
         self.destroy()
 
     def _delete(self):
-        if messagebox.askyesno("Delete", "Delete this script?", parent=self):
+        if messagebox.askyesno(*scriptform.DELETE_PROMPT, parent=self):
             self.db.delete(self.script_id)
             if self.on_save:
                 self.on_save()

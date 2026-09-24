@@ -29,7 +29,7 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import cardmenu, configio, outputpanel, selection
+from .. import cardmenu, configio, outputpanel, scriptform, selection
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
@@ -291,11 +291,7 @@ class RYOSApp(_BaseWindow):
     def _on_files_dropped(self, paths: list[str]):
         groups = self.db.list_groups()
         if not groups:
-            name = simpledialog.askstring(
-                "Create a Group First",
-                "You have no groups yet.\nEnter a group name to continue:",
-                parent=self,
-            )
+            name = simpledialog.askstring(*scriptform.FIRST_GROUP_PROMPT, parent=self)
             if not (name and name.strip()):
                 return
             self.db.create_group(name.strip())
@@ -1533,11 +1529,7 @@ class RYOSApp(_BaseWindow):
     def _add_script(self):
         groups = self.db.list_groups()
         if not groups:
-            name = simpledialog.askstring(
-                "Create a Group First",
-                "You have no groups yet.\nEnter a group name to continue:",
-                parent=self,
-            )
+            name = simpledialog.askstring(*scriptform.FIRST_GROUP_PROMPT, parent=self)
             if not (name and name.strip()):
                 return
             self.db.create_group(name.strip())

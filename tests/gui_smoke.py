@@ -840,6 +840,43 @@ def check_delete_all_counts_everything(app):
         app._refresh()
 
 
+def check_script_dialog_round_trip(app):
+    """Opening a script in the Tk dialog and saving must change nothing.
+
+    The dialog now loads and saves through scriptform.load_form / save_form,
+    shared with Qt. A field dropped on either side would show up here as a
+    difference -- launcher, working folder and environment included.
+    """
+    from ryos import scriptform
+    from ryos.ui.dialogs import ScriptDialog
+
+    path = _write_script("print('rt')\n")
+    app.db.create_group("smoke-rt")
+    sid = app.db.add("smoke-rt", path, "--a", sys.executable, "smoke-rt", 1, 1,
+                     env_vars='{"K": "V"}', work_dir=str(Path(path).parent))
+    app.db.replace_param_presets(sid, [("--a", "--a"), ("--b", "--b")])
+    before = scriptform.load_form(app.db, sid)
+    dlg = None
+    try:
+        dlg = ScriptDialog(app, app.db, script_id=sid, on_save=lambda: None,
+                           existing_groups=app.db.list_groups(),
+                           group_base_dirs=dict(app.db.list_groups_with_meta()))
+        app.update_idletasks()
+        dlg._save()
+        after = scriptform.load_form(app.db, sid)
+        assert after == before, f"save changed the script:\n{before}\n{after}"
+        print("  [ok] script-dialog: Tk load and save round-trip every field")
+    finally:
+        try:
+            if dlg is not None and dlg.winfo_exists():
+                dlg.destroy()
+        except Exception:
+            pass
+        app.db.delete(sid)
+        app.db.delete_group("smoke-rt")
+        os.unlink(path)
+
+
 def check_card_menus(app):
     """The Tk menus are built from the shared `cardmenu` definitions.
 
@@ -1006,6 +1043,7 @@ def main():
         check_favorites_drag_reorder(app)
         check_launcher_auto_release(app)
         check_card_menus(app)
+        check_script_dialog_round_trip(app)
         check_delete_all_counts_everything(app)
         check_run_to_completion(app)
         check_stop_running_job(app)

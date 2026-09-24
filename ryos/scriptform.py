@@ -12,7 +12,11 @@ a network share that is offline), so the form asks rather than refusing.
 
 from __future__ import annotations
 
+import json
 import os
+from dataclasses import dataclass, field
+
+from .interpreter import format_env_text, parse_env_text
 from .quickrun import _is_inside
 
 from . import verdict
@@ -98,3 +102,116 @@ def param_options(default_params: str, presets) -> list[tuple[str, str, str]]:
         options.append((str(pid), label, params))
     return [(key, params if label == params else label, params)
             for key, label, params in options]
+
+
+# --- the rest of the form: wording, small rules, load and save ------------------
+# Both dialogs draw these fields; what they offer, how a stored script loads
+# into them and how they are written back are decided here, once.
+
+INTERPRETER_CHOICES = ("cmd /c", "powershell -File", "pwsh -File", "python",
+                       "node", "bash")
+INTERPRETER_HINT = "Leave blank for auto-detection, or pick a preset"
+TEMP_PARAM_LABEL = "Ask for a temporary parameter on each run (not saved)"
+LAUNCHER_LABEL = "Launcher — opens an app/project; don't keep in Running"
+ENV_HINT = "One KEY=value per line; blank to inherit only the system environment"
+DELETE_PROMPT = ("Delete", "Delete this script?")
+FIRST_GROUP_PROMPT = ("Create a Group First",
+                      "You have no groups yet.\nEnter a group name to continue:")
+
+
+def relative_under_base(path: str, base: str) -> str | None:
+    """``path`` relative to ``base`` if it is strictly inside it, else None."""
+    if not path or not base:
+        return None
+    norm_path = os.path.normcase(os.path.normpath(path))
+    norm_base = os.path.normcase(os.path.normpath(base))
+    if norm_path == norm_base or not norm_path.startswith(norm_base + os.sep):
+        return None
+    return os.path.normpath(path)[len(os.path.normpath(base)):].lstrip(os.sep)
+
+
+def relative_field(path: str, base_dir: str) -> str:
+    """What the relative box shows for ``path`` under ``base_dir``.
+
+    A path outside the base shows just its file name -- a starting point to
+    correct, rather than a path that would silently escape the folder.
+    """
+    rel = relative_under_base(path, base_dir)
+    if rel is not None:
+        return rel
+    return os.path.basename(path) if path else ""
+
+
+def browse_refusal(path: str, base_dir: str) -> "Check | None":
+    """Why a browsed-to file cannot be used for a group with a base folder."""
+    if base_dir and not _is_inside(path, base_dir):
+        return Check(REFUSE, "Path outside group directory",
+                     f"The selected file\n{path}\nis outside the base "
+                     f"directory:\n{base_dir}")
+    return None
+
+
+def name_from_path(path: str) -> str:
+    """The name suggested for a browsed-to file: its stem."""
+    return os.path.splitext(os.path.basename(path))[0] if path else ""
+
+
+def with_preset(presets: list, params: str) -> "list | None":
+    """``presets`` plus one for ``params``, or None when there is nothing new."""
+    params = params.strip()
+    if not params or any(p[1] == params for p in presets):
+        return None
+    return [*presets, (params, params)]
+
+
+@dataclass
+class ScriptForm:
+    """Everything the add/edit dialog edits, as plain values."""
+
+    name: str = ""
+    path: str = ""
+    params: str = ""
+    interpreter: str = ""
+    group: str = ""
+    temp_param: bool = False
+    detached: bool = False
+    work_dir: str = ""
+    env_text: str = ""
+    presets: list = field(default_factory=list)     # [(label, params)]
+
+
+def load_form(db, script_id: "int | None", default_group: str = "") -> ScriptForm:
+    """The form for an existing script, or a blank one in ``default_group``."""
+    if not script_id:
+        return ScriptForm(group=default_group)
+    rec = db.get(script_id)
+    if not rec:
+        return ScriptForm(group=default_group)
+    _id, name, path, params, interp, grp, temp_param, env_vars, work_dir = rec[:9]
+    return ScriptForm(
+        name=name or "", path=path or "", params=params or "",
+        interpreter=interp or "", group=grp or "",
+        temp_param=bool(temp_param), detached=bool(db.is_detached(script_id)),
+        work_dir=work_dir or "", env_text=format_env_text(env_vars),
+        presets=[(label, p) for _pid, label, p in db.list_param_presets(script_id)])
+
+
+def save_form(db, script_id: "int | None", form: ScriptForm) -> int:
+    """Write ``form``; returns the script's id (new when it was an add).
+
+    Environment is stored as JSON, and as "" rather than None on update:
+    None means "leave untouched", which would make clearing it impossible.
+    """
+    pairs = parse_env_text(form.env_text)
+    env_vars = json.dumps(pairs) if pairs else ""
+    args = (form.name.strip(), form.path.strip(), form.params.strip(),
+            form.interpreter.strip(), form.group.strip(),
+            int(form.temp_param), int(form.detached))
+    if script_id:
+        db.update(script_id, *args, env_vars=env_vars,
+                  work_dir=form.work_dir.strip())
+    else:
+        script_id = db.add(*args, env_vars=env_vars or None,
+                           work_dir=form.work_dir.strip())
+    db.replace_param_presets(script_id, [(label, p) for label, p in form.presets])
+    return script_id
