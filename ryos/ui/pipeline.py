@@ -1,10 +1,8 @@
 """Pipeline editor dialog — manage step order and per-step param overrides."""
 import tkinter as tk
-from pathlib import Path
 from tkinter import messagebox, ttk
 
-from ..db import (FAIL_CONTINUE, FAIL_STOP, TRIGGER_AFTER, TRIGGER_WITH,
-                  WHEN_ALWAYS, WHEN_ON_FAILURE, WHEN_ON_SUCCESS, ScriptDB)
+from ..db import (FAIL_STOP, WHEN_ALWAYS, ScriptDB)
 from .. import pipelinesteps
 from .placement import center_over_parent
 from .theme import C, set_button_enabled
@@ -13,15 +11,8 @@ from .theme import C, set_button_enabled
 class PipelineEditorDialog(tk.Toplevel):
     """Manage a pipeline's step order, param overrides and per-step policy."""
 
-    _FAIL_LABELS = {
-        FAIL_STOP: "Stop the pipeline",
-        FAIL_CONTINUE: "Keep going",
-    }
-    _WHEN_LABELS = {
-        WHEN_ALWAYS: "Always",
-        WHEN_ON_SUCCESS: "Only if nothing has failed",
-        WHEN_ON_FAILURE: "Only if something has failed",
-    }
+    _FAIL_LABELS = pipelinesteps.FAIL_LABELS
+    _WHEN_LABELS = pipelinesteps.WHEN_LABELS
 
     def __init__(self, parent, db: ScriptDB, pipeline_id: int,
                  pipeline_name: str, group_name: str, on_save):
@@ -97,10 +88,7 @@ class PipelineEditorDialog(tk.Toplevel):
 
         legend = tk.Frame(self, bg=C["card_bg"], padx=12)
         legend.pack(fill="x")
-        tk.Label(legend, text="∥ = starts together with the step above   ·   "
-                            "! = keeps going if it fails   ·   ↻n = retries   ·   "
-                            "? = only runs on success/failure   ·   "
-                            "→launch = launcher; doesn't hold up the next step",
+        tk.Label(legend, text=pipelinesteps.LEGEND, wraplength=400, justify="left",
                  bg=C["card_bg"], fg=C["path_fg"], font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 4))
 
         opt = tk.Frame(self, bg=C["card_bg"], padx=12, pady=4)
@@ -121,7 +109,7 @@ class PipelineEditorDialog(tk.Toplevel):
         self._retries_combo = ttk.Combobox(
             opt, textvariable=self._retries_var, state="disabled",
             font=("Segoe UI", 9), width=4,
-            values=[str(n) for n in range(0, 6)])
+            values=[str(n) for n in pipelinesteps.RETRY_CHOICES])
         self._retries_combo.pack(side="left", padx=(6, 0))
         self._retries_combo.bind("<<ComboboxSelected>>", self._on_policy_change)
 
@@ -159,14 +147,8 @@ class PipelineEditorDialog(tk.Toplevel):
                  font=("Segoe UI", 9, "bold")).pack(anchor="w", pady=(0, 4))
         combo_row = tk.Frame(af, bg=C["card_bg"])
         combo_row.pack(fill="x")
-        scripts = [s for s in db.list_all() if (s[8] or "") == group_name]
-        name_count: dict[str, int] = {}
-        for s in scripts:
-            name_count[s[1]] = name_count.get(s[1], 0) + 1
-        self._script_map: dict[str, int] = {}
-        for s in scripts:
-            lbl = s[1] if name_count[s[1]] == 1 else f"{s[1]}  ({Path(s[2]).name})"
-            self._script_map[lbl] = s[0]
+        self._script_map: dict[str, int] = pipelinesteps.add_step_choices(
+            db.list_all(), group_name)
         keys = list(self._script_map.keys())
         self._combo_var = tk.StringVar(value=keys[0] if keys else "")
         self._add_combo = ttk.Combobox(
@@ -212,29 +194,21 @@ class PipelineEditorDialog(tk.Toplevel):
             self._trigger_btn.configure(text="∥ With Prev")
             return
         row = self._steps[idx]
-        on_failure = row[10] if len(row) > 10 else FAIL_STOP
-        retries = row[11] if len(row) > 11 else 0
-        run_when = row[12] if len(row) > 12 else WHEN_ALWAYS
-        self._on_failure_var.set(self._FAIL_LABELS.get(on_failure,
-                                                       self._FAIL_LABELS[FAIL_STOP]))
+        on_failure, retries, run_when = pipelinesteps.policy_of(row)
+        self._on_failure_var.set(self._FAIL_LABELS[on_failure])
         self._retries_var.set(str(retries))
-        self._run_when_var.set(self._WHEN_LABELS.get(run_when,
-                                                     self._WHEN_LABELS[WHEN_ALWAYS]))
-        # The button toggles, so say which way it will go for *this* step.
-        self._trigger_btn.configure(
-            text="→ After Prev" if (len(row) > 7 and row[7] == TRIGGER_WITH)
-            else "∥ With Prev")
+        self._run_when_var.set(self._WHEN_LABELS[run_when])
+        self._trigger_btn.configure(text=pipelinesteps.trigger_button_label(row))
         # Slice rather than unpack the whole row: list_pipeline_steps has grown
         # twice (trigger_mode, then env_vars/work_dir) and a fixed-arity unpack
         # broke here both times, silently emptying the step list.
         (step_id, sid, name, path, params, interp,
          params_override, trigger_mode) = self._steps[idx][:8]
         presets = self.db.list_param_presets(sid)
-        values = ["(Script default)"] + [p[2] for p in presets]
+        values = pipelinesteps.preset_choices(presets)
         self._step_preset_combo.configure(
             state="readonly" if presets else "disabled", values=values)
-        self._step_preset_var.set(
-            params_override if params_override in values else "(Script default)")
+        self._step_preset_var.set(pipelinesteps.preset_shown(params_override, values))
 
     def _on_policy_change(self, _event=None):
         """Write the three policy fields for the selected step."""
@@ -243,18 +217,11 @@ class PipelineEditorDialog(tk.Toplevel):
         idx = self._selected_index()
         if idx is None:
             return
-        inv_fail = {v: k for k, v in self._FAIL_LABELS.items()}
-        inv_when = {v: k for k, v in self._WHEN_LABELS.items()}
-        try:
-            retries = int(self._retries_var.get())
-        except (TypeError, ValueError):
-            retries = 0
         self.db.set_step_policy(
             self._steps[idx][0],
-            on_failure=inv_fail.get(self._on_failure_var.get(), FAIL_STOP),
-            retries=retries,
-            run_when=inv_when.get(self._run_when_var.get(), WHEN_ALWAYS),
-        )
+            **pipelinesteps.policy_from_labels(self._on_failure_var.get(),
+                                               self._retries_var.get(),
+                                               self._run_when_var.get()))
         self._reload_steps()
         self._listbox.selection_set(idx)
         self._on_step_select()
@@ -265,17 +232,14 @@ class PipelineEditorDialog(tk.Toplevel):
             idx = self._selected_index()
             if idx is None:
                 return
-            step_id, name = self._steps[idx][0], self._steps[idx][2]
-            chosen = self._step_preset_var.get()
-            override = None if chosen == "(Script default)" else chosen
+            step_id = self._steps[idx][0]
+            override = pipelinesteps.override_from_choice(self._step_preset_var.get())
             self.db.update_pipeline_step_params(step_id, override)
             step = list(self._steps[idx])
             step[6] = override
             self._steps[idx] = tuple(step)
-            prefix = "∥ " if step[7] == TRIGGER_WITH else "  "
-            label = f"{prefix}{idx + 1}.  {name}"
-            if override is not None:
-                label += f"  [{override}]"
+            # The shared label, so the policy marks survive a preset change.
+            label = pipelinesteps.step_label(step, idx)
             self._listbox.delete(idx)
             self._listbox.insert(idx, label)
             self._listbox.selection_set(idx)
@@ -317,9 +281,8 @@ class PipelineEditorDialog(tk.Toplevel):
         idx = self._selected_index()
         if idx is None or idx == 0:
             return                      # step 1 has no previous step
-        cur = self._steps[idx][7]
         self.db.set_step_trigger_mode(self._steps[idx][0],
-                                      TRIGGER_AFTER if cur == TRIGGER_WITH else TRIGGER_WITH)
+                                      pipelinesteps.toggled_trigger(self._steps[idx]))
         self._reload_steps()
         self._listbox.selection_set(idx)
         self._on_step_select()
@@ -348,7 +311,7 @@ class PipelineEditorDialog(tk.Toplevel):
     def _save(self):
         name = self._name_var.get().strip()
         if not name:
-            messagebox.showwarning("Name Required", "Enter a pipeline name.", parent=self)
+            messagebox.showwarning(*pipelinesteps.NAME_REQUIRED, parent=self)
             return
         self.db.rename_pipeline(self.pipeline_id, name)
         self.on_save()

@@ -11,7 +11,10 @@ strings and lists.
 
 from __future__ import annotations
 
-from .db import FAIL_CONTINUE, TRIGGER_WITH, WHEN_ON_FAILURE, WHEN_ON_SUCCESS
+from pathlib import PurePath
+
+from .db import (FAIL_CONTINUE, FAIL_STOP, TRIGGER_AFTER, TRIGGER_WITH,
+                 WHEN_ALWAYS, WHEN_ON_FAILURE, WHEN_ON_SUCCESS)
 
 # Step rows have grown three times; everything here reads defensively by
 # index and length, so an older row simply shows fewer marks rather than
@@ -97,3 +100,91 @@ def first_step_cannot_run_with_previous(index: int | None) -> bool:
     meaningless there rather than merely unused.
     """
     return index is None or index == 0
+
+
+# --- the editor's controls ------------------------------------------------------
+# What the policy combos offer and show, the trigger toggle, the per-step preset
+# choice and the Add Step list. Shared so the two editors cannot drift -- they
+# already had, with different "run when" wording and a different legend.
+
+LEGEND = ("∥ = starts together with the step above   ·   "
+          "! = keeps going if it fails   ·   ↻n = retries   ·   "
+          "?ok / ?fail = only after success / failure   ·   "
+          "→launch = launcher; doesn't hold up the next step")
+
+FAIL_LABELS = {FAIL_STOP: "Stop the pipeline", FAIL_CONTINUE: "Keep going"}
+WHEN_LABELS = {WHEN_ALWAYS: "Always",
+               WHEN_ON_SUCCESS: "Only if nothing has failed",
+               WHEN_ON_FAILURE: "Only if something has failed"}
+RETRY_CHOICES = tuple(range(6))
+
+DEFAULT_PRESET = "(Script default)"
+NAME_REQUIRED = ("Name Required", "Enter a pipeline name.")
+
+
+def policy_of(step) -> tuple:
+    """(on_failure, retries, run_when) for a step row, defaulting what is absent."""
+    on_failure = step[_ON_FAILURE] if len(step) > _ON_FAILURE else FAIL_STOP
+    retries = step[_RETRIES] if len(step) > _RETRIES else 0
+    run_when = step[_RUN_WHEN] if len(step) > _RUN_WHEN else WHEN_ALWAYS
+    return (on_failure if on_failure in FAIL_LABELS else FAIL_STOP,
+            int(retries or 0),
+            run_when if run_when in WHEN_LABELS else WHEN_ALWAYS)
+
+
+def policy_from_labels(fail_label: str, retries, when_label: str) -> dict:
+    """The keyword arguments for `db.set_step_policy`, from what the combos show."""
+    inv_fail = {v: k for k, v in FAIL_LABELS.items()}
+    inv_when = {v: k for k, v in WHEN_LABELS.items()}
+    try:
+        n = int(retries)
+    except (TypeError, ValueError):
+        n = 0
+    return {"on_failure": inv_fail.get(fail_label, FAIL_STOP),
+            "retries": max(0, n),
+            "run_when": inv_when.get(when_label, WHEN_ALWAYS)}
+
+
+def runs_with_previous(step) -> bool:
+    return len(step) > 7 and step[7] == TRIGGER_WITH
+
+
+def trigger_button_label(step) -> str:
+    """The toggle says which way it will go for *this* step."""
+    return "→ After Prev" if runs_with_previous(step) else "∥ With Prev"
+
+
+def toggled_trigger(step) -> str:
+    return TRIGGER_AFTER if runs_with_previous(step) else TRIGGER_WITH
+
+
+def preset_choices(presets) -> list:
+    """The step-preset combo's entries: the default, then each preset's params."""
+    return [DEFAULT_PRESET] + [p[2] for p in presets]
+
+
+def preset_shown(override, choices) -> str:
+    """Which entry to show for a step's stored override."""
+    return override if override in choices else DEFAULT_PRESET
+
+
+def override_from_choice(choice: str):
+    """What to store for a chosen entry: None means use the script's own."""
+    return None if choice == DEFAULT_PRESET else choice
+
+
+def add_step_choices(scripts, group: str) -> dict:
+    """Label -> script id for the Add Step list: the group's scripts.
+
+    Two scripts with the same name are told apart by file name, since picking
+    the wrong one of two "build" entries would be silent.
+    """
+    mine = [s for s in scripts if (s[8] or "") == group]
+    counts: dict = {}
+    for s in mine:
+        counts[s[1]] = counts.get(s[1], 0) + 1
+    choices = {}
+    for s in mine:
+        label = s[1] if counts[s[1]] == 1 else f"{s[1]}  ({PurePath(s[2]).name})"
+        choices[label] = s[0]
+    return choices

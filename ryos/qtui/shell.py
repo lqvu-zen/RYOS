@@ -243,6 +243,9 @@ class MainWindow(QMainWindow):
                     self._show_card_menu(k, i, c.mapToGlobal(pos)))
             card.favorite_toggled.connect(
                 lambda item_id, fav, k=kind: self._set_favorite(k, item_id, fav))
+            if kind == cardmenu.PIPELINE:
+                card.edit_requested.connect(
+                    lambda item_id, n=rec["name"]: self._edit_pipeline(item_id, n))
             made.append(card)
 
         scroll = QScrollArea()
@@ -701,13 +704,14 @@ class MainWindow(QMainWindow):
 
     def _edit_pipeline(self, pipeline_id: int, name: str) -> None:
         from .pipeline import PipelineEditorDialog
-        db = self._db
-        dlg = PipelineEditorDialog(
-            pipeline_id, name, db.list_pipeline_steps(pipeline_id), self,
-            on_reorder=lambda ids: db.reorder_pipeline_steps(pipeline_id, ids),
-            on_policy=lambda step_id, policy: db.set_step_policy(step_id,
-                                                                 **policy))
+        if self._db is None:
+            return
+        _rec, group = self._records.get((cardmenu.PIPELINE, pipeline_id),
+                                        ({}, self.current_group() or ""))
+        dlg = PipelineEditorDialog(self, db=self._db, pipeline_id=pipeline_id,
+                                   name=name, group=group)
         self.run_dialog(dlg)
+        # Steps are written as they change, so reload even after Cancel.
         self._defer_reload()
 
     def _defer_reload(self) -> None:

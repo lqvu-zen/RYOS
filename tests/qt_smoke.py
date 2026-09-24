@@ -410,78 +410,125 @@ def check_script_dialog(app):
 
 
 def check_pipeline_editor(app):
-    """Rows, reordering and the controls that depend on the selection.
+    """Every editor control, against a real database.
 
-    The labels and the move rules are `ryos.pipelinesteps`, shared with the Tk
-    editor, so this checks the wiring: that the list shows what the shared
-    function says, that a move reorders and reports the new id order, and that
-    the buttons disable where the move is impossible.
+    Each control writes as it changes, as in the Tk editor, so every check
+    reads the result back from the database rather than from the widget.
     """
+    import sys as _sys
+    import tempfile
+
     from ryos import pipelinesteps
-    from ryos.db import FAIL_CONTINUE, FAIL_STOP, TRIGGER_AFTER, WHEN_ALWAYS
+    from ryos.db import (FAIL_CONTINUE, TRIGGER_AFTER, TRIGGER_WITH,
+                         WHEN_ON_FAILURE, ScriptDB)
     from ryos.qtui.pipeline import PipelineEditorDialog
 
-    def step(sid, name, **kw):
-        return (sid, sid, name, "/x.py", "", "", kw.get("override"),
-                kw.get("trigger", TRIGGER_AFTER), None, "",
-                kw.get("on_failure", FAIL_STOP), kw.get("retries", 0),
-                WHEN_ALWAYS, 0)
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "editor.db")
+    db.create_group("G")
+    a = db.add("first", str(tmp / "a.py"), "", _sys.executable, "G")
+    b = db.add("second", str(tmp / "b.py"), "", _sys.executable, "G")
+    c = db.add("build", str(tmp / "one" / "build.py"), "", _sys.executable, "G")
+    d = db.add("build", str(tmp / "two" / "make.py"), "", _sys.executable, "G")
+    db.add("elsewhere", str(tmp / "x.py"), "", _sys.executable, "H")
+    db.replace_param_presets(b, [("fast", "--fast"), ("slow", "--slow")])
+    pid = db.create_pipeline("P", "G")
+    for sid in (a, b, c):
+        db.add_pipeline_step(pid, sid)
 
-    steps = [step(10, "first"), step(20, "second", on_failure=FAIL_CONTINUE),
-             step(30, "third", retries=2)]
-    reordered = []
-    dlg = PipelineEditorDialog(1, "P", steps,
-                               on_reorder=lambda ids: reordered.append(ids))
+    saved: list = []
+    dlg = PipelineEditorDialog(db=db, pipeline_id=pid, name="P", group="G",
+                               on_save=lambda: saved.append(True))
+    warned: list = []
+    dlg.warn = lambda title, text: warned.append(title)
     app.processEvents()
 
-    # The list shows exactly what the shared labeller produced.
-    shown = [dlg.list.item(i).text() for i in range(dlg.list.count())]
-    if shown != pipelinesteps.step_labels(steps):
-        PROBLEMS.append("the editor list does not match step_labels()")
-    if "!" not in shown[1]:
-        PROBLEMS.append(f"a continue-on-failure step lost its mark: {shown[1]!r}")
-    if "\u21bb2" not in shown[2]:
-        PROBLEMS.append(f"a retrying step lost its mark: {shown[2]!r}")
+    def steps():
+        return db.list_pipeline_steps(pid)
 
-    # Nothing selected: nothing can move.
+    def shown():
+        return [dlg.list.item(i).text() for i in range(dlg.list.count())]
+
+    # -- what it shows -----------------------------------------------------------
+    if shown() != pipelinesteps.step_labels(steps()):
+        PROBLEMS.append("the editor list does not match step_labels()")
+    adds = [dlg.add_combo.itemText(i) for i in range(dlg.add_combo.count())]
+    if "elsewhere" in adds or not any("(build.py)" in x for x in adds) \
+            or not any("(make.py)" in x for x in adds):
+        PROBLEMS.append(f"Add Step offered {adds}")
     dlg.list.setCurrentRow(-1)
     app.processEvents()
-    if dlg.up_button.isEnabled() or dlg.down_button.isEnabled():
-        PROBLEMS.append("move buttons are live with nothing selected")
-
-    # First row: cannot move up, and cannot run with a previous step.
+    if any(w.isEnabled() for w in (dlg.up_button, dlg.down_button,
+                                   dlg.remove_button, dlg.on_failure)):
+        PROBLEMS.append("step controls are live with nothing selected")
     dlg.list.setCurrentRow(0)
-    app.processEvents()
-    if dlg.up_button.isEnabled():
-        PROBLEMS.append("the first step can be moved up")
-    if dlg.trigger_button.isEnabled():
-        PROBLEMS.append("the first step offers 'with previous', which has no "
-                        "step above it to run alongside")
+    if dlg.up_button.isEnabled() or dlg.trigger_button.isEnabled():
+        PROBLEMS.append("step 1 can move up, or run with a previous step")
 
-    # Last row: cannot move down.
-    dlg.list.setCurrentRow(len(steps) - 1)
-    app.processEvents()
-    if dlg.down_button.isEnabled():
-        PROBLEMS.append("the last step can be moved down")
+    # -- moves and the trigger toggle --------------------------------------------
+    dlg.down_button.click()
+    if [s[1] for s in steps()] != [b, a, c] or dlg.selected_index() != 1:
+        PROBLEMS.append(f"Down stored {[s[1] for s in steps()]}")
+    dlg.trigger_button.click()
+    if steps()[1][7] != TRIGGER_WITH or not shown()[1].startswith("∥"):
+        PROBLEMS.append("With Prev was not stored, or not shown")
+    if dlg.trigger_button.text() != "→ After Prev":
+        PROBLEMS.append(f"the toggle then read {dlg.trigger_button.text()!r}")
+    dlg.trigger_button.click()
+    if steps()[1][7] != TRIGGER_AFTER:
+        PROBLEMS.append("toggling back did not store 'after'")
 
-    # A real move reorders and reports the new id order.
+    # -- policy: the combos load the step and write it back ------------------------
+    dlg.on_failure.setCurrentText(pipelinesteps.FAIL_LABELS[FAIL_CONTINUE])
+    dlg.retries.setCurrentText("3")
+    dlg.run_when.setCurrentText(pipelinesteps.WHEN_LABELS[WHEN_ON_FAILURE])
+    if pipelinesteps.policy_of(steps()[1]) != (FAIL_CONTINUE, 3, WHEN_ON_FAILURE):
+        PROBLEMS.append(f"policy stored {pipelinesteps.policy_of(steps()[1])}")
+    if "!" not in shown()[1] or "↻3" not in shown()[1]:
+        PROBLEMS.append(f"the row lost its marks: {shown()[1]!r}")
     dlg.list.setCurrentRow(0)
-    app.processEvents()
-    dlg.move(+1)
-    app.processEvents()
-    if reordered != [[20, 10, 30]]:
-        PROBLEMS.append(f"move reported {reordered}, expected [[20, 10, 30]]")
-    now = [dlg.list.item(i).text() for i in range(dlg.list.count())]
-    if "second" not in now[0]:
-        PROBLEMS.append(f"the list did not follow the move: {now[0]!r}")
-    if dlg.list.currentRow() != 1:
-        PROBLEMS.append("the moved step lost the selection")
+    if dlg.retries.currentText() != "0":
+        PROBLEMS.append("selecting another step kept the last step's retries")
+    dlg.list.setCurrentRow(1)
+    if dlg.retries.currentText() != "3":
+        PROBLEMS.append("reselecting a step did not show its stored retries")
 
-    print(f"  [ok] pipeline editor: {len(steps)} rows, marks kept, "
-          f"move reorders and keeps the selection")
+    # -- per-step preset: offered only where the script has presets -----------------
+    dlg.list.setCurrentRow(0)                        # "second", which has presets
+    choices = [dlg.preset.itemText(i) for i in range(dlg.preset.count())]
+    if choices != [pipelinesteps.DEFAULT_PRESET, "--fast", "--slow"]:
+        PROBLEMS.append(f"preset choices {choices}")
+    dlg.preset.setCurrentText("--slow")
+    if steps()[0][6] != "--slow" or "[--slow]" not in shown()[0]:
+        PROBLEMS.append("choosing a step preset was not stored, or not shown")
+    dlg.preset.setCurrentText(pipelinesteps.DEFAULT_PRESET)
+    if steps()[0][6] is not None:
+        PROBLEMS.append("choosing the script default did not clear the override")
+    dlg.list.setCurrentRow(2)                        # "build", no presets
+    if dlg.preset.isEnabled():
+        PROBLEMS.append("the preset box is live for a script without presets")
+
+    # -- add and remove --------------------------------------------------------------
+    dlg.add_combo.setCurrentText(next(x for x in adds if "(make.py)" in x))
+    dlg.add_button.click()
+    if [s[1] for s in steps()][-1] != d or dlg.selected_index() != 3:
+        PROBLEMS.append("Add did not append the chosen script and select it")
+    dlg.remove_button.click()
+    if [s[1] for s in steps()] != [b, a, c]:
+        PROBLEMS.append(f"Remove left {[s[1] for s in steps()]}")
+
+    # -- save only renames; an empty name is refused ------------------------------
+    dlg.name_edit.setText("   ")
+    if dlg.save() or warned != [pipelinesteps.NAME_REQUIRED[0]]:
+        PROBLEMS.append("an empty pipeline name was accepted")
+    dlg.name_edit.setText(" Renamed ")
+    dlg.save()
+    if db.list_pipelines("G")[0][1] != "Renamed" or saved != [True]:
+        PROBLEMS.append("Save did not rename, or did not report back")
+
+    print("  [ok] pipeline editor: labels, Add Step choices, move, with-prev, "
+          "policy combos, step presets, add/remove and rename, all stored")
     dlg.deleteLater()
-
-
 
 
 def check_shell(app):
@@ -1542,6 +1589,11 @@ def check_context_menus(app):
     kinds = [type(d) for d in dialogs]
     if kinds != [ScheduleDialog, RunHistoryDialog, PipelineEditorDialog]:
         PROBLEMS.append(f"dialogs opened from the menu: {kinds}")
+    dialogs.clear()
+    card_for("pipeline", pid).edit_button.click()        # the ⚙ button
+    settle()
+    if [type(d) for d in dialogs] != [PipelineEditorDialog]:
+        PROBLEMS.append("the pipeline card's ⚙ did not open the editor")
 
     # -- the group-tab menu ----------------------------------------------------------
     bar = win.group_tab_bar

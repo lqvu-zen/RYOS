@@ -619,6 +619,7 @@ def check_pipeline_editor_lists_steps(app):
     steps = app.db.list_pipeline_steps(pid)
     app.db.update_pipeline_step_params(steps[1][0], "--ci")
     app.db.set_step_trigger_mode(steps[1][0], "with")
+    app.db.replace_param_presets(b, [("ci", "--ci"), ("full", "--full")])
 
     dlg = None
     try:
@@ -648,6 +649,16 @@ def check_pipeline_editor_lists_steps(app):
         assert stored[10] == "continue" and stored[11] == 2, stored[10:]
         marked = dlg._listbox.get(1)
         assert "!" in marked and "↻2" in marked, f"policy marks missing: {marked!r}"
+
+        # Changing the step's preset rebuilds its row; the marks must survive.
+        dlg._listbox.selection_set(1)
+        dlg._on_step_select()
+        dlg._step_preset_var.set("--full")
+        dlg._on_step_preset_change()
+        app.update_idletasks()
+        marked = dlg._listbox.get(1)
+        assert "[--full]" in marked and "↻2" in marked, \
+            f"a preset change dropped the policy marks: {marked!r}"
 
         # Removing the selection must leave the controls disabled, not stale.
         dlg._listbox.selection_clear(0, "end")

@@ -7352,6 +7352,71 @@ class TestScheduleRunner(unittest.TestCase):
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
 
 
+class TestPipelineEditorRules(unittest.TestCase):
+    """The editor controls both pipeline editors draw from `pipelinesteps`."""
+
+    def step(self, **kw):
+        from ryos.db import FAIL_STOP, TRIGGER_AFTER, WHEN_ALWAYS
+        return (1, 7, "s", "/s.py", "", "", kw.get("override"),
+                kw.get("trigger", TRIGGER_AFTER), None, "",
+                kw.get("on_failure", FAIL_STOP), kw.get("retries", 0),
+                kw.get("run_when", WHEN_ALWAYS), 0)
+
+    def test_policy_of_defaults_and_tolerates_old_rows(self):
+        from ryos.db import FAIL_STOP, WHEN_ALWAYS
+        self.assertEqual(pipelinesteps.policy_of(self.step()[:8]),
+                         (FAIL_STOP, 0, WHEN_ALWAYS))
+        self.assertEqual(pipelinesteps.policy_of(self.step(on_failure="bogus",
+                                                           run_when="bogus")),
+                         (FAIL_STOP, 0, WHEN_ALWAYS))
+
+    def test_policy_round_trips_through_the_labels(self):
+        from ryos.db import FAIL_CONTINUE, WHEN_ON_SUCCESS
+        kw = pipelinesteps.policy_from_labels(
+            pipelinesteps.FAIL_LABELS[FAIL_CONTINUE], "4",
+            pipelinesteps.WHEN_LABELS[WHEN_ON_SUCCESS])
+        self.assertEqual(kw, {"on_failure": FAIL_CONTINUE, "retries": 4,
+                              "run_when": WHEN_ON_SUCCESS})
+        self.assertEqual(pipelinesteps.policy_from_labels("?", "x", "?")["retries"], 0)
+
+    def test_trigger_toggle(self):
+        from ryos.db import TRIGGER_AFTER, TRIGGER_WITH
+        after, with_ = self.step(), self.step(trigger=TRIGGER_WITH)
+        self.assertEqual(pipelinesteps.trigger_button_label(after), "∥ With Prev")
+        self.assertEqual(pipelinesteps.trigger_button_label(with_), "→ After Prev")
+        self.assertEqual(pipelinesteps.toggled_trigger(after), TRIGGER_WITH)
+        self.assertEqual(pipelinesteps.toggled_trigger(with_), TRIGGER_AFTER)
+
+    def test_presets(self):
+        choices = pipelinesteps.preset_choices([(1, "fast", "--fast")])
+        self.assertEqual(choices, [pipelinesteps.DEFAULT_PRESET, "--fast"])
+        self.assertEqual(pipelinesteps.preset_shown("--fast", choices), "--fast")
+        self.assertEqual(pipelinesteps.preset_shown("--gone", choices),
+                         pipelinesteps.DEFAULT_PRESET)
+        self.assertIsNone(pipelinesteps.override_from_choice(
+            pipelinesteps.DEFAULT_PRESET))
+        self.assertEqual(pipelinesteps.override_from_choice("--fast"), "--fast")
+
+    def test_add_step_choices_are_the_groups_and_disambiguated(self):
+        rows = [(1, "build", "/a/build.py", "", "", "", "", "", "G"),
+                (2, "build", "/b/make.py", "", "", "", "", "", "G"),
+                (3, "test", "/t.py", "", "", "", "", "", "G"),
+                (4, "other", "/o.py", "", "", "", "", "", "H"),
+                (5, "loose", "/l.py", "", "", "", "", "", None)]
+        self.assertEqual(pipelinesteps.add_step_choices(rows, "G"),
+                         {"build  (build.py)": 1, "build  (make.py)": 2, "test": 3})
+        self.assertEqual(pipelinesteps.add_step_choices(rows, ""), {"loose": 5})
+
+    def test_labels_cover_every_value(self):
+        from ryos.db import (FAIL_CONTINUE, FAIL_STOP, WHEN_ALWAYS,
+                             WHEN_ON_FAILURE, WHEN_ON_SUCCESS)
+        self.assertEqual(set(pipelinesteps.FAIL_LABELS), {FAIL_STOP, FAIL_CONTINUE})
+        self.assertEqual(set(pipelinesteps.WHEN_LABELS),
+                         {WHEN_ALWAYS, WHEN_ON_SUCCESS, WHEN_ON_FAILURE})
+        for mark in ("∥", "!", "↻n", "?ok", "?fail", "→launch"):
+            self.assertIn(mark, pipelinesteps.LEGEND)
+
+
 class TestConfigIO(unittest.TestCase):
     """Export / import / Delete All wording, shared by both UIs."""
 
