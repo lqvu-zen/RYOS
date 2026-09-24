@@ -40,6 +40,7 @@ from ryos import schedule_runner  # noqa: E402
 from ryos import cardmenu, grouping, themes  # noqa: E402
 from ryos import selection  # noqa: E402
 from ryos import configio  # noqa: E402
+from ryos import traypolicy  # noqa: E402
 import types  # noqa: E402
 from ryos.quickrun_index import (  # noqa: E402
     INDEX_VERSION, QuickRunIndex, index_path, load_disk_index,
@@ -5794,6 +5795,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/dragdrop.py": "imports PySide6; same reason",
         "ryos/qtui/menus.py": "imports PySide6; same reason",
         "ryos/qtui/scriptdialog.py": "imports PySide6; same reason",
+        "ryos/qtui/tray.py": "imports PySide6; same reason",
     }
 
     def _scope(self):
@@ -7469,6 +7471,73 @@ class TestPipelineEditorRules(unittest.TestCase):
                          {WHEN_ALWAYS, WHEN_ON_SUCCESS, WHEN_ON_FAILURE})
         for mark in ("∥", "!", "↻n", "?ok", "?fail", "→launch"):
             self.assertIn(mark, pipelinesteps.LEGEND)
+
+
+class TestTrayPolicy(unittest.TestCase):
+    """Tray contents and the window's life, shared by pystray and Qt trays."""
+
+    def test_menu_lists_jobs_then_show_and_exit(self):
+        keys = [e.key for e in traypolicy.tray_menu([(3, "a"), (7, "b")])]
+        self.assertEqual(keys, [traypolicy.job_key(3), traypolicy.job_key(7), None,
+                                traypolicy.SHOW, None, traypolicy.EXIT])
+        idle = traypolicy.tray_menu([])
+        self.assertEqual([e.key for e in idle], [traypolicy.SHOW, None, traypolicy.EXIT])
+        self.assertTrue(idle[0].default)
+
+    def test_menu_labels_are_clamped(self):
+        entry = traypolicy.tray_menu([(1, "x" * 500)])[0]
+        self.assertLessEqual(len(entry.label), traypolicy.MENU_LABEL_MAX)
+
+    def test_job_keys_round_trip(self):
+        self.assertEqual(traypolicy.job_from_key(traypolicy.job_key(42)), 42)
+        self.assertIsNone(traypolicy.job_from_key(traypolicy.SHOW))
+        self.assertIsNone(traypolicy.job_from_key("job:nope"))
+
+    def test_close_without_a_tray_quits(self):
+        self.assertEqual(traypolicy.on_close({"close_to_tray": True}, False),
+                         traypolicy.QUIT)
+
+    def test_close_with_a_tray(self):
+        self.assertEqual(traypolicy.on_close({"close_to_tray": True}, True),
+                         traypolicy.HIDE)
+        self.assertEqual(traypolicy.on_close({}, True), traypolicy.PROMPT)
+        self.assertEqual(traypolicy.on_close({"prompt_close_to_tray": False}, True),
+                         traypolicy.QUIT)
+
+    def test_prompt_answers(self):
+        s = {}
+        self.assertEqual(traypolicy.after_prompt(s, "tray", False),
+                         (traypolicy.HIDE, True))
+        self.assertEqual(s, {"close_to_tray": True, "prompt_close_to_tray": False})
+        s = {}
+        self.assertEqual(traypolicy.after_prompt(s, "quit", False), (traypolicy.QUIT, False))
+        self.assertEqual(s, {})
+        self.assertEqual(traypolicy.after_prompt(s, "quit", True), (traypolicy.QUIT, True))
+        self.assertFalse(s["prompt_close_to_tray"])
+
+    def test_cancel_never_quits_or_saves(self):
+        s = {}
+        self.assertEqual(traypolicy.after_prompt(s, "cancel", True),
+                         (traypolicy.NOTHING, False))
+        # As in Tk: "don't ask" still sticks in memory, saved at the next quit.
+        self.assertFalse(s["prompt_close_to_tray"])
+
+    def test_minimize_and_start(self):
+        self.assertEqual(traypolicy.on_minimize(True, False), traypolicy.HIDE)
+        self.assertEqual(traypolicy.on_minimize(True, True), traypolicy.NOTHING)
+        self.assertEqual(traypolicy.on_minimize(False, False), traypolicy.NOTHING)
+        self.assertEqual(traypolicy.on_start({}, True), traypolicy.NOTHING)
+        self.assertEqual(traypolicy.on_start({"start_minimized": True}, True),
+                         traypolicy.HIDE)
+        self.assertEqual(traypolicy.on_start({"start_minimized": True}, False),
+                         traypolicy.MINIMIZE)
+
+    def test_quit_prompt_and_verbs(self):
+        self.assertIsNone(traypolicy.quit_prompt(0))
+        self.assertIn("1 script job is", traypolicy.quit_prompt(1)[1])
+        self.assertIn("3 script jobs are", traypolicy.quit_prompt(3)[1])
+        self.assertTrue(traypolicy.restore_follows_cursor("RESTORE_CURSOR"))
+        self.assertFalse(traypolicy.restore_follows_cursor("RESTORE"))
 
 
 class TestConfigIO(unittest.TestCase):

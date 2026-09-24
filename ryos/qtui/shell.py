@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import (cardmenu, configio, grouping, outputpanel, scriptform, search,
-               selection)
+               selection, traypolicy)
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
 from .dragdrop import CardList, GroupTabBar
@@ -83,8 +83,18 @@ class MainWindow(QMainWindow):
 
     def __init__(self, palette: dict | None = None, *,
                  settings: dict | None = None,
-                 on_run: Callable[[int], None] | None = None):
+                 on_run: Callable[[int], None] | None = None,
+                 save_settings: Callable[[dict], None] | None = None):
         super().__init__()
+        # Both inert unless the real entry point passes the real ones, so a
+        # test that closes a window can never write the user's settings or
+        # end the application.
+        self._save_settings = save_settings or (lambda _s: None)
+        self.on_quit: Callable[[], None] = lambda: None
+        self._tray = None
+        self._instance = None
+        self._hidden_to_tray = False
+        self._quitting = False
         self._palette = palette or REFERENCE["dark"]
         self._settings = dict(settings or {})
         self._on_run = on_run
@@ -488,6 +498,129 @@ class MainWindow(QMainWindow):
                                       action.group)
         QTimer.singleShot(0, self.reload)
         self.statusBar().showMessage(warning or f"Moved to '{group or self.UNGROUPED_LABEL}'.")
+
+    # -- tray, second launches, and closing ---------------------------------------
+    def attach_tray(self, tray) -> None:
+        """Wire a `qtui.tray.Tray` in: show, exit, and jump to a job's output."""
+        self._tray = tray
+        tray.show_requested.connect(self.restore_from_tray)
+        tray.exit_requested.connect(self.quit_app)
+        tray.job_requested.connect(self.show_job_from_tray)
+        tray.start()
+        self._sync_tray()
+
+    def attach_instance(self, lock, interval_ms: int = 500) -> None:
+        """Poll a `single_instance` lock for a second launch asking to restore.
+
+        The lock's listener runs on its own thread and only fills a queue;
+        draining it on a UI-thread timer keeps every widget call here.
+        """
+        self._instance = lock
+        self._instance_timer = QTimer(self)
+        self._instance_timer.setInterval(interval_ms)
+        self._instance_timer.timeout.connect(self._poll_instance)
+        self._instance_timer.start()
+
+    def _poll_instance(self) -> None:
+        import queue
+        try:
+            while True:
+                verb = self._instance.signals.get_nowait()
+                self.restore_from_tray(
+                    follow_cursor=traypolicy.restore_follows_cursor(verb))
+        except queue.Empty:
+            pass
+
+    def tray_available(self) -> bool:
+        return self._tray is not None and self._tray.available
+
+    def _sync_tray(self) -> None:
+        if self._tray is not None and self._bridge is not None:
+            self._tray.set_jobs([(j.job_id, j.name)
+                                 for j in self._bridge.registry.all()])
+
+    def apply_start(self) -> None:
+        """Honour start-minimised, once the window has been shown."""
+        action = traypolicy.on_start(self._settings, self.tray_available())
+        if action == traypolicy.HIDE:
+            self.hide_to_tray()
+        elif action == traypolicy.MINIMIZE:
+            self.showMinimized()
+
+    @property
+    def hidden_to_tray(self) -> bool:
+        return self._hidden_to_tray
+
+    def hide_to_tray(self) -> None:
+        self._hidden_to_tray = True
+        self.hide()
+
+    def restore_from_tray(self, follow_cursor: bool = False) -> None:
+        # follow_cursor is honoured once the multi-monitor placement is ported
+        # (docs/plans/qt-migration.md); until then it restores in place.
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self._hidden_to_tray = False
+
+    def show_job_from_tray(self, job_id: int) -> None:
+        """Restore the window and bring a job's output tab forward."""
+        self.restore_from_tray()
+        job = self._bridge.registry.get(job_id) if self._bridge else None
+        if job is not None and job.tab_key in self._output_tabs:
+            self.output_tabs.setCurrentWidget(self._output_tabs[job.tab_key])
+
+    def closeEvent(self, event) -> None:                  # noqa: N802
+        if self._quitting:
+            event.accept()
+            return
+        event.ignore()
+        action = traypolicy.on_close(self._settings, self.tray_available())
+        if action == traypolicy.PROMPT:
+            from .smalldialogs import CloseToTrayPromptDialog
+            dlg = CloseToTrayPromptDialog(self)
+            self.run_dialog(dlg)
+            action, save = traypolicy.after_prompt(self._settings, dlg.result,
+                                                   dlg.dont_ask)
+            if save:
+                self._save_settings(self._settings)
+        if action == traypolicy.HIDE:
+            self.hide_to_tray()
+        elif action == traypolicy.QUIT:
+            self.quit_app()
+
+    def changeEvent(self, event) -> None:                 # noqa: N802
+        super().changeEvent(event)
+        from PySide6.QtCore import QEvent
+        if (event.type() == QEvent.Type.WindowStateChange and self.isMinimized()
+                and traypolicy.on_minimize(self.tray_available(),
+                                           self._hidden_to_tray) == traypolicy.HIDE):
+            # Hiding from inside the state change fights the window manager;
+            # do it on the next turn.
+            QTimer.singleShot(0, self.hide_to_tray)
+
+    def quit_app(self) -> bool:
+        """Quit: confirm if jobs are alive, stop them, save, let go. True if quit."""
+        alive = ([j for j in self._bridge.registry.all() if j.active_processes()]
+                 if self._bridge is not None else [])
+        prompt = traypolicy.quit_prompt(len(alive))
+        if prompt is not None:
+            if self.isHidden() or self.isMinimized():
+                self.restore_from_tray()    # the question needs a window
+            if not self.ask_yes_no(*prompt):
+                return False
+        if self._bridge is not None:
+            self._bridge.stop()             # terminates what is still running
+        self._save_settings(self._settings)
+        if self._tray is not None:
+            self._tray.stop()
+        if self._instance is not None:
+            self._instance_timer.stop()
+            self._instance.release()
+        self._quitting = True
+        self.close()
+        self.on_quit()
+        return True
 
     # -- scripts: add and edit ----------------------------------------------------
     def add_script(self) -> None:
@@ -924,6 +1057,8 @@ class MainWindow(QMainWindow):
         bridge.status.connect(self.statusBar().showMessage)
         bridge.started.connect(self._on_job_started)
         bridge.finished.connect(self.running.remove)
+        for sig in (bridge.started, bridge.finished, bridge.renamed):
+            sig.connect(lambda _job: self._sync_tray())
 
     def _on_job_started(self, job) -> None:
         self.add_output_tab(job.tab_key, job.name)

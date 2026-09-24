@@ -49,6 +49,7 @@ Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__mai
 | Monitor work areas (pure geometry)             | `ryos/screens.py`       |
 | Dialog placement on the right monitor          | `ryos/ui/placement.py`  |
 | System-tray icon, tooltip, dynamic menu        | `ryos/tray.py`          |
+| Tray contents, close/minimise/quit rules       | `ryos/traypolicy.py`    |
 | Single-instance guard / handoff                | `ryos/single_instance.py` |
 | Theme gallery + WCAG `contrast_ratio`          | `ryos/themes.py`        |
 | Theme, widgets, dialogs, cards, app            | `ryos/ui/*`             |

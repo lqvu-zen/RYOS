@@ -29,7 +29,8 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import cardmenu, configio, outputpanel, scriptform, selection
+from .. import (cardmenu, configio, outputpanel, scriptform, selection,
+               traypolicy)
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
@@ -228,11 +229,11 @@ class RYOSApp(_BaseWindow):
         if corner and corner != "none":
             self.after(0, lambda c=corner: _apply_snap_corner(
                 self, c, work_area=self._target_monitor))
-        if self._settings["start_minimized"]:
-            if self._tray is not None and self._tray.available:
-                self.after(0, self._hide_to_tray)
-            else:
-                self.after(0, self.iconify)
+        start = traypolicy.on_start(self._settings, self._tray_available())
+        if start == traypolicy.HIDE:
+            self.after(0, self._hide_to_tray)
+        elif start == traypolicy.MINIMIZE:
+            self.after(0, self.iconify)
 
     def _apply_initial_placement(self, w: int, h: int):
         """Decide where the window opens and return the target monitor work area
@@ -2763,15 +2764,18 @@ class RYOSApp(_BaseWindow):
             return
         if self.state() != "iconic":
             return
-        if self._tray is None or not self._tray.available or self._hidden_to_tray:
-            return
-        self._hide_to_tray()
+        if traypolicy.on_minimize(self._tray_available(),
+                                  self._hidden_to_tray) == traypolicy.HIDE:
+            self._hide_to_tray()
 
     def _on_root_configure(self, event):
         if event.widget is not self:
             return
         if self.state() == "normal":
             self._last_normal_geometry = self.geometry()
+
+    def _tray_available(self) -> bool:
+        return self._tray is not None and self._tray.available
 
     def _hide_to_tray(self):
         self._hidden_to_tray = True
@@ -2798,34 +2802,25 @@ class RYOSApp(_BaseWindow):
         try:
             while True:
                 verb = self._instance_lock.signals.get_nowait()
-                self._restore_from_tray(follow_cursor=(verb == "RESTORE_CURSOR"))
+                self._restore_from_tray(
+                    follow_cursor=traypolicy.restore_follows_cursor(verb))
         except queue.Empty:
             pass
         self.after(500, self._poll_instance_signals)
 
     def _on_close(self):
-        if self._settings["close_to_tray"] and self._tray is not None and self._tray.available:
-            self._hide_to_tray()
-            return
-        if (self._settings.get("prompt_close_to_tray", True)
-                and self._tray is not None and self._tray.available):
+        action = traypolicy.on_close(self._settings, self._tray_available())
+        if action == traypolicy.PROMPT:
             dlg = CloseToTrayPromptDialog(self)
             self.wait_window(dlg)
-            if dlg.dont_ask:
-                self._settings["prompt_close_to_tray"] = False
-            if dlg.result == "tray":
-                self._settings["close_to_tray"] = True
-                self._settings["prompt_close_to_tray"] = False
+            action, save = traypolicy.after_prompt(self._settings, dlg.result,
+                                                   dlg.dont_ask)
+            if save:
                 _save_settings(self._settings)
-                self._hide_to_tray()
-                return
-            if dlg.result == "quit":
-                if dlg.dont_ask:
-                    _save_settings(self._settings)
-                self._quit_app()
-                return
-            return  # "cancel" -- Escape/X on the prompt itself: do nothing
-        self._quit_app()
+        if action == traypolicy.HIDE:
+            self._hide_to_tray()
+        elif action == traypolicy.QUIT:
+            self._quit_app()
 
     def _quit_app(self):
         alive = [j for j in self._jobreg.all() if j.active_processes()]
@@ -2837,10 +2832,7 @@ class RYOSApp(_BaseWindow):
                 self.deiconify()
                 self.state("normal")
                 self.lift()
-            n = len(alive)
-            label = "jobs are" if n > 1 else "job is"
-            if not messagebox.askyesno("Still Running",
-                                       f"{n} script {label} still running. Exit anyway?"):
+            if not messagebox.askyesno(*traypolicy.quit_prompt(len(alive))):
                 return
             for job in list(self._jobreg.all()):
                 for proc in job.active_processes():

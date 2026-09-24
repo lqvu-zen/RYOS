@@ -60,34 +60,10 @@ def _load_tray_image(path: Path):
     return img
 
 
-# NOTIFYICONDATAW.szTip is WCHAR[128]; ctypes raises rather than truncating,
-# so an over-long tooltip has to be clamped here or the update would fail.
-TIP_MAX = 127
-MENU_LABEL_MAX = 60
-
-
-def _ellipsize(text: str, limit: int) -> str:
-    """Clamp text to `limit` characters, marking the cut with an ellipsis."""
-    text = " ".join(text.split())          # tooltips collapse whitespace anyway
-    if len(text) <= limit:
-        return text
-    return text[:limit - 1].rstrip() + "…"
-
-
-def tray_title(job_names, base: str) -> str:
-    """Tooltip text for a set of running jobs. Pure; `base` is the idle text.
-
-    One job shows its full label (that is the interesting case when you are
-    waiting on a pipeline); several collapse to a count plus names, because the
-    128-character cap would truncate them into uselessness otherwise.
-    """
-    job_names = list(job_names)
-    if not job_names:
-        return _ellipsize(base, TIP_MAX)
-    if len(job_names) == 1:
-        return _ellipsize(f"{base} — {job_names[0]}", TIP_MAX)
-    return _ellipsize(
-        f"{base} — {len(job_names)} running: " + ", ".join(job_names), TIP_MAX)
+# The tooltip, the menu contents and the clamp live in traypolicy, shared
+# with the Qt tray; re-exported here for existing callers and tests.
+from .traypolicy import (EXIT, MENU_LABEL_MAX, SHOW, TIP_MAX,  # noqa: E402,F401
+                         _ellipsize, job_from_key, tray_menu, tray_title)
 
 
 class TrayIcon:
@@ -124,14 +100,15 @@ class TrayIcon:
         standing Show/Exit entries. 'Show RYOS' stays the default action, so a
         left-click still restores the window no matter what is running."""
         items = []
-        for job_id, label in self._jobs:
-            items.append(pystray.MenuItem(_ellipsize(label, MENU_LABEL_MAX),
-                                          self._job_handler(job_id)))
-        if items:
-            items.append(pystray.Menu.SEPARATOR)
-        items.append(pystray.MenuItem("Show RYOS", self._on_show, default=True))
-        items.append(pystray.Menu.SEPARATOR)
-        items.append(pystray.MenuItem("Exit", self._on_exit))
+        for entry in tray_menu(self._jobs):
+            if entry.key is None:
+                items.append(pystray.Menu.SEPARATOR)
+                continue
+            job_id = job_from_key(entry.key)
+            action = (self._job_handler(job_id) if job_id is not None
+                      else self._on_show if entry.key == SHOW else self._on_exit)
+            items.append(pystray.MenuItem(entry.label, action,
+                                          default=entry.default))
         return pystray.Menu(*items)
 
     def set_jobs(self, jobs) -> None:

@@ -85,6 +85,7 @@ files = [
     "ryos/history.py",
     "ryos/schedule_runner.py",
     "ryos/selection.py",
+    "ryos/traypolicy.py",
     "ryos/scheduling.py",
     "ryos/ui/__init__.py",
     "ryos/ui/theme.py",

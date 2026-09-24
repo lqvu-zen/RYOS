@@ -2122,6 +2122,186 @@ def check_group_management(app):
     win.deleteLater()
 
 
+
+
+def check_tray_and_close(app):
+    """Tray menu and tooltip, close/minimise to tray, a second launch, quit.
+
+    The second launch is the real `single_instance` listener on a loopback
+    socket, sent a real handshake -- not `acquire()`, which would touch the
+    user's own lock file. Settings saving and application quit are stubbed:
+    both default to doing nothing, so no smoke run can write real settings.
+    """
+    import secrets
+    import socket
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from PySide6.QtGui import QIcon, QPixmap
+
+    from ryos import traypolicy
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import CloseToTrayPromptDialog
+    from ryos.qtui.tray import Tray
+    from ryos.single_instance import SingleInstance
+    from ryos.themes import REFERENCE
+
+    def pump_until(predicate, timeout=15.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    pix = QPixmap(16, 16)
+    pix.fill()
+    tray = Tray(QIcon(pix), title="RYOS test")
+
+    # -- the menu and tooltip follow the job snapshot --------------------------------
+    picked: list = []
+    tray.job_requested.connect(lambda jid: picked.append(("job", jid)))
+    tray.show_requested.connect(lambda: picked.append(("show",)))
+    tray.exit_requested.connect(lambda: picked.append(("exit",)))
+    tray.set_jobs([(4, "alpha"), (9, "⚡ pipe — Step 2/3: b")])
+    labels = [a.text() for a in tray.menu.actions() if not a.isSeparator()]
+    if labels != ["alpha", "⚡ pipe — Step 2/3: b", "Show RYOS", "Exit"]:
+        PROBLEMS.append(f"tray menu {labels}")
+    if tray.tooltip != traypolicy.tray_title(["alpha", "⚡ pipe — Step 2/3: b"],
+                                              "RYOS test"):
+        PROBLEMS.append(f"tray tooltip {tray.tooltip!r}")
+    by_key = {a.data(): a for a in tray.menu.actions()}
+    for key in (traypolicy.job_key(9), traypolicy.SHOW, traypolicy.EXIT):
+        by_key[key].trigger()
+    if picked != [("job", 9), ("show",), ("exit",)]:
+        PROBLEMS.append(f"tray actions emitted {picked}")
+    tray.set_jobs([])
+    if tray.tooltip != "RYOS test":
+        PROBLEMS.append("the tooltip kept jobs that had finished")
+
+    # -- a window with the tray, a bridge and a real instance listener ---------------
+    tmp = Path(tempfile.mkdtemp())
+    slow = tmp / "slow.py"
+    slow.write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
+    db = ScriptDB(tmp / "tray.db")
+    db.create_group("G")
+    db.add("slow", str(slow), "", _sys.executable, "G")
+
+    saved: list = []
+    quits: list = []
+    settings = {"quick_run_enabled": False, "close_to_tray": False,
+                "prompt_close_to_tray": True, "max_parallel_jobs": 4}
+    win = MainWindow(REFERENCE["dark"], settings=settings,
+                     save_settings=lambda s: saved.append(dict(s)))
+    win.on_quit = lambda: quits.append(True)
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.attach_tray(tray)
+    win.tray_available = lambda: True       # offscreen CI has no tray
+    win.load_from_db(db)
+    win.show()
+    app.processEvents()
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    sock.listen(4)
+    token = secrets.token_hex(8)
+    lock = SingleInstance(sock=sock, token=token)
+    win.attach_instance(lock, interval_ms=20)
+
+    # A running job reaches the tray.
+    win.card_lists["G"].cards[0].run_button.click()
+    if not pump_until(lambda: "slow" in tray.tooltip):
+        PROBLEMS.append(f"a running job never reached the tray: {tray.tooltip!r}")
+
+    # -- close asks; each answer does what it says ------------------------------------
+    answers = {"result": "cancel", "dont_ask": False}
+
+    def answer(dlg):
+        if isinstance(dlg, CloseToTrayPromptDialog):
+            dlg.result, dlg.dont_ask = answers["result"], answers["dont_ask"]
+    win.run_dialog = answer
+    win.close()
+    app.processEvents()
+    if not win.isVisible() or quits or saved:
+        PROBLEMS.append("Cancel on the close prompt did something")
+    answers.update(result="tray", dont_ask=False)
+    win.close()
+    app.processEvents()
+    if win.isVisible() or not win.hidden_to_tray or quits:
+        PROBLEMS.append("choosing the tray did not hide the window")
+    if not saved or not saved[-1].get("close_to_tray") \
+            or saved[-1].get("prompt_close_to_tray"):
+        PROBLEMS.append(f"choosing the tray was not remembered: {saved[-1:]}")
+    if len(bridge.registry) != 1:
+        PROBLEMS.append("hiding to the tray stopped the running job")
+
+    # -- a second launch restores it, through the real listener -----------------------
+    port = sock.getsockname()[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=2) as c:
+        c.sendall(f"{token} RESTORE\n".encode())
+        reply = c.recv(16)
+    if reply != b"OK\n" or not pump_until(lambda: win.isVisible()):
+        PROBLEMS.append(f"a second launch did not restore the window ({reply!r})")
+    if win.hidden_to_tray:
+        PROBLEMS.append("restored, but still marked hidden")
+
+    # Remembered: closing now goes straight to the tray, no prompt.
+    win.run_dialog = lambda dlg: PROBLEMS.append("prompted again after 'tray'")
+    win.close()
+    app.processEvents()
+    if win.isVisible():
+        PROBLEMS.append("close did not go straight to the tray")
+    tray.show_requested.emit()
+    app.processEvents()
+
+    # -- minimising goes to the tray --------------------------------------------------
+    win.showMinimized()
+    if not pump_until(lambda: win.hidden_to_tray and not win.isVisible(), 5):
+        PROBLEMS.append("minimising did not hide to the tray")
+    if not bridge.registry.all():
+        PROBLEMS.append("the running job was gone before the tray could "
+                        "jump to it (did a close quit the app?)")
+        win.deleteLater()
+        return
+    job = bridge.registry.all()[0]
+    tray.job_requested.emit(job.job_id)
+    app.processEvents()
+    if not win.isVisible() or win.output_tabs.currentWidget() is not \
+            win._output_tabs.get(job.tab_key):
+        PROBLEMS.append("picking a job in the tray did not show its output")
+
+    # -- quit with a job alive asks, and only then stops everything ---------------------
+    asked: list = []
+    win.ask_yes_no = lambda title, q: asked.append(title) or False
+    tray.exit_requested.emit()
+    app.processEvents()
+    if asked != ["Still Running"] or quits or not job.active_processes():
+        PROBLEMS.append(f"declining quit: asked {asked}, quit {quits}")
+    win.ask_yes_no = lambda title, q: True
+    tray.exit_requested.emit()
+    app.processEvents()
+    if quits != [True] or win.isVisible():
+        PROBLEMS.append("confirming quit did not quit")
+    if not job.stopped:
+        PROBLEMS.append("quitting left the job running")
+    if tray.icon.isVisible():
+        PROBLEMS.append("quitting left the tray icon up")
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            PROBLEMS.append("quitting did not release the instance listener")
+    except OSError:
+        pass
+
+    print("  [ok] tray and close: menu/tooltip follow jobs, close prompt answers, "
+          "remembered tray, second launch restores, minimise hides, job jump, "
+          "quit asks then stops jobs, tray and listener")
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -2146,6 +2326,7 @@ def main() -> int:
     check_context_menus(app)
     check_select_mode(app)
     check_group_management(app)
+    check_tray_and_close(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:
