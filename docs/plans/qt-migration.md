@@ -207,6 +207,32 @@ release is to be the Qt one, so everything below has to exist before
 | ~~Start-up housekeeping~~ | — | **Done 2026-09-25**, in `qtui/main.py`: legacy themes migrated and custom themes loaded, palette from settings, run history pruned (`history.prune_run_history`, shared with Tk), window title, minimum size, icon and taskbar ID, tray (packaged, or RYOS_TRAY=1, as in Tk), instance listener, placement, start minimised, update check. Found on the way: "Start with Windows" had no Qt control, because it lives in the registry, not in settings. It is now in Options, through an injected `startup`. And changed options never reached the job bridge's own settings, so a new job cap was ignored until restart. |
 | ~~Theme editor~~ | — | **Done 2026-09-24.** `qtui/theme_editor.py` edits a seed with a live preview and contrast warnings. `qtui/appearance.py` (Options → Appearance…) is Tk's Appearance tab: pick a theme, create/edit/delete/export/import custom themes, set the themes folder, and set the accent, all previewed live. Cancel restores the look it opened with. Palette resolution (`palette_for`, `theme_choices`) moved from `ui/theme.py` into `themes.py`, and the tab's rules into `themeform.py`. Tk uses both, and gives palettes identical to before on every theme, with and without an accent. **Deliberate difference:** Tk locks Appearance while jobs run, because it rebuilds its widgets. Qt restyles in place, so it does not. |
 
+### Pre-release checks (2026-09-26)
+
+Before the first Qt release, the app was checked the way a user meets it,
+not feature by feature:
+
+- **A whole session** (`tests/session_smoke.py`, also in CI): groups and
+  scripts made in their dialogs, runs, a failure and retry, a stop, a
+  pipeline built and run, a schedule fired by the real sweep, Quick Run,
+  search, select mode, favourites, delete, export/import, options, theme,
+  restart. Found: a script's own parameters dropped whenever it had presets
+  (Tk too); cards not showing a run's outcome until something reloaded; the
+  instance listener able to reset a handoff; the window shown before it was
+  placed, so it flashed on the primary screen.
+- **Deletes cascade** (schema v8): a deleted script's steps, presets and
+  schedule go with it, and migration 8 clears what earlier deletes left.
+- **Tk and Qt side by side** on the same data: Qt gained relative paths,
+  last-run times, step names on pipeline cards, the coloured edge, bold
+  names, readable button glyphs and the gold favourite star.
+- **Every theme rendered and measured**: tooltips were unreadable on light
+  themes and primary-button text failed on nine themes; every text colour
+  the stylesheet draws is now checked against its fill in every theme.
+- **The packaged exe** starts clean, renders as from source, has SVG
+  support (logged if not), and two copies hand over as one instance.
+- **Upgrade**: a copy of a real Tk-era database (v7, with orphaned steps)
+  opens through the migrations to v8 (`real_data_smoke.py --db`).
+
 **A process note, recorded because it cost something.** `tests/` is ignored
 by default in `.gitignore`, with named files allowlisted back in, and
 `tests/qt_smoke.py` was never added — so for the whole of phase 2 the Qt

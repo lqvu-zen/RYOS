@@ -97,7 +97,7 @@ def main() -> int:
         if "Window shown" not in log_text:
             problems.append(f"no 'Window shown' within {WAIT_S}s "
                             f"(exit code {proc.poll()})")
-        for bad in ("Traceback", "Fatal error", "ERROR"):
+        for bad in ("Traceback", "Fatal error", "ERROR", "no SVG"):
             if bad in log_text:
                 problems.append(f"the log contains {bad!r}")
         if not (data / "scripts.db").exists():

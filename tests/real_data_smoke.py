@@ -3,6 +3,12 @@
 
     uv run python tests/real_data_smoke.py            # offscreen: no window
     uv run python tests/real_data_smoke.py --visible  # window on a second screen
+    uv run python tests/real_data_smoke.py --db PATH  # another database file, e.g.
+                                                      # a backup or an older copy
+
+``--db`` is how an upgrade is checked: an older database opens through the
+same migrations a user's would, and the schema version before and after is
+printed.
 
 The fresh databases the other smokes build hold what the checks put there.
 This one holds years of real use. It copies %APPDATA%/RYOS -- the database
@@ -39,9 +45,9 @@ def _snapshot(folder: Path) -> dict:
             for p in folder.rglob("*") if p.is_file()} if folder.is_dir() else {}
 
 
-def _copy_data(real: Path, into: Path) -> None:
+def _copy_data(real: Path, into: Path, db_file: Path | None = None) -> None:
     into.mkdir(parents=True)
-    src = real / "scripts.db"
+    src = db_file or real / "scripts.db"
     if src.exists():
         with sqlite3.connect(f"file:{src.as_posix()}?mode=ro", uri=True) as source, \
                 sqlite3.connect(into / "scripts.db") as dest:
@@ -158,15 +164,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--visible", action="store_true",
                         help="show the window, on a second screen when there is one")
+    parser.add_argument("--db", type=Path,
+                        help="open a copy of this database file instead of the user's own")
     args = parser.parse_args()
 
     real = Path(os.environ.get("APPDATA") or Path.home() / ".local" / "share") / "RYOS"
-    if not (real / "scripts.db").exists():
+    if not args.db and not (real / "scripts.db").exists():
         print(f"No RYOS data at {real}; nothing to check.")
         return 0
     before = _snapshot(real)
+    extra_before = _snapshot(args.db.parent) if args.db else {}
     tmp = Path(tempfile.mkdtemp(prefix="ryos-realdata-"))
-    _copy_data(real, tmp / "RYOS")
+    _copy_data(real, tmp / "RYOS", args.db)
+    copied = tmp / "RYOS" / "scripts.db"
+    with sqlite3.connect(copied) as conn:
+        version_before = conn.execute("PRAGMA user_version").fetchone()[0]
+        steps_before = conn.execute("SELECT COUNT(*) FROM pipeline_steps").fetchone()[0]
 
     # Everything below reads and writes the copy: ryos works out its data
     # folder from APPDATA when it is first imported.
@@ -194,11 +207,21 @@ def main() -> int:
     app, win = build(settings=settings, show=args.visible)
     for _ in range(5):
         app.processEvents()
+    with sqlite3.connect(copied) as conn:
+        version_after = conn.execute("PRAGMA user_version").fetchone()[0]
+        steps_after = conn.execute("SELECT COUNT(*) FROM pipeline_steps").fetchone()[0]
+    print(f"  schema: v{version_before} -> v{version_after}; pipeline steps "
+          f"{steps_before} -> {steps_after}")
+    from ryos.db import SCHEMA_VERSION
+    if version_after != SCHEMA_VERSION:
+        PROBLEMS.append(f"the database was left at v{version_after}, not v{SCHEMA_VERSION}")
     check_everything(app, win, ScriptDB(), settings)
     win.bridge.stop()
 
     if _snapshot(real) != before:
         PROBLEMS.append("the real RYOS folder changed during the run")
+    if args.db and _snapshot(args.db.parent) != extra_before:
+        PROBLEMS.append("the folder of the --db file changed during the run")
     for note in NOTES:
         print(f"  NOTE: {note}")
     for problem in PROBLEMS:

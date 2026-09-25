@@ -81,6 +81,12 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
     app.setApplicationName("RYOS")
     # Hiding to the tray hides the last window; that must not end the app.
     app.setQuitOnLastWindowClosed(False)
+    # The check-box tick is an SVG; a build that lost Qt's SVG plugin draws
+    # ticked boxes with no tick and says nothing, so say it here.
+    from PySide6.QtGui import QImageReader
+    if b"svg" not in [bytes(f) for f in QImageReader.supportedImageFormats()]:
+        _log.warning("Qt has no SVG image support here (imageformats plugin "
+                     "missing?): ticked check boxes will show no tick")
     icon_path = _BASE / "icon.ico"
     icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
     app.setWindowIcon(icon)
