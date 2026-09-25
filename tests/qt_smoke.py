@@ -2388,8 +2388,16 @@ def check_updates_and_notify(app):
     if opened != ["https://example.invalid/r"]:
         PROBLEMS.append(f"Download opened {opened}")
     banner = win.update_banner
+    # Wait for the result to be handled, not just for the fetch to start: on
+    # a slow runner it arrived after the dismissal below and re-showed the
+    # banner (seen on CI).
+    handled: list = []
+    real_result = win._update_result
+    win._update_result = lambda result, manual: (real_result(result, manual),
+                                                 handled.append(manual))
     win.check_for_updates(manual=True)
-    pump_until(lambda: len(threads) == 2)
+    if not pump_until(lambda: handled):
+        PROBLEMS.append("the second update check never reported back")
     app.processEvents()
     if win.update_banner is not banner or told:
         PROBLEMS.append("a second check added a second banner, or a notice")
@@ -2411,9 +2419,10 @@ def check_updates_and_notify(app):
     if told != [notifications.UNREACHABLE_NOTICE[0]]:
         PROBLEMS.append(f"unreachable, manual: told {told}")
     told.clear()
-    before = len(threads)
+    before = len(handled)
     win.check_for_updates()
-    pump_until(lambda: len(threads) > before)
+    if not pump_until(lambda: len(handled) > before):
+        PROBLEMS.append("the automatic update check never reported back")
     app.processEvents()
     if told:
         PROBLEMS.append("an automatic check that failed said something")
