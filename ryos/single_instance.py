@@ -91,10 +91,20 @@ class SingleInstance:
             pass
         self._stop_event.set()
         if self._sock is not None:
+            # shutdown() first: on Linux, close() does not wake a thread
+            # blocked in accept(), and the socket keeps taking connections
+            # until that accept times out. Windows refuses shutdown on a
+            # listening socket, which is fine -- close() suffices there.
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 self._sock.close()
             except OSError:
                 pass
+            if self._thread is not None and self._thread is not threading.current_thread():
+                self._thread.join(timeout=2.0)
         if self._mutex_handle:
             try:
                 _get_kernel32().CloseHandle(self._mutex_handle)
