@@ -100,8 +100,29 @@ class _CardBase(QFrame):
 
     def _run_button(self, last_status: str | None) -> QPushButton:
         """The Run button, which becomes Retry after a failure."""
+        b = self._button("", "", object_name="run")
+        self._style_run_button(b, last_status)
+        return b
+
+    def set_last_status(self, status: str | None) -> None:
+        """Show a run's outcome as it lands: Retry after a failure, and the
+        chip, without rebuilding the card (which a reload would do, losing
+        select-mode ticks and the scroll position)."""
+        if status == self._last_status:
+            return
+        self._last_status = status
+        self._style_run_button(self.run_button, status)
+        if self.status_chip is not None:
+            self._header.removeWidget(self.status_chip)
+            self.status_chip.deleteLater()
+        self.status_chip = self._status_chip(status)
+        if self.status_chip is not None:
+            self._header.addWidget(self.status_chip)
+
+    def _style_run_button(self, b: QPushButton, last_status: str | None) -> None:
         spec = cardstyle.run_button(last_status)
-        b = self._button(spec.glyph, spec.tooltip, object_name="run")
+        b.setText(spec.glyph)
+        set_tooltip(b, spec.tooltip)
         c = self._palette
         # Per-button colours, because the state is per-card rather than
         # per-class; everything else is left to the stylesheet.
@@ -111,7 +132,6 @@ class _CardBase(QFrame):
             f"QPushButton#run:hover {{ background: {c[spec.hover_key]};"
             f" color: {ink_on(c[spec.hover_fg_key])}; }}")
         b.setProperty("runState", spec.state)
-        return b
 
     def _tag_badges(self, header: QHBoxLayout, badges) -> None:
         """`cardstyle.TagBadge`s beside the name, drawn as the Tk cards draw them."""
@@ -189,9 +209,11 @@ class ScriptCard(_CardBase):
         if label_color:
             self.name_label.setStyleSheet(f"color: {label_color};")
         header.addWidget(self.name_label, 1)
-        chip = self._status_chip(last_status)
-        if chip is not None:
-            header.addWidget(chip)
+        self._header = header
+        self._last_status = last_status
+        self.status_chip = self._status_chip(last_status)
+        if self.status_chip is not None:
+            header.addWidget(self.status_chip)
         text.addLayout(header)
 
         if not compact:
@@ -275,9 +297,11 @@ class PipelineCard(_CardBase):
         if label_color:
             self.name_label.setStyleSheet(f"color: {label_color};")
         header.addWidget(self.name_label, 1)
-        chip = self._status_chip(last_status)
-        if chip is not None:
-            header.addWidget(chip)
+        self._header = header
+        self._last_status = last_status
+        self.status_chip = self._status_chip(last_status)
+        if self.status_chip is not None:
+            header.addWidget(self.status_chip)
         text.addLayout(header)
 
         if not compact:

@@ -1671,6 +1671,44 @@ class TestSignalExisting(unittest.TestCase):
         self.assertFalse(_single_instance_mod._signal_existing("RESTORE"))
 
 
+class TestInstanceListener(unittest.TestCase):
+    """The running app's side of the handshake, over a real loopback socket."""
+
+    def setUp(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(4)
+        self.port = sock.getsockname()[1]
+        self.lock = _single_instance_mod.SingleInstance(sock=sock, token="tok")
+        self.addCleanup(self.lock.release)
+
+    def _send(self, *parts, pause=0.0):
+        import time as _time
+        with socket.create_connection(("127.0.0.1", self.port), timeout=3) as c:
+            for i, part in enumerate(parts):
+                if i:
+                    _time.sleep(pause)
+                c.sendall(part)
+            return c.recv(16)
+
+    def _verb(self):
+        return self.lock.signals.get(timeout=3)
+
+    def test_a_whole_message(self):
+        self.assertEqual(self._send(b"tok RESTORE_CURSOR\n"), b"OK\n")
+        self.assertEqual(self._verb(), "RESTORE_CURSOR")
+
+    def test_a_message_in_two_pieces_keeps_its_verb(self):
+        # The listener read one chunk and closed: the verb was lost, and
+        # closing with the rest unread reset the connection on Windows.
+        self.assertEqual(self._send(b"tok", b" RESTORE_CURSOR\n", pause=0.2), b"OK\n")
+        self.assertEqual(self._verb(), "RESTORE_CURSOR")
+
+    def test_a_wrong_token_is_refused_without_a_signal(self):
+        self.assertEqual(self._send(b"nope RESTORE\n"), b"")
+        self.assertTrue(self.lock.signals.empty())
+
+
 # ---------------------------------------------------------------------------
 # JobRegistry — job bookkeeping extracted from RYOSApp (ryos.jobs)
 # ---------------------------------------------------------------------------
@@ -7658,7 +7696,12 @@ class TestRunParams(unittest.TestCase):
         entries, selected = scriptform.card_param_choices("--slow", presets)
         self.assertEqual(entries, [scriptform.NO_PARAMS_LABEL, "--fast", "--slow"])
         self.assertEqual(selected, "--slow")
-        self.assertEqual(scriptform.card_param_choices("--other", presets)[1],
+        # The script's own parameters are offered and selected even when no
+        # preset matches them -- they used to be dropped, running it bare.
+        entries, selected = scriptform.card_param_choices("--other", presets)
+        self.assertEqual(entries, [scriptform.NO_PARAMS_LABEL, "--other", "--fast", "--slow"])
+        self.assertEqual(selected, "--other")
+        self.assertEqual(scriptform.card_param_choices("", presets)[1],
                          scriptform.NO_PARAMS_LABEL)
 
     def test_choice_to_params(self):

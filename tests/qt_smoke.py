@@ -3189,10 +3189,20 @@ def check_run_with_params_and_new_pipeline(app):
     # -- the drop-down decides what Run passes ------------------------------------------
     combo = card("plain").params_combo
     if combo is None or [combo.itemText(i) for i in range(combo.count())] != [
-            scriptform.NO_PARAMS_LABEL, "--fast", "--slow"]:
+            scriptform.NO_PARAMS_LABEL, "--base", "--fast", "--slow"]:
         PROBLEMS.append("a script with presets showed no, or the wrong, drop-down")
     if card("asks").params_combo is not None:
         PROBLEMS.append("a script without presets showed a drop-down")
+    # Its own saved parameters, though no preset matches them, are what Run
+    # passes by default -- they used to be dropped, running the script bare.
+    if combo is not None and combo.currentText() != "--base":
+        PROBLEMS.append(f"the drop-down starts on {combo.currentText()!r}, "
+                        f"not the script's own parameters")
+    lines.clear()
+    card("plain").run_button.click()
+    if not ran_with("--base"):
+        PROBLEMS.append(f"Run did not pass the script's own parameters: {lines[-3:]}")
+    lines.clear()
     combo.setCurrentText("--slow")
     card("plain").run_button.click()
     if not ran_with("--slow"):

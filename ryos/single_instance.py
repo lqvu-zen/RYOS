@@ -62,8 +62,7 @@ class SingleInstance:
                 return
             try:
                 conn.settimeout(1.0)
-                data = conn.recv(256)
-                text = data.decode("utf-8", errors="replace").strip()
+                text = _read_line(conn).decode("utf-8", errors="replace").strip()
                 parts = text.split(None, 1)
                 token = parts[0] if parts else ""
                 verb = parts[1] if len(parts) > 1 else "RESTORE"
@@ -73,10 +72,7 @@ class SingleInstance:
             except Exception:
                 _log.debug("Error handling instance-signal connection", exc_info=True)
             finally:
-                try:
-                    conn.close()
-                except OSError:
-                    pass
+                _close_gracefully(conn)
 
     def release(self) -> None:
         if self._released:
@@ -111,6 +107,43 @@ class SingleInstance:
             except Exception:
                 _log.debug("Error closing instance mutex handle", exc_info=True)
             self._mutex_handle = None
+
+
+def _read_line(conn, limit: int = 256) -> bytes:
+    """One newline-ended message, however it arrives.
+
+    A single recv() took whatever came first: a message split across two
+    segments lost its verb, and the rest was left unread.
+    """
+    data = b""
+    while b"\n" not in data and len(data) < limit:
+        chunk = conn.recv(limit - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+def _close_gracefully(conn) -> None:
+    """Close without resetting the connection.
+
+    On Windows, closing a socket with unread input sends a reset, which can
+    discard the "OK" already sent: the second launch then retries, and after
+    three such failures it would start as a second primary. So say we are
+    done, let the client's side finish, then close.
+    """
+    try:
+        conn.shutdown(socket.SHUT_WR)
+        conn.settimeout(0.2)
+        while conn.recv(256):
+            pass
+    except OSError:
+        pass
+    finally:
+        try:
+            conn.close()
+        except OSError:
+            pass
 
 
 def _signal_existing(verb: str) -> bool:

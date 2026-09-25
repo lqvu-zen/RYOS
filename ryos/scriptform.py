@@ -236,12 +236,17 @@ def card_param_choices(params: str, presets) -> tuple[list, str] | None:
 
     Offered only when the script has presets. "(no parameters)" always comes
     first, so a script can be run bare whatever its presets say. The script's
-    saved parameters are selected when they are one of the entries.
+    own saved parameters are always an entry, and the one selected: they
+    used to be selected only when they matched a preset, so parameters typed
+    into the dialog without making them a preset were silently dropped and
+    the script ran bare.
     """
     if not presets:
         return None
     entries = [NO_PARAMS_LABEL] + [p[2] for p in presets if p[2] != ""]
-    return entries, (params if params and params in entries else NO_PARAMS_LABEL)
+    if params and params not in entries:
+        entries.insert(1, params)
+    return entries, (params or NO_PARAMS_LABEL)
 
 
 def params_from_choice(choice: str) -> str:

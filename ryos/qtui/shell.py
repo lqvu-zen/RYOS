@@ -2032,6 +2032,7 @@ class MainWindow(QMainWindow):
         bridge.status.connect(self.statusBar().showMessage)
         bridge.started.connect(self._on_job_started)
         bridge.finished.connect(self.running.remove)
+        bridge.finished.connect(self._refresh_card_statuses)
         for sig in (bridge.started, bridge.finished, bridge.renamed):
             sig.connect(lambda _job: self._sync_tray())
         bridge.notify.connect(self._on_job_notify)
@@ -2043,6 +2044,26 @@ class MainWindow(QMainWindow):
         # is opt-in, as in Tk; the tab is there either way.
         if self._settings.get("auto_open_output", False):
             self.set_output_expanded(True)
+
+    def _refresh_card_statuses(self, _job=None) -> None:
+        """Bring every card's Run button and chip up to date after a run.
+
+        Every card, not just the job's: a pipeline also sets its steps'
+        scripts. Two queries, and only cards whose status moved are touched.
+        """
+        if self._db is None:
+            return
+        scripts = {row[0]: row[7] for row in self._db.list_all()}
+        pipelines = self._db.last_pipeline_status()
+        for (kind, item_id), (rec, _group) in self._records.items():
+            rec["status"] = (pipelines if kind == cardmenu.PIPELINE
+                             else scripts).get(item_id)
+        for page in [*self.card_lists.values(), *self.all_pages.values()]:
+            for card in page.cards:
+                if isinstance(card, PipelineCard):
+                    card.set_last_status(pipelines.get(card.pipeline_id))
+                else:
+                    card.set_last_status(scripts.get(card.script_id))
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""

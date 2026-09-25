@@ -85,6 +85,9 @@ jobs:
       - name: Launch smoke (the real entry point, throwaway data)
         run: uv run python tests/launch_smoke.py
 
+      - name: Session smoke (a whole working session, throwaway data)
+        run: uv run python tests/session_smoke.py
+
   typecheck:
     name: typecheck (mypy, core)
     runs-on: ubuntu-latest
