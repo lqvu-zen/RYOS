@@ -7605,6 +7605,39 @@ class TestScheduleRunner(unittest.TestCase):
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
 
 
+class TestCardSecondLine(unittest.TestCase):
+    """What a card shows under its name, shared by Tk and Qt.
+
+    Found comparing the two side by side: Qt showed the whole path where Tk
+    showed it relative to the group's folder, no last-run time, and only a
+    pipeline's step count where Tk named the steps.
+    """
+
+    def test_path_is_relative_inside_the_base_folder(self):
+        from ryos import cardstyle
+        base = os.path.join(os.sep, "proj")
+        inside = os.path.join(base, "scripts", "build.py")
+        outside = os.path.join(os.sep, "elsewhere", "x.py")
+        self.assertEqual(cardstyle.display_path(inside, base),
+                         os.path.join("scripts", "build.py"))
+        self.assertEqual(cardstyle.display_path(outside, base), outside)
+        self.assertEqual(cardstyle.display_path(inside, ""), inside)
+        self.assertEqual(cardstyle.display_path("", base), "")
+
+    def test_last_run_to_the_minute(self):
+        from ryos import cardstyle
+        self.assertEqual(cardstyle.last_run_text("2026-09-26T00:19:28"), "2026-09-26 00:19")
+        self.assertEqual(cardstyle.last_run_text(None), "")
+        self.assertEqual(cardstyle.last_run_text("-"), "")
+
+    def test_steps_summary(self):
+        from ryos import cardstyle
+        self.assertEqual(cardstyle.steps_summary(["Lint"]), "1 step  ·  Lint")
+        self.assertEqual(cardstyle.steps_summary(list("ABCDEF")),
+                         "6 steps  ·  A  →  B  →  C  →  D  →  +2 more")
+        self.assertEqual(cardstyle.steps_summary([]), f"0 steps  ·  {cardstyle.NO_STEPS}")
+
+
 class TestFileDropAndCardDetails(unittest.TestCase):
     """Dropped files, card badges, previews and the banner -- shared rules."""
 

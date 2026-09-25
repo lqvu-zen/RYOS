@@ -107,6 +107,12 @@ class ScrollingLabel(QWidget):
         self._offset = 0
         self._schedule()
 
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.FontChange:  # e.g. bold, by the stylesheet
+            self._measure()
+            self._schedule()
+
     def enterEvent(self, event: QEvent) -> None:   # noqa: N802
         super().enterEvent(event)
         self._pause()

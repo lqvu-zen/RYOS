@@ -11,6 +11,7 @@ palette **keys**, not colours.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from .db import TRIGGER_WITH
@@ -146,6 +147,49 @@ def script_badges(*, temp_param: bool, scheduled: bool) -> list[TagBadge]:
 
 def pipeline_badges(*, scheduled: bool) -> list[TagBadge]:
     return [PIPELINE_SCHEDULED_BADGE] if scheduled else []
+
+
+# --- the text under a card's name ------------------------------------------------
+
+def display_path(path: str, base_dir: str) -> str:
+    """A script's path as its card shows it: relative to the group's base
+    folder when it is inside it, else whole. The full path is the tooltip."""
+    if base_dir and path:
+        try:
+            rel = os.path.relpath(path, base_dir)
+        except ValueError:              # another drive
+            return path
+        if not rel.startswith(".."):
+            return rel
+    return path
+
+
+def last_run_text(iso: str | None) -> str:
+    """When a script last ran, to the minute: '2026-09-26 00:19'. Empty
+    when it never has. Stored as ISO, which Tk used to show as it was."""
+    if not iso or iso == "-":
+        return ""
+    return iso.replace("T", " ")[:16]
+
+
+NO_STEPS = "No steps — click ⚙ to add scripts"
+
+
+def steps_summary(names) -> str:
+    """A pipeline card's second line: how many steps, and the first four.
+
+    '4 steps  ·  Lint  →  Test  →  Build  →  Deploy'. The card elides it to
+    fit; the steps popup has them all.
+    """
+    names = list(names)
+    n = len(names)
+    count = f"{n} step{'s' if n != 1 else ''}"
+    if not names:
+        return f"{count}  ·  {NO_STEPS}"
+    text = "  →  ".join(names[:4])
+    if n > 4:
+        text += f"  →  +{n - 4} more"
+    return f"{count}  ·  {text}"
 
 
 # --- the hover preview and the steps popup ------------------------------------------

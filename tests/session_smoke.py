@@ -535,8 +535,9 @@ def step_restart(s: Session, build, settings_loader) -> None:
     if not win.quit_app():
         problem("quitting was refused")
     s.pump(0.3)
+    s.restarting[0] = True
     settings = settings_loader()
-    app, win2 = build(settings=settings, show=s.visible)
+    app, win2 = build(settings=settings, show=True)
     s.hook(win2)
     s.pump(0.5)
     if "Project" not in win2.card_lists:
@@ -588,10 +589,18 @@ def main() -> int:
     sys.excepthook = lambda t, v, tb: errors.append(
         "".join(traceback.format_exception(t, v, tb)))
 
+    s_restarting = [False]
+
     def load_settings():
         settings = settings_mod._load_settings()
         settings["auto_check_update"] = False
         settings["open_on_cursor_monitor"] = False
+        # A definite place to open, so the start-up check can tell it from
+        # Qt's default spot; the saved geometry takes over after a restart.
+        if not settings.get("window_geometry") or not s_restarting[0]:
+            settings["window_geometry"] = "500x600+150+120"
+        settings["remember_window_geometry"] = True
+        settings["snap_corner"] = "none"
         if args.visible:
             sys.path.insert(0, str(ROOT / "tests"))
             from gui_smoke import smoke_screen
@@ -605,10 +614,36 @@ def main() -> int:
     from ryos.qtui.main import build
     work = tmp / "work"
     project = make_files(work)
-    app, win = build(settings=load_settings(), show=args.visible)
+    # Where the window is at the moment it first shows: it must already be
+    # where it belongs, not at Qt's default spot on the primary screen.
+    from PySide6.QtCore import QEvent, QObject
+    from PySide6.QtWidgets import QApplication, QMainWindow
+    shown_at: list = []
+
+    class _FirstShow(QObject):
+        def eventFilter(self, obj, event):               # noqa: N802
+            if (event.type() == QEvent.Type.Show and isinstance(obj, QMainWindow)
+                    and not shown_at):
+                shown_at.append((obj.geometry().topLeft().toTuple(),
+                                 obj.screen().name() if obj.screen() else None))
+            return False
+    first_show = _FirstShow()
+    app0 = QApplication.instance() or QApplication(sys.argv)
+    app0.installEventFilter(first_show)
+    app, win = build(settings=load_settings(), show=True)
+    app.removeEventFilter(first_show)
     s = Session(app, win, ScriptDB(), work)
     s.visible = args.visible
+    s.restarting = s_restarting
     s.pump(0.5)
+    final = (win.geometry().topLeft().toTuple(), win.screen().name())
+    if not shown_at:
+        problem("the window was never shown")
+    elif shown_at[0][1] != final[1] or any(
+            abs(a - b) > 30 for a, b in zip(shown_at[0][0], final[0])):
+        problem(f"the window first showed at {shown_at[0]} and then moved to {final}")
+    else:
+        ok(f"start-up: the window first shows where it stays, {final}")
 
     steps = [lambda: step_groups_and_scripts(s, project),
              lambda: step_run_and_output(s),

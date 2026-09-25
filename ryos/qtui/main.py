@@ -126,6 +126,12 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
               len(db.list_groups()), len(db.list_all()),
               sum(len(db.list_pipelines(g)) for g in [*db.list_groups(), ""]))
     if show:
+        # Placed before it is shown, so it first appears where it belongs:
+        # shown first, it flashed at Qt's default spot (on the primary
+        # screen) and then jumped. Placed again once shown, because Windows
+        # may rescale a window that lands on a screen of another scale, and
+        # set_geometry_string's guard holds it there.
+        win.apply_placement(launched_at_startup=launched_at_startup)
         win.show()
         win.apply_placement(launched_at_startup=launched_at_startup)
         win.apply_start()

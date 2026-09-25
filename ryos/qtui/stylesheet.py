@@ -93,7 +93,13 @@ QFrame#card {{
     border-radius: 4px;
 }}
 QFrame#card:hover {{ background: {c['card_hover']}; }}
+/* The coloured edge Tk cards have: the accent for a script, the pipeline
+   accent for a pipeline, so the two kinds tell apart at a glance. */
+QFrame#card {{ border-left: 4px solid {c['accent']}; }}
+QFrame#card[kind="pipeline"] {{ border-left: 4px solid {c.get('pipe_accent', c['accent'])}; }}
 QLabel#cardName {{ color: {c['name_fg']}; font-weight: 600; }}
+/* The name is a ScrollingLabel, not a QLabel: without this it was not bold. */
+QWidget#cardName {{ font-weight: 600; }}
 /* Text on a card sits on the card, not in a box of the window colour. */
 QFrame#card QLabel, QFrame#card #cardName {{ background: transparent; }}
 /* The empty column on a pipeline card is a gap in the card (#7). */
@@ -121,6 +127,14 @@ QPushButton#primary {{ background: {c['accent']}; color: {c['btn_fg']}; }}
 QPushButton#primary:hover {{ background: {c['accent2']}; }}
 QPushButton#dark {{ background: {c['btn_dark_bg']}; color: {c['btn_fg']}; }}
 QPushButton#dark:hover {{ background: {c['btn_dark_hover']}; }}
+/* A card's button strip holds glyphs, not words (▶ ↻ ★ ⚙ ▸+): at the body
+   size they drew a few pixels tall, and ↻ -- the retry -- was hard to make
+   out. Tk draws them larger too. */
+QFrame#card QPushButton {{ font-size: 13pt; padding: 2px 0; }}
+/* A favourite's star is gold on the accent wash, as in Tk. */
+QFrame#card QPushButton#favOn {{
+    color: {c.get('bolt', c['accent'])}; background: {c['accent_wash']};
+}}
 
 /* --- group tabs ----------------------------------------------------- */
 QTabWidget::pane {{ border: 1px solid {c['border']}; background: {c['card_bg']}; }}
@@ -198,6 +212,9 @@ QScrollBar:vertical {{ background: {c['bg']}; width: 12px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 6px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: {c['accent_wash']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+/* The track either side of the handle: left unstyled, Qt fills it with a
+   dotted hatch. */
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
 
 /* --- update banner ------------------------------------------------- */
 QFrame#updateBanner {{

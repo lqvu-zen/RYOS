@@ -729,7 +729,8 @@ class MainWindow(QMainWindow):
                                 is_favorite=bool(rec.get("favorite")),
                                 label_color=shade, last_status=rec.get("status"),
                                 badges=cardstyle.pipeline_badges(
-                                    scheduled=bool(rec.get("scheduled"))))
+                                    scheduled=bool(rec.get("scheduled"))),
+                                step_names=rec.get("step_names"))
         else:
             card = ScriptCard(script_id=rec["id"], name=rec["name"],
                               path=rec.get("path", ""), palette=self._palette,
@@ -740,7 +741,9 @@ class MainWindow(QMainWindow):
                                   rec.get("params", ""), rec.get("presets") or []),
                               badges=cardstyle.script_badges(
                                   temp_param=bool(rec.get("temp_param")),
-                                  scheduled=bool(rec.get("scheduled"))))
+                                  scheduled=bool(rec.get("scheduled"))),
+                              base_dir=rec.get("base_dir", ""),
+                              last_run=rec.get("last_run"))
         card.section = section
         if compact and self._settings.get("hover_preview", True):
             from .widgets import HoverPreview
@@ -954,6 +957,7 @@ class MainWindow(QMainWindow):
                 sid, sname, path, params, interp = rec[0], rec[1], rec[2], rec[3], rec[4]
                 records.append({
                     "id": sid, "name": sname, "path": path, "status": rec[7],
+                    "base_dir": base or "", "last_run": rec[6],
                     "favorite": bool(rec[10]), "color": rec[11],
                     "params": params or "", "temp_param": bool(rec[9]),
                     "scheduled": sid in scheduled_scripts,
@@ -967,7 +971,8 @@ class MainWindow(QMainWindow):
                     "id": pid, "kind": "pipeline", "name": pname,
                     "favorite": bool(fav), "color": color,
                     "scheduled": pid in scheduled_pipes,
-                    "steps": len(db.list_pipeline_steps(pid)),
+                    "steps": len(steps := db.list_pipeline_steps(pid)),
+                    "step_names": [row[2] for row in steps],
                     "status": statuses.get(pid),
                     "run": (lambda p=pid, n=pname, g=name:
                             self._run_pipeline_record(p, n, g)),
@@ -2053,7 +2058,9 @@ class MainWindow(QMainWindow):
         """
         if self._db is None:
             return
-        scripts = {row[0]: row[7] for row in self._db.list_all()}
+        rows = self._db.list_all()
+        scripts = {row[0]: row[7] for row in rows}
+        last_runs = {row[0]: row[6] for row in rows}
         pipelines = self._db.last_pipeline_status()
         for (kind, item_id), (rec, _group) in self._records.items():
             rec["status"] = (pipelines if kind == cardmenu.PIPELINE
@@ -2064,6 +2071,7 @@ class MainWindow(QMainWindow):
                     card.set_last_status(pipelines.get(card.pipeline_id))
                 else:
                     card.set_last_status(scripts.get(card.script_id))
+                    card.set_last_run(last_runs.get(card.script_id))
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""

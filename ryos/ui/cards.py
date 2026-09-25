@@ -1,5 +1,4 @@
 """Card widgets for scripts and pipelines."""
-import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
@@ -213,16 +212,10 @@ class ScriptCard(tk.Frame):
             # button, which is present at every card size.
             ScrollingLabel(text_area, name, name_fg, C["card_bg"]).pack(fill="x")
         if not _COMPACT:
-            display_path = path
-            if group_base_dir and path:
-                try:
-                    rel = os.path.relpath(path, group_base_dir)
-                    if not rel.startswith(".."):
-                        display_path = rel
-                except ValueError:
-                    pass
+            display_path = cardstyle.display_path(path, group_base_dir or "")
             # Row 2: path + last-run timestamp + status badge on one line
-            has_run = last_run and last_run != "-"
+            last_run = cardstyle.last_run_text(last_run)
+            has_run = bool(last_run)
             if display_path or has_run:
                 sub_row = tk.Frame(text_area, bg=C["card_bg"])
                 sub_row.pack(fill="x")

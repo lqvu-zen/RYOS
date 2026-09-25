@@ -168,6 +168,11 @@ class ScriptCard(_CardBase):
     edit_requested = Signal(int)
     favorite_toggled = Signal(int, bool)
 
+    def set_last_run(self, iso: str | None) -> None:
+        """Update when it last ran, in place (see `set_last_status`)."""
+        if self.last_run_label is not None:
+            self.last_run_label.setText(cardstyle.last_run_text(iso))
+
     def selected_params(self, fallback: str) -> str:
         """What Run should pass: the drop-down's choice, else ``fallback``."""
         if self.params_combo is None:
@@ -180,6 +185,7 @@ class ScriptCard(_CardBase):
                  label_color: str | None = None,
                  param_choices: tuple | None = None,
                  badges=(),
+                 base_dir: str = "", last_run: str | None = None,
                  parent: QWidget | None = None):
         super().__init__(palette, compact, size, parent)
         self.script_id = script_id
@@ -216,13 +222,24 @@ class ScriptCard(_CardBase):
             header.addWidget(self.status_chip)
         text.addLayout(header)
 
+        self.last_run_label: QLabel | None = None
         if not compact:
-            self.path_label = ElidedLabel(path)
+            # Relative to the group's base folder, as in Tk; the tooltip
+            # keeps the whole path.
+            self.path_label = ElidedLabel(cardstyle.display_path(path, base_dir))
             self.path_label.setObjectName("cardPath")
+            self.path_label.setToolTip(path)
             # Not text-selectable, matching the Tk card: a selectable label
             # takes the mouse for itself, so dragging the card by its path
             # would select text instead of moving the card.
-            text.addWidget(self.path_label)
+            sub = QHBoxLayout()
+            sub.setSpacing(6)
+            sub.addWidget(self.path_label, 1)
+            self.last_run_label = QLabel(cardstyle.last_run_text(last_run))
+            self.last_run_label.setObjectName("cardPath")
+            self.last_run_label.setToolTip("Last run")
+            sub.addWidget(self.last_run_label)
+            text.addLayout(sub)
         # The preset drop-down: which parameters Run passes. Offered, as in
         # Tk, only when the script has presets (`scriptform.card_param_choices`).
         if param_choices and not compact:
@@ -242,7 +259,8 @@ class ScriptCard(_CardBase):
         # Four columns, in the same order as the Tk card.
         self.fav_button = self._button("★" if is_favorite else "☆",
                                        "Remove from favorites" if is_favorite
-                                       else "Add to favorites")
+                                       else "Add to favorites",
+                                       object_name="favOn" if is_favorite else "")
         self.edit_button = self._button("⚙", "Edit")
         self.param_button = self._button("▶+", "Run with parameter")
         self.run_button = self._run_button(last_status)
@@ -272,10 +290,12 @@ class PipelineCard(_CardBase):
                  palette: dict, compact: bool = False, size: str = "medium",
                  is_favorite: bool = False, last_status: str | None = None,
                  label_color: str | None = None,
-                 badges=(),
+                 badges=(), step_names=None,
                  parent: QWidget | None = None):
         super().__init__(palette, compact, size, parent)
         self.pipeline_id = pipeline_id
+        # Drawn with the pipeline accent down its left edge (stylesheet).
+        self.setProperty("kind", "pipeline")
         self._name = name
 
         text = QVBoxLayout()
@@ -305,8 +325,14 @@ class PipelineCard(_CardBase):
         text.addLayout(header)
 
         if not compact:
-            plural = "s" if step_count != 1 else ""
-            self.steps_label = QLabel(f"{step_count} step{plural}")
+            # The count and the first steps' names, as in Tk; elided to fit.
+            if step_names is None:
+                plural = "s" if step_count != 1 else ""
+                self.steps_label = ElidedLabel(f"{step_count} step{plural}",
+                                               mode=Qt.TextElideMode.ElideRight)
+            else:
+                self.steps_label = ElidedLabel(cardstyle.steps_summary(step_names),
+                                               mode=Qt.TextElideMode.ElideRight)
             self.steps_label.setObjectName("cardPath")
             self.steps_label.setCursor(Qt.CursorShape.PointingHandCursor)
             # A click lists the steps, as in Tk. Release, not press: the press
@@ -318,7 +344,8 @@ class PipelineCard(_CardBase):
 
         self.fav_button = self._button("★" if is_favorite else "☆",
                                        "Remove from favorites" if is_favorite
-                                       else "Add to favorites")
+                                       else "Add to favorites",
+                                       object_name="favOn" if is_favorite else "")
         self.edit_button = self._button("⚙", "Edit")
         self.spacer = self._spacer()          # where ▶+ sits on a script card
         self.run_button = self._run_button(last_status)
