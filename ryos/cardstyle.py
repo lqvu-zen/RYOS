@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .db import TRIGGER_WITH
+
 SIZES = ("small", "medium", "large")
 DEFAULT_SIZE = "medium"
 
@@ -115,3 +117,55 @@ def status_badge(status: str | None) -> StatusBadge | None:
     if status == "ok":
         return StatusBadge("✓ OK", "ok_fg", "ok")
     return None
+
+
+# --- the badges beside a card's name ---------------------------------------------
+
+@dataclass(frozen=True)
+class TagBadge:
+    """A small label beside a card's name: text, background palette key, tooltip.
+    Drawn in ``fg_on_dark``, as the Tk cards always have."""
+
+    text: str
+    bg_key: str
+    tooltip: str
+
+
+SCHEDULE_TIP = "Runs on a schedule — right-click to edit"
+TEMP_PARAM_BADGE = TagBadge("⏱ TEMP PARAM", "accent",
+                            "Asks for a temporary parameter on each run (not saved)")
+SCRIPT_SCHEDULED_BADGE = TagBadge("🕒 SCHEDULED", "pipe_accent", SCHEDULE_TIP)
+PIPELINE_SCHEDULED_BADGE = TagBadge("🕒", "accent", SCHEDULE_TIP)
+
+
+def script_badges(*, temp_param: bool, scheduled: bool) -> list[TagBadge]:
+    """A script card's badges, in the order Tk draws them."""
+    return ([TEMP_PARAM_BADGE] if temp_param else []) + (
+        [SCRIPT_SCHEDULED_BADGE] if scheduled else [])
+
+
+def pipeline_badges(*, scheduled: bool) -> list[TagBadge]:
+    return [PIPELINE_SCHEDULED_BADGE] if scheduled else []
+
+
+# --- the hover preview and the steps popup ------------------------------------------
+
+NO_VALUE = "—"
+NO_STEPS = "No steps yet."
+
+
+def script_preview_rows(path: str, params: str) -> list[tuple[str, str, bool]]:
+    """(label, value, dim) rows for a compact script card's preview."""
+    return [("Path", path or NO_VALUE, not path),
+            ("Params", params or NO_VALUE, not params)]
+
+
+def pipeline_preview_rows(steps) -> list[tuple[str, str, str, str | None]]:
+    """(number, name, path, override) per step, as the preview and the steps
+    popup list them. A step that starts with the one above is numbered ∥."""
+    rows = []
+    for i, step in enumerate(steps, 1):
+        together = len(step) > 7 and step[7] == TRIGGER_WITH
+        override = step[6] if len(step) > 6 else None
+        rows.append(("∥" if together else f"{i}.", step[2], step[3], override))
+    return rows

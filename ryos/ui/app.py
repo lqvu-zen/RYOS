@@ -21,7 +21,6 @@ from .. import __version__
 from ..db import ScriptDB
 from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE
 from .. import schedule_runner
-from ..interpreter import (detect_interpreter)
 from ..logger import get_logger, setup_logging
 from .. import notifications
 from ..notifications import _fetch_latest_release, _show_notification
@@ -49,7 +48,7 @@ from ..quickrun_actions import NOTHING as QR_NOTHING
 from ..quickrun_actions import chosen_path, ensure_script, plan_submit
 from ..quickrun_index import QuickRunIndex
 from ..quickrun import (
-    _is_inside, display_relpath,
+    display_relpath,
 )
 from ..job_controller import JobController
 from ..jobs import Job as _Job, JobRegistry, format_elapsed
@@ -279,24 +278,15 @@ class RYOSApp(_BaseWindow):
             groups = self.db.list_groups()
 
         group = self._active_group or ""
-        base_dir = self.db.get_group_base_dir(group)
-        added = 0
-        skipped = []
-        for path in paths:
-            p = Path(path)
-            if p.is_file():
-                if base_dir and not _is_inside(str(p), base_dir):
-                    skipped.append(p)
-                    continue
-                self.db.add(p.stem, str(p), "", detect_interpreter(str(p)), group)
-                added += 1
+        to_add, skipped = scriptform.plan_file_drop(
+            paths, self.db.get_group_base_dir(group), lambda p: Path(p).is_file())
+        for path in to_add:
+            name, full, interp = scriptform.dropped_script(path)
+            self.db.add(name, full, "", interp, group)
+        added = len(to_add)
         if skipped:
-            messagebox.showwarning(
-                "Files outside base directory",
-                f"{len(skipped)} file(s) were skipped because their paths are outside the base directory for group '{group}':\n"
-                + "\n".join([str(p) for p in skipped[:10]]),
-                parent=self,
-            )
+            messagebox.showwarning(*scriptform.outside_base_notice(group, skipped),
+                                   parent=self)
         if added:
             self._refresh_cards()
 
@@ -978,7 +968,7 @@ class RYOSApp(_BaseWindow):
         icon_lbl = tk.Label(banner, text="📁", bg=C["card_bg"], fg=C["path_fg"],
                             font=("Segoe UI", 11), padx=10, pady=8, cursor="hand2")
         icon_lbl.pack(side="left")
-        path_text = group_base_dir if group_base_dir else "No base directory — click to set"
+        path_text = group_base_dir if group_base_dir else sections.NO_BASE_DIR
         path_fg = C["name_fg"] if group_base_dir else C["path_fg"]
         path_lbl = tk.Label(banner, text=path_text, bg=C["card_bg"], fg=path_fg,
                             font=("Segoe UI", 10), anchor="w", pady=8, cursor="hand2")

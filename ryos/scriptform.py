@@ -272,3 +272,41 @@ TEMP_PARAM_HINT = "Used for this run only — not saved. Appended to saved param
 def saved_params_line(params: str) -> str | None:
     """The temp-param prompt's reminder of what is already passed, if anything."""
     return f"Saved params: {params}" if params else None
+
+
+# --- files dropped onto the window ------------------------------------------------
+
+def plan_file_drop(paths, base_dir: str, is_file) -> tuple[list, list]:
+    """(files to add, files skipped as outside ``base_dir``) for a drop.
+
+    Only files count: a dropped folder is ignored rather than added as a
+    script it cannot run. ``is_file`` is passed in so this stays pure.
+    """
+    add, skipped = [], []
+    for path in paths:
+        if not is_file(path):
+            continue
+        if base_dir and not _is_inside(str(path), base_dir):
+            skipped.append(path)
+        else:
+            add.append(path)
+    return add, skipped
+
+
+def dropped_script(path) -> tuple[str, str, str]:
+    """(name, path, interpreter) for a dropped file.
+
+    The path is normalised: drops arrive with forward slashes on Windows (Qt's
+    QUrl, and tkdnd), while every other way of adding a script stores native
+    ones -- so the same file could otherwise be stored two ways.
+    """
+    from .interpreter import detect_interpreter
+    native = os.path.normpath(str(path))
+    return name_from_path(native), native, detect_interpreter(native)
+
+
+def outside_base_notice(group: str, skipped) -> tuple[str, str]:
+    return ("Files outside base directory",
+            f"{len(skipped)} file(s) were skipped because their paths are "
+            f"outside the base directory for group '{group}':\n"
+            + "\n".join(str(p) for p in list(skipped)[:10]))

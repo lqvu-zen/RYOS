@@ -162,6 +162,22 @@ QFrame#updateBanner {{
 }}
 QFrame#updateBanner QLabel {{ background: transparent; color: {c['name_fg']}; }}
 
+/* --- hover preview and steps popup ------------------------------- */
+QFrame#hoverPreview {{ background: {c['card_bg']}; border: 1px solid {c['border']}; }}
+
+/* --- group banner -------------------------------------------------- */
+QPushButton#groupBanner, QPushButton#groupBannerEmpty {{
+    background: {c['card_bg']};
+    border: 1px solid {c['border']};
+    text-align: left;
+    padding: 8px 10px;
+}}
+QPushButton#groupBanner {{ color: {c['name_fg']}; }}
+QPushButton#groupBannerEmpty {{ color: {c['path_fg']}; }}
+QPushButton#groupBanner:hover, QPushButton#groupBannerEmpty:hover {{
+    background: {c['card_hover']};
+}}
+
 /* --- sections ------------------------------------------------------ */
 QPushButton#sectionHeader {{
     background: transparent;

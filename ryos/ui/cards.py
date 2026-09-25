@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from .. import cardmenu, cardstyle, scriptform
-from ..db import TRIGGER_WITH, ScriptDB
+from ..db import ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
                       _PresetEntryDialog, _TempParamDialog)
@@ -77,6 +77,15 @@ def _status_badge(parent, status: str) -> "tk.Label | None":
     return tk.Label(parent, text=spec.text, bg=C[spec.bg_key],
                     fg=C[spec.fg_key], font=("Segoe UI", 8, "bold"),
                     padx=5, pady=1)
+
+
+def _tag_badge(parent, spec) -> tk.Label:
+    """A `cardstyle.TagBadge`, packed beside the card's name."""
+    badge = tk.Label(parent, text=spec.text, bg=C[spec.bg_key], fg=C["fg_on_dark"],
+                     font=("Segoe UI", 8, "bold"), padx=5, pady=1)
+    badge.pack(side="left", padx=(0, 6))
+    Tooltip(badge, spec.tooltip)
+    return badge
 
 
 def _popup_menu(owner: tk.Misc, items, on_pick) -> tk.Menu:
@@ -191,18 +200,9 @@ class ScriptCard(tk.Frame):
             name_row.pack(fill="x", pady=(0, 2))
             tk.Label(name_row, text=tag_text, bg=tag_bg, fg=C["fg_on_dark"],
                      font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(0, 6))
-            if temp_param:
-                temp_badge = tk.Label(name_row, text="⏱ TEMP PARAM", bg=C["accent"],
-                                      fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
-                                      padx=5, pady=1)
-                temp_badge.pack(side="left", padx=(0, 6))
-                Tooltip(temp_badge, "Asks for a temporary parameter on each run (not saved)")
-            if scheduled:
-                sched_badge = tk.Label(name_row, text="🕒 SCHEDULED",
-                                       bg=C["pipe_accent"], fg=C["fg_on_dark"],
-                                       font=("Segoe UI", 8, "bold"), padx=5, pady=1)
-                sched_badge.pack(side="left", padx=(0, 6))
-                Tooltip(sched_badge, "Runs on a schedule — right-click to edit")
+            for spec in cardstyle.script_badges(temp_param=bool(temp_param),
+                                                 scheduled=bool(scheduled)):
+                _tag_badge(name_row, spec)
             ScrollingLabel(name_row, name, name_fg, C["card_bg"]).pack(side="left", fill="both", expand=True)
         else:
             # Compact cards have no path/status row, so a failure would have
@@ -302,9 +302,8 @@ class ScriptCard(tk.Frame):
             tk.Label(r, text=value, bg=C["card_bg"], fg=value_fg,
                      font=("Segoe UI", 8), anchor="w").pack(side="left")
 
-        _row("Path", self._path or "—")
-        _row("Params", self._params if self._params else "—",
-             value_fg=C["name_fg"] if self._params else C["path_fg"])
+        for label, value, dim in cardstyle.script_preview_rows(self._path, self._params):
+            _row(label, value, value_fg=C["path_fg"] if dim else C["name_fg"])
 
     def show_checkbox(self, command=None):
         self._chk.config(command=command)
@@ -547,12 +546,8 @@ class PipelineCard(tk.Frame):
             name_row.pack(fill="x")
             tk.Label(name_row, text="⚡ PIPELINE", bg=self._PIPE_ACCENT, fg=C["fg_on_dark"],
                      font=("Segoe UI", 8, "bold"), padx=5, pady=1).pack(side="left", padx=(0, 6))
-            if scheduled:
-                pipe_sched = tk.Label(name_row, text="🕒", bg=C["accent"],
-                                      fg=C["fg_on_dark"], font=("Segoe UI", 8, "bold"),
-                                      padx=5, pady=1)
-                pipe_sched.pack(side="left", padx=(0, 6))
-                Tooltip(pipe_sched, "Runs on a schedule — right-click to edit")
+            for spec in cardstyle.pipeline_badges(scheduled=bool(scheduled)):
+                _tag_badge(name_row, spec)
             name_label = ScrollingLabel(name_row, name, name_fg, C["card_bg"])
             name_label.pack(side="left", fill="both", expand=True)
         else:
@@ -616,21 +611,20 @@ class PipelineCard(tk.Frame):
         tk.Frame(inner, bg=C["border"], height=1).pack(fill="x", pady=(0, 6))
 
         if not steps:
-            tk.Label(inner, text="No steps yet.", bg=C["card_bg"], fg=C["path_fg"],
+            tk.Label(inner, text=cardstyle.NO_STEPS, bg=C["card_bg"], fg=C["path_fg"],
                      font=("Segoe UI", 8)).pack(anchor="w")
         else:
-            for i, step in enumerate(steps, 1):
+            for idx_text, name, path, override in cardstyle.pipeline_preview_rows(steps):
                 row = tk.Frame(inner, bg=C["card_bg"])
                 row.pack(fill="x", pady=2)
-                idx_text = "∥" if len(step) > 7 and step[7] == TRIGGER_WITH else f"{i}."
                 tk.Label(row, text=idx_text, bg=C["card_bg"], fg=C["path_fg"],
                          font=("Segoe UI", 8), width=3, anchor="e").pack(side="left")
-                tk.Label(row, text=step[2], bg=C["card_bg"], fg=C["name_fg"],
+                tk.Label(row, text=name, bg=C["card_bg"], fg=C["name_fg"],
                          font=("Segoe UI", 8, "bold"), anchor="w").pack(side="left", padx=(6, 0))
-                tk.Label(row, text=step[3], bg=C["card_bg"], fg=C["path_fg"],
+                tk.Label(row, text=path, bg=C["card_bg"], fg=C["path_fg"],
                          font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(6, 0))
-                if len(step) > 6 and step[6] is not None:
-                    tk.Label(row, text=f"[{step[6]}]", bg=C["card_bg"], fg=C["accent"],
+                if override is not None:
+                    tk.Label(row, text=f"[{override}]", bg=C["card_bg"], fg=C["accent"],
                              font=("Segoe UI", 7), anchor="w").pack(side="left", padx=(4, 0))
 
     def _build_preview(self, inner):

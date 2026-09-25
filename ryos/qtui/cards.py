@@ -113,6 +113,20 @@ class _CardBase(QFrame):
         b.setProperty("runState", spec.state)
         return b
 
+    def _tag_badges(self, header: QHBoxLayout, badges) -> None:
+        """`cardstyle.TagBadge`s beside the name, drawn as the Tk cards draw them."""
+        self.badges: list[QLabel] = []
+        for spec in badges or ():
+            badge = QLabel(spec.text)
+            badge.setObjectName("tagBadge")
+            badge.setStyleSheet(
+                f"background: {self._palette[spec.bg_key]};"
+                f" color: {self._palette['fg_on_dark']}; padding: 1px 5px;"
+                f" border-radius: 2px; font-size: 8pt; font-weight: 700;")
+            set_tooltip(badge, spec.tooltip)
+            header.addWidget(badge)
+            self.badges.append(badge)
+
     def _status_chip(self, status: str | None) -> QLabel | None:
         spec = cardstyle.status_badge(status)
         if spec is None:
@@ -145,6 +159,7 @@ class ScriptCard(_CardBase):
                  is_favorite: bool = False, last_status: str | None = None,
                  label_color: str | None = None,
                  param_choices: tuple | None = None,
+                 badges=(),
                  parent: QWidget | None = None):
         super().__init__(palette, compact, size, parent)
         self.script_id = script_id
@@ -168,6 +183,7 @@ class ScriptCard(_CardBase):
                 f" padding: 1px 5px; border-radius: 2px; font-size: 8pt;"
                 f" font-weight: 700;")
             header.addWidget(badge)
+        self._tag_badges(header, () if compact else badges)
         self.name_label = ScrollingLabel(name)
         self.name_label.setObjectName("cardName")
         if label_color:
@@ -223,11 +239,13 @@ class PipelineCard(_CardBase):
     run_requested = Signal(int)
     edit_requested = Signal(int)
     favorite_toggled = Signal(int, bool)
+    steps_clicked = Signal(int)
 
     def __init__(self, *, pipeline_id: int, name: str, step_count: int,
                  palette: dict, compact: bool = False, size: str = "medium",
                  is_favorite: bool = False, last_status: str | None = None,
                  label_color: str | None = None,
+                 badges=(),
                  parent: QWidget | None = None):
         super().__init__(palette, compact, size, parent)
         self.pipeline_id = pipeline_id
@@ -246,6 +264,7 @@ class PipelineCard(_CardBase):
                 f" padding: 1px 5px; border-radius: 2px; font-size: 8pt;"
                 f" font-weight: 700;")
             header.addWidget(badge)
+        self._tag_badges(header, () if compact else badges)
         self.name_label = ScrollingLabel(name)
         self.name_label.setObjectName("cardName")
         if label_color:
@@ -260,6 +279,11 @@ class PipelineCard(_CardBase):
             plural = "s" if step_count != 1 else ""
             self.steps_label = QLabel(f"{step_count} step{plural}")
             self.steps_label.setObjectName("cardPath")
+            self.steps_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            # A click lists the steps, as in Tk. Release, not press: the press
+            # still reaches the card, which may be starting a drag.
+            self.steps_label.mouseReleaseEvent = (
+                lambda _e: self.steps_clicked.emit(self.pipeline_id))
             text.addWidget(self.steps_label)
         self._row.addLayout(text, 1)
 

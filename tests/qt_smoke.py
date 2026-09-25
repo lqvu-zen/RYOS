@@ -3372,6 +3372,224 @@ def check_output_panel(app):
     win.deleteLater()
 
 
+def check_file_drop(app):
+    """Files dropped on the window become scripts in the group on screen."""
+    import tempfile
+
+    from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+    from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+
+    from ryos.db import ScriptDB
+    from ryos.interpreter import detect_interpreter
+    from ryos.qtui.dragdrop import MIME, CardPayload
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    base = tmp / "base"
+    (base / "folder").mkdir(parents=True)
+    inside_py, inside_bat = base / "tool.py", base / "build.bat"
+    outside = tmp / "elsewhere.py"
+    for f in (inside_py, inside_bat, outside):
+        f.write_text("x\n", encoding="utf-8")
+
+    def settle():
+        for _ in range(4):
+            app.processEvents()
+
+    def drop(win, mime):
+        pos = QPoint(40, 40)
+        args = (Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier)
+        enter = QDragEnterEvent(pos, *args)
+        app.sendEvent(win, enter)
+        if not enter.isAccepted():
+            return False
+        app.sendEvent(win, QDragMoveEvent(pos, *args))
+        app.sendEvent(win, QDropEvent(QPointF(pos), *args))
+        settle()
+        return True
+
+    def files(*paths):
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(x)) for x in paths])
+        return mime
+
+    def window(db):
+        win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+        win.show()
+        win.load_from_db(db)
+        settle()
+        return win
+
+    # -- into a group with a base folder: inside added, outside warned, folder ignored --
+    db = ScriptDB(tmp / "drop.db")
+    db.create_group("G", base_dir=str(base))
+    win = window(db)
+    warned: list = []
+    win.warn = lambda title, text: warned.append(text)
+    win.show_group("G")
+    if not drop(win, files(inside_py, inside_bat, base / "folder", outside)):
+        PROBLEMS.append("the window refused a drop of files")
+    got = sorted((r[1], r[2], r[4]) for r in db.list_all() if r[8] == "G")
+    want = sorted([("tool", str(inside_py), detect_interpreter(str(inside_py))),
+                   ("build", str(inside_bat), detect_interpreter(str(inside_bat)))])
+    if got != want:
+        PROBLEMS.append(f"dropping into G stored {got}")
+    if len(warned) != 1 or "elsewhere.py" not in warned[0] or "1 file(s)" not in warned[0]:
+        PROBLEMS.append(f"the file outside the base folder was not warned about: {warned}")
+    shown = sorted(c._name for c in win.card_lists["G"].section("scripts").cards)
+    if shown != ["build", "tool"]:
+        PROBLEMS.append(f"the dropped scripts showed as cards {shown}")
+
+    # -- a card being dragged is not a file drop ------------------------------------------
+    card = QMimeData()
+    card.setData(MIME, CardPayload("script", 1, "G").encode())
+    if drop(win, card):
+        PROBLEMS.append("the window took a card drag as a file drop")
+
+    # -- on the All tab: ungrouped, and All stays in front ---------------------------------
+    win.show_group(None)
+    drop(win, files(outside))
+    if [r[1] for r in db.list_all() if (r[8] or "") == ""] != ["elsewhere"] \
+            or not win.showing_all():
+        PROBLEMS.append("a drop on All did not go to ungrouped, or left the All tab")
+    win.deleteLater()
+
+    # -- no groups yet: asks for one, then adds there --------------------------------------
+    db2 = ScriptDB(tmp / "empty.db")
+    win = window(db2)
+    win.ask_text = lambda title, prompt, initial: "First"
+    drop(win, files(outside))
+    if db2.list_groups() != ["First"] or [r[8] for r in db2.list_all()] != ["First"]:
+        PROBLEMS.append(f"with no groups: groups {db2.list_groups()}, "
+                        f"scripts in {[r[8] for r in db2.list_all()]}")
+    win.deleteLater()
+
+    print("  [ok] file drop: files into the group on screen with detected "
+          "interpreters, folder ignored, outside the base warned, card drags "
+          "refused, All goes to ungrouped, no groups asks first")
+
+
+def check_badges_banner_previews(app):
+    """Card badges, the group banner, the steps popup and the hover preview."""
+    import json
+    import sys as _sys
+    import tempfile
+    from datetime import datetime, timedelta
+
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QLabel
+
+    from ryos import cardstyle, sections
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import GroupBaseDirDialog
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "badges.db")
+    db.create_group("G", base_dir=str(tmp))
+    db.create_group("H")
+    asks = db.add("asks", str(tmp / "a.py"), "--p", _sys.executable, "G", 1)
+    db.add("plain", str(tmp / "b.py"), "", _sys.executable, "G")
+    db.add("loose", str(tmp / "c.py"), "", _sys.executable, "")
+    pid = db.create_pipeline("pipe", "G")
+    db.add_pipeline_step(pid, asks)
+    second = db.add_pipeline_step(pid, asks)
+    db.set_step_trigger_mode(second, "with")
+    db.update_pipeline_step_params(second, "--x")
+    soon = datetime.now() + timedelta(hours=1)
+    every = json.dumps({"minutes": 60})
+    db.add_schedule("script", script_id=asks, spec_type="interval", spec=every,
+                    enabled=True, next_run_at=soon)
+    db.add_schedule("pipeline", pipeline_id=pid, spec_type="interval", spec=every,
+                    enabled=True, next_run_at=soon)
+
+    def settle():
+        for _ in range(4):
+            app.processEvents()
+
+    def window(settings):
+        win = MainWindow(REFERENCE["dark"],
+                         settings={"quick_run_enabled": False, **settings})
+        win.show()
+        win.load_from_db(db)
+        win.show_group("G")
+        settle()
+        return win
+
+    def card(win, name, section="scripts"):
+        return next(c for c in win.card_lists["G"].section(section).cards
+                    if c._name == name)
+
+    win = window({})
+    dialogs: list = []
+    win.run_dialog = dialogs.append
+
+    # -- badges --------------------------------------------------------------------------
+    got = [b.text() for b in card(win, "asks").badges]
+    if got != [cardstyle.TEMP_PARAM_BADGE.text, cardstyle.SCRIPT_SCHEDULED_BADGE.text]:
+        PROBLEMS.append(f"the script badges were {got}")
+    if card(win, "plain").badges:
+        PROBLEMS.append("a plain script carried badges")
+    got = [b.text() for b in card(win, "pipe", "pipelines").badges]
+    if got != [cardstyle.PIPELINE_SCHEDULED_BADGE.text]:
+        PROBLEMS.append(f"the pipeline badges were {got}")
+
+    # -- the group banner ----------------------------------------------------------------
+    if win.group_banners["G"].text() != sections.banner_text(str(tmp)) \
+            or win.group_banners["H"].text() != sections.banner_text(""):
+        PROBLEMS.append("the group banners did not show the base folder or the hint")
+    if "" in win.group_banners:
+        PROBLEMS.append("Ungrouped got a base-folder banner")
+    win.group_banners["H"].click()
+    if not dialogs or not isinstance(dialogs[-1], GroupBaseDirDialog):
+        PROBLEMS.append("clicking the banner did not open the base-folder dialog")
+
+    # -- a pipeline's steps, from a click on its step count --------------------------------
+    steps = card(win, "pipe", "pipelines").steps_label
+    release = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(3, 3),
+                          QPointF(steps.mapToGlobal(steps.rect().topLeft())),
+                          Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+                          Qt.KeyboardModifier.NoModifier)
+    app.sendEvent(steps, release)
+    settle()
+    popup = getattr(win, "steps_popup", None)
+    texts = [w.text() for w in popup.findChildren(QLabel)] if popup else []
+    if not popup or not popup.isVisible() or "∥" not in texts or "[--x]" not in texts:
+        PROBLEMS.append(f"the steps popup showed {texts}")
+    if popup:
+        popup.close()
+
+    # -- the hover preview, on compact cards only, and only when it is on ----------------
+    if getattr(card(win, "plain"), "preview", None) is not None:
+        PROBLEMS.append("a full-size card had a hover preview")
+    win.deleteLater()
+    win = window({"compact_mode": True})
+    target = card(win, "asks")
+    preview = getattr(target, "preview", None)
+    if preview is None:
+        PROBLEMS.append("a compact card had no hover preview")
+    else:
+        preview._show()
+        texts = [w.text() for w in preview._popup.findChildren(QLabel)]
+        if texts[:1] != ["asks"] or "--p" not in texts or "Path" not in texts:
+            PROBLEMS.append(f"the preview showed {texts}")
+        preview.hide_now()
+    win.deleteLater()
+    win = window({"compact_mode": True, "hover_preview": False})
+    if getattr(card(win, "asks"), "preview", None) is not None:
+        PROBLEMS.append("hover_preview off still gave a preview")
+    win.deleteLater()
+
+    print("  [ok] badges, banner, previews: temp-param and scheduled badges, "
+          "pipeline badge, banners with the folder or the hint and a click to set "
+          "it, steps popup with ∥ and overrides, hover preview on compact cards "
+          "only and only when on")
+
+
 #: Top-left of the screen the smoke's windows use; set in main().
 SMOKE_ORIGIN = (0, 0)
 
@@ -3451,6 +3669,8 @@ def main() -> int:
     check_all_tab(app)
     check_run_with_params_and_new_pipeline(app)
     check_output_panel(app)
+    check_file_drop(app)
+    check_badges_banner_previews(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

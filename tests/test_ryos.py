@@ -7359,6 +7359,57 @@ class TestScheduleRunner(unittest.TestCase):
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
 
 
+class TestFileDropAndCardDetails(unittest.TestCase):
+    """Dropped files, card badges, previews and the banner -- shared rules."""
+
+    def test_drop_plan(self):
+        base = os.path.join(os.sep, "base")
+        inside = os.path.join(base, "a.py")
+        outside = os.path.join(os.sep, "else", "b.py")
+        folder = os.path.join(base, "dir")
+        is_file = lambda p: p != folder                  # noqa: E731
+        self.assertEqual(scriptform.plan_file_drop([inside, folder, outside], base, is_file),
+                         ([inside], [outside]))
+        self.assertEqual(scriptform.plan_file_drop([inside, outside], "", is_file),
+                         ([inside, outside], []))
+
+    def test_dropped_script_normalises_the_path(self):
+        name, path, _interp = scriptform.dropped_script("C:/tools/build.bat")
+        self.assertEqual(name, "build")
+        self.assertEqual(path, os.path.normpath("C:/tools/build.bat"))
+
+    def test_outside_notice(self):
+        title, text = scriptform.outside_base_notice("G", ["x"] * 12)
+        self.assertEqual(title, "Files outside base directory")
+        self.assertIn("12 file(s)", text)
+        self.assertEqual(text.count("x"), 10)
+
+    def test_badges(self):
+        from ryos import cardstyle
+        self.assertEqual(cardstyle.script_badges(temp_param=False, scheduled=False), [])
+        self.assertEqual(cardstyle.script_badges(temp_param=True, scheduled=True),
+                         [cardstyle.TEMP_PARAM_BADGE, cardstyle.SCRIPT_SCHEDULED_BADGE])
+        self.assertEqual(cardstyle.pipeline_badges(scheduled=True),
+                         [cardstyle.PIPELINE_SCHEDULED_BADGE])
+        for badge in (cardstyle.TEMP_PARAM_BADGE, cardstyle.SCRIPT_SCHEDULED_BADGE,
+                      cardstyle.PIPELINE_SCHEDULED_BADGE):
+            self.assertIn(badge.bg_key, themes.BUILTIN_THEMES["light"])
+
+    def test_preview_rows(self):
+        from ryos import cardstyle
+        self.assertEqual(cardstyle.script_preview_rows("", "--x"),
+                         [("Path", cardstyle.NO_VALUE, True), ("Params", "--x", False)])
+        steps = [(1, 7, "a", "/a.py", "", "", None, "after"),
+                 (2, 8, "b", "/b.py", "", "", "--x", "with")]
+        self.assertEqual(cardstyle.pipeline_preview_rows(steps),
+                         [("1.", "a", "/a.py", None), ("∥", "b", "/b.py", "--x")])
+
+    def test_banner(self):
+        from ryos import sections
+        self.assertEqual(sections.banner_text("C:/x"), "📁  C:/x")
+        self.assertIn(sections.NO_BASE_DIR, sections.banner_text(""))
+
+
 class TestOutputPanelRules(unittest.TestCase):
     """The output header's rules, shared by the Tk and Qt panels."""
 

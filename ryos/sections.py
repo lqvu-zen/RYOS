@@ -86,3 +86,13 @@ def all_view_groups(groups, has_ungrouped: bool) -> list[tuple[str, str | None]]
     if has_ungrouped:
         blocks.append(("", OTHER_LABEL.upper() if groups else None))
     return blocks
+
+
+# --- the group banner -------------------------------------------------------------
+
+NO_BASE_DIR = "No base directory — click to set"
+
+
+def banner_text(base_dir: str) -> str:
+    """The banner at the top of a group: its base folder, or how to set one."""
+    return f"📁  {base_dir or NO_BASE_DIR}"

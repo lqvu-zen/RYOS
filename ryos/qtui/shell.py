@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import (__version__, cardmenu, configio, grouping, notifications,
+from .. import (__version__, cardmenu, cardstyle, configio, grouping, notifications,
                outputpanel, pipelinesteps, screens, scriptform, search,
                sections, selection, traypolicy)
 from . import placement
@@ -238,6 +238,7 @@ class MainWindow(QMainWindow):
         self._records: dict[tuple, tuple] = {}
         self._collapse = sections.CollapseState()
         self.all_pages: dict[str, GroupPage] = {}
+        self.group_banners: dict[str, QPushButton] = {}
 
         # Everything a menu action may ask. Real dialogs by default; a test
         # replaces them, since each of these blocks until a person answers.
@@ -268,6 +269,8 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Ready")
         self._build_menu()
+        # Files dropped anywhere on the window become scripts, as in Tk.
+        self.setAcceptDrops(True)
 
     # -- construction ------------------------------------------------------
     def _build_top(self) -> QWidget:
@@ -574,6 +577,14 @@ class MainWindow(QMainWindow):
         hcol = QVBoxLayout(holder)
         hcol.setContentsMargins(0, 0, 0, 0)
         hcol.setSpacing(2)
+        if group_name:
+            banner = QPushButton(sections.banner_text(base_dir))
+            banner.setObjectName("groupBanner" if base_dir else "groupBannerEmpty")
+            banner.setFlat(True)
+            banner.clicked.connect(
+                lambda _c=False, g=group_name: self.on_group_menu(g, cardmenu.BASE_DIR))
+            hcol.addWidget(banner)
+            self.group_banners[group_name] = banner
         if base_dir and self._settings.get("quick_run_enabled", True):
             hcol.addWidget(self._build_quick_run(group_name, base_dir))
         hcol.addWidget(scroll, 1)
@@ -654,7 +665,9 @@ class MainWindow(QMainWindow):
                                 step_count=rec.get("steps", 0),
                                 palette=self._palette, compact=compact, size=size,
                                 is_favorite=bool(rec.get("favorite")),
-                                label_color=shade, last_status=rec.get("status"))
+                                label_color=shade, last_status=rec.get("status"),
+                                badges=cardstyle.pipeline_badges(
+                                    scheduled=bool(rec.get("scheduled"))))
         else:
             card = ScriptCard(script_id=rec["id"], name=rec["name"],
                               path=rec.get("path", ""), palette=self._palette,
@@ -662,8 +675,19 @@ class MainWindow(QMainWindow):
                               is_favorite=bool(rec.get("favorite")),
                               label_color=shade, last_status=rec.get("status"),
                               param_choices=scriptform.card_param_choices(
-                                  rec.get("params", ""), rec.get("presets") or []))
+                                  rec.get("params", ""), rec.get("presets") or []),
+                              badges=cardstyle.script_badges(
+                                  temp_param=bool(rec.get("temp_param")),
+                                  scheduled=bool(rec.get("scheduled"))))
         card.section = section
+        if compact and self._settings.get("hover_preview", True):
+            from .widgets import HoverPreview
+            card.preview = HoverPreview(
+                card, lambda popup, r=rec: self._fill_preview(popup, r),
+                delay_ms=cardstyle.PREVIEW_DELAY_MS)
+        if kind == cardmenu.PIPELINE:
+            card.steps_clicked.connect(
+                lambda _pid, c=card, r=rec: self.show_steps_popup(c, r))
         if self._on_run is not None:
             card.run_requested.connect(self._on_run)
         elif "run_with" in rec:
@@ -686,6 +710,61 @@ class MainWindow(QMainWindow):
         else:
             card.edit_requested.connect(self.edit_script)
         return card
+
+    # -- previews: the compact card's hover detail, and a pipeline's steps ----------
+    def _fill_preview(self, popup, rec: dict) -> None:
+        """The detail a compact card hides: a script's path and parameters, or a
+        pipeline's steps -- the rows `cardstyle` gives both toolkits."""
+        from PySide6.QtWidgets import QGridLayout
+        col = popup.layout()
+        title = QLabel(rec.get("name", ""))
+        title.setObjectName("cardName")
+        col.addWidget(title)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        col.addLayout(grid)
+        if rec.get("kind") == cardmenu.PIPELINE:
+            steps = self._db.list_pipeline_steps(rec["id"]) if self._db else []
+            rows = cardstyle.pipeline_preview_rows(steps)
+            if not rows:
+                empty = QLabel(cardstyle.NO_STEPS)
+                empty.setObjectName("cardPath")
+                grid.addWidget(empty, 0, 0)
+            for r, (number, name, path, override) in enumerate(rows):
+                cells = [number, name, path] + ([f"[{override}]"] if override else [])
+                for c, text in enumerate(cells):
+                    label = QLabel(text)
+                    label.setObjectName("cardName" if c == 1 else "cardPath")
+                    grid.addWidget(label, r, c)
+        else:
+            rows = cardstyle.script_preview_rows(rec.get("path", ""),
+                                                 rec.get("params", ""))
+            for r, (label, value, dim) in enumerate(rows):
+                head = QLabel(label)
+                head.setObjectName("cardPath")
+                cell = QLabel(value)
+                cell.setObjectName("cardPath" if dim else "cardName")
+                grid.addWidget(head, r, 0)
+                grid.addWidget(cell, r, 1)
+
+    def show_steps_popup(self, card, rec: dict) -> None:
+        """A pipeline's steps, from a click on its step count; a second click,
+        or a click anywhere else, closes it."""
+        existing = getattr(self, "steps_popup", None)
+        if existing is not None and existing.isVisible():
+            existing.close()
+            self.steps_popup = None
+            return
+        from PySide6.QtCore import QPoint
+        popup = QFrame(self, Qt.WindowType.Popup)
+        popup.setObjectName("hoverPreview")
+        QVBoxLayout(popup).setContentsMargins(12, 8, 12, 8)
+        self._fill_preview(popup, rec)
+        popup.adjustSize()
+        anchor = card.steps_label if hasattr(card, "steps_label") else card
+        popup.move(anchor.mapToGlobal(QPoint(0, anchor.height())))
+        popup.show()
+        self.steps_popup = popup
 
     # -- quick run ---------------------------------------------------------
     def _quick_run_index(self):
@@ -797,6 +876,7 @@ class MainWindow(QMainWindow):
         self.set_select_mode(False)
         self._clear_groups()
         statuses = db.last_pipeline_status()
+        scheduled_scripts, scheduled_pipes = db.scheduled_ids()
         scripts = db.list_all()
         groups = [(name, base) for name, base in db.list_groups_with_meta()]
         has_ungrouped = (any((rec[8] or "") == "" for rec in scripts)
@@ -814,6 +894,7 @@ class MainWindow(QMainWindow):
                     "id": sid, "name": sname, "path": path, "status": rec[7],
                     "favorite": bool(rec[10]), "color": rec[11],
                     "params": params or "", "temp_param": bool(rec[9]),
+                    "scheduled": sid in scheduled_scripts,
                     "presets": db.list_param_presets(sid),
                     "run_with": (lambda prm, s=sid, n=sname, pth=path,
                                  i=interp, g=name: self._run_script_record(
@@ -823,6 +904,7 @@ class MainWindow(QMainWindow):
                 records.append({
                     "id": pid, "kind": "pipeline", "name": pname,
                     "favorite": bool(fav), "color": color,
+                    "scheduled": pid in scheduled_pipes,
                     "steps": len(db.list_pipeline_steps(pid)),
                     "status": statuses.get(pid),
                     "run": (lambda p=pid, n=pname, g=name:
@@ -851,6 +933,7 @@ class MainWindow(QMainWindow):
         self._cards.clear()
         self.card_lists.clear()
         self.all_pages = {}
+        self.group_banners = {}
         self._records.clear()
         self.quick_run_bars.clear()
 
@@ -1356,6 +1439,63 @@ class MainWindow(QMainWindow):
         self.reload()
         self.show_group(group)
         self._edit_pipeline(pid, name.strip())
+
+    # -- files dropped onto the window ------------------------------------------------
+    @staticmethod
+    def _dropped_files(mime) -> list:
+        if mime is None or not mime.hasUrls():
+            return []
+        return [u.toLocalFile() for u in mime.urls() if u.isLocalFile()]
+
+    def dragEnterEvent(self, event) -> None:              # noqa: N802
+        # Only files: a card being dragged is the card lists' and tabs' to take.
+        if self._dropped_files(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:               # noqa: N802
+        if self._dropped_files(event.mimeData()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event) -> None:                   # noqa: N802
+        paths = self._dropped_files(event.mimeData())
+        if not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        # After the drop returns: adding reloads the cards under the cursor.
+        QTimer.singleShot(0, lambda: self.add_dropped_files(paths))
+
+    def add_dropped_files(self, paths) -> int:
+        """Add dropped files as scripts in the group on screen. Returns how many.
+
+        With no groups yet, asks for one first; on the All tab they go to
+        ungrouped, as in Tk. Folders are ignored; files outside the group's
+        base folder are skipped with a warning.
+        """
+        if self._db is None:
+            return 0
+        if not self._db.list_groups():
+            name = self.ask_text(*scriptform.FIRST_GROUP_PROMPT, "")
+            if not (name and name.strip()):
+                return 0
+            self._db.create_group(name.strip())
+            self.reload()
+            self.show_group(name.strip())
+        group = self.current_group() or ""
+        to_add, skipped = scriptform.plan_file_drop(
+            paths, self._db.get_group_base_dir(group), lambda p: Path(p).is_file())
+        for path in to_add:
+            name, full, interp = scriptform.dropped_script(path)
+            self._db.add(name, full, "", interp, group)
+        if skipped:
+            self.warn(*scriptform.outside_base_notice(group, skipped))
+        if to_add:
+            self.reload()                   # keeps the tab on screen, All included
+        return len(to_add)
 
     # -- scripts: add and edit ----------------------------------------------------
     def add_script(self) -> None:
