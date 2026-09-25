@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from .. import cardmenu, cardstyle
+from .. import cardmenu, cardstyle, scriptform
 from ..db import TRIGGER_WITH, ScriptDB
 from ..interpreter import _script_tag
 from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
@@ -118,7 +118,7 @@ class ScriptCard(tk.Frame):
     """A single styled card: accent strip + name/path + Modify + Run."""
 
     # Displayed label for the always-available empty preset; maps to "" params.
-    _EMPTY_LABEL = "(no parameters)"
+    _EMPTY_LABEL = scriptform.NO_PARAMS_LABEL
 
     def __init__(self, parent, record, db: ScriptDB, runner, on_refresh,
                  on_move_up, on_move_down, on_move_top, *,
@@ -246,21 +246,16 @@ class ScriptCard(tk.Frame):
                         side="left", fill="x", expand=True)
 
         self._params_combo = None
-        presets = db.list_param_presets(sid)
-        if presets and not _COMPACT:
-            # Always offer an empty preset at the top (shown with a clear label)
-            # so a script can be run with no parameters regardless of its presets.
-            preset_values = [self._EMPTY_LABEL] + [p[2] for p in presets if p[2] != ""]
+        choices = scriptform.card_param_choices(params, db.list_param_presets(sid))
+        if choices and not _COMPACT:
+            preset_values, selected = choices
             self._params_combo = ttk.Combobox(
                 text_area, values=preset_values,
                 state="readonly", font=("Segoe UI", 8),
                 style="Card.TCombobox",
             )
             self._params_combo.pack(fill="x", pady=(4, 0))
-            if params and params in preset_values:
-                self._params_combo.set(params)
-            else:
-                self._params_combo.current(0)
+            self._params_combo.set(selected)
 
         fav_text = "★" if self._is_favorite else "☆"
         fav_bg  = C["accent_wash"]    if self._is_favorite else C["btn_neutral_bg"]
@@ -403,8 +398,7 @@ class ScriptCard(tk.Frame):
         """Return the combo's selected params, mapping the empty-preset label to ''."""
         if not self._params_combo:
             return fallback
-        value = self._params_combo.get()
-        return "" if value == self._EMPTY_LABEL else value
+        return scriptform.params_from_choice(self._params_combo.get())
 
     def run(self) -> None:
         """Run this script exactly as its Run button does.
@@ -422,13 +416,11 @@ class ScriptCard(tk.Frame):
         params = self._selected_params(params)
         if temp_param:
             dlg = _TempParamDialog(self.winfo_toplevel(), saved_params=params,
-                                   title=f"Run with temp param — {name}")
+                                   title=scriptform.temp_param_title(name))
             self.wait_window(dlg)
             if dlg.cancelled:
                 return
-            extra = dlg.result.strip()
-            if extra:
-                params = f"{params} {extra}".strip()
+            params = scriptform.with_temp_param(params, dlg.result)
         self.runner(self.script_id, name, path, params, interp)
 
     def _run_with_param(self):
@@ -442,16 +434,14 @@ class ScriptCard(tk.Frame):
         db = self.db
         current = self._selected_params(default_params)
 
-        dlg = _PresetEntryDialog(self.winfo_toplevel(), current, title="Run with Parameters")
+        dlg = _PresetEntryDialog(self.winfo_toplevel(), current,
+                                 title=scriptform.RUN_WITH_PARAMS_TITLE)
         self.wait_window(dlg)
         if dlg.result is None:
             return
 
         chosen = dlg.result
-        existing = db.list_param_presets(script_id)
-        if not any(p[2] == chosen for p in existing):
-            db.replace_param_presets(script_id, [(p[1], p[2]) for p in existing] + [(chosen, chosen)])
-        db.update(script_id, name, path, chosen, interp, _grp)
+        scriptform.remember_run_params(db, script_id, chosen)
         on_refresh()
 
         runner(script_id, name, path, chosen, interp)

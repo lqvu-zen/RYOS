@@ -17,10 +17,10 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QFrame, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
                                QPushButton, QVBoxLayout, QWidget)
 
-from .. import cardstyle
+from .. import cardstyle, scriptform
 from ..interpreter import _script_tag
 from ..themes import ink_on
 from .widgets import ScrollingLabel, set_tooltip
@@ -130,17 +130,26 @@ class ScriptCard(_CardBase):
     """One script: name, path, and the four-button strip."""
 
     run_requested = Signal(int)
+    run_with_param_requested = Signal(int)
     edit_requested = Signal(int)
     favorite_toggled = Signal(int, bool)
+
+    def selected_params(self, fallback: str) -> str:
+        """What Run should pass: the drop-down's choice, else ``fallback``."""
+        if self.params_combo is None:
+            return fallback
+        return scriptform.params_from_choice(self.params_combo.currentText())
 
     def __init__(self, *, script_id: int, name: str, path: str,
                  palette: dict, compact: bool = False, size: str = "medium",
                  is_favorite: bool = False, last_status: str | None = None,
                  label_color: str | None = None,
+                 param_choices: tuple | None = None,
                  parent: QWidget | None = None):
         super().__init__(palette, compact, size, parent)
         self.script_id = script_id
         self._name = name
+        self.params_combo: QComboBox | None = None
 
         self.checkbox = QCheckBox()
         self.checkbox.setVisible(False)
@@ -176,6 +185,15 @@ class ScriptCard(_CardBase):
             # takes the mouse for itself, so dragging the card by its path
             # would select text instead of moving the card.
             text.addWidget(self.path_label)
+        # The preset drop-down: which parameters Run passes. Offered, as in
+        # Tk, only when the script has presets (`scriptform.card_param_choices`).
+        if param_choices and not compact:
+            entries, selected = param_choices
+            self.params_combo = QComboBox()
+            self.params_combo.setObjectName("paramCombo")
+            self.params_combo.addItems(entries)
+            self.params_combo.setCurrentText(selected)
+            text.addWidget(self.params_combo)
         self._row.addLayout(text, 1)
 
         # Four columns, in the same order as the Tk card.
@@ -193,6 +211,8 @@ class ScriptCard(_CardBase):
             lambda: self.run_requested.emit(self.script_id))
         self.edit_button.clicked.connect(
             lambda: self.edit_requested.emit(self.script_id))
+        self.param_button.clicked.connect(
+            lambda: self.run_with_param_requested.emit(self.script_id))
         self.fav_button.clicked.connect(
             lambda: self.favorite_toggled.emit(self.script_id, not is_favorite))
 

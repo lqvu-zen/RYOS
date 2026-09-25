@@ -218,7 +218,13 @@ class PresetEntryDialog(QDialog):
 
 
 class TempParamDialog(QDialog):
-    """One-off parameters for a single run. Empty is allowed and means none."""
+    """An extra parameter for one run, appended to the saved ones.
+
+    ``result`` is what was typed (empty is allowed: run with the saved
+    parameters alone), or None when cancelled. As in the Tk prompt, the saved
+    parameters are shown, not put in the box: the answer is appended to them
+    by `scriptform.with_temp_param`, so pre-filling them would pass them twice.
+    """
 
     def __init__(self, parent: QWidget | None = None, *, saved_params: str = "",
                  title: str = "Temporary Parameter"):
@@ -226,8 +232,16 @@ class TempParamDialog(QDialog):
         self.setWindowTitle(title)
         self.result: str | None = None
         form = QFormLayout(self)
-        self.e_params = QLineEdit(saved_params)
-        form.addRow(QLabel("Parameters for this run"), self.e_params)
+        saved = scriptform.saved_params_line(saved_params)
+        if saved:
+            self.saved_label = QLabel(saved)
+            self.saved_label.setObjectName("cardPath")
+            form.addRow(self.saved_label)
+        self.e_params = QLineEdit()
+        form.addRow(QLabel("Temp param:"), self.e_params)
+        hint = QLabel(scriptform.TEMP_PARAM_HINT)
+        hint.setObjectName("cardPath")
+        form.addRow(hint)
         form.addRow(_ok_cancel(self, self.accept_form))
 
     def accept_form(self) -> bool:

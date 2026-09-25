@@ -34,8 +34,8 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import (__version__, cardmenu, configio, grouping, notifications,
-               outputpanel, screens, scriptform, search, sections, selection,
-               traypolicy)
+               outputpanel, pipelinesteps, screens, scriptform, search,
+               sections, selection, traypolicy)
 from . import placement
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
@@ -176,6 +176,9 @@ class MainWindow(QMainWindow):
         self.add_script_button.setObjectName("primary")
         self.add_script_button.clicked.connect(self.add_script)
         row.addWidget(self.add_script_button)
+        self.add_pipeline_button = QPushButton(pipelinesteps.ADD_PIPELINE_LABEL)
+        self.add_pipeline_button.clicked.connect(self.new_pipeline)
+        row.addWidget(self.add_pipeline_button)
         col.addLayout(row)
 
         self._top_col = col
@@ -349,10 +352,17 @@ class MainWindow(QMainWindow):
                               path=rec.get("path", ""), palette=self._palette,
                               compact=compact, size=size,
                               is_favorite=bool(rec.get("favorite")),
-                              label_color=shade, last_status=rec.get("status"))
+                              label_color=shade, last_status=rec.get("status"),
+                              param_choices=scriptform.card_param_choices(
+                                  rec.get("params", ""), rec.get("presets") or []))
         card.section = section
         if self._on_run is not None:
             card.run_requested.connect(self._on_run)
+        elif "run_with" in rec:
+            card.run_requested.connect(
+                lambda _id, c=card, r=rec: self.run_script_card(c, r))
+            card.run_with_param_requested.connect(
+                lambda _id, c=card, r=rec: self.run_with_param(c, r))
         elif "run" in rec:
             card.run_requested.connect(lambda _id, go=rec["run"]: go())
         self._records[(kind, rec["id"])] = (rec, group)
@@ -495,9 +505,11 @@ class MainWindow(QMainWindow):
                 records.append({
                     "id": sid, "name": sname, "path": path, "status": rec[7],
                     "favorite": bool(rec[10]), "color": rec[11],
-                    "run": (lambda s=sid, n=sname, pth=path, prm=params,
-                            i=interp, g=name: self._run_script_record(
-                                s, n, pth, prm or "", i or "", g)),
+                    "params": params or "", "temp_param": bool(rec[9]),
+                    "presets": db.list_param_presets(sid),
+                    "run_with": (lambda prm, s=sid, n=sname, pth=path,
+                                 i=interp, g=name: self._run_script_record(
+                                     s, n, pth, prm, i or "", g)),
                 })
             for pid, pname, fav, color in db.list_pipelines(name):
                 records.append({
@@ -991,6 +1003,50 @@ class MainWindow(QMainWindow):
         self.close()
         self.on_quit()
         return True
+
+    # -- running with parameters ---------------------------------------------------
+    def run_script_card(self, card, rec: dict) -> None:
+        """Run as the card's Run button does: the drop-down's parameters, and
+        the ask-each-run prompt when the script wants one."""
+        params = card.selected_params(rec.get("params", ""))
+        if rec.get("temp_param"):
+            from .smalldialogs import TempParamDialog
+            dlg = TempParamDialog(self, saved_params=params,
+                                  title=scriptform.temp_param_title(rec["name"]))
+            self.run_dialog(dlg)
+            if dlg.result is None:
+                return                          # cancelled: no run
+            params = scriptform.with_temp_param(params, dlg.result)
+        rec["run_with"](params)
+
+    def run_with_param(self, card, rec: dict) -> None:
+        """▶+: ask for parameters, keep them as the script's, and run."""
+        from .smalldialogs import PresetEntryDialog
+        dlg = PresetEntryDialog(self, params=card.selected_params(rec.get("params", "")),
+                                title=scriptform.RUN_WITH_PARAMS_TITLE)
+        self.run_dialog(dlg)
+        if dlg.result is None or self._db is None:
+            return
+        scriptform.remember_run_params(self._db, rec["id"], dlg.result)
+        rec["run_with"](dlg.result)
+        self._defer_reload()
+
+    # -- pipelines: create -----------------------------------------------------------
+    def new_pipeline(self) -> None:
+        """Name a pipeline in the group on screen, then open it to add steps."""
+        if self._db is None:
+            return
+        if self.showing_all():
+            self.inform(*pipelinesteps.SELECT_GROUP_FIRST)
+            return
+        group = self.current_group() or ""
+        name = self.ask_text(*pipelinesteps.NEW_PIPELINE_PROMPT, "")
+        if not (name and name.strip()):
+            return
+        pid = self._db.create_pipeline(name.strip(), group)
+        self.reload()
+        self.show_group(group)
+        self._edit_pipeline(pid, name.strip())
 
     # -- scripts: add and edit ----------------------------------------------------
     def add_script(self) -> None:

@@ -7359,6 +7359,48 @@ class TestScheduleRunner(unittest.TestCase):
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
 
 
+class TestRunParams(unittest.TestCase):
+    """The card drop-down, the temp-param prompt and ▶+, shared by both cards."""
+
+    def test_no_presets_no_drop_down(self):
+        self.assertIsNone(scriptform.card_param_choices("--x", []))
+
+    def test_drop_down_entries_and_selection(self):
+        presets = [(1, "fast", "--fast"), (2, "blank", ""), (3, "slow", "--slow")]
+        entries, selected = scriptform.card_param_choices("--slow", presets)
+        self.assertEqual(entries, [scriptform.NO_PARAMS_LABEL, "--fast", "--slow"])
+        self.assertEqual(selected, "--slow")
+        self.assertEqual(scriptform.card_param_choices("--other", presets)[1],
+                         scriptform.NO_PARAMS_LABEL)
+
+    def test_choice_to_params(self):
+        self.assertEqual(scriptform.params_from_choice(scriptform.NO_PARAMS_LABEL), "")
+        self.assertEqual(scriptform.params_from_choice("--fast"), "--fast")
+
+    def test_temp_param_is_appended_once(self):
+        self.assertEqual(scriptform.with_temp_param("--saved", " --once "),
+                         "--saved --once")
+        self.assertEqual(scriptform.with_temp_param("", "--once"), "--once")
+        self.assertEqual(scriptform.with_temp_param("--saved", ""), "--saved")
+        self.assertEqual(scriptform.with_temp_param("--saved", None), "--saved")
+
+    def test_saved_line(self):
+        self.assertIsNone(scriptform.saved_params_line(""))
+        self.assertIn("--x", scriptform.saved_params_line("--x"))
+
+    def test_remember_run_params(self):
+        db = _make_db()
+        sid = db.add("s", "/s.py", "--old", "py", "G")
+        db.replace_param_presets(sid, [("--a", "--a")])
+        scriptform.remember_run_params(db, sid, "--new")
+        self.assertEqual(db.get(sid)[3], "--new")
+        self.assertEqual(db.get(sid)[5], "G")
+        self.assertEqual([p[2] for p in db.list_param_presets(sid)], ["--a", "--new"])
+        scriptform.remember_run_params(db, sid, "--a")          # already a preset
+        self.assertEqual([p[2] for p in db.list_param_presets(sid)], ["--a", "--new"])
+        scriptform.remember_run_params(db, 999, "--x")          # gone: no error
+
+
 class TestScriptFormLoadSave(unittest.TestCase):
     """The script dialog's load and save, shared by the Tk and Qt dialogs."""
 

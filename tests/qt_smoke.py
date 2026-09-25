@@ -1029,6 +1029,10 @@ def check_small_dialogs(app):
         if not dlg.accept_form() or dlg.result != "-v":
             PROBLEMS.append(f"preset result {dlg.result!r}")
         tmp_dlg = sd.TempParamDialog(saved_params="--x")
+        # The answer is appended to the saved parameters, so they are shown,
+        # never pre-filled -- pre-filling passed them twice.
+        if tmp_dlg.e_params.text() or "--x" not in tmp_dlg.saved_label.text():
+            PROBLEMS.append("the temp-param box was pre-filled, or hid the saved params")
         tmp_dlg.e_params.setText("")
         if not tmp_dlg.accept_form() or tmp_dlg.result != "":
             PROBLEMS.append("empty one-off parameters were refused; they mean "
@@ -3078,6 +3082,138 @@ def check_mixed_dpi_placement(app):
           f"cycles each without growing")
 
 
+
+
+def check_run_with_params_and_new_pipeline(app):
+    """Run with the card's preset, the ask-each-run prompt, ▶+, + Pipeline.
+
+    The scripts print their arguments, so what is checked is what each run
+    actually received, through a real JobBridge.
+    """
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from ryos import pipelinesteps, scriptform
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.pipeline import PipelineEditorDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import PresetEntryDialog, TempParamDialog
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    echo = tmp / "echo.py"
+    echo.write_text("import sys\nprint('ARGS=' + '|'.join(sys.argv[1:]))\n",
+                    encoding="utf-8")
+    db = ScriptDB(tmp / "params.db")
+    db.create_group("G")
+    plain = db.add("plain", str(echo), "--base", _sys.executable, "G")
+    db.replace_param_presets(plain, [("fast", "--fast"), ("slow", "--slow")])
+    db.add("asks", str(echo), "--saved", _sys.executable, "G", 1)
+
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False,
+                                                  "max_parallel_jobs": 4})
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    lines: list = []
+    bridge.output.connect(lambda key, text, tag: lines.append(text))
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.load_from_db(db)
+    win.show_group("G")
+    answers = {"temp": "--once", "preset": "--new"}
+
+    def dialogs(dlg):
+        if isinstance(dlg, TempParamDialog):
+            if answers["temp"] is not None:
+                dlg.e_params.setText(answers["temp"])
+                dlg.accept_form()
+        elif isinstance(dlg, PresetEntryDialog):
+            dlg.e_params.setText(answers["preset"])
+            dlg.accept_form()
+        elif isinstance(dlg, PipelineEditorDialog):
+            opened.append(dlg)
+    opened: list = []
+    win.run_dialog = dialogs
+
+    def pump_until(predicate, timeout=20.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    def card(name):
+        return next(c for c in win.card_lists["G"].section("scripts").cards
+                    if c._name == name)
+
+    def ran_with(expected):
+        want = f"ARGS={expected}"
+        ok = pump_until(lambda: any(want in ln for ln in lines))
+        pump_until(lambda: len(bridge.registry) == 0)
+        return ok
+
+    # -- the drop-down decides what Run passes ------------------------------------------
+    combo = card("plain").params_combo
+    if combo is None or [combo.itemText(i) for i in range(combo.count())] != [
+            scriptform.NO_PARAMS_LABEL, "--fast", "--slow"]:
+        PROBLEMS.append("a script with presets showed no, or the wrong, drop-down")
+    if card("asks").params_combo is not None:
+        PROBLEMS.append("a script without presets showed a drop-down")
+    combo.setCurrentText("--slow")
+    card("plain").run_button.click()
+    if not ran_with("--slow"):
+        PROBLEMS.append(f"Run did not pass the chosen preset: {lines[-3:]}")
+    combo.setCurrentText(scriptform.NO_PARAMS_LABEL)
+    lines.clear()
+    card("plain").run_button.click()
+    if not ran_with(""):
+        PROBLEMS.append(f"'(no parameters)' still passed some: {lines[-3:]}")
+
+    # -- ask each run: appended to the saved ones; cancel runs nothing --------------------
+    lines.clear()
+    card("asks").run_button.click()
+    if not ran_with("--saved|--once"):
+        PROBLEMS.append(f"the temp param was not appended once: {lines[-3:]}")
+    answers["temp"] = None                          # cancel the prompt
+    lines.clear()
+    card("asks").run_button.click()
+    app.processEvents()
+    if len(bridge.registry) or any("ARGS=" in ln for ln in lines):
+        PROBLEMS.append("cancelling the temp-param prompt still ran the script")
+
+    # -- ▶+ runs with new parameters and keeps them ---------------------------------------
+    lines.clear()
+    card("plain").param_button.click()
+    if not ran_with("--new"):
+        PROBLEMS.append(f"▶+ did not run with what was typed: {lines[-3:]}")
+    for _ in range(3):
+        app.processEvents()
+    if db.get(plain)[3] != "--new" or "--new" not in [p[2] for p in db.list_param_presets(plain)]:
+        PROBLEMS.append("▶+ did not keep the parameters and add them as a preset")
+
+    # -- + Pipeline: refused on All, created in the group on screen, editor opened ---------
+    told: list = []
+    win.inform = lambda title, text: told.append(title)
+    win.ask_text = lambda title, prompt, initial: "Deploy"
+    win.show_group(None)
+    win.add_pipeline_button.click()
+    if told != [pipelinesteps.SELECT_GROUP_FIRST[0]] or db.list_pipelines("G"):
+        PROBLEMS.append("+ Pipeline on the All tab did not ask for a group first")
+    win.show_group("G")
+    win.add_pipeline_button.click()
+    made = db.list_pipelines("G")
+    if [p[1] for p in made] != ["Deploy"] or len(opened) != 1 \
+            or opened[0].pipeline_id != made[0][0] or win.current_group() != "G":
+        PROBLEMS.append(f"+ Pipeline made {made}, opened {len(opened)} editor(s)")
+
+    bridge.stop()
+    print("  [ok] run with params: drop-down chooses what Run passes, (no "
+          "parameters), temp param appended once, cancel runs nothing, ▶+ runs "
+          "and keeps, + Pipeline refused on All then created and opened")
+    win.deleteLater()
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -3109,6 +3245,7 @@ def main() -> int:
     check_sections_and_favorites(app)
     check_theme_editor_and_appearance(app)
     check_all_tab(app)
+    check_run_with_params_and_new_pipeline(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

@@ -215,3 +215,60 @@ def save_form(db, script_id: "int | None", form: ScriptForm) -> int:
                            work_dir=form.work_dir.strip())
     db.replace_param_presets(script_id, [(label, p) for label, p in form.presets])
     return script_id
+
+
+# --- running a script with parameters -----------------------------------------------
+# The card's preset drop-down, the ask-each-run prompt, and ▶+ "run with
+# parameter". Shared by the Tk and Qt cards.
+
+NO_PARAMS_LABEL = "(no parameters)"
+
+
+def card_param_choices(params: str, presets) -> tuple[list, str] | None:
+    """(entries, selected) for a card's preset drop-down, or None for no drop-down.
+
+    Offered only when the script has presets. "(no parameters)" always comes
+    first, so a script can be run bare whatever its presets say. The script's
+    saved parameters are selected when they are one of the entries.
+    """
+    if not presets:
+        return None
+    entries = [NO_PARAMS_LABEL] + [p[2] for p in presets if p[2] != ""]
+    return entries, (params if params and params in entries else NO_PARAMS_LABEL)
+
+
+def params_from_choice(choice: str) -> str:
+    return "" if choice == NO_PARAMS_LABEL else choice
+
+
+def with_temp_param(params: str, extra: str) -> str:
+    """The parameters for one run with a temporary addition."""
+    return f"{params} {extra.strip()}".strip() if extra and extra.strip() else params
+
+
+def temp_param_title(name: str) -> str:
+    return f"Run with temp param — {name}"
+
+
+RUN_WITH_PARAMS_TITLE = "Run with Parameters"
+
+
+def remember_run_params(db, script_id: int, chosen: str) -> None:
+    """▶+ keeps what it ran with: the script's parameters become ``chosen``,
+    and ``chosen`` joins its presets if it is new."""
+    rec = db.get(script_id)
+    if not rec:
+        return
+    _id, name, path, _params, interp, group = rec[:6]
+    existing = db.list_param_presets(script_id)
+    if not any(p[2] == chosen for p in existing):
+        db.replace_param_presets(script_id, [(p[1], p[2]) for p in existing]
+                                 + [(chosen, chosen)])
+    db.update(script_id, name, path, chosen, interp, group)
+
+TEMP_PARAM_HINT = "Used for this run only — not saved. Appended to saved params."
+
+
+def saved_params_line(params: str) -> str | None:
+    """The temp-param prompt's reminder of what is already passed, if anything."""
+    return f"Saved params: {params}" if params else None

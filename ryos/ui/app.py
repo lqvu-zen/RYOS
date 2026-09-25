@@ -30,8 +30,8 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import (cardmenu, configio, grouping, outputpanel, scriptform, sections,
-               selection, traypolicy)
+from .. import (cardmenu, configio, grouping, outputpanel, pipelinesteps,
+               scriptform, sections, selection, traypolicy)
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
                         bucket_by_group, rename_target, unique_clone_name,
@@ -327,7 +327,7 @@ class RYOSApp(_BaseWindow):
                                      self._create_group, width=header_btn_size)
         add_group_btn.pack(side="right", padx=(0, 6))
         Tooltip(add_group_btn, "Create a group")
-        self._pipeline_btn = _flat_button(header, "+ Pipeline", C["btn_create_bg"], C["btn_create_hover"],
+        self._pipeline_btn = _flat_button(header, pipelinesteps.ADD_PIPELINE_LABEL, C["btn_create_bg"], C["btn_create_hover"],
                                            self._add_pipeline, width=header_btn_size)
         self._pipeline_btn.pack(side="right", padx=(0, 6))
         Tooltip(self._pipeline_btn, "Create a pipeline")
@@ -1702,11 +1702,9 @@ class RYOSApp(_BaseWindow):
 
     def _add_pipeline(self):
         if not self._active_group:
-            messagebox.showinfo("Select a Group",
-                                "Please select a group first to create a pipeline.",
-                                parent=self)
+            messagebox.showinfo(*pipelinesteps.SELECT_GROUP_FIRST, parent=self)
             return
-        name = simpledialog.askstring("New Pipeline", "Pipeline name:", parent=self)
+        name = simpledialog.askstring(*pipelinesteps.NEW_PIPELINE_PROMPT, parent=self)
         if not (name and name.strip()):
             return
         pid = self.db.create_pipeline(name.strip(), self._active_group)

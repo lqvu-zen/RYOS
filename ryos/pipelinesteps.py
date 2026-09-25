@@ -188,3 +188,11 @@ def add_step_choices(scripts, group: str) -> dict:
         label = s[1] if counts[s[1]] == 1 else f"{s[1]}  ({PurePath(s[2]).name})"
         choices[label] = s[0]
     return choices
+
+
+# --- creating one ---------------------------------------------------------------------
+
+ADD_PIPELINE_LABEL = "+ Pipeline"
+NEW_PIPELINE_PROMPT = ("New Pipeline", "Pipeline name:")
+SELECT_GROUP_FIRST = ("Select a Group",
+                      "Please select a group first to create a pipeline.")
