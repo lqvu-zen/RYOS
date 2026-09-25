@@ -370,7 +370,8 @@ class ScriptCard(tk.Frame):
             self.on_refresh()
 
     def _delete_card(self):
-        title, question = cardmenu.delete_prompt(cardmenu.SCRIPT, self._name)
+        title, question = cardmenu.delete_prompt(
+            cardmenu.SCRIPT, self._name, self.db.pipelines_using([self.script_id]))
         if messagebox.askyesno(title, question, parent=self):
             cardmenu.delete(self.db, cardmenu.SCRIPT, self.script_id)
             self.on_refresh()

@@ -115,6 +115,13 @@ TEMP_PARAM_LABEL = "Ask for a temporary parameter on each run (not saved)"
 LAUNCHER_LABEL = "Launcher — opens an app/project; don't keep in Running"
 ENV_HINT = "One KEY=value per line; blank to inherit only the system environment"
 DELETE_PROMPT = ("Delete", "Delete this script?")
+
+
+def delete_prompt(used_in=()) -> tuple[str, str]:
+    """The script dialog's Delete question, naming the pipelines it leaves."""
+    from .cardmenu import steps_note
+    title, question = DELETE_PROMPT
+    return title, question + steps_note(used_in)
 FIRST_GROUP_PROMPT = ("Create a Group First",
                       "You have no groups yet.\nEnter a group name to continue:")
 

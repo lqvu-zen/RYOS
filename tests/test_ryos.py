@@ -1740,6 +1740,197 @@ class TestJobRegistry(unittest.TestCase):
 # ScriptDB — groups
 # ---------------------------------------------------------------------------
 
+class TestDeletesLeaveNothingBehind(unittest.TestCase):
+    """Deleting a script takes its steps, presets and schedule with it.
+
+    Nothing in the schema cascades. Before this, a deleted script's pipeline
+    steps stayed -- invisible, because every step query joins the scripts
+    table -- so a pipeline showed and ran as empty while its steps were still
+    stored. A real database was found with 59 such steps and no scripts.
+    """
+
+    def setUp(self):
+        import json as _json
+        self.json = _json
+        self.db = _make_db()
+        self.db.create_group("G")
+        self.gone = self.db.add("Gone", "/gone.py", "", "", "G")
+        self.kept = self.db.add("Kept", "/kept.py", "", "", "G")
+        self.pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(self.pid, self.gone)
+        self.db.add_pipeline_step(self.pid, self.kept)
+        for sid in (self.gone, self.kept):
+            self.db.replace_param_presets(sid, [("a", "--a")])
+            self.db.add_schedule("script", script_id=sid, spec_type="daily",
+                                 spec=self.json.dumps({"at": "09:00"}))
+        self.db.record_run("script", name="Gone", script_id=self.gone,
+                           started_at="2026-09-25T10:00:00", status="ok")
+
+    def _count(self, sql, *args):
+        conn = sqlite3.connect(self.db.db_path)
+        try:
+            return conn.execute(sql, args).fetchone()[0]
+        finally:
+            conn.close()
+
+    def _left_for(self, sid):
+        return (self._count("SELECT COUNT(*) FROM pipeline_steps WHERE script_id=?", sid),
+                self._count("SELECT COUNT(*) FROM script_param_presets WHERE script_id=?", sid),
+                self._count("SELECT COUNT(*) FROM schedules WHERE script_id=?", sid))
+
+    def test_delete_takes_steps_presets_and_schedule(self):
+        self.db.delete(self.gone)
+        self.assertEqual(self._left_for(self.gone), (0, 0, 0))
+        self.assertEqual(self._left_for(self.kept), (1, 1, 1))
+        self.assertEqual([s[1] for s in self.db.list_pipeline_steps(self.pid)], [self.kept])
+
+    def test_run_history_is_kept(self):
+        self.db.delete(self.gone)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM runs WHERE script_id=?",
+                                     self.gone), 1)
+
+    def test_delete_many(self):
+        self.db.delete_many([self.gone, self.kept])
+        self.assertEqual(self._left_for(self.gone), (0, 0, 0))
+        self.assertEqual(self._left_for(self.kept), (0, 0, 0))
+
+    def test_delete_all_keeps_the_pipelines(self):
+        self.db.delete_all()
+        self.assertEqual(self._count("SELECT COUNT(*) FROM pipeline_steps"), 0)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM script_param_presets"), 0)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM schedules"), 0)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM pipelines"), 1)
+
+    def test_delete_pipeline_takes_its_schedule(self):
+        self.db.add_schedule("pipeline", pipeline_id=self.pid, spec_type="daily",
+                             spec=self.json.dumps({"at": "09:00"}))
+        self.db.delete_pipeline(self.pid)
+        self.assertIsNone(self.db.get_schedule(pipeline_id=self.pid))
+        # A script's schedule is not the pipeline's.
+        self.assertIsNotNone(self.db.get_schedule(script_id=self.kept))
+
+    def test_pipelines_using(self):
+        other = self.db.create_pipeline("another", "G")
+        self.db.add_pipeline_step(other, self.gone)
+        self.assertEqual(self.db.pipelines_using([self.gone]), ["another", "P"])
+        self.assertEqual(self.db.pipelines_using([self.kept]), ["P"])
+        self.assertEqual(self.db.pipelines_using([]), [])
+        lone = self.db.add("Lone", "/lone.py", "", "", "G")
+        self.assertEqual(self.db.pipelines_using([lone]), [])
+
+
+class TestOrphanMigration(unittest.TestCase):
+    """Migration 8 clears what earlier deletes left behind, and only that."""
+
+    def _orphaned_db(self):
+        import json as _json
+        db = _make_db()
+        db.create_group("G")
+        sid = db.add("S", "/s.py", "", "", "G")
+        pid = db.create_pipeline("P", "G")
+        db.add_pipeline_step(pid, sid)
+        empty = db.create_pipeline("Empty", "G")
+        db.replace_param_presets(sid, [("a", "--a")])
+        db.add_schedule("script", script_id=sid, spec_type="daily",
+                        spec=_json.dumps({"at": "09:00"}))
+        doomed = db.create_pipeline("Doomed", "G")
+        db.add_schedule("pipeline", pipeline_id=doomed, spec_type="daily",
+                        spec=_json.dumps({"at": "09:00"}))
+        # The old deletes: the row only.
+        conn = sqlite3.connect(db.db_path)
+        conn.execute("DELETE FROM scripts WHERE id=?", (sid,))
+        conn.execute("DELETE FROM pipelines WHERE id=?", (doomed,))
+        conn.execute("PRAGMA user_version = 7")
+        conn.commit()
+        conn.close()
+        return db, pid, empty
+
+    def _count(self, db, table):
+        conn = sqlite3.connect(db.db_path)
+        try:
+            return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_orphans_are_cleared_on_open(self):
+        db, pid, empty = self._orphaned_db()
+        self.assertEqual(self._count(db, "pipeline_steps"), 1)
+        reopened = ScriptDB(db.db_path)
+        for table in ("pipeline_steps", "script_param_presets", "schedules"):
+            with self.subTest(table=table):
+                self.assertEqual(self._count(reopened, table), 0)
+        self.assertEqual(_user_version(reopened.db_path), SCHEMA_VERSION)
+
+    def test_pipelines_themselves_stay(self):
+        db, pid, empty = self._orphaned_db()
+        reopened = ScriptDB(db.db_path)
+        names = sorted(p[1] for p in reopened.list_pipelines("G"))
+        self.assertEqual(names, ["Empty", "P"])
+
+    def test_live_rows_are_untouched_and_it_is_safe_twice(self):
+        from ryos.db import _migrate_drop_orphans
+        import json as _json
+        db = _make_db()
+        db.create_group("G")
+        sid = db.add("S", "/s.py", "", "", "G")
+        pid = db.create_pipeline("P", "G")
+        db.add_pipeline_step(pid, sid)
+        db.replace_param_presets(sid, [("a", "--a")])
+        db.add_schedule("pipeline", pipeline_id=pid, spec_type="daily",
+                        spec=_json.dumps({"at": "09:00"}))
+        conn = sqlite3.connect(db.db_path)
+        _migrate_drop_orphans(conn)
+        _migrate_drop_orphans(conn)
+        conn.commit()
+        conn.close()
+        for table in ("pipeline_steps", "script_param_presets", "schedules"):
+            with self.subTest(table=table):
+                self.assertEqual(self._count(db, table), 1)
+
+
+class TestDeletePromptsNamePipelines(unittest.TestCase):
+    """A delete that removes pipeline steps says so, naming the pipelines."""
+
+    def test_one_script(self):
+        self.assertEqual(cardmenu.delete_prompt(cardmenu.SCRIPT, "A"),
+                         ("Delete", "Delete 'A'?"))
+        _t, q = cardmenu.delete_prompt(cardmenu.SCRIPT, "A", ["Build"])
+        self.assertIn("Its steps in pipeline 'Build' will be removed too.", q)
+
+    def test_many_pipelines_are_capped(self):
+        _t, q = cardmenu.delete_prompt(cardmenu.SCRIPT, "A", list("PQRST"))
+        self.assertIn("pipelines 'P', 'Q', 'R' and 2 more", q)
+
+    def test_a_pipeline_delete_has_no_note(self):
+        self.assertEqual(cardmenu.delete_prompt(cardmenu.PIPELINE, "P", ["X"]),
+                         ("Delete Pipeline", "Delete pipeline 'P'?"))
+
+    def test_selection_and_dialog(self):
+        _t, q = selection.delete_prompt(2, ["X"])
+        self.assertIn("Their steps in pipeline 'X'", q)
+        self.assertEqual(scriptform.delete_prompt(), scriptform.DELETE_PROMPT)
+        self.assertIn("pipeline 'X'", scriptform.delete_prompt(["X"])[1])
+
+    def test_delete_all_counts_pipelines_left_empty(self):
+        self.assertNotIn("pipeline", configio.delete_all_prompt(2)[1])
+        self.assertIn("Your pipeline will be kept, with no steps left.",
+                      configio.delete_all_prompt(2, 1)[1])
+        self.assertIn("Your 3 pipelines", configio.delete_all_prompt(2, 3)[1])
+
+    def test_delete_all_prompt_from_the_database(self):
+        db = _make_db()
+        db.create_group("G")
+        a = db.add("A", "/a.py", "", "", "G")
+        db.add("B", "/b.py", "", "", "G")
+        pid = db.create_pipeline("P", "G")
+        db.add_pipeline_step(pid, a)
+        db.create_pipeline("Empty already", "G")
+        _t, q = configio.delete_all_prompt_from(db)
+        self.assertIn("all 2 scripts", q)
+        self.assertIn("Your pipeline will be kept", q)
+        self.assertIsNone(configio.delete_all_prompt_from(_make_db()))
+
+
 class TestScriptDBGroups(unittest.TestCase):
 
     def setUp(self):

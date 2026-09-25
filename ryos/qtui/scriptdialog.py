@@ -291,7 +291,8 @@ class ScriptDialog(QDialog):
         return True
 
     def delete(self) -> bool:
-        if not self.script_id or not self.ask_yes_no(*scriptform.DELETE_PROMPT):
+        if not self.script_id or not self.ask_yes_no(
+                *scriptform.delete_prompt(self.db.pipelines_using([self.script_id]))):
             return False
         self.db.delete(self.script_id)
         if self._on_save is not None:

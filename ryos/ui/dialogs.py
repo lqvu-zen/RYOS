@@ -505,7 +505,8 @@ class ScriptDialog(tk.Toplevel):
         self.destroy()
 
     def _delete(self):
-        if messagebox.askyesno(*scriptform.DELETE_PROMPT, parent=self):
+        if messagebox.askyesno(*scriptform.delete_prompt(
+                self.db.pipelines_using([self.script_id])), parent=self):
             self.db.delete(self.script_id)
             if self.on_save:
                 self.on_save()

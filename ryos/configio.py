@@ -34,7 +34,7 @@ def import_status(added: int, skipped: int) -> str:
     return f"Import done — {added} script(s) added, {skipped} skipped."
 
 
-def delete_all_prompt(total: int) -> "tuple[str, str] | None":
+def delete_all_prompt(total: int, pipelines: int = 0) -> "tuple[str, str] | None":
     """(title, question) for Delete All, or None when there is nothing to delete.
 
     ``total`` must be every script in the database, because that is what
@@ -44,5 +44,16 @@ def delete_all_prompt(total: int) -> "tuple[str, str] | None":
     if total <= 0:
         return None
     noun = "script" if total == 1 else "scripts"
-    return ("Delete All",
-            f"Delete all {total} {noun} in every group? This cannot be undone.")
+    question = f"Delete all {total} {noun} in every group? This cannot be undone."
+    if pipelines > 0:
+        # Pipelines are kept, but every step runs a script, so none survive.
+        which = "pipeline" if pipelines == 1 else f"{pipelines} pipelines"
+        question += f"\n\nYour {which} will be kept, with no steps left."
+    return ("Delete All", question)
+
+
+def delete_all_prompt_from(db) -> "tuple[str, str] | None":
+    """`delete_all_prompt`, counted from the database: every script, and the
+    pipelines that will lose their steps with them."""
+    ids = [row[0] for row in db.list_all()]
+    return delete_all_prompt(len(ids), len(db.pipelines_using(ids)))

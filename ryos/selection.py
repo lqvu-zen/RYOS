@@ -72,5 +72,7 @@ def plan_run(selected: int, running: int, max_jobs: int) -> RunPlan:
                    f"Started {can} script{'s' if can != 1 else ''}.")
 
 
-def delete_prompt(count: int) -> tuple[str, str]:
-    return "Delete Selected", f"Delete {count} selected script(s)?"
+def delete_prompt(count: int, used_in=()) -> tuple[str, str]:
+    from .cardmenu import steps_note
+    return ("Delete Selected",
+            f"Delete {count} selected script(s)?" + steps_note(used_in, "Their"))

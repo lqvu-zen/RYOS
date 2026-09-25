@@ -198,9 +198,43 @@ def _migrate_step_failure_policy(conn):
                      "run_when TEXT NOT NULL DEFAULT 'always'")
 
 
+def _forget_scripts(conn, where: str, args=()) -> None:
+    """Remove what hangs off the scripts ``where`` selects, before they go.
+
+    Nothing in the schema cascades, so deleting a script used to leave its
+    pipeline steps, presets and schedule behind: pipelines kept steps that
+    no query could show, and ran as empty. Run history stays -- it is a
+    record of what ran, not part of the script.
+    """
+    ids = f"SELECT id FROM scripts WHERE {where}"
+    conn.execute(f"DELETE FROM pipeline_steps WHERE script_id IN ({ids})", args)
+    conn.execute(f"DELETE FROM script_param_presets WHERE script_id IN ({ids})", args)
+    conn.execute(f"DELETE FROM schedules WHERE kind='script' AND script_id IN ({ids})",
+                 args)
+
+
+def _migrate_drop_orphans(conn):
+    """Clear the leftovers of scripts and pipelines deleted before deletes
+    cascaded (see `_forget_scripts`).
+
+    Only rows pointing at something that no longer exists: a pipeline left
+    with no steps stays, for its owner to fill or delete.
+    """
+    conn.execute("DELETE FROM pipeline_steps WHERE script_id NOT IN (SELECT id FROM scripts)")
+    conn.execute("DELETE FROM pipeline_steps WHERE pipeline_id NOT IN "
+                 "(SELECT id FROM pipelines)")
+    conn.execute("DELETE FROM script_param_presets WHERE script_id NOT IN "
+                 "(SELECT id FROM scripts)")
+    conn.execute("DELETE FROM schedules WHERE kind='script' AND script_id NOT IN "
+                 "(SELECT id FROM scripts)")
+    conn.execute("DELETE FROM schedules WHERE kind='pipeline' AND pipeline_id NOT IN "
+                 "(SELECT id FROM pipelines)")
+
+
 _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
                      4: _migrate_script_env, 5: _migrate_run_history,
-                     6: _migrate_schedules, 7: _migrate_step_failure_policy}
+                     6: _migrate_schedules, 7: _migrate_step_failure_policy,
+                     8: _migrate_drop_orphans}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -391,19 +425,34 @@ class ScriptDB:
             return bool(row[0]) if row else False
 
     def delete(self, script_id: int):
-        with self._connect() as conn:
-            conn.execute("DELETE FROM scripts WHERE id=?", (script_id,))
-            conn.commit()
+        self.delete_many([script_id])
 
     def delete_many(self, ids: list[int]):
         with self._connect() as conn:
-            conn.executemany("DELETE FROM scripts WHERE id=?", [(i,) for i in ids])
+            for i in ids:
+                _forget_scripts(conn, "id=?", (i,))
+                conn.execute("DELETE FROM scripts WHERE id=?", (i,))
             conn.commit()
 
     def delete_all(self):
         with self._connect() as conn:
+            _forget_scripts(conn, "1")
             conn.execute("DELETE FROM scripts")
             conn.commit()
+
+    def pipelines_using(self, script_ids) -> list[str]:
+        """Names of the pipelines with a step running any of ``script_ids``,
+        for a delete prompt to say what else changes."""
+        ids = list(script_ids)
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        with self._connect() as conn:
+            return [r[0] for r in conn.execute(
+                "SELECT DISTINCT p.name FROM pipelines p "
+                "JOIN pipeline_steps ps ON ps.pipeline_id = p.id "
+                f"WHERE ps.script_id IN ({marks}) ORDER BY p.name COLLATE NOCASE",
+                ids)]
 
     def export_to_file(self, path: str, group_name: str | None = None):
         with self._connect() as conn:
@@ -1146,6 +1195,8 @@ class ScriptDB:
 
     def delete_pipeline(self, pipeline_id: int):
         with self._connect() as conn:
+            conn.execute("DELETE FROM schedules WHERE kind='pipeline' AND pipeline_id=?",
+                         (pipeline_id,))
             conn.execute("DELETE FROM pipeline_steps WHERE pipeline_id=?", (pipeline_id,))
             conn.execute("DELETE FROM pipelines WHERE id=?", (pipeline_id,))
             conn.commit()

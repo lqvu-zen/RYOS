@@ -145,11 +145,28 @@ def neighbours(ids: list, item_id) -> tuple:
 
 # --- confirmations ------------------------------------------------------------
 
-def delete_prompt(kind: str, name: str) -> tuple[str, str]:
-    """(title, question) for deleting one card."""
+def steps_note(pipelines, whose: str = "Its") -> str:
+    """What deleting scripts does to the pipelines that run them ("" if none).
+
+    Their steps go with them (`db._forget_scripts`), so say so and name the
+    pipelines: a step vanishing unannounced reads as data loss.
+    """
+    names = list(pipelines)
+    if not names:
+        return ""
+    shown = ", ".join(f"'{n}'" for n in names[:3])
+    if len(names) > 3:
+        shown += f" and {len(names) - 3} more"
+    noun = "pipeline" if len(names) == 1 else "pipelines"
+    return f"\n\n{whose} steps in {noun} {shown} will be removed too."
+
+
+def delete_prompt(kind: str, name: str, used_in=()) -> tuple[str, str]:
+    """(title, question) for deleting one card. ``used_in``: the pipelines
+    with a step running this script (`ScriptDB.pipelines_using`)."""
     if kind == PIPELINE:
         return "Delete Pipeline", f"Delete pipeline '{name}'?"
-    return "Delete", f"Delete '{name}'?"
+    return "Delete", f"Delete '{name}'?" + steps_note(used_in)
 
 
 def delete_group_prompt(name: str) -> tuple[str, str]:

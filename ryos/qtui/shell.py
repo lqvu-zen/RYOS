@@ -1652,7 +1652,7 @@ class MainWindow(QMainWindow):
     def delete_all(self) -> None:
         if self._db is None:
             return
-        prompt = configio.delete_all_prompt(len(self._db.list_all()))
+        prompt = configio.delete_all_prompt_from(self._db)
         if prompt is None or not self.ask_yes_no(*prompt):
             return
         self._db.delete_all()
@@ -1749,7 +1749,8 @@ class MainWindow(QMainWindow):
         if not ids:
             self.inform(*selection.NOTHING_TO_DELETE)
             return
-        if self._db is None or not self.ask_yes_no(*selection.delete_prompt(len(ids))):
+        if self._db is None or not self.ask_yes_no(
+                *selection.delete_prompt(len(ids), self._db.pipelines_using(ids))):
             return
         self._db.delete_many(ids)
         self._defer_reload()
@@ -1805,7 +1806,8 @@ class MainWindow(QMainWindow):
         elif key == cardmenu.CLONE:
             cardmenu.clone(db, kind, item_id)
         elif key == cardmenu.DELETE:
-            if not self.ask_yes_no(*cardmenu.delete_prompt(kind, name)):
+            used_in = db.pipelines_using([item_id]) if kind == cardmenu.SCRIPT else []
+            if not self.ask_yes_no(*cardmenu.delete_prompt(kind, name, used_in)):
                 return
             cardmenu.delete(db, kind, item_id)
         elif key in (cardmenu.SCHEDULE, cardmenu.HISTORY):

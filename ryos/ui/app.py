@@ -1873,14 +1873,15 @@ class RYOSApp(_BaseWindow):
         if not ids:
             messagebox.showinfo(*selection.NOTHING_TO_DELETE)
             return
-        if messagebox.askyesno(*selection.delete_prompt(len(ids))):
+        if messagebox.askyesno(*selection.delete_prompt(len(ids),
+                                                        self.db.pipelines_using(ids))):
             self.db.delete_many(ids)
             self._refresh()
 
     def _delete_all(self):
         # Counted from the database: delete_all() removes every script, not
         # just the cards the current group shows.
-        prompt = configio.delete_all_prompt(len(self.db.list_all()))
+        prompt = configio.delete_all_prompt_from(self.db)
         if prompt is None:
             return
         if messagebox.askyesno(*prompt):

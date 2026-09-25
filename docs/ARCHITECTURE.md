@@ -97,7 +97,7 @@ could be tested in isolation.
 | `ryos/selection.py` | Select mode's wording and decisions: the bar text, Select / Deselect All, `plan_run` (resolve the job cap once, so going past it gives one notice with counts rather than one refusal per script), and the delete prompt. Shared by the Tk and Qt select bars. | yes |
 | `ryos/scheduleform.py` | The schedule dialog's form rules: which fields make up a spec per mode, how a stored schedule loads back (tolerating one that no longer parses, since the dialog is how it gets repaired), the catch-up labels, preview formatting, and when to offer starting RYOS at login. The maths stays in `scheduling.py`. | yes |
 | `ryos/ui/placement.py` | Applies `screens.py` to real windows — `work_area_for_widget`, `center_over_parent`, `place_near`. Uses Win32 `MonitorFromPoint` / `GetMonitorInfoW` where available, with a documented Tk-only fallback. This is what keeps dialogs on the monitor the app is on. | yes |
-| `ryos/qtui/` | The PySide6 front-end, built alongside `ryos/ui/` and not yet shipping (docs/plans/qt-migration.md). `stylesheet.py` turns a palette into one Qt stylesheet — pure, no Qt import, so it is unit-tested in the main suite; whether the CSS reaches real widgets is checked by `tests/qt_smoke.py`. PySide6 is optional: nothing else imports this package. | yes |
+| `ryos/qtui/` | The PySide6 front-end, which `uv run ryos` and RYOS.exe start (`qtui/main.py`); the Tk one in `ryos/ui/` remains behind `RYOS_UI=tk` (docs/plans/qt-migration.md). `stylesheet.py` turns a palette into one Qt stylesheet — pure, no Qt import, so it is unit-tested in the main suite; whether the CSS reaches real widgets is checked by `tests/qt_smoke.py`. Nothing but `__main__` imports this package. | yes |
 | `ryos/themes.py` | The built-in theme gallery and WCAG `contrast_ratio()`, used to keep generated colours legible. | yes |
 | `ryos/ui/theme_editor.py` | Dialog for editing and previewing a custom theme. | — |
 | `ryos/tray.py` | System-tray icon: tooltip and dynamic menu listing what is currently running. `pystray` is optional — every entry point is guarded so the app runs without it, and CI exercises that path. | partial |
@@ -208,7 +208,7 @@ This is what makes the test suite possible without a display:
   v1 schema and is **frozen** — it is not where new schema goes. Numbered
   entries in `_MIGRATIONS` run once each, gated by SQLite's `PRAGMA
   user_version`, and each re-checks `PRAGMA table_info` so it is safe to run
-  twice. The schema is at v7; `SCHEMA_VERSION` is derived from the migration
+  twice. The schema is at v8; `SCHEMA_VERSION` is derived from the migration
   keys rather than written down separately.
 - **Widening an accessor row is a breaking change**: `db.get()` and
   `list_pipeline_steps()` are unpacked positionally in the UI, and appending a

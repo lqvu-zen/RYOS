@@ -53,9 +53,10 @@ Module-level constants:
 | --- | --- | --- |
 | `add(name, path, params, interpreter, group_name="", temp_param=0, detached=0, env_vars=None, work_dir="")` | `int` (new id) | Appends at the end of the order. |
 | `update(script_id, name, path, params, interpreter, group_name="", temp_param=None, detached=None, env_vars=None, work_dir=None)` | — | Any `None` leaves that field untouched. |
-| `delete(script_id)` | — | |
-| `delete_many(ids: list[int])` | — | |
-| `delete_all()` | — | Removes every script. |
+| `delete(script_id)` | — | Also deletes the script's pipeline steps, presets and schedule; its run history stays. |
+| `delete_many(ids: list[int])` | — | As `delete`, for each. |
+| `delete_all()` | — | Removes every script, as `delete` does; the pipelines stay, with no steps. |
+| `pipelines_using(script_ids)` | list of names | Pipelines with a step running any of these scripts — what a delete prompt names. |
 | `get(script_id)` | 9-tuple or `None` | `(id, name, path, params, interpreter, group_name, temp_param, env_vars, work_dir)`. Slice it. |
 | `list_all()` | list of 12-tuples | `(id, name, path, params, interpreter, created_at, last_run_at, last_run_status, group_name, temp_param, is_favorite, label_color)`, ordered by group then `order_index`. |
 | `is_detached(script_id)` | `bool` | True for a launcher script — started and released, not waited on. |
@@ -98,7 +99,7 @@ Module-level constants:
 | `create_pipeline(name, group_name)` | `int` (new id) | |
 | `clone_pipeline(pipeline_id)` | `int` (new id) | Copies the steps and everything that defines them — including each step’s `params_override`. Names it `"… (copy)"`. Raises `ValueError` if not found. |
 | `rename_pipeline(pipeline_id, name)` | — | |
-| `delete_pipeline(pipeline_id)` | — | Also deletes its steps. |
+| `delete_pipeline(pipeline_id)` | — | Also deletes its steps and its schedule. |
 | `list_pipelines(group_name)` | list of `(id, name, is_favorite, label_color)` | |
 | `list_pipeline_steps(pipeline_id)` | list of **14-tuples** | `(step_id, script_id, name, path, params, interpreter, params_override, trigger_mode, env_vars, work_dir, on_failure, retries, run_when, detached)`. `env_vars`, `work_dir` and `detached` come from the **script**, not the step. Slice it (`row[:8]`). |
 | `add_pipeline_step(pipeline_id, script_id)` | `int` (step id) | |
