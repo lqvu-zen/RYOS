@@ -602,51 +602,123 @@ class MainWindow(QMainWindow):
     def geometry_string(self) -> str:
         return screens.format_geometry(self.width(), self.height(), self.x(), self.y())
 
+    #: After placing the window: how long to hold it to that geometry, how
+    #: many times to put it back, and the largest drift that counts as
+    #: Windows' correction rather than a real move. See `set_geometry_string`.
+    GEOMETRY_GUARD_S = 0.5
+    GEOMETRY_GUARD_TRIES = 3
+    GEOMETRY_DRIFT_PX = 24
+
     def set_geometry_string(self, geometry: str) -> None:
-        parsed = screens.parse_geometry(geometry)
-        if parsed is not None:
-            w, h, x, y = parsed
-            self.resize(w, h)
-            self.move(x, y)
-            QTimer.singleShot(0, lambda: self._check_size(w, h))
+        """Put the window at 'WxH+X+Y', and keep it there across a DPI change.
 
-    def _check_size(self, w: int, h: int) -> None:
-        """Log when the window did not get the size it asked for.
+        Moving a window between monitors with different scaling (100% and
+        125%, say) makes Windows send its own resize and move a few
+        milliseconds later -- its suggested rectangle, scaled from the old
+        monitor, which lands a frame's width off: asked for 540x640+100+50,
+        got 542x648+99+42. Saved on quit and re-applied on start, that grew
+        the window on every start.
 
-        Seen intermittently on Windows (2026-09-24): asked for 540x640, got
-        542x648, frame grown by 1/8/1/0 px. Saved and reapplied, that would
-        grow the window on every start, so a real occurrence must leave a
-        trace. See docs/plans/qt-migration.md.
+        It arrives after this call returns, and whether it is coming cannot
+        be told reliably beforehand: a new window's screen is not known to Qt
+        until Windows has shown it. So for a short while, a resize or move
+        that leaves the window a *little* off target -- a frame's width, not
+        a real drag or the app's own resize -- puts the requested geometry
+        back, a bounded number of times.
         """
-        if self.isVisible() and (self.width(), self.height()) != (w, h):
+        parsed = screens.parse_geometry(geometry)
+        if parsed is None:
+            return
+        import time
+        self._geometry_target = parsed
+        self._geometry_guard_until = time.monotonic() + self.GEOMETRY_GUARD_S
+        self._geometry_tries = self.GEOMETRY_GUARD_TRIES
+        self._apply_geometry(parsed)
+        QTimer.singleShot(int(self.GEOMETRY_GUARD_S * 1000) + 100,
+                          lambda: self._check_geometry(parsed))
+
+    @classmethod
+    def is_drift(cls, now: tuple, target: tuple) -> bool:
+        """Off target, but only by a frame's width: Windows' correction."""
+        deltas = [abs(a - b) for a, b in zip(now, target)]
+        return any(deltas) and max(deltas) <= cls.GEOMETRY_DRIFT_PX
+
+    def _apply_geometry(self, parsed) -> None:
+        w, h, x, y = parsed
+        self.resize(w, h)
+        self.move(x, y)
+
+    def _current_geometry(self) -> tuple:
+        return (self.width(), self.height(), self.x(), self.y())
+
+    def _guard_geometry(self) -> None:
+        """A resize or move just happened: correct it if it undid a placement."""
+        import time
+        target = getattr(self, "_geometry_target", None)
+        if (target is None or time.monotonic() > self._geometry_guard_until
+                or self._geometry_tries <= 0 or getattr(self, "_geometry_fix_queued", False)):
+            return
+        self._geometry_fix_queued = True
+
+        def fix():
+            self._geometry_fix_queued = False
+            if (self._geometry_tries > 0
+                    and self.is_drift(self._current_geometry(), target)):
+                self._geometry_tries -= 1
+                self._apply_geometry(target)
+        QTimer.singleShot(0, fix)
+
+    def _check_geometry(self, parsed) -> None:
+        """Log if, after the guard, the window still is not where it was put.
+
+        Evidence rather than a fix: the guard should have corrected it, and if
+        a real desktop defeats it, the log says with what.
+        """
+        if (self.isVisible() and not self.isMinimized()
+                and self._current_geometry() != tuple(parsed)
+                and getattr(self, "_geometry_target", None) == parsed):
             from ..logger import get_logger
             get_logger("qtui.shell").warning(
-                "Window asked for %dx%d, got %dx%d (frame margins %s)", w, h,
-                self.width(), self.height(),
+                "Window asked for %s, got %s (frame margins %s)",
+                screens.format_geometry(*parsed),
+                screens.format_geometry(*self._current_geometry()),
                 self.windowHandle().frameMargins() if self.windowHandle() else None)
 
     def apply_placement(self, launched_at_startup: bool = False) -> None:
         """Open where the Tk app would: saved, moved to the cursor's monitor,
-        or centred there; then snap to a corner and set always-on-top."""
+        or centred there; snapped to a corner; always-on-top if set.
+
+        The final geometry, snap included, is worked out first and applied
+        once, so the DPI guard in `set_geometry_string` holds the window to
+        where it should end up rather than to a step on the way.
+        """
         s = self._settings
+        self.apply_topmost()
         target = (self.cursor_area()
                   if screens.follows_cursor(s, launched_at_startup) else None)
         size = (int(s.get("window_width", 540)), int(s.get("window_height", 640)))
         geometry = screens.initial_geometry(s, size=size, target=target,
                                             work_area_at=self.area_at)
-        if geometry:
-            self.set_geometry_string(geometry)
-        self.apply_topmost()
-        self.snap_to_corner(target)
+        final = self._snapped(geometry or self.geometry_string(), target)
+        if geometry or final != self.geometry_string():
+            self.set_geometry_string(final)
+
+    def _snapped(self, geometry: str, work_area=None) -> str:
+        """``geometry`` moved into the snap corner, if one is set."""
+        corner = screens.snapping(self._settings)
+        parsed = screens.parse_geometry(geometry)
+        if not corner or parsed is None:
+            return geometry
+        w, h, x, y = parsed
+        area = work_area or self.area_at(x + w // 2, y + h // 2)
+        if area is None:
+            return geometry
+        return screens.format_geometry(w, h, *screens.snap_position(corner, w, h, area))
 
     def snap_to_corner(self, work_area=None) -> None:
-        corner = screens.snapping(self._settings)
-        if not corner:
-            return
-        area = work_area or self.area_at(self.x() + self.width() // 2,
-                                         self.y() + self.height() // 2)
-        if area is not None:
-            self.move(*screens.snap_position(corner, self.width(), self.height(), area))
+        final = self._snapped(self.geometry_string(), work_area)
+        if final != self.geometry_string():
+            self.set_geometry_string(final)
 
     def apply_topmost(self) -> None:
         on = bool(self._settings.get("always_on_top", False))
@@ -662,10 +734,12 @@ class MainWindow(QMainWindow):
 
     def moveEvent(self, event) -> None:                   # noqa: N802
         super().moveEvent(event)
+        self._guard_geometry()
         self._remember_normal()
 
     def resizeEvent(self, event) -> None:                 # noqa: N802
         super().resizeEvent(event)
+        self._guard_geometry()
         self._remember_normal()
 
     def open_options(self) -> None:

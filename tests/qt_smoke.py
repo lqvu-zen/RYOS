@@ -2451,7 +2451,14 @@ def check_window_placement(app):
         win.show()
         app.processEvents()
         win.apply_placement(**kw)
-        app.processEvents()
+        # Wait out the DPI guard: if the window was born on a differently
+        # scaled screen, Windows' own correction lands a few ms after
+        # placement and the guard puts the geometry back after that.
+        import time as _time
+        end = _time.time() + MainWindow.GEOMETRY_GUARD_S + 0.2
+        while _time.time() < end:
+            app.processEvents()
+            _time.sleep(0.01)
         return win, saved
 
     def at(win):
@@ -2992,6 +2999,85 @@ def check_all_tab(app):
           "remembered and honoured, empty and ungrouped-only cases")
 
 
+
+
+def check_mixed_dpi_placement(app):
+    """Placing the window across monitors with different scaling is exact,
+    and saving then restoring it does not grow it.
+
+    Windows answers a move onto a monitor with different scaling with its own
+    resize and move a few ms later, a frame's width off: 540x640 became
+    542x648, and grew again on every start. This needs two real screens with
+    different scale factors; without them it says it was skipped rather than
+    passing quietly.
+    """
+    import time as _time
+
+    from PySide6.QtGui import QGuiApplication
+
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    screens = QGuiApplication.screens()
+    pair = next(((a, b) for a in screens for b in screens
+                 if a.devicePixelRatio() != b.devicePixelRatio()), None)
+    if pair is None:
+        print("  [skip] mixed DPI: needs two screens with different scaling "
+              f"(have {[s.devicePixelRatio() for s in screens]})")
+        return
+    def pump(seconds=0.8):
+        end = _time.time() + seconds
+        while _time.time() < end:
+            app.processEvents()
+            _time.sleep(0.01)
+
+    def cycles(born_on, lands_on, settle_first):
+        """Three starts, each born on one screen and restored onto the other.
+
+        ``settle_first`` lets the new window settle on its first screen before
+        it is placed; without it, placement follows show() at once, as at a
+        real start -- the case the scale-change check must see coming.
+        """
+        src, dst = born_on.availableGeometry(), lands_on.availableGeometry()
+        want = f"540x640+{dst.x() + 60}+{dst.y() + 40}"
+        saved, history = want, []
+        for _run in range(3):
+            stored: list = []
+            win = MainWindow(REFERENCE["dark"],
+                             settings={"quick_run_enabled": False,
+                                       "window_geometry": saved,
+                                       "remember_window_geometry": True,
+                                       "open_on_cursor_monitor": False},
+                             save_settings=lambda s, st=stored: st.append(dict(s)))
+            win.move(src.x() + 40, src.y() + 40)
+            win.show()
+            if settle_first:
+                pump(0.3)
+            else:
+                app.processEvents()
+            win.apply_placement(launched_at_startup=True)
+            pump()
+            history.append(win.geometry_string())
+            win.quit_app()
+            saved = stored[-1]["window_geometry"] if stored else None
+            win.deleteLater()
+            pump(0.2)
+        if history != [want] * 3 or saved != want:
+            PROBLEMS.append(
+                f"mixed DPI {born_on.devicePixelRatio()}x -> "
+                f"{'settled ' if settle_first else 'at once '}"
+                f"{lands_on.devicePixelRatio()}x: wanted {want} every start, "
+                f"got {history}, then saved {saved!r}")
+
+    a, b = pair
+    for settle_first in (True, False):
+        cycles(a, b, settle_first)
+        cycles(b, a, settle_first)
+    print(f"  [ok] mixed DPI: {a.devicePixelRatio()}x <-> {b.devicePixelRatio()}x "
+          f"both ways, settled and at once, placed exactly, three save/restore "
+          f"cycles each without growing")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -3019,6 +3105,7 @@ def main() -> int:
     check_tray_and_close(app)
     check_updates_and_notify(app)
     check_window_placement(app)
+    check_mixed_dpi_placement(app)
     check_sections_and_favorites(app)
     check_theme_editor_and_appearance(app)
     check_all_tab(app)
