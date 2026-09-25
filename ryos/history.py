@@ -105,3 +105,22 @@ def summarize(rows) -> str:
     ok = sum(1 for r in rows if r[7] == "ok")
     plural = "s" if len(rows) != 1 else ""
     return f"{len(rows)} run{plural} · {ok} passed · {len(rows) - ok} failed"
+
+
+def prune_run_history(db, settings: dict) -> int:
+    """Drop run history past the retention window, at start. Best-effort: a
+    failure here must never stop the app from opening. Returns rows removed."""
+    from .logger import get_logger
+    log = get_logger("history")
+    try:
+        days = int(settings.get("history_retention_days", 90))
+    except (TypeError, ValueError):
+        days = 90
+    try:
+        removed = db.prune_runs(days)
+    except Exception:
+        log.warning("Could not prune run history", exc_info=True)
+        return 0
+    if removed:
+        log.info("Pruned %d run history rows older than %d days", removed, days)
+    return removed

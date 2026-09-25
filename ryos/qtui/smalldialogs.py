@@ -514,7 +514,15 @@ class ScheduleDialog(QDialog):
             self.db.add_schedule(kind, script_id=self._script_id,
                                  pipeline_id=self._pipeline_id, **kwargs)
         if kwargs["enabled"]:
-            self.offer_run_at_login(ask=self._ask_login)
+            # With a window's `startup` given, it answers and writes; alone, the
+            # dialog asks the registry itself, as before.
+            given = getattr(self, "startup", None)
+            if given is not None:
+                self.offer_run_at_login(ask=self._ask_login,
+                                        startup_enabled=given.enabled(),
+                                        enable=given.set)
+            else:
+                self.offer_run_at_login(ask=self._ask_login)
         if self._on_save is not None:
             self._on_save()
         self.accept()

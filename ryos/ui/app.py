@@ -21,6 +21,7 @@ from .. import __version__
 from ..db import ScriptDB
 from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE
 from .. import schedule_runner
+from ..history import prune_run_history
 from ..logger import get_logger, setup_logging
 from .. import notifications
 from ..notifications import _fetch_latest_release, _show_notification
@@ -1798,19 +1799,8 @@ class RYOSApp(_BaseWindow):
             launch=self._launch_scheduled)
 
     def _prune_run_history(self) -> None:
-        """Drop history past the retention window. Startup-only and best-effort:
-        a failure here must never stop the app from opening."""
-        try:
-            days = int(self._settings.get("history_retention_days", 90))
-        except (TypeError, ValueError):
-            days = 90
-        try:
-            removed = self.db.prune_runs(days)
-        except Exception:
-            _log.warning("Could not prune run history", exc_info=True)
-            return
-        if removed:
-            _log.info("Pruned %d run history rows older than %d days", removed, days)
+        """Drop history past the retention window (shared with the Qt start)."""
+        prune_run_history(self.db, self._settings)
 
     def _sync_tray(self) -> None:
         """Hand the tray a snapshot of what is running.

@@ -3248,9 +3248,15 @@ def check_output_panel(app):
     if win.output_expanded or not win.output_tabs.isHidden() \
             or win.output_toggle.text() != outputpanel.SHOW_OUTPUT:
         PROBLEMS.append("the output panel did not start collapsed, as in Tk")
-    if win.minimumSizeHint().width() > 540:
-        PROBLEMS.append(f"the window cannot be 540 wide: minimum "
-                        f"{win.minimumSizeHint().width()}")
+    # A layout's minimum becomes the window's: every bar must fit inside the
+    # window's own minimum, whatever the font (offscreen's needed 600 px).
+    widths = [win.minimumSizeHint().width()]
+    win.set_select_mode(True)
+    widths.append(win.minimumSizeHint().width())
+    win.set_select_mode(False)
+    if max(widths) > MainWindow.MIN_WIDTH:
+        PROBLEMS.append(f"the window cannot be {MainWindow.MIN_WIDTH} wide: "
+                        f"minimum {widths}")
     win.output_toggle.click()
     if not win.output_expanded or win.output_tabs.isHidden() \
             or win.output_findbar.isHidden():

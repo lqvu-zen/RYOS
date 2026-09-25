@@ -193,6 +193,16 @@ class OutputPane(QWidget):
         self.text.setExtraSelections(selections)
 
 
+class _NoStartup:
+    """Run-at-login for a window that must not touch the registry."""
+
+    def enabled(self) -> bool:
+        return False
+
+    def set(self, on: bool) -> None:
+        pass
+
+
 class MainWindow(QMainWindow):
     """The window: group tabs, a card list, a search box and an output panel."""
 
@@ -201,8 +211,13 @@ class MainWindow(QMainWindow):
                  on_run: Callable[[int], None] | None = None,
                  save_settings: Callable[[dict], None] | None = None,
                  notifier: Callable[[str, str], None] | None = None,
-                 fetch_release: Callable[[], object] | None = None):
+                 fetch_release: Callable[[], object] | None = None,
+                 startup=None):
         super().__init__()
+        # Run-at-login lives in the Windows registry, not in settings. Like
+        # the other real effects it is passed in; the default does nothing,
+        # so no test can change the user's login entry.
+        self._startup = startup or _NoStartup()
         # Like save_settings: inert unless the entry point passes the real
         # ones, so tests pop no toasts and make no network calls.
         self._notifier = notifier or (lambda _t, _b: None)
@@ -271,6 +286,31 @@ class MainWindow(QMainWindow):
         self._build_menu()
         # Files dropped anywhere on the window become scripts, as in Tk.
         self.setAcceptDrops(True)
+        self._let_bars_shrink()
+
+    #: The narrowest the window may be; the bars below must fit inside it.
+    MIN_WIDTH = 480
+
+    def _let_bars_shrink(self) -> None:
+        """Let the header bars' buttons and labels give way before the window.
+
+        A layout's minimum width becomes the window's, and a button's is its
+        whole text. With a wider font -- larger text settings, or a platform's
+        fallback font (the output header alone needed 600 px offscreen) -- the
+        window could not be made as narrow as its own minimum, and a saved
+        size was silently widened. Here the text clips instead.
+        """
+        from PySide6.QtWidgets import QAbstractButton
+        rows = [self.select_bar, self.output_findbar,
+                *self.findChildren(QFrame, "outputHeader")]
+        loose = [self.search_hint, self.add_script_button, self.add_pipeline_button]
+        for widget in loose + [w for row in rows for kind in (QAbstractButton, QLabel)
+                               for w in row.findChildren(kind)]:
+            widget.setMinimumWidth(min(widget.minimumSizeHint().width(), 24))
+        # The rows' layouts cached their sizes before this; recompute them.
+        for row in rows:
+            row.layout().invalidate()
+            row.updateGeometry()
 
     # -- construction ------------------------------------------------------
     def _build_top(self) -> QWidget:
@@ -550,6 +590,11 @@ class MainWindow(QMainWindow):
         self.appearance_action = QAction("🎨  Appearance…", self)
         self.appearance_action.triggered.connect(self.open_appearance)
         options.addAction(self.appearance_action)
+        self.startup_action = QAction("Start with Windows", self)
+        self.startup_action.setCheckable(True)
+        self.startup_action.setChecked(self._startup.enabled())
+        self.startup_action.toggled.connect(self.set_start_with_windows)
+        options.addAction(self.startup_action)
         options.addSeparator()
         self.update_action = QAction("🔔  Check for updates", self)
         self.update_action.triggered.connect(
@@ -1145,6 +1190,16 @@ class MainWindow(QMainWindow):
         self._guard_geometry()
         self._remember_normal()
 
+    def set_start_with_windows(self, on: bool) -> None:
+        try:
+            self._startup.set(on)
+        except OSError:
+            self.warn("Could not change startup",
+                      "RYOS could not update the startup setting.")
+        self.startup_action.blockSignals(True)
+        self.startup_action.setChecked(self._startup.enabled())
+        self.startup_action.blockSignals(False)
+
     def open_options(self) -> None:
         from .dialogs import OptionsDialog
         self.run_dialog(OptionsDialog(dict(self._settings), self,
@@ -1155,6 +1210,9 @@ class MainWindow(QMainWindow):
         from ..logger import setup_logging
         self._settings.update(new)
         self._save_settings(self._settings)
+        if self._bridge is not None:
+            # The bridge keeps its own copy; a new job cap must reach it.
+            self._bridge._settings.update(new)
         setup_logging(self._settings.get("logging_enabled", True),
                       self._settings.get("log_level", "INFO"))
         self.apply_topmost()
@@ -1739,8 +1797,10 @@ class MainWindow(QMainWindow):
             ids = ({"pipeline_id": item_id} if kind == cardmenu.PIPELINE
                    else {"script_id": item_id})
             if key == cardmenu.SCHEDULE:
-                self.run_dialog(ScheduleDialog(self, db=db, title=name,
-                                               on_save=self._defer_reload, **ids))
+                dlg = ScheduleDialog(self, db=db, title=name,
+                                     on_save=self._defer_reload, **ids)
+                dlg.startup = self._startup
+                self.run_dialog(dlg)
             else:
                 self.run_dialog(RunHistoryDialog(self, db=db, title=name, **ids))
             return

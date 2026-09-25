@@ -59,6 +59,32 @@ jobs:
       - name: GUI smoke under Xvfb
         run: xvfb-run -a .venv-gui/bin/python tests/gui_smoke.py
 
+  qt-smoke:
+    name: qt-smoke (ubuntu, offscreen)
+    runs-on: ubuntu-latest
+    env:
+      # Qt's offscreen platform: real widgets and layouts, no display. The Qt
+      # smoke and the launch smoke both pass on it; checks that need two real
+      # screens say they were skipped.
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      # Libraries Qt loads even offscreen (fonts, EGL, keyboard).
+      - name: Install Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+
+      - name: Qt smoke
+        run: uv run --no-project --with PySide6 python tests/qt_smoke.py
+
+      - name: Launch smoke (the real entry point, throwaway data)
+        run: uv run python tests/launch_smoke.py
+
   typecheck:
     name: typecheck (mypy, core)
     runs-on: ubuntu-latest

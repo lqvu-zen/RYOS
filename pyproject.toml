@@ -3,15 +3,12 @@ name = "ryos"
 dynamic = ["version"]
 description = "RYOS - Run Your Own Scripts"
 requires-python = ">=3.10"
-# pystray/pillow are required, not optional, so `uv run ryos` gives every user
-# a working tray. ryos/tray.py still guards the import -- that guard is about a
-# broken install (bad wheel, no backend on an unusual desktop) degrading to "no
-# tray" instead of refusing to start, NOT about the package being absent by
-# design. Both are deliberate; see docs/tech-debt-2026-09-21.md item 4.
+# The app runs on Qt (PySide6), which brings its own tray (QSystemTrayIcon)
+# and file drops -- so pystray, pillow and tkinterdnd2 are no longer needed.
+# The Tk interface (RYOS_UI=tk) still runs without them: ryos/ui guards all
+# three and degrades to no tray and no file drop.
 dependencies = [
-    "tkinterdnd2>=0.3.0,<1.0",
-    "pystray>=0.19,<1.0",
-    "pillow>=10,<12",
+    "PySide6>=6.7,<7",
 ]
 
 [project.optional-dependencies]

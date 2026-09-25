@@ -16,6 +16,7 @@ tests/*
 !tests/uv_hello.py
 !tests/gui_smoke.py
 !tests/qt_smoke.py
+!tests/launch_smoke.py
 
 # Database
 scripts.db

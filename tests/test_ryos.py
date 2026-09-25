@@ -5800,6 +5800,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/sections.py": "imports PySide6; same reason",
         "ryos/qtui/theme_editor.py": "imports PySide6; same reason",
         "ryos/qtui/appearance.py": "imports PySide6; same reason",
+        "ryos/qtui/main.py": "imports PySide6; same reason",
     }
 
     def _scope(self):

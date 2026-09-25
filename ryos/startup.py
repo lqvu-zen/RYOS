@@ -1,4 +1,5 @@
 """Windows startup-on-login registry helpers."""
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -38,8 +39,15 @@ def _startup_enabled() -> bool:
         return False
 
 
+def registry_writes_blocked() -> bool:
+    """True when RYOS_NO_REGISTRY=1: test launches must never touch the user's
+    real run-at-login entry -- a build launched from dist/ would otherwise
+    point it at itself."""
+    return os.environ.get("RYOS_NO_REGISTRY") == "1"
+
+
 def _set_startup(enable: bool) -> None:
-    if sys.platform != "win32":
+    if sys.platform != "win32" or registry_writes_blocked():
         return
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY,
                         access=winreg.KEY_SET_VALUE) as k:
@@ -56,7 +64,7 @@ def _sync_startup_command() -> None:
     """If startup-on-login is enabled but its stored command is out of date
     (e.g. an older entry lacking the --startup flag), rewrite it. Safe to call
     on every launch; it only writes when the value actually differs."""
-    if sys.platform != "win32" or not _startup_enabled():
+    if sys.platform != "win32" or registry_writes_blocked() or not _startup_enabled():
         return
     desired = _startup_command()
     try:

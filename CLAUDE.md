@@ -8,24 +8,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv run ryos
 ```
 
-`uv` reads `pyproject.toml`, provisions Python ≥3.10 in an isolated environment, installs `tkinterdnd2`, and invokes the `ryos` console-script entry (`ryos.__main__:main`). No manual `pip install` or virtualenv setup needed.
+`uv` reads `pyproject.toml`, provisions Python ≥3.10 in an isolated environment, installs `PySide6`, and invokes the `ryos` console-script entry (`ryos.__main__:main`), which starts the Qt app (`ryos/qtui/main.py`). No manual `pip install` or virtualenv setup needed.
+
+The Tk interface is still there while the Qt one settles in: `RYOS_UI=tk uv run ryos` starts it, and it is used automatically, with a logged reason, if PySide6 cannot be imported.
 
 If `uv` is not installed: `pip install uv` or see https://docs.astral.sh/uv/getting-started/installation/
 
-All dependencies are from the standard library (tkinter, sqlite3, subprocess, threading). On Linux, tkinter may require a separate system package (`python3-tk` on Debian/Ubuntu).
+Apart from PySide6, everything is from the standard library (sqlite3, subprocess, threading; tkinter for the Tk interface). On Linux, the Tk interface may need `python3-tk`.
 
 ## Building the Executable
 
 ```bash
-uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
+uv run --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 
-Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs. Distribute the whole folder (or zip it). cx_Freeze is the only supported packager.
+Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs (about 110 MB; `setup_cxfreeze.py` leaves out the Qt libraries RYOS does not use). Distribute the whole folder (or zip it). cx_Freeze is the only supported packager.
+
+To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no window; `--visible` shows it on a second screen).
 
 ## Architecture
 
-Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script via `pyproject.toml`.
+Qt (PySide6) desktop app organized as the `ryos/` package; the older Tk interface lives alongside in `ryos/ui/`. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script via `pyproject.toml`.
 
 | Concern                                        | Module                  |
 | ---------------------------------------------- | ----------------------- |
@@ -53,13 +57,14 @@ Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__mai
 | Tray contents, close/minimise/quit rules       | `ryos/traypolicy.py`    |
 | Single-instance guard / handoff                | `ryos/single_instance.py` |
 | Theme gallery + WCAG `contrast_ratio`          | `ryos/themes.py`        |
-| Theme, widgets, dialogs, cards, app            | `ryos/ui/*`             |
+| Qt window, dialogs, cards, tray, start-up      | `ryos/qtui/*`           |
+| Tk interface (RYOS_UI=tk)                      | `ryos/ui/*`             |
 | `__version__`                                  | `ryos/__init__.py`      |
 
 Fuller detail, including which modules are unit-tested and why each was
 extracted, lives in `docs/ARCHITECTURE.md`.
 
-Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained by a recurring `after(80, ...)` timer on the main UI thread.
+Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained on the UI thread every 80 ms (a `QTimer` in Qt, `after(80, ...)` in Tk).
 
 ## Key Design Choices
 
@@ -67,6 +72,7 @@ Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` an
 - **Interpreter detection**: extension-to-interpreter map in `detect_interpreter()`; users can override with a custom interpreter field.
 - **Parameter parsing**: `shlex.split(params, posix=not sys.platform.startswith("win"))` — platform-aware.
 - **Process termination**: a job may have several steps in flight, so handles live in `Job.processes` (`step_token -> Popen`); `Stop` walks `job.active_processes()` and calls `.terminate()` on each. `Job.current_process` still exists for the single-step path — don't reach for it when writing anything pipeline-aware.
-- **One-way imports**: `ryos/ui/*` may import top-level modules; top-level modules must never import `ryos.ui`. That is what keeps the core unit-testable without a display.
+- **One-way imports**: `ryos/qtui/*` and `ryos/ui/*` may import top-level modules; top-level modules must never import either. That is what keeps the core unit-testable without a display. The one exception is the entry point, `__main__`, which picks the interface to start and imports it inside `main()`.
+- **Real effects are passed in**: the Qt window saves settings, shows toasts, checks for updates, writes run-at-login and quits only through arguments that do nothing by default. `ryos/qtui/main.py` is the one place that passes the real ones, so tests can build windows freely.
 - **Schema changes**: `_ensure_baseline()` in `db.py` is frozen. New columns and tables go in `_MIGRATIONS`, keyed by the `PRAGMA user_version` they upgrade to, and each one re-checks `PRAGMA table_info` so it is safe to run twice.
 - **Widening an accessor row is a breaking change**: `db.get()` and `list_pipeline_steps()` are unpacked by name in the UI, and appending a column has silently broken those call sites three times. Slice to a fixed width (`rec[:7]`, `row[:8]`) at the call site, and `TestRowWidthsArePinned` in `tests/test_ryos.py` pins the widths as a tripwire.

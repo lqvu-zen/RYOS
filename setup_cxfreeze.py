@@ -1,17 +1,41 @@
 """cx_Freeze build configuration for RYOS.
 
 Usage (via build_cxfreeze.bat):
-    uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
+    uv run --with cx_Freeze python setup_cxfreeze.py build_exe
 
 Output: dist/cxfreeze/RYOS.exe  (plus supporting DLLs in the same folder)
 """
+from pathlib import Path
+
 from cx_Freeze import Executable, setup
 
+
+def _unused_qt_binaries() -> list:
+    """Qt DLLs RYOS does not use, for bin_excludes.
+
+    cx_Freeze's PySide6 hook copies every Qt library in the wheel -- web
+    engine (195 MB on its own), 3D, QML, multimedia with its FFmpeg -- which
+    made the build 383 MB. RYOS uses QtCore, QtGui and QtWidgets (and Svg for
+    icons); everything else is left out. Worked out from the installed wheel,
+    so a new Qt release's extra modules are excluded too.
+    """
+    import PySide6
+    keep = {"Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll", "Qt6Svg.dll"}
+    folder = Path(PySide6.__file__).parent
+    qt = [p.name for p in folder.glob("Qt6*.dll") if p.name not in keep]
+    ffmpeg = [p.name for p in folder.glob("*.dll")
+              if p.name.startswith(("av", "sw"))]
+    return sorted(qt + ffmpeg)
+
+
 build_options = {
-    # pystray and PIL resolve backends/plugins dynamically at import time,
-    # which cx_Freeze's static import finder can't follow, so they must be
-    # named explicitly -- otherwise the frozen exe would be silently broken.
-    "packages": ["ryos", "tkinterdnd2", "sqlite3", "pystray", "PIL"],
+    # "ryos" is named whole because the Qt app imports its UI modules lazily
+    # (inside ryos.qtui.main.run). PySide6 is deliberately NOT named: that
+    # copies every Qt module (web engine, 3D, multimedia...) -- 647 MB. Left
+    # to the import graph, only QtCore/QtGui/QtWidgets come in, and
+    # cx_Freeze's PySide6 hook adds the plugins they need.
+    "packages": ["ryos", "sqlite3"],
+    "bin_excludes": _unused_qt_binaries(),
     "include_files": [
         ("icon.ico", "icon.ico"),
         # Bundled preset themes are data files, not modules, so cx_Freeze won't
