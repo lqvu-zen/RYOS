@@ -7547,6 +7547,40 @@ class TestAppearanceRules(unittest.TestCase):
         self.assertIn("“B”", themeform.delete_prompt("B")[1])
 
 
+class TestAllViewAndLastGroup(unittest.TestCase):
+    """The All view's blocks, and which group opens -- shared by Tk and Qt."""
+
+    def test_blocks(self):
+        from ryos import sections
+        self.assertEqual(sections.all_view_groups(["A", "b"], True),
+                         [("A", "A"), ("b", "B"), ("", "OTHER")])
+        self.assertEqual(sections.all_view_groups(["A"], False), [("A", "A")])
+        self.assertEqual(sections.all_view_groups([], True), [("", None)])
+        self.assertEqual(sections.all_view_groups([], False), [])
+
+    def test_empty_message_names_the_button(self):
+        from ryos import sections
+        self.assertIn(f"'{sections.ADD_SCRIPT_LABEL}'", sections.ALL_EMPTY)
+
+    def test_initial_group(self):
+        s = {"remember_last_group": True, "last_group": "B"}
+        self.assertEqual(grouping.initial_group(s, ["A", "B"]), "B")
+        self.assertEqual(grouping.initial_group(s, ["A"]), "A")      # gone
+        self.assertEqual(grouping.initial_group(dict(s, remember_last_group=False),
+                                                ["A", "B"]), "A")
+        self.assertIsNone(grouping.initial_group(s, []))
+
+    def test_remember_group(self):
+        s = {"remember_last_group": True}
+        grouping.remember_group(s, "B")
+        self.assertEqual(s["last_group"], "B")
+        grouping.remember_group(s, None)                  # the All view
+        self.assertIsNone(s["last_group"])
+        off = {"remember_last_group": False, "last_group": "X"}
+        grouping.remember_group(off, "B")
+        self.assertEqual(off["last_group"], "X")
+
+
 class TestSections(unittest.TestCase):
     """Which cards go in which section, shared by the Tk and Qt pages."""
 

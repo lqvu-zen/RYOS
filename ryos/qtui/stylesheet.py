@@ -175,6 +175,7 @@ QPushButton#sectionHeader {{
     border-radius: 0;
 }}
 QPushButton#sectionHeader:hover {{ color: {c['name_fg']}; }}
+QLabel#groupHeader {{ color: {c['path_fg']}; font-size: 8pt; font-weight: 700; padding: 14px 0 2px 0; }}
 
 /* --- select mode --------------------------------------------------- */
 QFrame#selectBar {{

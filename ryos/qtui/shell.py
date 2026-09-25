@@ -125,6 +125,7 @@ class MainWindow(QMainWindow):
         # (kind, id) -> (record, group), for the menus.
         self._records: dict[tuple, tuple] = {}
         self._collapse = sections.CollapseState()
+        self.all_pages: dict[str, GroupPage] = {}
 
         # Everything a menu action may ask. Real dialogs by default; a test
         # replaces them, since each of these blocks until a person answers.
@@ -171,7 +172,7 @@ class MainWindow(QMainWindow):
         self.search_hint = QLabel("")
         self.search_hint.setObjectName("cardPath")
         row.addWidget(self.search_hint)
-        self.add_script_button = QPushButton("＋ Add Script")
+        self.add_script_button = QPushButton(sections.ADD_SCRIPT_LABEL)
         self.add_script_button.setObjectName("primary")
         self.add_script_button.clicked.connect(self.add_script)
         row.addWidget(self.add_script_button)
@@ -250,19 +251,8 @@ class MainWindow(QMainWindow):
         what the tab shows. The key is stored on the tab, so a card dropped
         on "Ungrouped" moves to "" rather than to a group named "Ungrouped".
         """
-        page = GroupPage(group_name, self._collapse)
+        page, made = self._build_page(group_name, records)
         self.card_lists[group_name] = page
-        made = []
-        by_section = sections.split(
-            [dict(rec, kind=rec.get("kind") or "script") for rec in records])
-        for key in sections.ORDER:
-            section = page.section(key)
-            section.dropped.connect(self._on_drop_in_list)
-            for rec in by_section[key]:
-                card = self._make_card(rec, group_name, key)
-                section.add_card(card, rec["kind"], rec["id"])
-                made.append(card)
-            page.sections[key].refresh()
 
         scroll = QScrollArea()
         scroll.setWidget(page)
@@ -280,6 +270,61 @@ class MainWindow(QMainWindow):
             holder, label if label is not None else group_name)
         self.group_tab_bar.setTabData(index, group_name)
         self._cards.extend(made)
+
+    def _build_page(self, group: str, records) -> tuple:
+        """A group's sections filled with cards: (page, cards made)."""
+        page = GroupPage(group, self._collapse)
+        made = []
+        by_section = sections.split(
+            [dict(rec, kind=rec.get("kind") or "script") for rec in records])
+        for key in sections.ORDER:
+            section = page.section(key)
+            section.dropped.connect(self._on_drop_in_list)
+            for rec in by_section[key]:
+                card = self._make_card(rec, group, key)
+                section.add_card(card, rec["kind"], rec["id"])
+                made.append(card)
+            page.sections[key].refresh()
+        return page, made
+
+    def _add_all_tab(self, blocks) -> None:
+        """The All tab: every group on one page, each under its own header.
+
+        ``blocks`` is (group key, header or None, records) per group. The
+        pages here are copies: ``card_lists`` keeps pointing at each group's
+        own tab, so moves and neighbours are worked out there.
+        """
+        body = QWidget()
+        col = QVBoxLayout(body)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(4)
+        self.all_pages = {}
+        for group, header, records in blocks:
+            if header:
+                label = QLabel(header)
+                label.setObjectName("groupHeader")
+                col.addWidget(label)
+            page, made = self._build_page(group, records)
+            self.all_pages[group] = page
+            col.addWidget(page)
+            self._cards.extend(made)
+        if not blocks:
+            self.all_empty = QLabel(sections.ALL_EMPTY)
+            self.all_empty.setObjectName("cardPath")
+            col.addWidget(self.all_empty)
+        col.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidget(body)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        index = self.group_tabs.addTab(scroll, sections.ALL_LABEL)
+        # No key: the All tab is not a group, so nothing can be dropped on,
+        # renamed or reordered into it. Tabs keyed None are skipped by all three.
+        self.group_tab_bar.setTabData(index, None)
+
+    def showing_all(self) -> bool:
+        index = self.group_tabs.currentIndex()
+        return index >= 0 and self.group_tab_bar.tabData(index) is None
 
     def _make_card(self, rec: dict, group: str, section: str):
         """One card for ``rec`` in ``section``, wired to its handlers.
@@ -429,14 +474,18 @@ class MainWindow(QMainWindow):
         throw the user back to the first tab.
         """
         self._db = db
+        first_load = self.group_tabs.count() == 0
         current = self.current_group()
         self.set_select_mode(False)
         self._clear_groups()
         statuses = db.last_pipeline_status()
         scripts = db.list_all()
         groups = [(name, base) for name, base in db.list_groups_with_meta()]
-        if any((rec[8] or "") == "" for rec in scripts) or db.list_pipelines(""):
+        has_ungrouped = (any((rec[8] or "") == "" for rec in scripts)
+                         or bool(db.list_pipelines("")))
+        if has_ungrouped:
             groups.append(("", ""))
+        by_group = {}
         for name, base in groups:
             records = []
             for rec in scripts:
@@ -461,6 +510,13 @@ class MainWindow(QMainWindow):
                 })
             self.set_cards(name, records, base,
                            label=name or self.UNGROUPED_LABEL)
+            by_group[name] = records
+        named = [name for name, _base in groups if name]
+        self._add_all_tab([(g, header, by_group.get(g, []))
+                           for g, header in sections.all_view_groups(named,
+                                                                     has_ungrouped)])
+        if first_load:
+            current = grouping.initial_group(self._settings, named)
         self.show_group(current)
 
     def reload(self) -> None:
@@ -474,6 +530,7 @@ class MainWindow(QMainWindow):
             widget.deleteLater()
         self._cards.clear()
         self.card_lists.clear()
+        self.all_pages = {}
         self._records.clear()
         self.quick_run_bars.clear()
 
@@ -843,6 +900,7 @@ class MainWindow(QMainWindow):
                 return False
         if self._bridge is not None:
             self._bridge.stop()             # terminates what is still running
+        grouping.remember_group(self._settings, self.current_group())
         if self._settings.get("remember_window_geometry", True):
             geometry = (self.geometry_string()
                         if self.isVisible() and not self.isMinimized()
@@ -904,8 +962,9 @@ class MainWindow(QMainWindow):
         if self._db is None:
             return
         self._db.reorder_groups(grouping.group_order(keys))
-        if "" in keys and keys[-1] != "":
-            self._defer_reload()        # "Ungrouped" goes back to the end
+        tail = [k for k in ("", None) if k in keys]
+        if keys[len(keys) - len(tail):] != tail:
+            self._defer_reload()        # Ungrouped and All go back to the end
 
     def export_all(self) -> None:
         if self._db is None:
@@ -970,8 +1029,12 @@ class MainWindow(QMainWindow):
 
     def selectable_cards(self) -> list:
         """The script cards select mode acts on: those on the current tab."""
-        page = self.card_lists.get(self.current_group())
-        return [c for c in (page.cards if page else [])
+        if self.showing_all():
+            pages = list(self.all_pages.values())
+        else:
+            page = self.card_lists.get(self.current_group())
+            pages = [page] if page else []
+        return [c for page in pages for c in page.cards
                 if isinstance(c, ScriptCard)]
 
     def selected_cards(self) -> list:
@@ -984,7 +1047,7 @@ class MainWindow(QMainWindow):
         self.select_action.setText(selection.LEAVE_LABEL if on
                                    else selection.ENTER_LABEL)
         self.select_bar.setVisible(on)
-        for page in self.card_lists.values():
+        for page in [*self.card_lists.values(), *self.all_pages.values()]:
             for card in page.cards:
                 if isinstance(card, ScriptCard):
                     card.checkbox.setChecked(False)
@@ -1244,17 +1307,20 @@ class MainWindow(QMainWindow):
     def _apply_search(self, raw: str) -> None:
         """Hide cards that do not match, using the shared matcher."""
         query = search.normalize_query(raw, False)
-        shown = total = 0
+        items: set = set()
+        matched: set = set()
         for card in self._cards:
             name = getattr(card, "_name", "")
             visible = not query or search.matches(name, query)
             card.setVisible(visible)
-            # Count items, not cards: a favourite's copy is the same item.
-            if getattr(card, "section", None) != sections.FAVORITES:
-                total += 1
-                shown += bool(visible)
+            # Count items, not cards: a favourite, or the All tab, shows the
+            # same item more than once.
+            item = (card.drag_payload.kind, card.drag_payload.item_id)
+            items.add(item)
+            if visible:
+                matched.add(item)
         if query:
-            self.search_hint.setText(f"{shown} of {total}")
+            self.search_hint.setText(f"{len(matched)} of {len(items)}")
         else:
             self.search_hint.setText("")
 

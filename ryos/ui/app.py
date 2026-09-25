@@ -30,7 +30,7 @@ from ..dragdrop import (DRAG_THRESHOLD, MOVE_TO_GROUP, PIPELINE, REORDER,
                         SCRIPT, apply_move, apply_reorder, compute_insertion,
                         first_rect_at, passed_threshold, resolve_drop,
                         shows_insertion_indicator)
-from .. import (cardmenu, configio, outputpanel, scriptform, sections,
+from .. import (cardmenu, configio, grouping, outputpanel, scriptform, sections,
                selection, traypolicy)
 from ..grouping import (active_after_delete, active_after_rename,
                         apply_base_dir_change, base_dir_change,
@@ -173,10 +173,7 @@ class RYOSApp(_BaseWindow):
         # kick off another).
 
         groups = self.db.list_groups()
-        if self._settings["remember_last_group"] and self._settings.get("last_group") in groups:
-            self._active_group: str | None = self._settings["last_group"]
-        else:
-            self._active_group = groups[0] if groups else None
+        self._active_group: str | None = grouping.initial_group(self._settings, groups)
 
         self._target_monitor = self._apply_initial_placement(w, h)
 
@@ -321,7 +318,7 @@ class RYOSApp(_BaseWindow):
                  font=("Segoe UI", 14, "bold")).pack(side="left")
         tk.Label(wm, text=" RYOS", bg=C["header_bg"], fg=C["fg_on_dark"],
                  font=("Segoe UI", 14, "bold")).pack(side="left")
-        add_btn = _flat_button(header, "+ Script", C["btn_create_bg"], C["btn_create_hover"],
+        add_btn = _flat_button(header, sections.ADD_SCRIPT_LABEL, C["btn_create_bg"], C["btn_create_hover"],
                                self._add_script, width=header_btn_size)
         add_btn.config(bg=C["btn_create_bg"])
         add_btn.pack(side="right")
@@ -687,7 +684,8 @@ class RYOSApp(_BaseWindow):
         plus.bind("<Leave>", lambda e: plus.config(bg=C["bg"]))
         plus.pack(side="left", padx=(8, 2))
 
-        self._all_tab_refs = self._add_tab_btn(None, "All", self._active_group is None, side="right")
+        self._all_tab_refs = self._add_tab_btn(None, sections.ALL_LABEL,
+                                               self._active_group is None, side="right")
 
     def _add_tab_btn(self, group, label, is_active, side="left"):
         if is_active:
@@ -1154,31 +1152,20 @@ class RYOSApp(_BaseWindow):
             groups = self.db.list_groups()
             if not groups and not all_scripts:
                 tk.Label(self.cards_frame,
-                         text="No scripts yet.\nClick '+ Script' to get started.",
+                         text=sections.ALL_EMPTY,
                          bg=C["bg"], fg=C["path_fg"],
                          font=("Segoe UI", 10), justify="center").pack(pady=60)
                 return
             group_scripts = bucket_by_group(all_scripts, groups, lambda r: r[8] or "")
-            any_named = bool(groups)
             self._group_wrappers: list[tk.Frame] = []
-            for gname in groups:
+            has_ungrouped = bool(group_scripts.get("", []))
+            for gname, header in sections.all_view_groups(groups, has_ungrouped):
                 wrapper = tk.Frame(self.cards_frame, bg=C["bg"])
                 wrapper.pack(fill="x")
                 wrapper._grp_name = gname
-                self._make_group_header(wrapper, gname)
+                if header:
+                    self._make_group_header(wrapper, header)
                 self._render_group_sections(wrapper, gname, group_scripts.get(gname, []))
-                wrapper._fav_content  = self._fav_contents[-1]
-                wrapper._pipe_content = self._pipe_contents[-1]
-                wrapper._scr_content  = self._scr_contents[-1]
-                self._group_wrappers.append(wrapper)
-            ungrouped = group_scripts.get("", [])
-            if ungrouped:
-                wrapper = tk.Frame(self.cards_frame, bg=C["bg"])
-                wrapper.pack(fill="x")
-                wrapper._grp_name = ""
-                if any_named:
-                    self._make_group_header(wrapper, "Other")
-                self._render_group_sections(wrapper, "", ungrouped)
                 wrapper._fav_content  = self._fav_contents[-1]
                 wrapper._pipe_content = self._pipe_contents[-1]
                 wrapper._scr_content  = self._scr_contents[-1]
@@ -2813,6 +2800,7 @@ class RYOSApp(_BaseWindow):
                         proc.terminate()
                     except OSError:
                         pass  # process may have already exited
+        grouping.remember_group(self._settings, self._active_group)
         if self._settings["remember_window_geometry"]:
             if self.state() == "normal":
                 self._settings["window_geometry"] = self.geometry()

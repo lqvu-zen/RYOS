@@ -159,3 +159,25 @@ def apply_base_dir_change(db, group: str, change: BaseDirChange
                    + "\n".join(untouched[:10]))
     return (f"Base directory set for '{group}'. {remapped} path(s) remapped.",
             warning)
+
+
+# --- which group is on screen at start, and remembering it -------------------------
+
+def initial_group(settings: dict, groups) -> str | None:
+    """The group to open on: the remembered one if it still exists, else the
+    first group, else None -- the All view."""
+    groups = list(groups)
+    last = settings.get("last_group")
+    if settings.get("remember_last_group", True) and last in groups:
+        return last
+    return groups[0] if groups else None
+
+
+def remember_group(settings: dict, active: str | None) -> None:
+    """Store the group on screen for next time, when the setting asks for it.
+
+    The setting existed, and was read at start, but nothing ever wrote it --
+    so it always fell back to the first group.
+    """
+    if settings.get("remember_last_group", True):
+        settings["last_group"] = active

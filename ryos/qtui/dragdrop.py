@@ -208,7 +208,8 @@ class GroupTabBar(QTabBar):
         if index < 0:
             return None
         key = self.tabData(index)
-        return key if isinstance(key, str) else self.tabText(index)
+        # A tab with no key (All) is not a group: nothing drops on it.
+        return key if isinstance(key, str) else None
 
     def contextMenuEvent(self, event) -> None:        # noqa: N802
         group = self.group_at(event.pos())
@@ -230,7 +231,8 @@ class GroupTabBar(QTabBar):
         # Highlight the tab that would receive it, as the Tk strip does.
         # Deliberately not switching to it: that would swap out the page the
         # drag started on, and the card list the user may be heading back to.
-        self._highlight(self.tabAt(event.position().toPoint()))
+        point = event.position().toPoint()
+        self._highlight(self.tabAt(point) if self.group_at(point) is not None else -1)
         event.acceptProposedAction()
 
     def dragLeaveEvent(self, event) -> None:          # noqa: N802

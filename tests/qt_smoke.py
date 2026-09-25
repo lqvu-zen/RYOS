@@ -1374,10 +1374,10 @@ def check_drag_and_drop(app):
     def drop_on(widget, pos, payload):
         drag_to(widget, pos, payload.encode())
 
-    # Tabs are keyed by group, so "Ungrouped" maps back to "".
+    # Tabs are keyed by group, so "Ungrouped" maps back to ""; All has no key.
     keys = [win.group_tab_bar.tabData(i) for i in range(win.group_tabs.count())]
     labels = [win.group_tabs.tabText(i) for i in range(win.group_tabs.count())]
-    if keys != ["G", "H", ""] or labels[-1] != "Ungrouped":
+    if keys != ["G", "H", "", None] or labels[-2:] != ["Ungrouped", "All"]:
         PROBLEMS.append(f"tabs were {list(zip(labels, keys))}")
 
     # -- reorder: drop "c" above "a" -----------------------------------------
@@ -2061,11 +2061,12 @@ def check_group_management(app):
     if db.list_groups() != ["C", "A", "B", "New"]:
         PROBLEMS.append(f"dragging tab C to the front stored {db.list_groups()}")
 
-    # Ungrouped cannot stay anywhere but last.
-    bar.moveTab(bar.tab_keys().index(""), 0)
-    mouse(QEvent.Type.MouseButtonRelease, QPoint(5, 5), Qt.MouseButton.NoButton)
-    settle()
-    if bar.tab_keys()[-1] != "" or db.list_groups() != ["C", "A", "B", "New"]:
+    # Ungrouped, then All, cannot stay anywhere but last.
+    for key in ("", None):
+        bar.moveTab(bar.tab_keys().index(key), 0)
+        mouse(QEvent.Type.MouseButtonRelease, QPoint(5, 5), Qt.MouseButton.NoButton)
+        settle()
+    if bar.tab_keys()[-2:] != ["", None] or db.list_groups() != ["C", "A", "B", "New"]:
         PROBLEMS.append(f"after moving Ungrouped: tabs {bar.tab_keys()}, "
                         f"stored {db.list_groups()}")
 
@@ -2685,7 +2686,8 @@ def check_sections_and_favorites(app):
     app.processEvents()
     both = [c for c in win._cards if c._name == "bravo"]
     others = [c for c in win._cards if c._name != "bravo"]
-    if win.search_hint.text() != "1 of 6" or len(both) != 2 \
+    # Favorites and Scripts, on G's tab and again on All: four cards, one item.
+    if win.search_hint.text() != "1 of 6" or len(both) != 4 \
             or any(c.isHidden() for c in both) or not all(c.isHidden() for c in others):
         PROBLEMS.append(f"search: hint {win.search_hint.text()!r}, "
                         f"{len(both)} bravo cards")
@@ -2840,6 +2842,156 @@ def check_theme_editor_and_appearance(app):
     win.deleteLater()
 
 
+
+
+def check_all_tab(app):
+    """The All tab: every group on one page, and never mistaken for a group."""
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt
+    from PySide6.QtGui import (QContextMenuEvent, QDragEnterEvent,
+                               QDragMoveEvent, QDropEvent)
+    from PySide6.QtWidgets import QLabel
+
+    from ryos import sections
+    from ryos.db import ScriptDB
+    from ryos.qtui.dragdrop import MIME, CardPayload
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def settle():
+        for _ in range(3):
+            app.processEvents()
+
+    def make(settings=None, groups=("A", "B"), loose=True):
+        tmp = Path(tempfile.mkdtemp())
+        db = ScriptDB(tmp / "all.db")
+        ids = {}
+        for g in groups:
+            db.create_group(g)
+            for n in ("1", "2"):
+                ids[f"{g}{n}"] = db.add(f"{g}{n}", str(tmp / f"{g}{n}.py"), "",
+                                        _sys.executable, g)
+        if loose:
+            ids["loose"] = db.add("loose", str(tmp / "l.py"), "", _sys.executable, "")
+        saved: list = []
+        win = MainWindow(REFERENCE["dark"],
+                         settings={"quick_run_enabled": False, **(settings or {})},
+                         save_settings=lambda s: saved.append(dict(s)))
+        win.resize(700, 900)
+        win.show()
+        win.load_from_db(db)
+        settle()
+        return win, db, ids, saved
+
+    # -- where the tabs go, and what the All page holds ---------------------------------
+    win, db, ids, saved = make()
+    bar = win.group_tab_bar
+    if bar.tab_keys() != ["A", "B", "", None] or win.group_tabs.tabText(3) != "All":
+        PROBLEMS.append(f"tabs were {bar.tab_keys()}")
+    if win.current_group() != "A":
+        PROBLEMS.append("with nothing remembered, it did not open on the first group")
+    win.show_group(None)
+    all_body = win.group_tabs.currentWidget().widget()
+    headers = [w.text() for w in all_body.findChildren(QLabel)
+               if w.objectName() == "groupHeader"]
+    if headers != ["A", "B", "OTHER"]:
+        PROBLEMS.append(f"All headers {headers}")
+    if [c._name for c in win.all_pages["B"].section(sections.SCRIPTS).cards] != ["B1", "B2"]:
+        PROBLEMS.append("the All page's B block did not hold B's scripts")
+
+    # -- the All tab is not a group -------------------------------------------------------
+    shown: list = []
+    win.popup = lambda menu, pos: shown.append(menu)
+    rect = bar.tabRect(3)
+    app.sendEvent(bar, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, rect.center(),
+                                         bar.mapToGlobal(rect.center())))
+    if shown:
+        PROBLEMS.append("right-clicking All offered a group menu")
+
+    def drag(widget, pos, payload):
+        mime = QMimeData()
+        mime.setData(MIME, payload.encode())
+        args = (Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(widget, QDragEnterEvent(pos, *args))
+        app.sendEvent(widget, QDragMoveEvent(pos, *args))
+        app.sendEvent(widget, QDropEvent(QPointF(pos), *args))
+        settle()
+
+    drag(bar, rect.center(), CardPayload("script", ids["A1"], "A"))
+    if db.get(ids["A1"])[5] != "A" or "All" in db.list_groups():
+        PROBLEMS.append("dropping a card on All moved it")
+
+    # -- but its blocks work like the group tabs ---------------------------------------
+    win.show_group(None)
+    settle()
+    block = win.all_pages["A"].section(sections.SCRIPTS)
+    first = block.cards[0]
+    drag(block, QPoint(10, first.geometry().y() + 2),
+         CardPayload("script", ids["A2"], "A"))
+    order = [r[1] for r in db.list_all() if r[8] == "A"]
+    if order != ["A2", "A1"] or not win.showing_all():
+        PROBLEMS.append(f"a drop in All's A block gave {order}, "
+                        f"showing all: {win.showing_all()}")
+
+    win.all_pages["B"].sections[sections.PIPELINES].header.click()
+    win.reload()
+    settle()
+    if not win.card_lists["B"].section(sections.PIPELINES).isHidden():
+        PROBLEMS.append("collapsing in All did not collapse the group's own tab")
+    win.card_lists["B"].sections[sections.PIPELINES].header.click()
+
+    win.set_select_mode(True)
+    if sorted(c._name for c in win.selectable_cards()) != ["A1", "A2", "B1", "B2", "loose"]:
+        PROBLEMS.append(f"select mode in All offered {[c._name for c in win.selectable_cards()]}")
+    win.set_select_mode(False)
+
+    # -- quitting remembers the group on screen, and All as None -------------------------
+    win.show_group("B")
+    win.quit_app()
+    if not saved or saved[-1].get("last_group") != "B":
+        PROBLEMS.append(f"quit remembered {saved[-1].get('last_group') if saved else None!r}")
+    win.deleteLater()
+
+    win, db, ids, saved = make({"remember_last_group": True, "last_group": "B"})
+    if win.current_group() != "B":
+        PROBLEMS.append("the remembered group was not opened")
+    win.show_group(None)
+    win.quit_app()
+    if saved[-1].get("last_group") is not None:
+        PROBLEMS.append("leaving on All did not remember All")
+    win.deleteLater()
+
+    win, db, ids, saved = make({"remember_last_group": False, "last_group": "B"})
+    if win.current_group() != "A":
+        PROBLEMS.append("with remembering off, it still opened the remembered group")
+    win.quit_app()
+    if saved[-1].get("last_group") != "B":
+        PROBLEMS.append("with remembering off, quitting overwrote last_group")
+    win.deleteLater()
+
+    # -- no named groups: no header; nothing at all: the empty message -------------------
+    win, *_ = make(groups=())
+    win.show_group(None)
+    body = win.group_tabs.currentWidget().widget()
+    if [w for w in body.findChildren(QLabel) if w.objectName() == "groupHeader"]:
+        PROBLEMS.append("ungrouped-only All showed an 'Other' header")
+    win.deleteLater()
+    win, *_ = make(groups=(), loose=False)
+    if win.group_tab_bar.tab_keys() != [None] or not win.showing_all() \
+            or win.all_empty.text() != sections.ALL_EMPTY:
+        PROBLEMS.append("an empty database did not open on All with the empty message")
+    if win.add_script_button.text() != sections.ADD_SCRIPT_LABEL:
+        PROBLEMS.append("the Add button does not match the message that names it")
+    win.deleteLater()
+
+    print("  [ok] all tab: last, headed blocks with Other, not a group (menu, drop), "
+          "drops and collapse work inside it, select spans groups, last group "
+          "remembered and honoured, empty and ungrouped-only cases")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
@@ -2869,6 +3021,7 @@ def main() -> int:
     check_window_placement(app)
     check_sections_and_favorites(app)
     check_theme_editor_and_appearance(app)
+    check_all_tab(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

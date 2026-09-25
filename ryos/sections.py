@@ -65,3 +65,24 @@ class CollapseState:
 
     def forget(self, group: str) -> None:
         self._collapsed.pop(group, None)
+
+
+# --- the All view: every group on one page -----------------------------------------
+
+ALL_LABEL = "All"
+OTHER_LABEL = "Other"
+ADD_SCRIPT_LABEL = "+ Script"
+ALL_EMPTY = f"No scripts yet.\nClick '{ADD_SCRIPT_LABEL}' to get started."
+
+
+def all_view_groups(groups, has_ungrouped: bool) -> list[tuple[str, str | None]]:
+    """(group key, header) for each block of the All view, top to bottom.
+
+    Named groups in their stored order, each under its name in capitals;
+    ungrouped items last, headed "Other" -- or with no header when there are
+    no named groups, since "Other" than nothing reads oddly.
+    """
+    blocks: list[tuple[str, str | None]] = [(g, g.upper()) for g in groups]
+    if has_ungrouped:
+        blocks.append(("", OTHER_LABEL.upper() if groups else None))
+    return blocks
