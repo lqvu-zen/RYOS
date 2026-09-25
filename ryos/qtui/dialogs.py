@@ -92,6 +92,8 @@ class OptionsDialog(QDialog):
                  on_save: Callable[[dict], None] | None = None):
         super().__init__(parent)
         self.setWindowTitle("Advanced Options")
+        # Wide enough that every tab's name shows, instead of scroll arrows.
+        self.setMinimumWidth(520)
         self._settings = dict(settings)
         self._on_save = on_save
         self._rows: dict[str, _FieldRow] = {}

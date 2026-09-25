@@ -81,6 +81,10 @@ QFrame#card {{
 }}
 QFrame#card:hover {{ background: {c['card_hover']}; }}
 QLabel#cardName {{ color: {c['name_fg']}; font-weight: 600; }}
+/* Text on a card sits on the card, not in a box of the window colour. */
+QFrame#card QLabel, QFrame#card #cardName {{ background: transparent; }}
+/* The empty column on a pipeline card is a gap in the card (#7). */
+QWidget#cardSpacer {{ background: transparent; }}
 QLabel#cardPath {{ color: {c['path_fg']}; font-size: 9pt; }}
 
 /* --- buttons -------------------------------------------------------- */
@@ -140,6 +144,16 @@ QLineEdit, QComboBox, QSpinBox {{
     selection-background-color: {c['accent']};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; }}
+/* A check box reads as a box whether ticked or not, on every theme. */
+QCheckBox::indicator, QRadioButton::indicator {{
+    width: 14px; height: 14px;
+    border: 1px solid {c['path_fg']};
+    background: {c['card_bg']};
+}}
+QRadioButton::indicator {{ border-radius: 8px; }}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+    background: {c['accent']}; border: 1px solid {c['accent']};
+}}
 
 /* --- chrome --------------------------------------------------------- */
 QHeaderView::section {{ background: {c['header_bg']}; color: {c['name_fg']}; border: none; padding: 4px; }}
@@ -166,15 +180,15 @@ QFrame#updateBanner QLabel {{ background: transparent; color: {c['name_fg']}; }}
 QFrame#hoverPreview {{ background: {c['card_bg']}; border: 1px solid {c['border']}; }}
 
 /* --- group banner -------------------------------------------------- */
-QPushButton#groupBanner, QPushButton#groupBannerEmpty {{
+QLabel#groupBanner, QLabel#groupBannerEmpty {{
     background: {c['card_bg']};
     border: 1px solid {c['border']};
     text-align: left;
     padding: 8px 10px;
 }}
-QPushButton#groupBanner {{ color: {c['name_fg']}; }}
-QPushButton#groupBannerEmpty {{ color: {c['path_fg']}; }}
-QPushButton#groupBanner:hover, QPushButton#groupBannerEmpty:hover {{
+QLabel#groupBanner {{ color: {c['name_fg']}; }}
+QLabel#groupBannerEmpty {{ color: {c['path_fg']}; }}
+QLabel#groupBanner:hover, QLabel#groupBannerEmpty:hover {{
     background: {c['card_hover']};
 }}
 

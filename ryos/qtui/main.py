@@ -44,6 +44,19 @@ def _tray_wanted() -> bool:
 
 def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None,
         argv=None) -> int:
+    """Start RYOS and run until it quits."""
+    app, _win = build(settings=settings, launched_at_startup=launched_at_startup,
+                      instance_lock=instance_lock, argv=argv)
+    return app.exec()
+
+
+def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=None,
+          argv=None, show: bool = True):
+    """Everything start-up does, short of the event loop: (app, window).
+
+    Split from `run` so a test can take the exact start-up path -- the real
+    data, themes and settings -- and inspect the window it produces.
+    """
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 
@@ -62,7 +75,8 @@ def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None
         # Groups the windows under RYOS in the taskbar, not under python.exe.
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             "RYOS.RunYourOwnScripts")
-    app = QApplication(list(argv if argv is not None else sys.argv))
+    app = QApplication.instance() or QApplication(
+        list(argv if argv is not None else sys.argv))
     app.setApplicationName("RYOS")
     # Hiding to the tray hides the last window; that must not end the app.
     app.setQuitOnLastWindowClosed(False)
@@ -106,10 +120,15 @@ def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None
         win.attach_instance(instance_lock)
 
     win.load_from_db(db)
-    win.show()
-    win.apply_placement(launched_at_startup=launched_at_startup)
-    win.apply_start()
-    _log.info("Window shown at %s", win.geometry_string())
+    _log.info("Loaded %d group(s), %d script(s), %d pipeline(s)",
+              len(db.list_groups()), len(db.list_all()),
+              sum(len(db.list_pipelines(g)) for g in [*db.list_groups(), ""]))
+    if show:
+        win.show()
+        win.apply_placement(launched_at_startup=launched_at_startup)
+        win.apply_start()
+        _log.info("Window shown at %s", win.geometry_string())
     if settings.get("auto_check_update", True):
         win.check_for_updates()
-    return app.exec()
+    win.bridge = bridge
+    return app, win

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QVBoxLayout, QWidget)
 
 from .. import scriptform
+from .widgets import button_row
 
 
 class ScriptDialog(QDialog):
@@ -136,10 +137,9 @@ class ScriptDialog(QDialog):
         buttons.rejected.connect(self.reject)
         self.delete_button = None
         if script_id:
-            self.delete_button = buttons.addButton(
-                "Delete", QDialogButtonBox.ButtonRole.DestructiveRole)
+            self.delete_button = QPushButton("Delete")
             self.delete_button.clicked.connect(self.delete)
-        col.addWidget(buttons)
+        col.addWidget(button_row(buttons, self.delete_button))
 
         self._load(scriptform.load_form(db, script_id, default_group))
 

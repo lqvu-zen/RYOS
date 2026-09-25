@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel
 from .. import cardstyle, scriptform
 from ..interpreter import _script_tag
 from ..themes import ink_on
-from .widgets import ScrollingLabel, set_tooltip
+from .widgets import ElidedLabel, ScrollingLabel, set_tooltip
 
 # The four button columns every card carries, so a mixed list lines up. The
 # pipeline card has no "run with parameter", and issue #3 was that omitting the
@@ -195,7 +195,7 @@ class ScriptCard(_CardBase):
         text.addLayout(header)
 
         if not compact:
-            self.path_label = QLabel(path)
+            self.path_label = ElidedLabel(path)
             self.path_label.setObjectName("cardPath")
             # Not text-selectable, matching the Tk card: a selectable label
             # takes the mouse for itself, so dragging the card by its path
@@ -207,6 +207,11 @@ class ScriptCard(_CardBase):
             entries, selected = param_choices
             self.params_combo = QComboBox()
             self.params_combo.setObjectName("paramCombo")
+            # Its entries are parameters of any length; the card must not
+            # grow to fit the longest.
+            self.params_combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            self.params_combo.setMinimumContentsLength(6)
             self.params_combo.addItems(entries)
             self.params_combo.setCurrentText(selected)
             text.addWidget(self.params_combo)

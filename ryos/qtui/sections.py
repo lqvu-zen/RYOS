@@ -35,6 +35,8 @@ class Section(QWidget):
         self.cards = CardList(group)
         self.empty = QLabel(sections.EMPTY[key])
         self.empty.setObjectName("cardPath")
+        # Wraps, so the hint never sets the page's minimum width.
+        self.empty.setWordWrap(True)
         col.addWidget(self.empty)
         col.addWidget(self.cards)
         self._set_collapsed(collapsed)

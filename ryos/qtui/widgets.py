@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QPainter
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from .. import marquee
 
@@ -168,3 +168,64 @@ class HoverPreview(QWidget):
             self._popup.close()
             self._popup.deleteLater()
             self._popup = None
+
+
+class ElidedLabel(QLabel):
+    """A label that shortens text to fit, with "…" in the middle.
+
+    For paths: a QLabel's minimum width is its whole text, so a long path
+    made each card -- and the group page -- wider than the window, pushing the
+    Run button off the right edge. This one asks for almost no width, shows
+    the start and end of the path (the drive and the file name, the parts
+    worth reading), and keeps the full text as the tooltip.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None,
+                 mode=Qt.TextElideMode.ElideMiddle):
+        super().__init__(parent)
+        self._full = text
+        self._mode = mode
+        self.setMinimumWidth(24)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setToolTip(text)
+        self._refit()
+
+    def full_text(self) -> str:
+        return self._full
+
+    def setText(self, text: str) -> None:                  # noqa: N802
+        self._full = text
+        self.setToolTip(text)
+        self._refit()
+
+    def sizeHint(self):                                     # noqa: N802
+        hint = super().sizeHint()
+        hint.setWidth(QFontMetrics(self.font()).horizontalAdvance(self._full) + 4)
+        return hint
+
+    def resizeEvent(self, event) -> None:                   # noqa: N802
+        super().resizeEvent(event)
+        self._refit()
+
+    def _refit(self) -> None:
+        width = max(0, self.width() - 2)
+        QLabel.setText(self, QFontMetrics(self.font()).elidedText(
+            self._full, self._mode, width) if width > 0 else self._full)
+
+
+def button_row(buttons, destructive=None) -> QWidget:
+    """A dialog's buttons, with any destructive one alone on the left.
+
+    QDialogButtonBox places a DestructiveRole button by the platform's
+    rules, which on Windows puts Delete right beside Save. Tk keeps it apart,
+    on the left, where a slip of the mouse does not reach it.
+    """
+    from PySide6.QtWidgets import QHBoxLayout
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(0, 0, 0, 0)
+    if destructive is not None:
+        lay.addWidget(destructive)
+    lay.addStretch(1)
+    lay.addWidget(buttons)
+    return row

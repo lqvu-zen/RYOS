@@ -27,6 +27,8 @@ Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs (about 1
 
 To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no window; `--visible` shows it on a second screen).
 
+To check the Qt app against your own data without changing it: `uv run python tests/real_data_smoke.py` (copies `%APPDATA%\RYOS` to a throwaway folder, opens every dialog and editor on the copy, prints counts only, and checks the real folder is unchanged; `--visible` as above).
+
 ## Architecture
 
 Qt (PySide6) desktop app organized as the `ryos/` package; the older Tk interface lives alongside in `ryos/ui/`. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script via `pyproject.toml`.

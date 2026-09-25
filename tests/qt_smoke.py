@@ -252,6 +252,10 @@ def check_cards(app):
     pal = REFERENCE["dark"]
     app.setStyleSheet(stylesheet(pal))
 
+    from PySide6.QtCore import QPoint
+
+    from ryos.qtui.stylesheet import stylesheet as _sheet
+    app_sheet = _sheet(pal)
     for compact in (False, True):
         for size in cardstyle.SIZES:
             sc = ScriptCard(script_id=1, name="script.py", path="C:/x/script.py",
@@ -259,6 +263,9 @@ def check_cards(app):
             pc = PipelineCard(pipeline_id=1, name="pipe", step_count=3,
                               palette=pal, compact=compact, size=size)
             for c in (sc, pc):
+                # Styled as the window styles them: the stylesheet is what
+                # can paint a gap the wrong colour.
+                c.setStyleSheet(app_sheet)
                 c.resize(520, 60)
                 c.show()
             app.processEvents()
@@ -278,12 +285,26 @@ def check_cards(app):
                     PROBLEMS.append(
                         f"{tag}: column {i} is {a.width()}px, not {BUTTON_WIDTH}")
 
-            # #7: the spacer must not be painted like a button.
-            spacer_bg = pc.spacer.palette().window().color().name().lower()
-            button_bg = pc.edit_button.palette().button().color().name().lower()
-            if spacer_bg == button_bg:
-                PROBLEMS.append(
-                    f"{tag}: the spacer is painted like a button ({spacer_bg}) (#7)")
+            # #7: the spacer must read as a gap in the card -- drawn in the
+            # card's own colour, neither like a button nor as a hole of the
+            # window colour (the catch-all QWidget rule painted it so).
+            # Compared with the card just beside it, not a fixed colour: the
+            # card may be drawn in its hover colour, depending on the pointer.
+            shot = pc.grab().toImage()
+            scale = shot.devicePixelRatio()         # 1.25 on a 125% screen
+
+            def px(point):
+                # The image is in device pixels; widget points are logical.
+                return shot.pixelColor(int(point.x() * scale),
+                                       int(point.y() * scale)).name().lower()
+            centre = pc.spacer.mapTo(pc, pc.spacer.rect().center())
+            drawn = px(centre)
+            card_there = px(QPoint(pc.spacer.mapTo(pc, QPoint(0, 0)).x() - 2, centre.y()))
+            button = px(pc.edit_button.mapTo(pc, pc.edit_button.rect().center()
+                                             + QPoint(8, 0)))
+            if drawn != card_there or drawn == button:
+                PROBLEMS.append(f"{tag}: the spacer is drawn {drawn}; the card beside "
+                                f"it is {card_there}, a button {button} (#7)")
 
             # padding follows the shared table
             want = cardstyle.card_padding(compact, size)
@@ -3545,12 +3566,17 @@ def check_badges_banner_previews(app):
         PROBLEMS.append(f"the pipeline badges were {got}")
 
     # -- the group banner ----------------------------------------------------------------
-    if win.group_banners["G"].text() != sections.banner_text(str(tmp)) \
-            or win.group_banners["H"].text() != sections.banner_text(""):
+    if win.group_banners["G"].full_text() != sections.banner_text(str(tmp)) \
+            or win.group_banners["H"].full_text() != sections.banner_text(""):
         PROBLEMS.append("the group banners did not show the base folder or the hint")
     if "" in win.group_banners:
         PROBLEMS.append("Ungrouped got a base-folder banner")
-    win.group_banners["H"].click()
+    press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(5, 5),
+                        QPointF(win.group_banners["H"].mapToGlobal(
+                            win.group_banners["H"].rect().topLeft())),
+                        Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                        Qt.KeyboardModifier.NoModifier)
+    app.sendEvent(win.group_banners["H"], press)
     if not dialogs or not isinstance(dialogs[-1], GroupBaseDirDialog):
         PROBLEMS.append("clicking the banner did not open the base-folder dialog")
 
@@ -3594,6 +3620,73 @@ def check_badges_banner_previews(app):
           "pipeline badge, banners with the folder or the hint and a click to set "
           "it, steps popup with ∥ and overrides, hover preview on compact cards "
           "only and only when on")
+
+
+def check_long_text_fits(app):
+    """Long paths, folders and parameters must not push the Run button away.
+
+    Found by looking, not by any check: a QLabel's minimum width is its whole
+    text, so a long path made each card -- and the page -- wider than the
+    window, and the buttons sat off the right edge behind a sideways
+    scrollbar. At the default 540 px, every card's Run button must be inside
+    the visible list.
+    """
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QScrollArea
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    deep = tmp.joinpath(*["a-rather-long-folder-name"] * 8)
+    deep.mkdir(parents=True)
+    db = ScriptDB(tmp / "long.db")
+    db.create_group("G", base_dir=str(deep))
+    long_script = deep / ("a-script-with-a-very-long-descriptive-name" * 2 + ".py")
+    long_script.write_text("x\n", encoding="utf-8")
+    sid = db.add("A script whose name is also on the long side of things",
+                 str(long_script), "--an --option --list " * 6, _sys.executable, "G")
+    db.replace_param_presets(sid, [("long", "--preset " * 20)])
+    pid = db.create_pipeline("A pipeline with a name that goes on and on", "G")
+    db.add_pipeline_step(pid, sid)
+
+    for compact in (False, True):
+        win = MainWindow(REFERENCE["dark"],
+                         settings={"quick_run_enabled": True, "compact_mode": compact,
+                                   "window_width": 540, "window_height": 640})
+        win.resize(540, 640)
+        win.show()
+        for _ in range(6):
+            app.processEvents()
+        # Measured, not assumed 540: moving onto a 1.25x screen rounds it.
+        width = win.width()
+        win.load_from_db(db)
+        win.show_group("G")
+        for _ in range(6):
+            app.processEvents()
+        page = win.card_lists["G"]
+        scroll = next(w for w in (page.parentWidget(), page.parentWidget().parentWidget())
+                      if isinstance(w, QScrollArea))
+        viewport = scroll.viewport()
+        if scroll.horizontalScrollBar().isVisible():
+            PROBLEMS.append(f"long text gave the card list a sideways scrollbar "
+                            f"(compact={compact})")
+        for card in page.cards:
+            right = card.run_button.mapTo(viewport, QPoint(card.run_button.width(), 0)).x()
+            if right > viewport.width():
+                PROBLEMS.append(f"a {card.drag_payload.kind} card's Run button ends at "
+                                f"{right}, past the list's {viewport.width()} px "
+                                f"(compact={compact})")
+        if win.width() != width:
+            PROBLEMS.append(f"long text widened the window from {width} "
+                            f"to {win.width()}")
+        win.deleteLater()
+    print("  [ok] long text fits: long paths, folders and parameters leave every "
+          "Run button in view at 540 px, full and compact, no sideways scrollbar")
 
 
 #: Top-left of the screen the smoke's windows use; set in main().
@@ -3677,6 +3770,7 @@ def main() -> int:
     check_output_panel(app)
     check_file_drop(app)
     check_badges_banner_previews(app)
+    check_long_text_fits(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

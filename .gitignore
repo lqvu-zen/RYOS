@@ -17,6 +17,7 @@ tests/*
 !tests/gui_smoke.py
 !tests/qt_smoke.py
 !tests/launch_smoke.py
+!tests/real_data_smoke.py
 
 # Database
 scripts.db

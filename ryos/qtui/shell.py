@@ -332,6 +332,7 @@ class MainWindow(QMainWindow):
         self.add_script_button.clicked.connect(self.add_script)
         row.addWidget(self.add_script_button)
         self.add_pipeline_button = QPushButton(pipelinesteps.ADD_PIPELINE_LABEL)
+        self.add_pipeline_button.setObjectName("primary")
         self.add_pipeline_button.clicked.connect(self.new_pipeline)
         row.addWidget(self.add_pipeline_button)
         col.addLayout(row)
@@ -416,6 +417,9 @@ class MainWindow(QMainWindow):
         bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         bar.customContextMenuRequested.connect(self._show_output_tab_menu)
         self.add_output_tab(outputpanel.ALL, "All")
+        from PySide6.QtWidgets import QTabBar
+        for side in (QTabBar.ButtonPosition.RightSide, QTabBar.ButtonPosition.LeftSide):
+            self.output_tabs.tabBar().setTabButton(0, side, None)
         col.addWidget(self.output_tabs, 1)
         self.output_panel = panel
         self.output_expanded = True
@@ -435,6 +439,12 @@ class MainWindow(QMainWindow):
         self.output_findbar.setVisible(on)
         self.output_toggle.setText(outputpanel.HIDE_OUTPUT if on
                                    else outputpanel.SHOW_OUTPUT)
+        # Collapsed, the panel is its header and no taller: capped here, so
+        # the splitter cannot hand it empty space -- which it did when this
+        # ran during construction, before the splitter existed.
+        self.output_panel.setMaximumHeight(
+            16777215 if on else self.output_panel.layout().itemAt(0).widget()
+            .sizeHint().height())
         splitter = self.centralWidget()
         if isinstance(splitter, QSplitter):
             total = sum(splitter.sizes()) or self.height()
@@ -623,11 +633,14 @@ class MainWindow(QMainWindow):
         hcol.setContentsMargins(0, 0, 0, 0)
         hcol.setSpacing(2)
         if group_name:
-            banner = QPushButton(sections.banner_text(base_dir))
+            from .widgets import ElidedLabel
+            banner = ElidedLabel(sections.banner_text(base_dir))
             banner.setObjectName("groupBanner" if base_dir else "groupBannerEmpty")
-            banner.setFlat(True)
-            banner.clicked.connect(
-                lambda _c=False, g=group_name: self.on_group_menu(g, cardmenu.BASE_DIR))
+            banner.setCursor(Qt.CursorShape.PointingHandCursor)
+            # A label, so a long folder is shortened instead of widening the
+            # page; clicking it opens the base-folder dialog, as in Tk.
+            banner.mousePressEvent = (
+                lambda _e, g=group_name: self.on_group_menu(g, cardmenu.BASE_DIR))
             hcol.addWidget(banner)
             self.group_banners[group_name] = banner
         if base_dir and self._settings.get("quick_run_enabled", True):

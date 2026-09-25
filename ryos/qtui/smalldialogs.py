@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QDialog,
                                QSpinBox, QStackedWidget, QVBoxLayout, QWidget)
 
 from .. import history, scheduleform, scriptform
+from .widgets import button_row
 from ..grouping import validate_group_name
 from ..scheduling import DAILY, INTERVAL, WEEKLY, next_occurrence, normalize_spec
 
@@ -330,11 +331,10 @@ class RunHistoryDialog(QDialog):
         col.addWidget(self.table, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        self.clear_button = buttons.addButton(
-            "Clear history", QDialogButtonBox.ButtonRole.DestructiveRole)
+        self.clear_button = QPushButton("Clear history")
         self.clear_button.clicked.connect(self._confirm_clear)
         buttons.rejected.connect(self.reject)
-        col.addWidget(buttons)
+        col.addWidget(button_row(buttons, self.clear_button))
         self.resize(640, 420)
         self.reload()
 
@@ -459,13 +459,12 @@ class ScheduleDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save
                                    | QDialogButtonBox.StandardButton.Cancel)
-        self.remove_button = buttons.addButton(
-            "Remove schedule", QDialogButtonBox.ButtonRole.DestructiveRole)
+        self.remove_button = QPushButton("Remove schedule")
         self.remove_button.setEnabled(self._existing is not None)
         self.remove_button.clicked.connect(self.remove)
         buttons.accepted.connect(self.accept_form)
         buttons.rejected.connect(self.reject)
-        col.addWidget(buttons)
+        col.addWidget(button_row(buttons, self.remove_button))
 
         for signal in (self.mode.currentIndexChanged, self.minutes.valueChanged,
                        self.at.textChanged):
