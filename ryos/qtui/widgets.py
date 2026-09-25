@@ -29,6 +29,16 @@ from PySide6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 from .. import marquee
 
 
+def literal(text: str) -> str:
+    """Text for a tab or menu item, shown as written.
+
+    Qt reads "&" there as a keyboard-shortcut marker and hides it, so
+    "Startup & Window" showed as "Startup  Window" and a group named "R&D"
+    as "RD". Group, script and job names are the user's own text.
+    """
+    return text.replace("&", "&&")
+
+
 def set_tooltip(widget: QWidget, text: str) -> None:
     """Attach a tooltip.
 

@@ -12,6 +12,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from .. import __version__, traypolicy
+from .widgets import literal
 
 
 class Tray(QObject):
@@ -65,7 +66,7 @@ class Tray(QObject):
             if entry.key is None:
                 self.menu.addSeparator()
                 continue
-            action = self.menu.addAction(entry.label)
+            action = self.menu.addAction(literal(entry.label))
             action.setData(entry.key)
             if entry.default:
                 font = action.font()

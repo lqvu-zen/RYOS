@@ -6428,6 +6428,22 @@ class TestQtStylesheet(unittest.TestCase):
             with self.subTest(theme=name):
                 self.assertIn("QMainWindow", qss_for(name))
 
+    def test_every_image_it_names_exists(self):
+        # Qt draws nothing for a url() it cannot open -- a ticked box with no
+        # tick -- and says nothing either.
+        import re
+        for name in ("light", "dark"):
+            for url in re.findall(r'url\("([^"]+)"\)', qss_for(name)):
+                with self.subTest(theme=name, url=url):
+                    self.assertTrue(Path(url).is_file())
+
+    def test_the_tick_reads_on_the_accent(self):
+        # A white tick on a light accent vanishes; the ink is chosen per accent.
+        pale = dict(REFERENCE["light"], accent="#f0f0a0")
+        deep = dict(REFERENCE["light"], accent="#1a237e")
+        self.assertIn("check-dark.svg", qss(pale))
+        self.assertIn("check-light.svg", qss(deep))
+
 
 class TestMarquee(unittest.TestCase):
     """Scroll arithmetic shared by the Tk and Qt marquee widgets.

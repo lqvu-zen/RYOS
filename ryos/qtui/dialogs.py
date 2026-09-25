@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
 
 from .. import settings_schema
 from ..settings_schema import BOOL, CHOICE, INT, LIST
+from .widgets import literal
 
 # Spin boxes need an upper bound; Qt's default of 99 would silently cap
 # "maximum output lines" at two digits. Nothing in the schema is legitimately
@@ -104,7 +105,7 @@ class OptionsDialog(QDialog):
             fields = settings_schema.fields_for(tab_name)
             if not fields:
                 continue
-            self.tabs.addTab(self._build_tab(fields), tab_name)
+            self.tabs.addTab(self._build_tab(fields), literal(tab_name))
         col.addWidget(self.tabs)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save

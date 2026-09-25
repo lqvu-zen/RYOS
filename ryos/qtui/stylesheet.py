@@ -17,7 +17,18 @@ they draw from, so a missing key is easy to spot.
 
 from __future__ import annotations
 
-from ..themes import REFERENCE
+from pathlib import Path
+
+from ..themes import INK_LIGHT_POLE, REFERENCE, ink_on
+
+
+def icon_path(name: str) -> str:
+    """Where an image the stylesheet draws lives, as Qt's url() wants it.
+
+    Beside this module, from source and in the build alike: setup_cxfreeze.py
+    copies the folder to the same place, as it does the theme presets.
+    """
+    return (Path(__file__).resolve().parent / "icons" / name).as_posix()
 
 # Every palette key this module reads. Checked against the palette up front so
 # a missing one is a clear error here rather than a literal "None" appearing in
@@ -63,6 +74,8 @@ def stylesheet(palette: dict) -> str:
             f"palette is missing {len(gaps)} key(s) the stylesheet needs: "
             f"{', '.join(gaps)}")
     c = palette
+    tick = icon_path("check-light.svg" if ink_on(c["accent"]) == INK_LIGHT_POLE
+                     else "check-dark.svg")
     return f"""
 /* --- surfaces ------------------------------------------------------- */
 QWidget {{
@@ -144,6 +157,14 @@ QLineEdit, QComboBox, QSpinBox {{
     selection-background-color: {c['accent']};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; }}
+/* Lists (the script dialog's presets, the pipeline editor's steps) show
+   their edge even when empty, so they read as a place to put things. */
+QListView {{
+    background: {c['card_bg']};
+    color: {c['name_fg']};
+    border: 1px solid {c['border']};
+    border-radius: 3px;
+}}
 /* A check box reads as a box whether ticked or not, on every theme. */
 QCheckBox::indicator, QRadioButton::indicator {{
     width: 14px; height: 14px;
@@ -151,8 +172,17 @@ QCheckBox::indicator, QRadioButton::indicator {{
     background: {c['card_bg']};
 }}
 QRadioButton::indicator {{ border-radius: 8px; }}
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+/* Ticked: the accent, with a tick in whichever ink reads on it. A chosen
+   radio button: a dot of the accent in the box's own colour. */
+QCheckBox::indicator:checked {{
     background: {c['accent']}; border: 1px solid {c['accent']};
+    image: url("{tick}");
+}}
+QRadioButton::indicator:checked {{
+    border: 1px solid {c['accent']};
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+        stop:0 {c['accent']}, stop:0.55 {c['accent']},
+        stop:0.62 {c['card_bg']}, stop:1 {c['card_bg']});
 }}
 
 /* --- chrome --------------------------------------------------------- */

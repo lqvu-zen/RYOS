@@ -18,6 +18,7 @@ from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QMenu, QWidget
 
 from ..themes import readable_highlight
+from .widgets import literal
 
 SWATCH_PX = 12
 
@@ -42,11 +43,11 @@ def _fill(menu: QMenu, items, on_pick, palette: dict) -> None:
             menu.addSeparator()
             continue
         if item.children:
-            sub = menu.addMenu(item.label)
+            sub = menu.addMenu(literal(item.label))
             sub.menuAction().setData(item.key)
             _fill(sub, item.children, on_pick, palette)
             continue
-        action = menu.addAction(item.label)
+        action = menu.addAction(literal(item.label))
         action.setData(item.key)
         action.setEnabled(item.enabled)
         if item.highlight:

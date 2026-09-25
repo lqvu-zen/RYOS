@@ -38,6 +38,8 @@ build_options = {
     "bin_excludes": _unused_qt_binaries(),
     "include_files": [
         ("icon.ico", "icon.ico"),
+        # The stylesheet's images (the check-box tick); see qtui/stylesheet.py.
+        ("ryos/qtui/icons", "lib/ryos/qtui/icons"),
         # Bundled preset themes are data files, not modules, so cx_Freeze won't
         # pick them up via "packages"; copy them next to the frozen package so
         # themes.PRESETS_DIR (Path(__file__).parent / "presets") resolves.

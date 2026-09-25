@@ -361,8 +361,10 @@ def check_options_form(app):
     # Every tab with fields is present.
     tab_names = {dlg.tabs.tabText(i) for i in range(dlg.tabs.count())}
     for tab in settings_schema.TABS:
-        if settings_schema.fields_for(tab) and tab not in tab_names:
-            PROBLEMS.append(f"options form is missing the {tab!r} tab")
+        # Escaped: Qt would hide a bare "&" as a shortcut marker.
+        if settings_schema.fields_for(tab) and tab.replace("&", "&&") not in tab_names:
+            PROBLEMS.append(f"options form is missing the {tab!r} tab "
+                            f"(or shows it with its '&' eaten)")
 
     # Defaults round-trip unchanged: opening and saving must be a no-op.
     values = dlg.values()
@@ -3730,8 +3732,114 @@ class _KeepOnSmokeScreen:
         app.installEventFilter(self.filter)
 
 
+def check_ticks_are_drawn(app):
+    """A ticked box shows a tick, and a chosen radio button a dot.
+
+    Found by looking: styling the indicator replaces Qt's own drawing, so the
+    first version filled a ticked box with the accent and nothing more --
+    a solid square that did not read as "on". The tick is an SVG named in
+    the stylesheet; Qt draws nothing, silently, if it cannot load it.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import (QCheckBox, QRadioButton, QStyle,
+                                   QStyleOptionButton)
+
+    from ryos.qtui.stylesheet import stylesheet as _sheet
+    from ryos.themes import REFERENCE, ink_on
+
+    for theme in ("dark", "light"):
+        pal = REFERENCE[theme]
+        ink = QColor(ink_on(pal["accent"]))
+        for cls, element in ((QCheckBox, QStyle.SubElement.SE_CheckBoxIndicator),
+                             (QRadioButton, QStyle.SubElement.SE_RadioButtonIndicator)):
+            box = cls("x")
+            box.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+            box.setStyleSheet(_sheet(pal))
+            box.setChecked(True)
+            box.show()
+            app.processEvents()
+            opt = QStyleOptionButton()
+            opt.initFrom(box)
+            area = box.style().subElementRect(element, opt, box)
+            shot = box.grab().toImage()
+            scale = shot.devicePixelRatio()
+            # A tick: pixels of the ink. A dot: the accent inside a ring of
+            # the box colour -- a solid accent disc has no ring, an empty
+            # box no accent.
+            wanted = ([ink] if cls is QCheckBox
+                      else [QColor(pal["accent"]), QColor(pal["card_bg"])])
+            counts = [0] * len(wanted)
+            cx, cy = area.center().x() * scale, area.center().y() * scale
+            inner = 0.8 * min(area.width(), area.height()) / 2 * scale
+            for x in range(int(area.left() * scale), int(area.right() * scale)):
+                for y in range(int(area.top() * scale), int(area.bottom() * scale)):
+                    if (x - cx) ** 2 + (y - cy) ** 2 > inner ** 2:
+                        continue        # a round box's corners show the window
+                    c = shot.pixelColor(x, y).getRgb()[:3]
+                    for i, w in enumerate(wanted):
+                        if sum(abs(a - b) for a, b in zip(c, w.getRgb()[:3])) < 40:
+                            counts[i] += 1
+            if min(counts) < 4:
+                PROBLEMS.append(f"{theme}: a checked {cls.__name__} shows no mark "
+                                f"inside its box ({counts} px)")
+            box.close()
+    print("  [ok] ticks: a checked box shows a tick and a chosen radio button a "
+          "dot, light and dark")
+
+
+def check_ampersands_show(app):
+    """A "&" in a group name shows in its tab and its menus.
+
+    Qt reads "&" in tab and menu text as a shortcut marker and hides it:
+    Options' "Startup & Window" tab read "Startup  Window". Found by looking.
+    """
+    import sys as _sys
+    import tempfile
+
+    from ryos import cardmenu
+    from ryos.db import ScriptDB
+    from ryos.qtui.menus import build_menu
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "amp.db")
+    db.create_group("R&D")
+    db.add("Build & test", str(tmp / "x.py"), "", _sys.executable, "R&D")
+    win = MainWindow(REFERENCE["dark"])
+    win.load_from_db(db)
+    shown = [win.group_tabs.tabText(i) for i in range(win.group_tabs.count())]
+    if "R&&D" not in shown:
+        PROBLEMS.append(f"a group named R&D has tabs {shown}; its '&' would be hidden")
+    # A menu naming a group, as "Move to" does.
+    items = [cardmenu.MenuItem("move", "Move to", children=(
+        cardmenu.MenuItem("move:R&D", "R&D"),))]
+    menu = build_menu(win, items, lambda _k: None, REFERENCE["dark"])
+    texts = [a.text() for a in menu.actions()[0].menu().actions()]
+    if texts != ["R&&D"]:
+        PROBLEMS.append(f"a menu entry for R&D reads {texts}; its '&' would be hidden")
+    win.deleteLater()
+    print("  [ok] ampersands: a group named R&D keeps its '&' in its tab and menus")
+
+
+def _real_log_state():
+    """The user's own log file, as (size, mtime) -- None when there is none.
+
+    A check that reached the real setup_logging (Options' Save did, through
+    apply_settings) sent every later job's lines into the user's log.
+    """
+    from ryos.settings import LOG_PATH
+    try:
+        st = Path(LOG_PATH).stat()
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime_ns)
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
+    real_log = _real_log_state()
     app = QApplication(sys.argv)
     global SMOKE_ORIGIN
     home = _smoke_screen(app).availableGeometry()
@@ -3771,6 +3879,10 @@ def main() -> int:
     check_file_drop(app)
     check_badges_banner_previews(app)
     check_long_text_fits(app)
+    check_ticks_are_drawn(app)
+    check_ampersands_show(app)
+    if _real_log_state() != real_log:
+        PROBLEMS.append("the user's own RYOS log was written during the smoke")
     print()
     if PROBLEMS:
         for p in PROBLEMS:

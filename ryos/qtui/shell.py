@@ -46,6 +46,7 @@ from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from .stylesheet import stylesheet
+from .widgets import literal
 
 #: Matches the Tk placeholder, so the two shells prompt identically.
 SEARCH_PLACEHOLDER = "Search scripts and pipelines…"
@@ -212,7 +213,8 @@ class MainWindow(QMainWindow):
                  save_settings: Callable[[dict], None] | None = None,
                  notifier: Callable[[str, str], None] | None = None,
                  fetch_release: Callable[[], object] | None = None,
-                 startup=None):
+                 startup=None,
+                 configure_logging: Callable[[bool, str], None] | None = None):
         super().__init__()
         # Run-at-login lives in the Windows registry, not in settings. Like
         # the other real effects it is passed in; the default does nothing,
@@ -234,6 +236,8 @@ class MainWindow(QMainWindow):
         # test that closes a window can never write the user's settings or
         # end the application.
         self._save_settings = save_settings or (lambda _s: None)
+        # Points the log at the user's own file, so a test must not get it.
+        self._configure_logging = configure_logging or (lambda _on, _level: None)
         self.on_quit: Callable[[], None] = lambda: None
         self._tray = None
         self._instance = None
@@ -647,7 +651,7 @@ class MainWindow(QMainWindow):
             hcol.addWidget(self._build_quick_run(group_name, base_dir))
         hcol.addWidget(scroll, 1)
         index = self.group_tabs.addTab(
-            holder, label if label is not None else group_name)
+            holder, literal(label if label is not None else group_name))
         self.group_tab_bar.setTabData(index, group_name)
         self._cards.extend(made)
 
@@ -1220,14 +1224,13 @@ class MainWindow(QMainWindow):
 
     def apply_settings(self, new: dict) -> None:
         """Take saved options, as Tk's _apply does: store, log level, window."""
-        from ..logger import setup_logging
         self._settings.update(new)
         self._save_settings(self._settings)
         if self._bridge is not None:
             # The bridge keeps its own copy; a new job cap must reach it.
             self._bridge._settings.update(new)
-        setup_logging(self._settings.get("logging_enabled", True),
-                      self._settings.get("log_level", "INFO"))
+        self._configure_logging(self._settings.get("logging_enabled", True),
+                                self._settings.get("log_level", "INFO"))
         self.apply_topmost()
         self.resize(int(self._settings.get("window_width", self.width())),
                     int(self._settings.get("window_height", self.height())))
@@ -1982,7 +1985,7 @@ class MainWindow(QMainWindow):
         if pane is None:
             pane = OutputPane(self._palette)
             self._output_tabs[key] = pane
-            self.output_tabs.addTab(pane, label)
+            self.output_tabs.addTab(pane, literal(label))
         return pane
 
     def _close_output_tab(self, index: int) -> None:
