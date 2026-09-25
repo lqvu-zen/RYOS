@@ -19,7 +19,55 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..themes import INK_LIGHT_POLE, REFERENCE, ink_on
+from ..themes import (INK_LIGHT_POLE, REFERENCE, _readable_on, contrast_ratio,
+                      ink_on)
+
+
+#: Text needs 4.5:1 against its fill (WCAG AA); a glyph or a large
+#: selected-tab label needs 3:1.
+TEXT_MIN, GLYPH_MIN = 4.5, 3.0
+
+
+def _legible(fg: str, *fills: str, floor: float = TEXT_MIN) -> str:
+    """The theme's own colour when it reads on every fill, else the better of
+    black and white. Most themes keep their colours; a few needed rescuing."""
+    if all(contrast_ratio(fg, f) >= floor for f in fills):
+        return fg
+    return ink_on(*fills)
+
+
+def drawn_colors(c: dict) -> dict:
+    """Text colours the stylesheet draws where the palette's own key does not
+    always read. Measured across the shipped themes: white on Nord's pale
+    accent was 2.0:1, and tooltips drew the dark body text on a dark tooltip
+    in every light theme (about 1.2:1)."""
+    # Idle and hover are judged apart: on a mid-tone accent (Ocean Depths'
+    # teal) neither black nor white clears 4.5:1 on both at once, but one of
+    # them always does on each.
+    return {
+        "primary_fg": _legible(c["btn_fg"], c["accent"]),
+        "primary_hover_fg": _legible(c["btn_fg"], c["accent2"]),
+        "neutral_fg": _legible(c["btn_neutral_fg"], c["btn_neutral_bg"]),
+        "neutral_hover_fg": _legible(c["btn_neutral_fg"], c["btn_neutral_hover"]),
+        "tooltip_fg": _legible(c["name_fg"], c["tooltip_bg"]),
+        "status_fg": _legible(c["path_fg"], c["status_bg"]),
+        "tab_selected_fg": _legible(c["accent"], c["card_bg"], floor=GLYPH_MIN),
+        # Gold stays gold, shaded until it reads on the wash.
+        "star": _readable_on(c.get("bolt", "#FFD23F"), (c["accent_wash"],)),
+    }
+
+
+#: (colour from drawn_colors, the fills it sits on, minimum) -- for the tests.
+DRAWN_PAIRS = (
+    ("primary_fg", ("accent",), TEXT_MIN),
+    ("primary_hover_fg", ("accent2",), TEXT_MIN),
+    ("neutral_fg", ("btn_neutral_bg",), TEXT_MIN),
+    ("neutral_hover_fg", ("btn_neutral_hover",), TEXT_MIN),
+    ("tooltip_fg", ("tooltip_bg",), TEXT_MIN),
+    ("status_fg", ("status_bg",), TEXT_MIN),
+    ("tab_selected_fg", ("card_bg",), GLYPH_MIN),
+    ("star", ("accent_wash",), GLYPH_MIN),
+)
 
 
 def icon_path(name: str) -> str:
@@ -74,6 +122,7 @@ def stylesheet(palette: dict) -> str:
             f"palette is missing {len(gaps)} key(s) the stylesheet needs: "
             f"{', '.join(gaps)}")
     c = palette
+    d = drawn_colors(c)
     tick = icon_path("check-light.svg" if ink_on(c["accent"]) == INK_LIGHT_POLE
                      else "check-dark.svg")
     return f"""
@@ -109,12 +158,12 @@ QLabel#cardPath {{ color: {c['path_fg']}; font-size: 9pt; }}
 /* --- buttons -------------------------------------------------------- */
 QPushButton {{
     background: {c['btn_neutral_bg']};
-    color: {c['btn_neutral_fg']};
+    color: {d['neutral_fg']};
     border: none;
     border-radius: 3px;
     padding: 5px 12px;
 }}
-QPushButton:hover {{ background: {c['btn_neutral_hover']}; }}
+QPushButton:hover {{ background: {c['btn_neutral_hover']}; color: {d['neutral_hover_fg']}; }}
 QPushButton:disabled {{
     background: {c['btn_disabled_bg']};
     color: {c['btn_disabled_fg']};
@@ -123,8 +172,8 @@ QPushButton#run {{ background: {c['btn_run_bg']}; color: {c['btn_run_fg']}; }}
 QPushButton#run:hover {{ background: {c['btn_run_hover']}; }}
 QPushButton#stop {{ background: {c['btn_stop_idle']}; color: {c['btn_stop_idle_fg']}; }}
 QPushButton#stop:hover {{ background: {c['btn_stop_idle_hover']}; }}
-QPushButton#primary {{ background: {c['accent']}; color: {c['btn_fg']}; }}
-QPushButton#primary:hover {{ background: {c['accent2']}; }}
+QPushButton#primary {{ background: {c['accent']}; color: {d['primary_fg']}; }}
+QPushButton#primary:hover {{ background: {c['accent2']}; color: {d['primary_hover_fg']}; }}
 QPushButton#dark {{ background: {c['btn_dark_bg']}; color: {c['btn_fg']}; }}
 QPushButton#dark:hover {{ background: {c['btn_dark_hover']}; }}
 /* A card's button strip holds glyphs, not words (▶ ↻ ★ ⚙ ▸+): at the body
@@ -133,7 +182,7 @@ QPushButton#dark:hover {{ background: {c['btn_dark_hover']}; }}
 QFrame#card QPushButton {{ font-size: 13pt; padding: 2px 0; }}
 /* A favourite's star is gold on the accent wash, as in Tk. */
 QFrame#card QPushButton#favOn {{
-    color: {c.get('bolt', c['accent'])}; background: {c['accent_wash']};
+    color: {d['star']}; background: {c['accent_wash']};
 }}
 
 /* --- group tabs ----------------------------------------------------- */
@@ -147,7 +196,7 @@ QTabBar::tab {{
 QTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
 QTabBar::tab:selected {{
     background: {c['card_bg']};
-    color: {c['accent']};
+    color: {d['tab_selected_fg']};
     font-weight: 600;
     border-bottom: 2px solid {c['accent']};
 }}
@@ -201,10 +250,10 @@ QRadioButton::indicator:checked {{
 
 /* --- chrome --------------------------------------------------------- */
 QHeaderView::section {{ background: {c['header_bg']}; color: {c['name_fg']}; border: none; padding: 4px; }}
-QStatusBar {{ background: {c['status_bg']}; color: {c['path_fg']}; }}
+QStatusBar {{ background: {c['status_bg']}; color: {d['status_fg']}; }}
 QToolTip {{
     background: {c['tooltip_bg']};
-    color: {c['name_fg']};
+    color: {d['tooltip_fg']};
     border: 1px solid {c['tooltip_border']};
     padding: 4px;
 }}

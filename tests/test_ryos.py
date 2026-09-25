@@ -6657,6 +6657,23 @@ class TestQtStylesheet(unittest.TestCase):
             with self.subTest(theme=name):
                 self.assertIn("QMainWindow", qss_for(name))
 
+    def test_drawn_text_reads_in_every_shipped_theme(self):
+        # Measured rendering every theme: tooltips were about 1.2:1 on the
+        # light themes, white on Nord's accent 2.0:1, the favourite star
+        # 1.2:1 on a light wash.
+        from ryos.qtui.stylesheet import DRAWN_PAIRS, drawn_colors
+        for name, seed in self._all_seeds().items():
+            pal = build_palette(seed)
+            drawn = drawn_colors(pal)
+            css = qss(pal)
+            for key, fills, floor in DRAWN_PAIRS:
+                with self.subTest(theme=name, text=key):
+                    for fill in fills:
+                        self.assertGreaterEqual(
+                            contrast_ratio(drawn[key], pal[fill]), floor,
+                            f"{key} {drawn[key]} on {fill} {pal[fill]}")
+                    self.assertIn(drawn[key], css)
+
     def test_every_image_it_names_exists(self):
         # Qt draws nothing for a url() it cannot open -- a ticked box with no
         # tick -- and says nothing either.

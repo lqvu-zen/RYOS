@@ -8,7 +8,7 @@ from ..interpreter import _script_tag
 from .dialogs import (RunHistoryDialog, ScheduleDialog, ScriptDialog,
                       _PresetEntryDialog, _TempParamDialog)
 from .placement import place_near
-from ..themes import ink_on
+from ..themes import _readable_on, ink_on
 from .theme import C, highlight_fg
 from .widgets import HoverPreview, ScrollingLabel, Tooltip
 
@@ -253,7 +253,9 @@ class ScriptCard(tk.Frame):
         fav_text = "★" if self._is_favorite else "☆"
         fav_bg  = C["accent_wash"]    if self._is_favorite else C["btn_neutral_bg"]
         fav_hbg = C["btn_neutral_hover"]
-        fav_fg  = C["bolt"]           if self._is_favorite else C["btn_neutral_fg"]
+        # Gold, shaded until it reads on the wash (1.2:1 on light themes).
+        fav_fg  = (_readable_on(C["bolt"], (C["accent_wash"],)) if self._is_favorite
+                   else C["btn_neutral_fg"])
         fav_tip = "Remove from favorites" if self._is_favorite else "Add to favorites"
         self._fav_btn = _rbtn(fav_text, fav_bg, fav_hbg,
                               self._toggle_favorite,
@@ -499,7 +501,8 @@ class PipelineCard(tk.Frame):
         pipe_fav_text = "★" if is_favorite else "☆"
         pipe_fav_bg  = C["accent_wash"]    if is_favorite else C["btn_neutral_bg"]
         pipe_fav_hbg = C["btn_neutral_hover"]
-        pipe_fav_fg  = C["bolt"]           if is_favorite else C["btn_neutral_fg"]
+        pipe_fav_fg  = (_readable_on(C["bolt"], (C["accent_wash"],)) if is_favorite
+                        else C["btn_neutral_fg"])
         pipe_fav_tip = "Remove from favorites" if is_favorite else "Add to favorites"
         self._fav_btn = _rbtn(pipe_fav_text, pipe_fav_bg, pipe_fav_hbg,
                               self._toggle_favorite,
