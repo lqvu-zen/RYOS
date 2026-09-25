@@ -24,6 +24,7 @@ still lacks is listed in docs/plans/qt-migration.md under "Parity".
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt, QTimer
@@ -51,34 +52,145 @@ SEARCH_PLACEHOLDER = "Search scripts and pipelines…"
 
 
 class OutputPane(QWidget):
-    """One output tab's text, with the same buffer cap as the Tk panel."""
+    """One output tab: its lines, coloured by tag, found in, and filtered.
 
-    def __init__(self, parent: QWidget | None = None):
+    Every line is kept with its tag (stdout, stderr, info, ok), up to the
+    shared buffer cap. That is what lets "Errors only" hide lines and bring
+    them back, and colour stderr as the Tk panel does. Find highlights with
+    extra selections, so the text itself is never changed. The query, the
+    current match and the filter are this tab's own, as in Tk.
+    """
+
+    #: Palette key for each tag's text colour; anything else is stdout.
+    TAG_COLORS = {"stderr": "out_stderr", "info": "out_status", "ok": "out_success"}
+
+    def __init__(self, palette: dict | None = None, parent: QWidget | None = None):
         super().__init__(parent)
+        self._palette = palette or REFERENCE["dark"]
+        self.lines: list[tuple[str, str]] = []
+        self.query = ""
+        self.errors_only = False
+        self.match: int | None = None
+        self.spans: list[tuple[int, int]] = []
         col = QVBoxLayout(self)
         col.setContentsMargins(0, 0, 0, 0)
         self.text = QPlainTextEdit()
         self.text.setObjectName("output")
         self.text.setReadOnly(True)
-        # Qt maintains this itself, which is the Tk trim done for us; the
-        # shared rule still decides the number so the two agree.
-        self.text.setMaximumBlockCount(0)
         col.addWidget(self.text)
 
-    def append(self, text: str, max_lines: int, *, scroll: bool = True) -> None:
-        self.text.appendPlainText(text.rstrip("\n"))
-        drop = outputpanel.overflow_lines(
-            self.text.blockCount(), max_lines)
+    # -- writing -----------------------------------------------------------------------
+    def _format(self, tag: str):
+        from PySide6.QtGui import QColor, QTextCharFormat
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(self._palette[self.TAG_COLORS.get(tag, "out_stdout")]))
+        return fmt
+
+    def _write(self, line: str, tag: str) -> None:
+        from PySide6.QtGui import QTextCursor
+        cursor = QTextCursor(self.text.document())
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        if not self.text.document().isEmpty():
+            cursor.insertBlock()
+        cursor.insertText(line, self._format(tag))
+
+    def append(self, text: str, max_lines: int, *, scroll: bool = True,
+               tag: str | None = None) -> None:
+        tag = tag or "stdout"
+        line = text.rstrip("\n")
+        self.lines.append((line, tag))
+        if outputpanel.shown_when_filtered(tag, self.errors_only):
+            self._write(line, tag)
+        drop = outputpanel.overflow_lines(len(self.lines), max_lines)
         if drop:
-            cursor = self.text.textCursor()
-            cursor.movePosition(cursor.MoveOperation.Start)
-            for _ in range(drop):
-                cursor.movePosition(cursor.MoveOperation.Down,
-                                    cursor.MoveMode.KeepAnchor)
-            cursor.removeSelectedText()
+            dropped, self.lines = self.lines[:drop], self.lines[drop:]
+            shown = sum(outputpanel.shown_when_filtered(tg, self.errors_only)
+                        for _l, tg in dropped)
+            self._drop_blocks(shown)
         if scroll:
             bar = self.text.verticalScrollBar()
             bar.setValue(bar.maximum())
+
+    def _drop_blocks(self, count: int) -> None:
+        if count <= 0:
+            return
+        from PySide6.QtGui import QTextCursor
+        doc = self.text.document()
+        if count >= doc.blockCount():
+            self.text.clear()
+            return
+        # From the start to the start of line ``count``: the selection takes
+        # the dropped lines' breaks with it, so nothing is left behind.
+        cursor = QTextCursor(doc)
+        cursor.setPosition(doc.findBlockByNumber(count).position(),
+                           QTextCursor.MoveMode.KeepAnchor)
+        cursor.removeSelectedText()
+
+    def rebuild(self) -> None:
+        """Redraw from the kept lines -- for the filter, and a new palette."""
+        self.text.clear()
+        for line, tag in self.lines:
+            if outputpanel.shown_when_filtered(tag, self.errors_only):
+                self._write(line, tag)
+        self.search()
+
+    def clear(self) -> None:
+        self.lines = []
+        self.text.clear()
+        self.search()
+
+    def set_palette(self, palette: dict) -> None:
+        self._palette = palette
+        self.rebuild()
+
+    def set_errors_only(self, on: bool) -> None:
+        if on != self.errors_only:
+            self.errors_only = on
+            self.rebuild()
+
+    def plain_text(self) -> str:
+        """Everything this tab holds, whatever the filter shows."""
+        return "\n".join(line for line, _tag in self.lines)
+
+    # -- finding ---------------------------------------------------------------------
+    def set_query(self, query: str) -> None:
+        self.query = query
+        self.match = None
+        self.search()
+
+    def search(self) -> None:
+        self.spans = search.find_spans(self.text.toPlainText(), self.query)
+        if self.match is not None and self.match >= len(self.spans):
+            self.match = None
+        self._highlight()
+
+    def step(self, forward: bool) -> None:
+        nxt = search.step_match(len(self.spans), self.match, forward)
+        if nxt is not None:
+            self.match = nxt
+            self._highlight()
+
+    def match_label(self) -> str:
+        return outputpanel.match_label(self.query, len(self.spans), self.match)
+
+    def _highlight(self) -> None:
+        from PySide6.QtGui import QColor, QTextCursor
+        from PySide6.QtWidgets import QTextEdit
+        selections = []
+        for i, (start, end) in enumerate(self.spans):
+            sel = QTextEdit.ExtraSelection()
+            cursor = QTextCursor(self.text.document())
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+            sel.cursor = cursor
+            current = i == self.match
+            sel.format.setBackground(QColor(self._palette["bolt" if current else "out_status"]))
+            sel.format.setForeground(QColor(self._palette["out_bg"]))
+            selections.append(sel)
+            if current:
+                self.text.setTextCursor(cursor)
+                self.text.ensureCursorVisible()
+        self.text.setExtraSelections(selections)
 
 
 class MainWindow(QMainWindow):
@@ -203,12 +315,208 @@ class MainWindow(QMainWindow):
         return top
 
     def _build_output(self) -> QWidget:
+        """The output header -- show/hide, find, errors only, clear, close
+        all -- over the tabs. Starts collapsed, as the Tk panel does."""
+        from PySide6.QtWidgets import QCheckBox
+        panel = QWidget()
+        col = QVBoxLayout(panel)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+        header = QFrame()
+        header.setObjectName("outputHeader")
+        row = QHBoxLayout(header)
+        row.setContentsMargins(8, 2, 8, 2)
+        row.addWidget(QLabel("Output"))
+        self.output_toggle = QPushButton(outputpanel.SHOW_OUTPUT)
+        self.output_toggle.setFlat(True)
+        self.output_toggle.clicked.connect(lambda: self.set_output_expanded(
+            not self.output_expanded))
+        row.addWidget(self.output_toggle)
+        row.addStretch(1)
+        clear = QPushButton(outputpanel.CLEAR)
+        clear.setFlat(True)
+        clear.clicked.connect(self.clear_output)
+        close_all = QPushButton(outputpanel.CLOSE_ALL)
+        close_all.setFlat(True)
+        close_all.clicked.connect(self.close_all_output)
+        row.addWidget(clear)
+        row.addWidget(close_all)
+        col.addWidget(header)
+
+        # Find and the filter get a row of their own, shown with the tabs: one
+        # row of everything is wider than the window's default 540 px, and a
+        # layout's minimum width becomes the window's.
+        self.output_findbar = QFrame()
+        self.output_findbar.setObjectName("outputHeader")
+        find = QHBoxLayout(self.output_findbar)
+        find.setContentsMargins(8, 0, 8, 2)
+        find.addWidget(QLabel(outputpanel.FIND))
+        self.output_find = QLineEdit()
+        self.output_find.setObjectName("outputFind")
+        self.output_find.setMinimumWidth(60)
+        self.output_find.textChanged.connect(self._on_output_query)
+        self.output_find.installEventFilter(self)
+        find.addWidget(self.output_find, 1)
+        self.output_matches = QLabel("")
+        find.addWidget(self.output_matches)
+        self.output_errors = QCheckBox(outputpanel.ERRORS_ONLY)
+        self.output_errors.toggled.connect(self._on_output_filter)
+        find.addWidget(self.output_errors)
+        col.addWidget(self.output_findbar)
+
         self.output_tabs = QTabWidget()
         self.output_tabs.setObjectName("outputTabs")
         self.output_tabs.setTabsClosable(True)
         self.output_tabs.tabCloseRequested.connect(self._close_output_tab)
+        self.output_tabs.currentChanged.connect(lambda _i: self._sync_output_bar())
+        bar = self.output_tabs.tabBar()
+        bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        bar.customContextMenuRequested.connect(self._show_output_tab_menu)
         self.add_output_tab(outputpanel.ALL, "All")
-        return self.output_tabs
+        col.addWidget(self.output_tabs, 1)
+        self.output_panel = panel
+        self.output_expanded = True
+        self._output_search_timer = QTimer(self)
+        self._output_search_timer.setSingleShot(True)
+        self._output_search_timer.setInterval(300)
+        self._output_search_timer.timeout.connect(self._refresh_output_search)
+        self.set_output_expanded(False)
+        return panel
+
+    # -- the output header -----------------------------------------------------------
+    def set_output_expanded(self, on: bool) -> None:
+        if on == self.output_expanded:
+            return
+        self.output_expanded = on
+        self.output_tabs.setVisible(on)
+        self.output_findbar.setVisible(on)
+        self.output_toggle.setText(outputpanel.HIDE_OUTPUT if on
+                                   else outputpanel.SHOW_OUTPUT)
+        splitter = self.centralWidget()
+        if isinstance(splitter, QSplitter):
+            total = sum(splitter.sizes()) or self.height()
+            header = self.output_panel.sizeHint().height() if not on else 0
+            splitter.setSizes([total - header, header] if not on
+                              else [int(total * 0.6), int(total * 0.4)])
+
+    def active_output_pane(self):
+        return self._output_tabs.get(self.active_output_key() or "")
+
+    def _sync_output_bar(self) -> None:
+        """Point the find box and the filter at the tab now in front."""
+        pane = self.active_output_pane()
+        if pane is None:
+            return
+        for widget, value in ((self.output_find, pane.query),
+                              (self.output_errors, pane.errors_only)):
+            widget.blockSignals(True)
+            if widget is self.output_find:
+                widget.setText(value)
+            else:
+                widget.setChecked(value)
+            widget.blockSignals(False)
+        pane.search()
+        self.output_matches.setText(pane.match_label())
+
+    def _on_output_query(self, text: str) -> None:
+        pane = self.active_output_pane()
+        if pane is not None:
+            pane.set_query(text)
+            self.output_matches.setText(pane.match_label())
+
+    def _on_output_filter(self, on: bool) -> None:
+        pane = self.active_output_pane()
+        if pane is not None:
+            pane.set_errors_only(on)
+            self.output_matches.setText(pane.match_label())
+
+    def step_output_match(self, forward: bool) -> None:
+        pane = self.active_output_pane()
+        if pane is not None:
+            pane.step(forward)
+            self.output_matches.setText(pane.match_label())
+
+    def _refresh_output_search(self) -> None:
+        pane = self.active_output_pane()
+        if pane is not None and pane.query:
+            pane.search()
+            self.output_matches.setText(pane.match_label())
+
+    def eventFilter(self, obj, event) -> bool:            # noqa: N802
+        """Enter / Shift+Enter step through matches; Esc clears the find box."""
+        from PySide6.QtCore import QEvent
+        if obj is getattr(self, "output_find", None) and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.step_output_match(
+                    not event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                return True
+            if key == Qt.Key.Key_Escape:
+                self.output_find.clear()
+                return True
+        return super().eventFilter(obj, event)
+
+    def clear_output(self) -> None:
+        pane = self.active_output_pane()
+        if pane is not None:
+            pane.clear()
+            self.output_matches.setText(pane.match_label())
+
+    def close_all_output(self) -> None:
+        """Close every tab but All and those still running; clear All."""
+        running = ([j.tab_key for j in self._bridge.registry.all()]
+                   if self._bridge is not None else [])
+        for key in outputpanel.closable(list(self._output_tabs), running):
+            self._close_output_key(key)
+        self._output_tabs[outputpanel.ALL].clear()
+        self._sync_output_bar()
+
+    def _show_output_tab_menu(self, pos) -> None:
+        from PySide6.QtWidgets import QMenu
+        bar = self.output_tabs.tabBar()
+        index = bar.tabAt(pos)
+        if index < 0:
+            return
+        widget = self.output_tabs.widget(index)
+        key = next((k for k, pane in self._output_tabs.items() if pane is widget), None)
+        if key is None:
+            return
+        menu = QMenu(self)
+        handlers = {outputpanel.TAB_COPY: lambda: self.copy_output(key),
+                    outputpanel.TAB_SAVE: lambda: self.save_output(key),
+                    outputpanel.TAB_CLOSE: lambda: self._close_output_key(key)}
+        for label in outputpanel.tab_menu(key):
+            if label is None:
+                menu.addSeparator()
+            else:
+                action = menu.addAction(label)
+                action.setData(label)
+                action.triggered.connect(lambda _c=False, go=handlers[label]: go())
+        self.popup(menu, bar.mapToGlobal(pos))
+
+    def copy_output(self, key: str) -> None:
+        from PySide6.QtWidgets import QApplication
+        pane = self._output_tabs.get(key)
+        text = pane.plain_text().strip() if pane else ""
+        if text:
+            QApplication.clipboard().setText(text)
+            self.statusBar().showMessage(outputpanel.COPIED)
+
+    def save_output(self, key: str) -> None:
+        pane = self._output_tabs.get(key)
+        text = pane.plain_text().strip() if pane else ""
+        if not text:
+            self.statusBar().showMessage(outputpanel.NOTHING_TO_SAVE)
+            return
+        path = self.ask_save_path(outputpanel.SAVE_TITLE, "output.txt")
+        if path:
+            Path(path).write_text(text, encoding="utf-8")
+            self.statusBar().showMessage(outputpanel.saved_status(path))
+
+    def _close_output_key(self, key: str) -> None:
+        pane = self._output_tabs.get(key)
+        if pane is not None and key != outputpanel.ALL:
+            self._close_output_tab(self.output_tabs.indexOf(pane))
 
     def _build_menu(self) -> None:
         bar = self.menuBar()
@@ -943,6 +1251,7 @@ class MainWindow(QMainWindow):
         self.restore_from_tray()
         job = self._bridge.registry.get(job_id) if self._bridge else None
         if job is not None and job.tab_key in self._output_tabs:
+            self.set_output_expanded(True)
             self.output_tabs.setCurrentWidget(self._output_tabs[job.tab_key])
 
     def closeEvent(self, event) -> None:                  # noqa: N802
@@ -1458,7 +1767,7 @@ class MainWindow(QMainWindow):
     def add_output_tab(self, key: str, label: str) -> OutputPane:
         pane = self._output_tabs.get(key)
         if pane is None:
-            pane = OutputPane()
+            pane = OutputPane(self._palette)
             self._output_tabs[key] = pane
             self.output_tabs.addTab(pane, label)
         return pane
@@ -1479,13 +1788,17 @@ class MainWindow(QMainWindow):
                 return key
         return None
 
-    def append_output(self, text: str, tab_key: str | None = None) -> None:
+    def append_output(self, text: str, tab_key: str | None = None,
+                      tag: str | None = None) -> None:
         """Write a line wherever the shared routing rule says it belongs."""
         max_lines = self._settings.get("max_output_lines", 2000)
         scroll = self._settings.get("auto_scroll_output", True)
         for key in outputpanel.target_tabs(tab_key, self.active_output_key(),
                                            self._output_tabs):
-            self._output_tabs[key].append(text, max_lines, scroll=scroll)
+            self._output_tabs[key].append(text, max_lines, scroll=scroll, tag=tag)
+        # Re-run an active search once output settles, not on every line.
+        if self.output_find.text():
+            self._output_search_timer.start()
 
     # -- jobs --------------------------------------------------------------
     def attach_jobs(self, bridge) -> None:
@@ -1497,7 +1810,7 @@ class MainWindow(QMainWindow):
         """
         self._bridge = bridge
         bridge.output.connect(
-            lambda tab_key, text, _tag=None: self.append_output(text, tab_key))
+            lambda tab_key, text, tag=None: self.append_output(text, tab_key, tag))
         bridge.status.connect(self.statusBar().showMessage)
         bridge.started.connect(self._on_job_started)
         bridge.finished.connect(self.running.remove)
@@ -1508,6 +1821,10 @@ class MainWindow(QMainWindow):
     def _on_job_started(self, job) -> None:
         self.add_output_tab(job.tab_key, job.name)
         self.running.add(job)
+        # Opening the panel on every run takes attention from the cards, so it
+        # is opt-in, as in Tk; the tab is there either way.
+        if self._settings.get("auto_open_output", False):
+            self.set_output_expanded(True)
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""
@@ -1530,3 +1847,5 @@ class MainWindow(QMainWindow):
         """
         self._palette = palette
         self.setStyleSheet(stylesheet(palette))
+        for pane in self._output_tabs.values():
+            pane.set_palette(palette)

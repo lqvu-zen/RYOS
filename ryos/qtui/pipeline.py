@@ -96,8 +96,8 @@ class PipelineEditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         col.addWidget(buttons)
 
-        self.up_button.clicked.connect(lambda: self.move(-1))
-        self.down_button.clicked.connect(lambda: self.move(+1))
+        self.up_button.clicked.connect(lambda: self.move_step(-1))
+        self.down_button.clicked.connect(lambda: self.move_step(+1))
         self.remove_button.clicked.connect(self.remove_selected)
         self.trigger_button.clicked.connect(self.toggle_trigger)
         self.add_button.clicked.connect(self.add_step)
@@ -160,7 +160,9 @@ class PipelineEditorDialog(QDialog):
             self._filling = False
 
     # -- changes, each written as it is made --------------------------------------
-    def move(self, delta: int) -> None:
+    def move_step(self, delta: int) -> None:
+        # Not `move`: that would override QWidget.move(x, y), which positions
+        # the window.
         idx = self.selected_index()
         if idx is None or not pipelinesteps.can_move(idx, len(self._steps), delta):
             return

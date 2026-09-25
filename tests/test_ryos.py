@@ -7359,6 +7359,35 @@ class TestScheduleRunner(unittest.TestCase):
         self.assertIsNone(schedule_runner.pipeline_name(self.db, pid + 99))
 
 
+class TestOutputPanelRules(unittest.TestCase):
+    """The output header's rules, shared by the Tk and Qt panels."""
+
+    def test_errors_only_keeps_stderr(self):
+        self.assertTrue(outputpanel.shown_when_filtered("stderr", True))
+        for tag in (None, "stdout", "info", "ok"):
+            self.assertFalse(outputpanel.shown_when_filtered(tag, True))
+            self.assertTrue(outputpanel.shown_when_filtered(tag, False))
+
+    def test_match_label(self):
+        self.assertEqual(outputpanel.match_label("", 3, 1), "")
+        self.assertEqual(outputpanel.match_label("x", 0, None), "no matches")
+        self.assertEqual(outputpanel.match_label("x", 5, None), "0/5")
+        self.assertEqual(outputpanel.match_label("x", 5, 1), "2/5")
+
+    def test_tab_menu(self):
+        self.assertEqual(outputpanel.tab_menu(outputpanel.ALL),
+                         [outputpanel.TAB_COPY, outputpanel.TAB_SAVE])
+        self.assertEqual(outputpanel.tab_menu("job:1")[-1], outputpanel.TAB_CLOSE)
+
+    def test_close_all_keeps_all_and_running(self):
+        keys = [outputpanel.ALL, "job:1", "job:2", "job:3"]
+        self.assertEqual(outputpanel.closable(keys, ["job:2"]), ["job:1", "job:3"])
+        self.assertEqual(outputpanel.closable([outputpanel.ALL], []), [])
+
+    def test_saved_status(self):
+        self.assertEqual(outputpanel.saved_status("C:/x.txt"), "Saved to C:/x.txt")
+
+
 class TestRunParams(unittest.TestCase):
     """The card drop-down, the temp-param prompt and ▶+, shared by both cards."""
 

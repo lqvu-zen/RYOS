@@ -65,3 +65,55 @@ def section_is_visible(*, query_active: bool, has_cards: bool,
     if not query_active:
         return True
     return any_match
+
+
+# --- the output header and tabs: wording and small rules, shared -----------------
+
+SHOW_OUTPUT = "▲  Show Output"
+HIDE_OUTPUT = "▼  Hide Output"
+CLEAR = "🗑 Clear"
+CLOSE_ALL = "✕ Close All"
+FIND = "Find"
+ERRORS_ONLY = "Errors only"
+TAB_COPY = "⎘  Copy"
+TAB_SAVE = "💾  Save"
+TAB_CLOSE = "✕  Close"
+SAVE_TITLE = "Save output"
+NOTHING_TO_SAVE = "Nothing to save."
+COPIED = "Log copied to clipboard."
+
+#: Line tags that stay visible under "Errors only". Everything else -- plain
+#: output, status lines, the green success line -- is hidden, not removed.
+ERROR_TAGS = frozenset({"stderr"})
+
+
+def saved_status(path: str) -> str:
+    return f"Saved to {path}"
+
+
+def shown_when_filtered(tag: str | None, errors_only: bool) -> bool:
+    return not errors_only or (tag or "stdout") in ERROR_TAGS
+
+
+def match_label(query: str, count: int, current: int | None) -> str:
+    """The find box's count: blank, "no matches", or "2/5"."""
+    if not query:
+        return ""
+    if not count:
+        return "no matches"
+    return f"{(current + 1) if current is not None else 0}/{count}"
+
+
+def tab_menu(key: str) -> list[str | None]:
+    """The output tab's right-click menu; None is a separator. The All tab
+    cannot be closed."""
+    items: list[str | None] = [TAB_COPY, TAB_SAVE]
+    if key != ALL:
+        items += [None, TAB_CLOSE]
+    return items
+
+
+def closable(keys, running) -> list:
+    """The tabs Close All closes: every one but All and those still running."""
+    running = set(running)
+    return [k for k in keys if k != ALL and k not in running]

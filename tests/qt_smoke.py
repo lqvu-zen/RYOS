@@ -2204,6 +2204,7 @@ def check_tray_and_close(app):
     bridge = JobBridge(db, {"max_parallel_jobs": 4})
     win.attach_jobs(bridge)
     bridge.start()
+    tray.start = lambda: None               # no real icon in the taskbar
     win.attach_tray(tray)
     win.tray_available = lambda: True       # offscreen CI has no tray
     win.load_from_db(db)
@@ -2429,7 +2430,9 @@ def check_window_placement(app):
     """Where the window opens, snaps, is remembered, and restores to.
 
     A made-up two-monitor desktop is injected, so the numbers are the same on
-    any machine: A is (0, 0, 1000, 800), B is (1000, 0, 900, 800).
+    any machine. It sits on the smoke screen (`SMOKE_ORIGIN`) so the windows
+    stay off the screen someone is using: A is 760x800 at the origin, B is
+    760x800 beside it.
     """
     from PySide6.QtCore import Qt
 
@@ -2437,10 +2440,11 @@ def check_window_placement(app):
     from ryos.qtui.shell import MainWindow
     from ryos.themes import REFERENCE
 
-    A, B = (0, 0, 1000, 800), (1000, 0, 900, 800)
+    ox, oy = SMOKE_ORIGIN
+    A, B = (ox, oy, 760, 800), (ox + 760, oy, 760, 800)
 
     def area_at(x, y):
-        return A if x < 1000 else B
+        return A if x < ox + 760 else B
 
     def window(settings, cursor=B, **kw):
         base = {"quick_run_enabled": False, "window_width": 540,
@@ -2469,8 +2473,9 @@ def check_window_placement(app):
         return (win.x(), win.y(), win.width(), win.height())
 
     # Saved on A, cursor on B: same offset, moved to B.
-    win, _ = window({"window_geometry": "540x640+100+50"})
-    if at(win) != (1100, 50, 540, 640):
+    saved_on_a = f"540x640+{ox + 100}+{oy + 50}"
+    win, _ = window({"window_geometry": saved_on_a})
+    if at(win) != (ox + 860, oy + 50, 540, 640):
         # Seen intermittently (2026-09-24): every placement off by x-1, y-8,
         # w+2, h+8 in one run, clean in the next, never in isolation. The
         # detail below is so the next occurrence says why.
@@ -2483,21 +2488,21 @@ def check_window_placement(app):
     win.deleteLater()
 
     # A login launch restores exactly where it was, whatever the cursor.
-    win, _ = window({"window_geometry": "540x640+100+50"}, launched_at_startup=True)
-    if at(win) != (100, 50, 540, 640):
+    win, _ = window({"window_geometry": saved_on_a}, launched_at_startup=True)
+    if at(win) != (ox + 100, oy + 50, 540, 640):
         PROBLEMS.append(f"a login launch opened at {at(win)}")
     win.deleteLater()
 
     # Nothing saved: centred on the cursor's monitor.
     win, _ = window({"remember_window_geometry": False,
-                     "window_geometry": "540x640+100+50"})
-    if at(win) != (1180, 80, 540, 640):
+                     "window_geometry": saved_on_a})
+    if at(win) != (ox + 870, oy + 80, 540, 640):
         PROBLEMS.append(f"centring on the cursor monitor gave {at(win)}")
     win.deleteLater()
 
     # Snap to a corner of the cursor's monitor, and always on top.
     win, saved = window({"snap_corner": "bottom-right", "always_on_top": True})
-    if (win.x(), win.y()) != (1350, 150):
+    if (win.x(), win.y()) != (ox + 970, oy + 150):
         PROBLEMS.append(f"bottom-right snap on B gave {(win.x(), win.y())}")
     if not win.windowFlags() & Qt.WindowType.WindowStaysOnTopHint or not win.isVisible():
         PROBLEMS.append("always-on-top was not applied, or hid the window")
@@ -2505,21 +2510,21 @@ def check_window_placement(app):
 
     # -- remembered on quit, even from the tray --------------------------------------
     win, saved = window({})
-    win.move(200, 60)
+    win.move(ox + 200, oy + 60)
     app.processEvents()
     win.hide_to_tray()
     win.quit_app()
-    if not saved or saved[-1].get("window_geometry") != "540x640+200+60":
+    if not saved or saved[-1].get("window_geometry") != f"540x640+{ox + 200}+{oy + 60}":
         PROBLEMS.append(f"quitting from the tray saved "
                         f"{saved[-1].get('window_geometry') if saved else None!r}")
 
     # -- a second launch restores onto the cursor's monitor ---------------------------
-    win, _ = window({"window_geometry": "540x640+100+50"}, cursor=A)
+    win, _ = window({"window_geometry": saved_on_a}, cursor=A)
     win.cursor_area = lambda: B
     win.hide_to_tray()
     win.restore_from_tray(follow_cursor=True)
     app.processEvents()
-    if (win.x(), win.y()) != (1100, 50) or not win.isVisible():
+    if (win.x(), win.y()) != (ox + 860, oy + 50) or not win.isVisible():
         PROBLEMS.append(f"restoring to the cursor monitor gave {at(win)}")
     win.deleteLater()
 
@@ -2534,7 +2539,7 @@ def check_window_placement(app):
         win.apply_settings({"window_width": 600, "always_on_top": True,
                             "snap_corner": "top-left"})
         app.processEvents()
-        if win.width() != 600 or (win.x(), win.y()) != (1010, 10):
+        if win.width() != 600 or (win.x(), win.y()) != (ox + 770, oy + 10):
             PROBLEMS.append(f"applied options left the window at {at(win)}")
         if not win.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
             PROBLEMS.append("applied options did not set always-on-top")
@@ -3022,6 +3027,11 @@ def check_mixed_dpi_placement(app):
     from ryos.qtui.shell import MainWindow
     from ryos.themes import REFERENCE
 
+    import os
+    if os.environ.get("RYOS_SMOKE_BOTH_SCREENS") != "1":
+        print("  [skip] mixed DPI: moves windows across every screen; set "
+              "RYOS_SMOKE_BOTH_SCREENS=1 to run it")
+        return
     screens = QGuiApplication.screens()
     pair = next(((a, b) for a in screens for b in screens
                  if a.devicePixelRatio() != b.devicePixelRatio()), None)
@@ -3214,9 +3224,203 @@ def check_run_with_params_and_new_pipeline(app):
     win.deleteLater()
 
 
+def check_output_panel(app):
+    """The output header and tabs: colour, errors only, find, clear, close
+    all, the tab menu, collapse -- the Tk panel's behaviour."""
+    import tempfile
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    from ryos import outputpanel
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    palette = REFERENCE["dark"]
+    win = MainWindow(palette, settings={"quick_run_enabled": False,
+                                        "max_output_lines": 6})
+    win.show()
+    app.processEvents()
+
+    # -- starts collapsed, fits the window, opens on demand ---------------------------
+    if win.output_expanded or not win.output_tabs.isHidden() \
+            or win.output_toggle.text() != outputpanel.SHOW_OUTPUT:
+        PROBLEMS.append("the output panel did not start collapsed, as in Tk")
+    if win.minimumSizeHint().width() > 540:
+        PROBLEMS.append(f"the window cannot be 540 wide: minimum "
+                        f"{win.minimumSizeHint().width()}")
+    win.output_toggle.click()
+    if not win.output_expanded or win.output_tabs.isHidden() \
+            or win.output_findbar.isHidden():
+        PROBLEMS.append("Show Output did not open the panel and its find bar")
+
+    # -- colour by tag, and "errors only" hides and restores ---------------------------
+    win.add_output_tab("job:1", "job")
+    win.output_tabs.setCurrentWidget(win._output_tabs["job:1"])
+    for text, tag in (("plain one", None), ("bad thing", "stderr"),
+                      ("status", "info"), ("plain two", None)):
+        win.append_output(text + "\n", tab_key="job:1", tag=tag)
+    pane = win._output_tabs["job:1"]
+    doc = pane.text.document()
+    first = [doc.findBlockByNumber(i).begin().fragment().charFormat()
+             .foreground().color().name() for i in range(doc.blockCount())]
+    if first[1] != palette["out_stderr"].lower() or first[0] != palette["out_stdout"].lower():
+        PROBLEMS.append(f"lines were not coloured by tag: {first}")
+    win.output_errors.setChecked(True)
+    if pane.text.toPlainText() != "bad thing":
+        PROBLEMS.append(f"errors only showed {pane.text.toPlainText()!r}")
+    win.output_errors.setChecked(False)
+    if pane.text.toPlainText().splitlines() != ["plain one", "bad thing", "status", "plain two"]:
+        PROBLEMS.append("turning errors-only off did not bring every line back")
+
+    # -- the cap holds while filtered, and drops the oldest lines ------------------------
+    win.output_errors.setChecked(True)
+    for i in range(5):
+        win.append_output(f"err {i}\n", tab_key="job:1", tag="stderr")
+    # The filtered view itself, before a rebuild could hide a bad trim: the
+    # cap dropped "bad thing" (shown) and two hidden lines.
+    if pane.text.toPlainText().splitlines() != [f"err {i}" for i in range(5)]:
+        PROBLEMS.append(f"trimming while filtered left {pane.text.toPlainText()!r}")
+    win.output_errors.setChecked(False)
+    kept = pane.text.toPlainText().splitlines()
+    if len(kept) != 6 or kept[0] != "plain two" or kept[-1] != "err 4":
+        PROBLEMS.append(f"the cap while filtered kept {kept}")
+
+    # -- find: count, step with Enter / Shift+Enter, Esc clears, per tab ---------------
+    win.output_find.setText("err")
+    if win.output_matches.text() != "0/5":
+        PROBLEMS.append(f"find count said {win.output_matches.text()!r}")
+
+    def key(k, mods=Qt.KeyboardModifier.NoModifier):
+        app.sendEvent(win.output_find, QKeyEvent(QEvent.Type.KeyPress, k, mods))
+    key(Qt.Key.Key_Return)
+    key(Qt.Key.Key_Return)
+    if win.output_matches.text() != "2/5":
+        PROBLEMS.append(f"Enter twice gave {win.output_matches.text()!r}")
+    key(Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+    if win.output_matches.text() != "1/5":
+        PROBLEMS.append(f"Shift+Enter gave {win.output_matches.text()!r}")
+    if len(pane.text.extraSelections()) != 5:
+        PROBLEMS.append("the matches were not highlighted")
+    win.output_tabs.setCurrentWidget(win._output_tabs[outputpanel.ALL])
+    if win.output_find.text() or win.output_errors.isChecked():
+        PROBLEMS.append("one tab's search or filter carried over to another")
+    win.output_tabs.setCurrentWidget(pane)
+    if win.output_find.text() != "err":
+        PROBLEMS.append("coming back to a tab lost its search")
+    win.output_find.setText("nothing like this")
+    if win.output_matches.text() != "no matches":
+        PROBLEMS.append(f"no match said {win.output_matches.text()!r}")
+    key(Qt.Key.Key_Escape)
+    if win.output_find.text() or pane.text.extraSelections():
+        PROBLEMS.append("Esc did not clear the search")
+
+    # -- the tab menu: Copy, Save, and Close (not on All) ----------------------------
+    shown: list = []
+    win.popup = lambda menu, pos: shown.append(menu)
+    bar = win.output_tabs.tabBar()
+
+    def tab_menu(key_):
+        shown.clear()
+        index = win.output_tabs.indexOf(win._output_tabs[key_])
+        win._show_output_tab_menu(bar.tabRect(index).center())
+        return {a.data(): a for a in shown[-1].actions() if a.data()} if shown else {}
+
+    if outputpanel.TAB_CLOSE in tab_menu(outputpanel.ALL):
+        PROBLEMS.append("the All tab offered Close")
+    acts = tab_menu("job:1")
+    acts[outputpanel.TAB_COPY].trigger()
+    if QApplication.clipboard().text() != pane.plain_text():
+        PROBLEMS.append("Copy did not put the tab's output on the clipboard")
+    out = Path(tempfile.mkdtemp()) / "out.txt"
+    win.ask_save_path = lambda title, initial: str(out)
+    acts[outputpanel.TAB_SAVE].trigger()
+    if not out.exists() or out.read_text(encoding="utf-8") != pane.plain_text():
+        PROBLEMS.append("Save did not write the tab's output")
+
+    # -- Clear, and Close All keeps what is still running ------------------------------
+    win.clear_output()
+    if pane.lines or pane.text.toPlainText():
+        PROBLEMS.append("Clear left output behind")
+    win.add_output_tab("job:2", "two")
+    win._bridge = SimpleNamespace(registry=SimpleNamespace(
+        all=lambda: [SimpleNamespace(tab_key="job:2")]))
+    win.append_output("mirror\n", tab_key="job:2")
+    win.close_all_output()
+    if set(win._output_tabs) != {outputpanel.ALL, "job:2"} \
+            or win._output_tabs[outputpanel.ALL].plain_text():
+        PROBLEMS.append(f"Close All left {set(win._output_tabs)}, or kept All's text")
+    win._bridge = None
+    if "job:2" in win._output_tabs:
+        tab_menu("job:2")[outputpanel.TAB_CLOSE].trigger()
+    if "job:2" in win._output_tabs:
+        PROBLEMS.append("Close from the tab menu did not close it")
+
+    # -- auto-open on a job, when the setting asks ---------------------------------------
+    win.set_output_expanded(False)
+    win._settings["auto_open_output"] = True
+    win.running.add = lambda job: None
+    win._on_job_started(SimpleNamespace(tab_key="job:3", name="three"))
+    if not win.output_expanded:
+        PROBLEMS.append("auto_open_output did not open the panel for a new job")
+    print("  [ok] output panel: starts collapsed, fits 540, colours by tag, errors "
+          "only hides and restores, cap holds while filtered, find counts and "
+          "steps, per-tab state, Esc, Copy/Save/Close, Clear, Close All keeps "
+          "running, auto-open")
+    win.deleteLater()
+
+
+#: Top-left of the screen the smoke's windows use; set in main().
+SMOKE_ORIGIN = (0, 0)
+
+
+def _smoke_screen(app):
+    """A second screen when there is one, so a run never covers the screen
+    someone is working on. RYOS_SMOKE_SCREEN=<n> picks another (0 = primary)."""
+    import os
+    screens = app.screens()
+    primary = app.primaryScreen()
+    others = [s for s in screens if s is not primary]
+    wanted = os.environ.get("RYOS_SMOKE_SCREEN")
+    if wanted and wanted.isdigit():
+        return screens[min(int(wanted), len(screens) - 1)]
+    return others[0] if others else primary
+
+
+class _KeepOnSmokeScreen:
+    """Puts every new top-level window on the smoke screen before it is shown.
+
+    Done on Polish, which Qt sends just before a window first appears, so
+    nothing flashes on another screen. A window a check has positioned itself
+    (``WA_Moved``) is left where the check put it.
+    """
+
+    def __init__(self, app, area):
+        from PySide6.QtCore import QEvent, QObject, Qt
+        from PySide6.QtWidgets import QWidget
+
+        class Filter(QObject):
+            def eventFilter(self, obj, event):           # noqa: N802
+                if (event.type() == QEvent.Type.Polish and obj.isWidgetType()
+                        and obj.isWindow()
+                        and not obj.testAttribute(Qt.WidgetAttribute.WA_Moved)):
+                    # QWidget.move, not obj.move: a subclass may define its own.
+                    QWidget.move(obj, area.x() + 40, area.y() + 40)
+                return False
+        self.filter = Filter()
+        app.installEventFilter(self.filter)
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     app = QApplication(sys.argv)
+    global SMOKE_ORIGIN
+    home = _smoke_screen(app).availableGeometry()
+    SMOKE_ORIGIN = (home.x(), home.y())
+    app._smoke_keeper = _KeepOnSmokeScreen(app, home)   # held for the run
+    print(f"  (windows on the screen at {SMOKE_ORIGIN}, {home.width()}x{home.height()})")
     seeds = _all_seeds()
     check_every_theme_generates(seeds)
     check_a_short_palette_is_refused()
@@ -3246,6 +3450,7 @@ def main() -> int:
     check_theme_editor_and_appearance(app)
     check_all_tab(app)
     check_run_with_params_and_new_pipeline(app)
+    check_output_panel(app)
     print()
     if PROBLEMS:
         for p in PROBLEMS:

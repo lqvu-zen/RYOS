@@ -1054,12 +1054,71 @@ def _isolated_db():
     return path
 
 
+def _monitor_work_areas() -> list:
+    """Every monitor's work area as (x, y, w, h), primary first; [] off Windows."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    from ryos.screens import _work_area_from_monitor
+
+    areas: list = []
+    proc = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+                              ctypes.POINTER(wintypes.RECT), ctypes.c_void_p)
+
+    def collect(hmon, _hdc, _rect, _data):
+        area = _work_area_from_monitor(hmon)
+        if area:
+            areas.append(area)
+        return 1
+    ctypes.windll.user32.EnumDisplayMonitors(None, None, proc(collect), 0)
+    areas.sort(key=lambda a: (a[0], a[1]) != (0, 0))     # primary first
+    return areas
+
+
+def smoke_screen():
+    """The work area the smoke's windows use: a second monitor when there is
+    one, so a run never covers the screen someone is working on.
+    RYOS_SMOKE_SCREEN=<n> picks another (0 is the primary)."""
+    areas = _monitor_work_areas()
+    if not areas:
+        return None
+    wanted = os.environ.get("RYOS_SMOKE_SCREEN")
+    index = int(wanted) if wanted and wanted.isdigit() else (1 if len(areas) > 1 else 0)
+    return areas[min(index, len(areas) - 1)]
+
+
+def _isolated_settings():
+    """Real defaults, but placed on the smoke screen, and never written back.
+
+    The smoke used to load the user's own settings -- so it opened wherever
+    their window was, followed their mouse, and checked GitHub for updates --
+    and nothing stopped a check from saving them.
+    """
+    from ryos.settings import _load_settings
+
+    settings = _load_settings()
+    settings.update({"auto_check_update": False, "snap_corner": "none",
+                     "open_on_cursor_monitor": False,
+                     "remember_window_geometry": True, "start_minimized": False})
+    area = smoke_screen()
+    if area is not None:
+        settings["window_geometry"] = (f"{settings.get('window_width', 540)}x"
+                                       f"{settings.get('window_height', 640)}"
+                                       f"+{area[0] + 40}+{area[1] + 40}")
+    appmod._load_settings = lambda: dict(settings)
+    appmod._save_settings = lambda _s: None
+    return area
+
+
 def main():
     print("RYOS GUI smoke starting...")
     db_path = _isolated_db()
     print(f"  (using a throwaway database: {db_path})")
+    area = _isolated_settings()
+    print(f"  (windows on the work area {area}; settings are not saved)")
     app = RYOSApp()
-    app._settings["auto_check_update"] = False  # avoid network in CI
     try:
         pump_until(app, lambda: False, timeout=0.5)  # let the UI settle
         check_card_rendering(app)

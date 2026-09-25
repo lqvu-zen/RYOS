@@ -484,16 +484,16 @@ class RYOSApp(_BaseWindow):
         out_header.pack(fill="x")
         tk.Label(out_header, text="Output", bg=C["out_header"], fg=C["fg_on_dark_2"],
                  font=("Segoe UI", 9, "bold"), anchor="w").pack(side="left")
-        self._toggle_btn = tk.Button(out_header, text="▲  Show Output", bg=C["out_header"], fg=C["fg_on_dark_2"],
+        self._toggle_btn = tk.Button(out_header, text=outputpanel.SHOW_OUTPUT, bg=C["out_header"], fg=C["fg_on_dark_2"],
                                      activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                                      relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                                      command=self._toggle_output)
         self._toggle_btn.pack(side="right")
-        tk.Button(out_header, text="🗑 Clear", bg=C["out_header"], fg=C["fg_on_dark_2"],
+        tk.Button(out_header, text=outputpanel.CLEAR, bg=C["out_header"], fg=C["fg_on_dark_2"],
                   activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._clear_log).pack(side="right", padx=4)
-        tk.Button(out_header, text="✕ Close All", bg=C["out_header"], fg=C["fg_on_dark_2"],
+        tk.Button(out_header, text=outputpanel.CLOSE_ALL, bg=C["out_header"], fg=C["fg_on_dark_2"],
                   activebackground=C["btn_dark_hover"], activeforeground=C["fg_on_dark"],
                   relief="flat", bd=0, cursor="hand2", font=("Segoe UI", 9),
                   command=self._close_all_tabs).pack(side="right", padx=4)
@@ -2299,7 +2299,7 @@ class RYOSApp(_BaseWindow):
 
         bar = tk.Frame(parent, bg=C["out_header"])
         bar.pack(side="left", padx=(16, 0))
-        tk.Label(bar, text="Find", bg=C["out_header"], fg=C["fg_on_dark_2"],
+        tk.Label(bar, text=outputpanel.FIND, bg=C["out_header"], fg=C["fg_on_dark_2"],
                  font=("Segoe UI", 9)).pack(side="left", padx=(0, 5))
         entry = tk.Entry(bar, textvariable=self._out_find_var, width=18,
                          bg=C["out_bg"], fg=C["out_stdout"],
@@ -2317,7 +2317,7 @@ class RYOSApp(_BaseWindow):
                  fg=C["fg_on_dark_2"], font=("Consolas", 8), width=10,
                  anchor="w").pack(side="left", padx=(6, 0))
         tk.Checkbutton(
-            bar, text="Errors only", variable=self._out_errors_var,
+            bar, text=outputpanel.ERRORS_ONLY, variable=self._out_errors_var,
             command=self._apply_output_filter,
             bg=C["out_header"], fg=C["fg_on_dark_2"],
             activebackground=C["out_header"], activeforeground=C["fg_on_dark"],
@@ -2381,9 +2381,8 @@ class RYOSApp(_BaseWindow):
         idx = state.get("match")
         if idx is not None and 0 <= idx < len(spans):
             self._mark_current_match(text, spans[idx])
-        self._out_match_var.set(
-            f"{(idx + 1) if idx is not None and spans else 0}/{len(spans)}"
-            if spans else "no matches")
+        self._out_match_var.set(outputpanel.match_label(
+            query, len(spans), idx if idx is not None and spans else None))
 
     def _mark_current_match(self, text, span) -> None:
         start, end = span
@@ -2500,11 +2499,11 @@ class RYOSApp(_BaseWindow):
 
     def _show_tab_context_menu(self, event, key: str):
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="⎘  Copy", command=lambda: self._copy_log(key))
-        menu.add_command(label="💾  Save", command=lambda: self._save_log(key))
+        menu.add_command(label=outputpanel.TAB_COPY, command=lambda: self._copy_log(key))
+        menu.add_command(label=outputpanel.TAB_SAVE, command=lambda: self._save_log(key))
         if key != "all":
             menu.add_separator()
-            menu.add_command(label="✕  Close", command=lambda: self._close_tab(key))
+            menu.add_command(label=outputpanel.TAB_CLOSE, command=lambda: self._close_tab(key))
         menu.tk_popup(event.x_root, event.y_root)
 
     def _activate_tab(self, key: str):
@@ -2541,7 +2540,8 @@ class RYOSApp(_BaseWindow):
         return any(j.tab_key == key for j in self._jobreg.all())
 
     def _close_all_tabs(self):
-        keys_to_close = [k for k in list(self._output_tabs) if k != "all" and not self._is_tab_running(k)]
+        running = [j.tab_key for j in self._jobreg.all()]
+        keys_to_close = outputpanel.closable(list(self._output_tabs), running)
         for key in keys_to_close:
             tab = self._output_tabs.pop(key)
             tab["text"].pack_forget()
@@ -2559,7 +2559,7 @@ class RYOSApp(_BaseWindow):
             self._saved_sash_pos = self._paned.sashpos(0)
             self._out_tab_bar.pack_forget()
             self._out_tab_body.pack_forget()
-            self._toggle_btn.config(text="▲  Show Output")
+            self._toggle_btn.config(text=outputpanel.SHOW_OUTPUT)
             self._out_expanded = False
             self.update_idletasks()
             h = self._paned.winfo_height()
@@ -2567,7 +2567,7 @@ class RYOSApp(_BaseWindow):
         else:
             self._out_tab_bar.pack(fill="x")
             self._out_tab_body.pack(fill="both", expand=True)
-            self._toggle_btn.config(text="▼  Hide Output")
+            self._toggle_btn.config(text=outputpanel.HIDE_OUTPUT)
             self._out_expanded = True
             self.update_idletasks()
             h = self._paned.winfo_height()
@@ -2621,20 +2621,20 @@ class RYOSApp(_BaseWindow):
     def _save_log(self, key: str | None = None):
         k = key or self._active_tab_key
         if not k or k not in self._output_tabs:
-            self.status_var.set("Nothing to save.")
+            self.status_var.set(outputpanel.NOTHING_TO_SAVE)
             return
         text = self._output_tabs[k]["text"].get("1.0", tk.END).strip()
         if not text:
-            self.status_var.set("Nothing to save.")
+            self.status_var.set(outputpanel.NOTHING_TO_SAVE)
             return
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-            title="Save output",
+            title=outputpanel.SAVE_TITLE,
         )
         if path:
             Path(path).write_text(text, encoding="utf-8")
-            self.status_var.set(f"Saved to {path}")
+            self.status_var.set(outputpanel.saved_status(path))
 
     def _copy_log(self, key: str | None = None):
         k = key or self._active_tab_key
@@ -2644,7 +2644,7 @@ class RYOSApp(_BaseWindow):
         if text:
             self.clipboard_clear()
             self.clipboard_append(text)
-            self.status_var.set("Log copied to clipboard.")
+            self.status_var.set(outputpanel.COPIED)
 
     def _stop_all_jobs(self):
         """Stop every running job (used from on_close)."""
