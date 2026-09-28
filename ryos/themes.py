@@ -1,12 +1,12 @@
 """Theme palettes and the seed -> full-palette derivation engine.
 
-Pure logic, no tkinter, so it is unit-testable and respects the one-way
-`ui/* -> top-level` dependency rule (the UI imports from here, never the
+Pure logic, no toolkit, so it is unit-testable and respects the one-way
+`qtui/* -> top-level` dependency rule (the UI imports from here, never the
 reverse).
 
 A *seed* is a small, user-editable description of a theme: a light/dark `mode`
 plus 7 curated colors (see SEED_KEYS). `build_palette` expands a seed into the
-complete colour dict the UI consumes (`ryos.ui.theme.C`). It starts from the
+complete colour dict the UI consumes (`qtui/stylesheet.py`). It starts from the
 mode's REFERENCE palette so every key is always present (no missing-key
 KeyError), then overlays the seed-derived colours. Built-in Light/Dark use their
 hand-tuned REFERENCE palettes verbatim so the app looks identical; new presets

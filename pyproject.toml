@@ -4,9 +4,7 @@ dynamic = ["version"]
 description = "RYOS - Run Your Own Scripts"
 requires-python = ">=3.10"
 # The app runs on Qt (PySide6), which brings its own tray (QSystemTrayIcon)
-# and file drops -- so pystray, pillow and tkinterdnd2 are no longer needed.
-# The Tk interface (RYOS_UI=tk) still runs without them: ryos/ui guards all
-# three and degrades to no tray and no file drop.
+# and file drops -- the one dependency.
 dependencies = [
     "PySide6>=6.7,<7",
 ]
@@ -48,14 +46,13 @@ ignore = ["E741"]
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
-# Scope: the UI-free core, the cleanly-typed Tkinter modules, and the design
+# Scope: the UI-free core, the toolkit-free part of qtui, and the design
 # system generator. Running `mypy` with no arguments checks exactly the files
 # listed here.
 #
-# Two deliberate exclusions, both verified rather than assumed:
-#   * ryos/ui/app.py, dialogs.py, cards.py, theme_editor.py -- heavily
-#     widget-driven; Tk's dynamic API yields many false positives. Widening
-#     into these is tracked in docs/tech-debt-2026-09-21.md.
+# Deliberate exclusions, both verified rather than assumed:
+#   * ryos/qtui/* other than __init__ and stylesheet -- they import PySide6,
+#     which the typecheck job does not install; tests/qt_smoke.py covers them.
 #   * ryos/startup.py -- Windows-only (winreg). It passes on Windows but
 #     reports 8 `name is not defined` errors under `mypy --platform linux`,
 #     which is where the typecheck CI job runs. Check it locally with
@@ -85,11 +82,6 @@ files = [
     "ryos/selection.py",
     "ryos/traypolicy.py",
     "ryos/scheduling.py",
-    "ryos/ui/__init__.py",
-    "ryos/ui/theme.py",
-    "ryos/ui/placement.py",
-    "ryos/ui/widgets.py",
-    "ryos/ui/pipeline.py",
     "ryos/qtui/__init__.py",
     "ryos/qtui/stylesheet.py",
     "ryos/marquee.py",
@@ -104,7 +96,6 @@ files = [
     "ryos/outputpanel.py",
     "ryos/scheduleform.py",
     "ryos/themes.py",
-    "ryos/tray.py",
     "ryos/single_instance.py",
     "design-system/build.py",
 ]

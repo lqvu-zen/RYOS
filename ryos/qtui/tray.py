@@ -1,8 +1,8 @@
-"""The Qt tray icon: `QSystemTrayIcon`, fed the same snapshot as the Tk one.
+"""The tray icon: `QSystemTrayIcon`, fed a snapshot of what is running.
 
-The tooltip and menu contents are `traypolicy`'s, shared with the pystray
-tray. Unlike pystray, `QSystemTrayIcon` lives on the UI thread, so its
-actions need no marshalling: they are signals, connected like any other.
+The tooltip and menu contents are `traypolicy`'s. `QSystemTrayIcon` lives on
+the UI thread, so its actions need no marshalling: they are signals,
+connected like any other.
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ class Tray(QObject):
             self.exit_requested.emit()
 
     def _on_activated(self, reason) -> None:
-        # A click on the icon is "Show RYOS", as it is with pystray's default.
+        # A click on the icon is "Show RYOS".
         if reason in (QSystemTrayIcon.ActivationReason.Trigger,
                       QSystemTrayIcon.ActivationReason.DoubleClick):
             self.show_requested.emit()

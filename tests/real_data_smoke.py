@@ -98,9 +98,15 @@ def check_everything(app, win, db, settings) -> None:
     # -- every script opens as stored, and saves back unchanged ------------------------
     refused: list = []
     changed: list = []
+
+    def presets(sid):
+        # By label and parameters: saving replaces the rows, so their ids
+        # change, and nothing refers to a preset by id.
+        return [(label, params) for _id, label, params in db.list_param_presets(sid)]
+
     for rec in scripts:
         sid = rec[0]
-        before = (db.get(sid), db.list_param_presets(sid), db.is_detached(sid))
+        before = (db.get(sid), presets(sid), db.is_detached(sid))
         dlg = ScriptDialog(db=db, script_id=sid)
         if dlg.form() != scriptform.load_form(db, sid):
             PROBLEMS.append(f"script {sid} did not open as stored")
@@ -110,7 +116,7 @@ def check_everything(app, win, db, settings) -> None:
         if not dlg.save():
             refused.append((sid, warned[-1] if warned else "?"))
         else:
-            after = (db.get(sid), db.list_param_presets(sid), db.is_detached(sid))
+            after = (db.get(sid), presets(sid), db.is_detached(sid))
             if after != before:
                 fields = [i for i, (a, b) in enumerate(zip(after[0], before[0])) if a != b]
                 changed.append((sid, fields, after[1] != before[1], after[2] != before[2]))
@@ -196,7 +202,7 @@ def main() -> int:
     settings["open_on_cursor_monitor"] = False
     if args.visible:
         sys.path.insert(0, str(ROOT / "tests"))
-        from gui_smoke import smoke_screen
+        from smoke_screen import smoke_screen
         area = smoke_screen()
         if area:
             settings["window_geometry"] = f"540x640+{area[0] + 40}+{area[1] + 40}"

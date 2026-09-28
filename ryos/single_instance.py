@@ -1,6 +1,6 @@
 """Single-instance guard: a named mutex plus a localhost socket handshake so a
 second launch can ask the first (already-running) instance to restore itself.
-No ryos.ui.* imports.
+No UI imports.
 """
 import ctypes
 import json
@@ -69,6 +69,12 @@ class SingleInstance:
                 if token and token == self._token:
                     conn.sendall(b"OK\n")
                     self.signals.put(verb)
+                else:
+                    # Always answer. Closing a Windows loopback connection
+                    # that never sent anything was, about one time in six,
+                    # never seen by the other end: the caller waited out
+                    # its timeout instead of learning the lock was stale.
+                    conn.sendall(b"NO\n")
             except Exception:
                 _log.debug("Error handling instance-signal connection", exc_info=True)
             finally:

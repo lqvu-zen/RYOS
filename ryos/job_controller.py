@@ -1,9 +1,9 @@
 """UI-independent job lifecycle / pipeline sequencing for RYOS.
 
 `JobController` owns the job allocation, step-completion, and pipeline-advance
-logic that used to live on the `RYOSApp` god class. It knows nothing about
-Tkinter: it reaches the UI only through callbacks injected at construction, so
-the lifecycle rules can be unit-tested without a display.
+logic that used to live on the old Tk window's god class. It knows nothing
+about any toolkit: it reaches the UI only through callbacks injected at
+construction, so the lifecycle rules can be unit-tested without a display.
 
 See docs/adr/0001-decompose-job-lifecycle.md for the rationale and remaining
 increment (running-row teardown).

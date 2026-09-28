@@ -56,7 +56,7 @@ Edit the line to the concrete version, e.g. `__version__ = "1.6.5"`. (Optional p
 ### 3. Build the exe
 
 ```bash
-cd D:/Projects/RYOS && uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe 2>&1
+cd D:/Projects/RYOS && uv run --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1
 ```
 
 This writes `dist/cxfreeze/` with `RYOS.exe` and its DLLs. Confirm it exists and stop if it doesn't:

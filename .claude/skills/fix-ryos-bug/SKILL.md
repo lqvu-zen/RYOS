@@ -5,7 +5,7 @@ description: 'Diagnose and fix a bug in the RYOS desktop app the right way — r
 
 # Fixing a bug in RYOS
 
-RYOS ("Run Your Own Scripts") is a Tkinter desktop app. All code lives in the `ryos/` package; the entry point is `ryos.__main__:main`, exposed as the `ryos` console-script in `pyproject.toml`.
+RYOS ("Run Your Own Scripts") is a Qt (PySide6) desktop app. All code lives in the `ryos/` package; the entry point is `ryos.__main__:main`, exposed as the `ryos` console-script in `pyproject.toml`.
 
 The trap with bug-fixing here is fixing the *symptom* instead of the *cause*, or "fixing" something you never actually reproduced. Most RYOS bugs trace back to one of a few structural causes — a worker thread touching a widget directly, a migration that isn't guarded, a card refreshed the wrong way, a setting that never round-trips. So this workflow insists on two things before any code changes: reproduce the bug, and capture it in a **failing test** (where the logic is testable) so the fix is provable and can't silently regress later.
 
@@ -33,39 +33,49 @@ The delegated phases are pinned in their `Agent(... model: ...)` calls below (`h
 | Concern | File |
 |---|---|
 | Paths, `_SETTINGS_DEFAULTS`, `_load_settings` / `_save_settings` | `ryos/settings.py` |
+| What each setting is (the Options dialog is generated from it) | `ryos/settings_schema.py` |
 | Windows "run at login" registry | `ryos/startup.py` |
 | Toast notifications + GitHub update check | `ryos/notifications.py` |
-| `ScriptDB` — all SQLite logic, schema, migrations | `ryos/db.py` |
+| `ScriptDB` — all SQLite logic, schema, `_MIGRATIONS` | `ryos/db.py` |
 | `detect_interpreter`, `build_command` | `ryos/interpreter.py` |
-| Color palette `C`, flat-button factory, window snap | `ryos/ui/theme.py` |
-| `ScrollingLabel`, tooltip | `ryos/ui/widgets.py` |
-| Script / preset / param / advanced-options dialogs | `ryos/ui/dialogs.py` |
-| `PipelineEditorDialog` | `ryos/ui/pipeline.py` |
-| `ScriptCard`, `PipelineCard` | `ryos/ui/cards.py` |
-| `RYOSApp` main window + run engine | `ryos/ui/app.py` |
+| Running jobs, pipelines, the output queue | `ryos/runner.py`, `ryos/jobs.py`, `ryos/job_controller.py` |
+| Rules the window draws: card content, menus, sections, the script form, pipeline steps, output routing | `ryos/cardstyle.py`, `cardmenu.py`, `sections.py`, `scriptform.py`, `pipelinesteps.py`, `outputpanel.py` |
+| Palettes, themes, contrast helpers | `ryos/themes.py` |
+| Start-up: builds the window and passes it the real effects | `ryos/qtui/main.py` |
+| `MainWindow` — tabs, search, menus, output panel, placement, tray | `ryos/qtui/shell.py` |
+| `ScriptCard`, `PipelineCard` | `ryos/qtui/cards.py` |
+| Script dialog / pipeline editor / Options / small dialogs | `ryos/qtui/scriptdialog.py`, `pipeline.py`, `dialogs.py`, `smalldialogs.py` |
+| `JobBridge` (runs jobs, drains the queue on a `QTimer`) / Running list | `ryos/qtui/jobs.py`, `ryos/qtui/running.py` |
+| Stylesheet — every colour, font and spacing rule | `ryos/qtui/stylesheet.py` |
 | `__version__` | `ryos/__init__.py` |
 
 ## Architecture rules that always apply
 
-These invariants are also the usual suspects: when something breaks, a violated rule is often the cause. Internalize the *why*. **This is the canonical list** — when a brief below says to include the architecture rules, paste this whole section in verbatim; a partial list is how a rule quietly gets dropped.
+These are the invariants that make RYOS work. Most "looked fine, broke in practice" bugs come from violating one of them, so internalize the *why*, not just the rule. **This is the canonical list** — when a brief below says to include the architecture rules, paste this whole section in verbatim rather than summarizing it; a partial list is how a rule quietly gets dropped.
 
-- **Tkinter only.** The UI is built from `tk.Frame`, `tk.Label`, `tk.Button`, etc. No ttk themes, Qt, or web tech.
+- **Qt (PySide6) is the only toolkit.** The interface lives in `ryos/qtui/`. Don't pull in another toolkit or web tech.
 
-- **Worker threads never touch widgets directly.** Script execution runs on a `threading.Thread`. Tkinter is not thread-safe, so a worker that writes to a `Text` widget or flips a label from its own thread will eventually crash, freeze, or corrupt the display — a very common bug source. Workers reach the UI in exactly two ways: by putting items on `self.output_queue` (drained on the main thread by a recurring `self.after(80, self._drain_output_queue)`), or via `self.after(0, callback)`. A freeze/white-window/garbled-output report should make you suspect a violation here first.
+- **Worker threads never touch widgets.** Script execution runs on a `threading.Thread`. Qt widgets belong to the UI thread; touching one from a worker crashes or corrupts the display, sometimes only later. Workers reach the UI in exactly two ways: by putting items on the job output queue (drained on the UI thread by `JobBridge`'s `QTimer`, through `JobController.pump()`), or by handing a callable to a `MainThreadInvoker` (see `qtui/quickrun.py`). `QTimer.singleShot` from a worker thread never fires — don't use it for the hop. This is the single most important rule.
 
-- **Don't rebuild all the cards on run/stop.** When a script starts or stops, flip the running state of *that one card* in place. Calling the full `_refresh_cards()` on start/stop is slow, loses scroll position, and drops in-flight state — and "card stuck running" / "scroll jumps" bugs often live here. Grep `ryos/ui/cards.py` and `ryos/ui/app.py` for the current running-state mechanism and reuse it.
+- **Rules go in top-level modules, the window draws them.** What a card shows, what a menu offers, what a form accepts, how a pipeline proceeds — these live in toolkit-free modules (`cardstyle`, `cardmenu`, `scriptform`, `pipelinesteps`, `sections`, ...) with unit tests, and `ryos/qtui/*` only draws them. Put new decision logic there, not in a widget method.
 
-- **Database changes are additive and migration-safe.** Schema lives in `ScriptDB._init_db()` in `ryos/db.py`. SQLite has **no** `ADD COLUMN IF NOT EXISTS`; the file reads existing columns with `PRAGMA table_info(<table>)` then guards each migration (`if "<col>" not in cols: ALTER TABLE ...`). "DB won't open after upgrade" bugs usually mean a migration wasn't guarded this way. New query/mutation logic is a method on `ScriptDB`, not raw SQL in the UI.
+- **Dependency direction is one-way: `qtui/*` → top-level modules.** `ryos/db.py`, `ryos/settings.py` and every other top-level module must never import PySide6 or `ryos.qtui`. That is what keeps the core testable without a display or Qt. The only exception is `ryos/__main__.py`.
 
-- **Settings round-trip through `_SETTINGS_DEFAULTS`.** A setting must be a key in `_SETTINGS_DEFAULTS` (so old files still load via `{**_SETTINGS_DEFAULTS, **stored}`), saved/loaded via `_save_settings()` / `_load_settings()`, and wired to its control in `ryos/ui/dialogs.py`. "Setting doesn't stick" bugs are usually a missing link in that chain.
+- **Real effects are passed in.** The window saves settings, reconfigures the log, shows toasts, checks for updates, writes run-at-login and quits only through constructor arguments that do nothing by default, and asks the user only through attributes (`ask_yes_no`, `ask_text`, `warn`, `run_dialog`, ...). `ryos/qtui/main.py` passes the real ones. A new effect follows the same pattern, so tests can build windows without side effects.
 
-- **Dependency direction is one-way: `ui/*` → top-level modules.** `ryos/db.py`, `ryos/settings.py`, etc. must never import from `ryos.ui.*`. A new back-import creates an import cycle and may surface as an import error at startup.
+- **Don't rebuild all the cards on run/stop.** A run's outcome reaches cards in place (`set_last_status` / `set_last_run`, driven by `_refresh_card_statuses` in `shell.py` — including the favourite copies). A full `reload()` tears down every card, loses scroll position and select-mode ticks. Reuse the in-place path.
 
-- **Route colors and buttons through `theme.py`.** Colors come from the `C` dict; buttons from the flat-button factory. Add to `C` rather than hard-coding hex.
+- **Settings go through `_SETTINGS_DEFAULTS` and `settings_schema`.** A new user-facing setting is a key in `_SETTINGS_DEFAULTS` in `ryos/settings.py` (so old settings files still load via `{**_SETTINGS_DEFAULTS, **stored}`), and a `Field` in `ryos/settings_schema.py` if the user should change it — the Options dialog is generated from those fields, and `coerce()` turns what was typed into a usable value.
 
-- **Comments explain WHY, not WHAT.** Add a comment only when the reason for a line is non-obvious.
+- **Database changes go through `_MIGRATIONS`.** `_ensure_baseline()` in `ryos/db.py` is frozen. A new column or table is a new entry in `_MIGRATIONS`, keyed by the `PRAGMA user_version` it upgrades to, and it re-checks `PRAGMA table_info` so it is safe to run twice (SQLite has no `ADD COLUMN IF NOT EXISTS`). Add query logic as `ScriptDB` methods, not raw SQL in the UI. Don't widen `db.get()` or `list_pipeline_steps()` rows — call sites slice them, and `TestRowWidthsArePinned` pins the widths.
 
-- **Don't touch `__version__`.** It's bumped only at release time (see `release-ryos`), not per fix.
+- **Colours come from the palette.** Style through `ryos/qtui/stylesheet.py` by object name; text colours through `drawn_colors()` so they stay legible in every theme. A genuinely new colour is a palette key in `themes.py`, not a hex literal at a widget.
+
+- **Never open windows on the user's first screen.** They work there. Screenshots use the `run-ryos` driver (renders off screen); the smokes' `--visible` uses the second screen.
+
+- **Comments explain WHY, not WHAT.** The codebase is sparing with comments. Add one only when the reason for a line is non-obvious; don't narrate what the code plainly does.
+
+- **Don't touch `__version__`.** Leave `ryos/__init__.py` alone — the version is bumped only when cutting a release (see the `release-ryos` skill), never per change, and carries no `-dev` suffix.
 
 ## The workflow
 
@@ -112,8 +122,10 @@ Agent({ description: "Fix <bug>", subagent_type: "general-purpose", model: "sonn
 
 The brief includes, verbatim: the root cause and fix plan from step 3; the failing test to add (or the visual check); the entire **Architecture rules that always apply** section (paste it — the fix must not trade one violation for another); and the acceptance criteria:
 
-- `cd D:/Projects/RYOS && uv run python -m unittest discover -s tests -v` — the new regression test passes and the whole suite is green.
-- `cd D:/Projects/RYOS && uv run ryos` — the original repro no longer reproduces, and run/stop, groups, output panel, drag-drop, and the pipeline editor still work. **If there's no display and the GUI can't launch, don't silently skip this** — say so, rely on the unit tests, and use the `run-ryos` screenshot driver where possible.
+- `cd D:/Projects/RYOS && uv run --no-project --with pytest pytest -q` — the new regression test passes and the whole suite is green.
+- `cd D:/Projects/RYOS && uvx ruff check . && uvx mypy --platform linux` — lint and types are clean.
+- `cd D:/Projects/RYOS && uv run --no-project --with PySide6 python tests/qt_smoke.py` and `uv run python tests/session_smoke.py` — the real-widget checks and a whole session pass (both use a throwaway data folder; `QT_QPA_PLATFORM=offscreen` runs them without any window).
+- The original repro no longer reproduces, and run/stop, groups, output panel, drag-drop, and the pipeline editor still work. Reproduce through the window's hooks (the session smoke shows the pattern) or the `run-ryos` driver's screenshots — never by opening windows on the user's first screen. If the bug is something a smoke should keep catching, add the check there too.
 
 Add: *"Read only the files in the plan plus direct callers/callees; don't scan the repo. Edit only inside `ryos/`, plus the regression test in tests/test_ryos.py. Don't touch pyproject.toml, build*.bat, or uv.lock. Apply the fix, add the failing test, then run the suite and the repro check; if anything fails, read the traceback, fix, and re-run until clean. Do not commit or push. Report files changed, the regression test going red→green, the final suite result, and a one-line repro-gone note."*
 
@@ -121,9 +133,9 @@ When the agent returns, **verify before moving on** — this is the gate. Run `g
 
 - [ ] The regression test actually fails on the old code and passes on the fix (not a test written to trivially pass).
 - [ ] The fix addresses the root cause from step 3, not just the surface symptom.
-- [ ] No worker thread touches a widget except via `self.after` / `self.output_queue`.
-- [ ] No new `import ryos.ui.*` inside top-level modules; any DB change stays `PRAGMA`-guarded.
-- [ ] Run/stop still flips the affected card in place — no `_refresh_cards()` on start/stop.
+- [ ] No worker thread touches a widget except via the output queue or a `MainThreadInvoker`.
+- [ ] No PySide6 or `ryos.qtui` import inside a top-level module; any DB change is a `_MIGRATIONS` entry.
+- [ ] Run/stop still updates cards in place — no full `reload()` on start/stop.
 - [ ] Edits stay within `ryos/` plus the one regression test.
 
 Fix inline or send the Sonnet agent a follow-up via SendMessage if anything's off. Mark tasks complete only once verified.

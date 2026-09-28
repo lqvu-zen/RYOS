@@ -42,7 +42,7 @@ def _snapshot(folder: Path) -> dict:
 
 def _second_screen_geometry():
     sys.path.insert(0, str(ROOT / "tests"))
-    from gui_smoke import smoke_screen    # the same screen choice as the smokes
+    from smoke_screen import smoke_screen    # the same screen choice as the smokes
     area = smoke_screen()
     return f"540x640+{area[0] + 40}+{area[1] + 40}" if area else None
 
@@ -71,7 +71,6 @@ def main() -> int:
 
     env = dict(os.environ, APPDATA=str(tmp), RYOS_NO_REGISTRY="1",
                RYOS_ALLOW_MULTIPLE="1")
-    env.pop("RYOS_UI", None)
     if not args.visible:
         env["QT_QPA_PLATFORM"] = "offscreen"
     cmd = [str(Path(args.exe).resolve())] if args.exe else [sys.executable, "-m", "ryos"]

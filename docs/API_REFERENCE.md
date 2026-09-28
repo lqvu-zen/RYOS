@@ -1,8 +1,8 @@
 # RYOS module reference
 
 Reference for the public surface of RYOS's core (UI-independent) modules — the
-parts that are imported, reused, and unit-tested. The Tkinter layer in
-`ryos/ui/` is summarised at the end; for its internals read the source
+parts that are imported, reused, and unit-tested. The Qt interface in
+`ryos/qtui/` is summarised at the end; for its internals read the source
 alongside `docs/ARCHITECTURE.md`.
 
 Names prefixed with `_` are internal helpers, included only where they're part
@@ -225,7 +225,7 @@ protocol.
 
 ## `ryos.jobs`
 
-Job bookkeeping — no Tk, no threads.
+Job bookkeeping — no toolkit, no threads.
 
 ```python
 class Job:
@@ -234,8 +234,8 @@ class Job:
 ```
 State for one running script or pipeline: identity, start time, the live
 `current_process`, a `stopped` flag, pipeline progress fields
-(`pipeline_queue`, `pipeline_step_idx`, `pipeline_total`), and lazy references
-to the Tk vars/row that display it.
+(`pipeline_queue`, `pipeline_step_idx`, `pipeline_total`). The window keeps
+its own widgets for a job (`qtui/running.py`).
 
 ```python
 class JobRegistry:
@@ -380,8 +380,9 @@ the plain string values of the `ryos.db` policy constants:
 
 ## `ryos.scheduling`
 
-Pure scheduling maths over **naive local time**; no storage, no Tk. `db.py`
-holds the rows, `ui/app.py` ticks it every `SCHEDULE_TICK_MS` (30 s).
+Pure scheduling maths over **naive local time**; no storage, no toolkit.
+`db.py` holds the rows; `schedule_runner.run_due` fires what is due, and
+`qtui/jobs.py` sweeps every 30 s.
 
 Constants: `INTERVAL`, `DAILY`, `WEEKLY`, `SPEC_TYPES`; `CATCH_UP_SKIP`,
 `CATCH_UP_ONCE`, `CATCH_UP_ALL`, `CATCH_UP_MODES`; `MAX_CATCH_UP = 20`,
@@ -441,7 +442,7 @@ Card search: what matches, and how the match is shown.
 
 ## `ryos.dragdrop`
 
-Drag-and-drop reordering as geometry, separate from Tk's drag events.
+Drag-and-drop reordering as geometry, separate from the toolkit's drag events.
 
 | Function | Returns | Purpose |
 | --- | --- | --- |
@@ -450,10 +451,10 @@ Drag-and-drop reordering as geometry, separate from Tk's drag events.
 
 ---
 
-## `ryos.screens` and `ryos.ui.placement`
+## `ryos.screens` and `ryos.qtui.placement`
 
 Multi-monitor placement, split so the maths is testable without a display.
-`screens.py` is pure geometry; `ui/placement.py` applies it to real widgets.
+`screens.py` is pure geometry; `qtui/placement.py` reads the real work areas from `QScreen`.
 Together they are why a dialog opens on the monitor the app is on, fully
 on-screen, rather than centred on the primary display.
 
@@ -470,21 +471,13 @@ on-screen, rather than centred on the primary display.
 | `geometry_origin(geometry)` | `tuple[int, int]` | Parse `+x+y` out of a geometry string. |
 | `center_in_work_area(w, h, work_area)` | `str` | A ready geometry string. |
 
-`ryos.ui.placement`:
-
-| Function | Purpose |
-| --- | --- |
-| `work_area_for_point(widget, x, y)` / `work_area_for_widget(widget)` | The work area a point or widget sits on. `_tk_screen_area` is the documented non-Windows fallback (Tk reports one virtual screen, so it cannot tell monitors apart). |
-| `center_over_parent(window, parent, width=0, height=0)` | Centre a dialog over its parent window. |
-| `offset_from_parent(window, parent, dx, dy)` | Cascade a window off its parent. |
-| `place_near(window, x, y, dx=12, dy=12)` | Place near a point (context menus, pickers). |
-
 ---
 
 ## `ryos.themes`
 
-The theme gallery and the colour maths behind it. `ui/theme.py` consumes this;
-`ui/theme_editor.py` edits it.
+The theme gallery and the colour maths behind it. `qtui/stylesheet.py` turns a
+palette into the app's stylesheet; `qtui/appearance.py` and
+`qtui/theme_editor.py` choose and edit themes.
 
 Constants: `SEED_KEYS`, `ADVANCED_KEYS`, `CUSTOM_THEMES_PATH`, `PRESETS_DIR`,
 `THEME_FILE_VERSION`, `USER_THEMES_DIR_DEFAULT`.
@@ -503,23 +496,19 @@ Constants: `SEED_KEYS`, `ADVANCED_KEYS`, `CUSTOM_THEMES_PATH`, `PRESETS_DIR`,
 
 ---
 
-## `ryos.tray`
+## `ryos.traypolicy`
 
-System-tray icon showing what is currently running. **`pystray` is optional** —
-`available()` is false when it is missing and every entry point is a no-op, so
-the app runs without it. CI exercises that path (`TestTrayWithoutPystray`);
-a tray test that passes locally can fail on CI precisely because the dependency
-is absent there.
+The tray's contents and the window's life, with no toolkit: the tooltip and
+menu for a running-job snapshot, and what close, minimise, start and quit do.
+`qtui/tray.py` draws it with `QSystemTrayIcon`.
 
 Constants: `TIP_MAX = 127` (Windows truncates a longer tooltip),
 `MENU_LABEL_MAX = 60`.
 
 | Name | Returns | Purpose |
 | --- | --- | --- |
-| `tray_title(job_names, base)` | `str` | The tooltip text — base name plus running jobs, ellipsized to `TIP_MAX`. Pure, and unit-tested. |
-| `TrayIcon.available()` | `bool` | Whether a tray is usable at all. |
-| `TrayIcon.set_jobs(jobs)` | — | Refresh tooltip and menu from the running set. |
-| `TrayIcon.start()` / `.stop()` | — | Run the icon on its own thread. |
+| `tray_title(job_names, base)` | `str` | The tooltip text — base name plus running jobs, ellipsized to `TIP_MAX`. |
+| `tray_menu(jobs)` | list of entries | One entry per running job, then Show and Exit. |
 
 ---
 
@@ -535,22 +524,24 @@ the release smoke test sets `RYOS_ALLOW_MULTIPLE=1` to bypass it.
 
 ---
 
-## UI layer (`ryos.ui`) — summary
+## The Qt interface (`ryos.qtui`) — summary
 
-These modules import Tkinter and are exercised through the app, not unit-tested
-directly.
+These modules import PySide6 and are exercised by `tests/qt_smoke.py` and
+`tests/session_smoke.py`, not by the unit suite (except `stylesheet.py`, which
+imports no Qt).
 
 | Module | Public surface |
 | --- | --- |
-| `app.py` | `RYOSApp` — the main window. Owns the job lifecycle, output panel, tabs, drag-and-drop, Quick Run bar, the schedule tick (`_tick_schedules`, every 30 s) and output find/filter. |
-| `cards.py` | `ScriptCard`, `PipelineCard`; module helpers `set_compact_mode`, `set_card_size`, `card_padding`, `row_metrics`, and `run_button_style(last_status)` — which turns the Run button into a red retry button after a failure. |
-| `dialogs.py` | `ScriptDialog`, `NewGroupDialog`, `GroupBaseDirDialog`, `ParamPickerDialog`, `AdvancedOptionsDialog` (Appearance / Startup & Window / Output / Quick Run / Logging tabs), schedule and run-history dialogs. |
-| `pipeline.py` | `PipelineEditorDialog`, plus `_policy_marks()` — the `!`, `↻n`, `?ok`, `?fail`, `→launch` annotations on a step row. |
-| `theme.py` | `apply_theme(theme_name, accent=None)`, `set_button_enabled(btn, enabled)` (flips state *and* appearance — Tk alone only dims the label, to a system colour), the `C` palette dict every widget reads its colours from, `HIGHLIGHT_SEEDS` / `highlight_fg(key, *surfaces)` for per-card label colours, plus ttk-style and snap-to-corner helpers. |
-| `theme_editor.py` | `ThemeEditorDialog`. |
-| `widgets.py` | `Tooltip`, `ScrollingLabel`. |
-| `placement.py` | Documented above — it is pure enough to unit-test, unlike the rest of this layer. |
+| `main.py` | `build(settings=…, show=True)` → `(app, window)`: everything start-up does short of the event loop. `run(settings=…)` adds the loop. The one place real effects are passed into the window. |
+| `shell.py` | `MainWindow` — tabs, sections, search, select mode, menus, output panel, placement, tray and close rules. Real effects are constructor arguments that do nothing by default; prompts (`ask_yes_no`, `ask_text`, `warn`, `run_dialog`, …) are attributes a test can replace. |
+| `jobs.py` | `JobBridge` — runs scripts and pipelines through `JobController`, drains the output queue on a `QTimer`, and runs the schedule sweep. |
+| `cards.py` | `ScriptCard`, `PipelineCard`; `set_last_status` / `set_last_run` update a card in place after a run. |
+| `scriptdialog.py`, `pipeline.py` | `ScriptDialog`, `PipelineEditorDialog`. |
+| `dialogs.py`, `smalldialogs.py` | `OptionsDialog` (generated from `settings_schema`); new group, base folder, parameters, schedule, run history, close-to-tray. |
+| `stylesheet.py` | `stylesheet(palette)`, `drawn_colors(palette)` — every text colour the stylesheet draws, made legible on its fill. Pure. |
+| `appearance.py`, `theme_editor.py` | `AppearanceDialog`, `ThemeEditorDialog`. |
+| `widgets.py` | `ScrollingLabel`, `ElidedLabel`, `HoverPreview`, `literal()` (tab and menu text shown as written), `button_row()`. |
 
-Two conventions hold across this layer: **every colour comes from the `C` dict**
-in `theme.py` rather than a literal, and **worker threads never touch a
-widget** — they post to the output queue instead.
+Two conventions hold across this layer: **colours come from the palette** (the
+stylesheet, or a card's per-state rule) rather than literals, and **worker
+threads never touch a widget** — they post to the output queue instead.

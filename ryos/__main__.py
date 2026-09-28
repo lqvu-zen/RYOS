@@ -1,11 +1,6 @@
-"""Entry point — `uv run ryos` or `python -m ryos`.
-
-Runs the Qt app (`ryos.qtui.main`). The Tk app stays one step away while the
-Qt one settles in: RYOS_UI=tk selects it, and it is also used, with a logged
-reason, if PySide6 cannot be imported.
-"""
+"""Entry point — `uv run ryos` or `python -m ryos`. Runs the Qt app
+(`ryos.qtui.main`)."""
 import logging
-import os
 import sys
 
 from . import single_instance
@@ -14,15 +9,17 @@ from .settings import _load_settings
 from .startup import _sync_startup_command
 
 
-def _wants_tk(log) -> bool:
-    if os.environ.get("RYOS_UI", "").strip().lower() == "tk":
-        return True
+def _qt_available(log) -> bool:
+    """Whether PySide6 imports. It is RYOS's one dependency; without it there
+    is no interface to start, so say why rather than fail on a bare import."""
     try:
         import PySide6  # noqa: F401
-    except ImportError:
-        log.warning("PySide6 is not available; starting the Tk interface")
-        return True
-    return False
+    except ImportError as exc:
+        log.error("PySide6 is not available (%s); RYOS cannot start", exc)
+        print(f"RYOS needs PySide6, which could not be imported: {exc}\n"
+              "Run it with `uv run ryos`, which installs it.", file=sys.stderr)
+        return False
+    return True
 
 
 def main():
@@ -36,6 +33,8 @@ def main():
     _sync_startup_command()  # upgrade an older registry entry in place
     from . import __version__
     log = logging.getLogger("ryos")
+    if not _qt_available(log):
+        return 1
 
     # A --startup launch stays silent if something's already running (no
     # window pop); a manual launch signals the existing instance to restore.
@@ -45,27 +44,21 @@ def main():
     )
     if lock is None:
         log.info("Another RYOS instance is already running; exiting")
-        return
+        return 0
 
-    use_tk = _wants_tk(log)
-    log.info("RYOS %s starting (startup=%s, ui=%s)", __version__,
-             launched_at_startup, "tk" if use_tk else "qt")
+    log.info("RYOS %s starting (startup=%s, ui=qt)", __version__, launched_at_startup)
     try:
-        if use_tk:
-            from .ui.app import RYOSApp
-            app = RYOSApp(launched_at_startup=launched_at_startup, instance_lock=lock)
-            app.mainloop()
-        else:
-            from .qtui.main import run
-            run(settings=settings, launched_at_startup=launched_at_startup,
-                instance_lock=lock)
+        from .qtui.main import run
+        run(settings=settings, launched_at_startup=launched_at_startup,
+            instance_lock=lock)
     except Exception:
         log.exception("Fatal error in the main loop")
         raise
     finally:
         lock.release()
         log.info("RYOS shutting down")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -626,7 +626,7 @@ class ScriptDB:
                      int(s.get("detached", 0) or 0),
                      int(s.get("is_favorite", 0) or 0),
                      # An unrecognised highlight key is left as-is rather than
-                     # validated here: db.py must not import from ryos.ui, and
+                     # validated here: db.py must not import from the UI, and
                      # the card layer already falls back to the normal label
                      # colour for any key it doesn't know.
                      s.get("label_color") or None,

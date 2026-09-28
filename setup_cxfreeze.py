@@ -46,6 +46,8 @@ build_options = {
         ("ryos/presets", "lib/ryos/presets"),
     ],
     "excludes": [
+        # The Tk interface is gone; without this, Tcl/Tk (~7 MB) still ships.
+        "tkinter",
         "unittest", "pydoc", "doctest", "difflib",
         "ftplib", "imaplib", "mailbox", "nntplib", "poplib",
         "smtplib", "telnetlib",

@@ -9,8 +9,6 @@ test run, then explains the conventions the codebase expects.
   thing you need to install. It provisions Python ≥3.10, creates the
   environment, and installs dependencies on demand. On Windows you can run
   `install_uv.bat`.
-- **Tkinter** — bundled with Python on Windows and macOS. On Debian/Ubuntu the
-  app (not the tests) needs the system package: `sudo apt install python3-tk`.
 
 No manual `pip install` or virtualenv setup is required.
 
@@ -65,8 +63,9 @@ ryos/
   notifications.py   toast + GitHub update check
   logger.py          rotating-file logging
   startup.py         Windows run-at-login registry
-  ui/                Tkinter layer (app, cards, dialogs, pipeline, theme, widgets)
-tests/               test_ryos.py + runnable sample scripts
+  qtui/              the Qt interface (window, cards, dialogs, tray, start-up)
+tests/               test_ryos.py and the smokes (qt_smoke, session_smoke, ...)
+samples/             sample scripts to try the app with
 docs/                this guide, ARCHITECTURE.md, API_REFERENCE.md
 ```
 
@@ -75,19 +74,18 @@ threading/queue model that most changes have to respect.
 
 ## Conventions
 
-**Keep the core UI-free.** The modules in the table above (everything outside
-`ryos/ui/`) must not import `tkinter`. That separation is what lets the test
-suite run headless. If you need Tk types in a core module for annotations only,
-use `from __future__ import annotations` like `jobs.py` does.
+**Keep the core UI-free.** The top-level modules (everything outside
+`ryos/qtui/`) must not import PySide6 or `ryos.qtui`. That separation is what
+lets the unit suite run without a display or Qt.
 
-**Never touch a Tk widget from a worker thread.** Subprocess output flows back
-through the `queue.Queue` and is drained on the main thread by the
-`after(80, ...)` timer. New background work should follow the same pattern.
+**Never touch a widget from a worker thread.** Subprocess output flows back
+through the `queue.Queue` and is drained on the UI thread by a `QTimer`
+(`qtui/jobs.py`). New background work should follow the same pattern.
 
-**Put new business logic in a testable place.** The `★` modules (`quickrun`,
-`jobs`, `runner`) exist because logic was pulled out of `app.py` so it could be
-unit-tested. Prefer adding a pure function/class you can test directly over
-growing `RYOSApp`.
+**Put new business logic in a testable place.** Rules live in top-level
+modules (`quickrun`, `jobs`, `runner`, `cardstyle`, `scriptform`, ...) so they
+can be unit-tested; the Qt code draws them. Prefer adding a pure function you
+can test directly over growing a window class.
 
 **Schema changes go through migrations.** Don't edit `_ensure_baseline()` (it's
 frozen at the v1 schema). Add an entry to `_MIGRATIONS` in `db.py` keyed by the
@@ -122,7 +120,7 @@ the extension to `quick_run_index_extensions` in `settings.py`. Add a case to
 The primary packager is cx_Freeze (produces a folder you zip and distribute):
 
 ```bash
-uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
+uv run --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 

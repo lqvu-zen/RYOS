@@ -11,7 +11,7 @@
 > Hurts usability or looks broken.
 
 #### H1. <short title>
-- **Screen / location:** <screen> — `ryos/ui/<file>.py:<line>` (or token `C["..."]`)
+- **Screen / location:** <screen> — `ryos/qtui/<file>.py:<line>` (or palette key `c['...']`)
 - **What & why:** <what's wrong and why it matters to the user>
 - **Recommendation:** <concrete, RYOS-appropriate fix>
 - **Screenshot:** <filename.png>

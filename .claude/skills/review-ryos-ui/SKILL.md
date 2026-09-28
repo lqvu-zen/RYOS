@@ -1,24 +1,28 @@
 ---
 name: review-ryos-ui
-description: Review and improve the RYOS desktop app's UI and UX. Use this whenever the user wants a design/usability review of RYOS, mentions the app "looks off," wants feedback on layout, spacing, colors, contrast, visual hierarchy, affordances, empty states, or accessibility — or asks to polish, clean up, modernize, or improve the look and feel of any RYOS screen (script cards, pipeline cards, tabs, dialogs, the output panel, the Quick Run bar, status bar, headers). Trigger even when the user doesn't say the words "UI" or "UX" but is clearly asking whether a screen is good, what to fix, or to make it nicer. Produces a prioritized findings report and then concrete edits to ryos/ui/*. Do NOT use it to add a feature or change behavior (use add-ryos-feature), to fix a functional bug or crash (use fix-ryos-bug), or to just launch the app (use run-ryos).
+description: Review and improve the RYOS desktop app's UI and UX. Use this whenever the user wants a design/usability review of RYOS, mentions the app "looks off," wants feedback on layout, spacing, colors, contrast, visual hierarchy, affordances, empty states, or accessibility — or asks to polish, clean up, modernize, or improve the look and feel of any RYOS screen (script cards, pipeline cards, tabs, dialogs, the output panel, the Quick Run bar, status bar, headers). Trigger even when the user doesn't say the words "UI" or "UX" but is clearly asking whether a screen is good, what to fix, or to make it nicer. Produces a prioritized findings report and then concrete edits to ryos/qtui/* (and the rule modules they draw). Do NOT use it to add a feature or change behavior (use add-ryos-feature), to fix a functional bug or crash (use fix-ryos-bug), or to just launch the app (use run-ryos).
 ---
 
 # Reviewing & improving RYOS UI/UX
 
-RYOS is a Tkinter desktop app for running user scripts. Its entire interface lives in `ryos/ui/`. A good review of this app combines two things that neither alone gives you: **what the app actually looks like when running** (screenshots) and **why it looks that way** (the source). You will gather both, judge against the heuristics below, then propose fixes that respect the app's existing design language instead of importing generic web-design advice that doesn't fit a native desktop tool.
+RYOS is a Qt (PySide6) desktop app for running user scripts. Its interface lives in `ryos/qtui/`, drawing rules kept in top-level modules (`cardstyle.py`, `cardmenu.py`, `sections.py`, ...). A good review of this app combines two things that neither alone gives you: **what the app actually looks like when running** (screenshots) and **why it looks that way** (the source). You will gather both, judge against the heuristics below, then propose fixes that respect the app's existing design language instead of importing generic web-design advice that doesn't fit a native desktop tool.
 
 ## Where the UI lives
 
 | Concern | File |
 |---|---|
-| Main window, header, tabs, group sections, running rows, layout | `ryos/ui/app.py` |
-| Script cards & pipeline cards (the main content) | `ryos/ui/cards.py` |
-| All dialogs (add/edit script, settings, group base dir, etc.) | `ryos/ui/dialogs.py` |
-| Pipeline editor | `ryos/ui/pipeline.py` |
-| **Color palette + button factory + window snap** | `ryos/ui/theme.py` |
-| Tooltip, scrolling label | `ryos/ui/widgets.py` |
+| Main window, menus, tabs, search, select mode, output panel, layout | `ryos/qtui/shell.py` |
+| Group sections, All tab | `ryos/qtui/sections.py` (rules: `ryos/sections.py`) |
+| Script cards & pipeline cards (the main content) | `ryos/qtui/cards.py` (rules: `ryos/cardstyle.py`) |
+| Script dialog | `ryos/qtui/scriptdialog.py` |
+| Options (generated), small dialogs | `ryos/qtui/dialogs.py`, `ryos/qtui/smalldialogs.py` |
+| Pipeline editor | `ryos/qtui/pipeline.py` |
+| Appearance, theme editor | `ryos/qtui/appearance.py`, `ryos/qtui/theme_editor.py` |
+| Running list, Quick Run bar, tray | `ryos/qtui/running.py`, `ryos/qtui/quickrun.py`, `ryos/qtui/tray.py` |
+| **Stylesheet (every colour, font and spacing rule)** | `ryos/qtui/stylesheet.py` |
+| Palettes, themes, contrast helpers | `ryos/themes.py` |
 
-**`theme.py` is the design-token source of truth.** Every colour in the app comes from the `C` dict there. Before recommending any colour change, read `theme.py` and refer to tokens by name (e.g. `C["accent"]`, `C["btn_run_bg"]`). Never hard-code a hex value into a widget when a token exists or should exist — if a new colour is genuinely needed, add it to `C` so the palette stays the single source of truth. The same goes for fonts: the app uses `("Segoe UI", ...)` throughout, so keep typography consistent with that.
+**The palette is the design-token source of truth**, and `stylesheet.py` is where it becomes Qt styling. Before recommending any colour change, refer to palette keys by name (e.g. `c['accent']`, `c['btn_run_bg']`). Never hard-code a hex value when a key exists or should exist. Text colours go through `drawn_colors()` so they stay legible on their fill in every theme — `TestQtStylesheet` checks every drawn pair across all shipped themes, so a change that fails it is a real contrast problem. Typography is Segoe UI, set once in the stylesheet. The design system (`design-system/project/`) documents tokens and intent; its component notes predate the Qt interface and are due for revision.
 
 ## The review workflow
 
@@ -27,14 +31,12 @@ RYOS is a Tkinter desktop app for running user scripts. Its entire interface liv
 You cannot review look-and-feel from source alone — spacing, contrast, alignment, and crowding only reveal themselves on screen. Use the **`run-ryos` skill** (`.claude/skills/run-ryos/`), which launches the app and captures screenshots via its driver. From the project root:
 
 ```
-uv run --with pillow python .claude/skills/run-ryos/driver.py <scenario>
+uv run python .claude/skills/run-ryos/driver.py <scenario ...> [--theme ID]
 ```
 
-Screenshots land in `.claude/skills/run-ryos/screenshots/`. Read them with the `Read` tool. Existing scenarios: `smoke`, `quick-run-bar`, `run-first`, `autocomplete`, `adhoc-run`, `close-all-verify`, `debug-run-py`, `running-row-check`.
+Screenshots land in `.claude/skills/run-ryos/screenshots/`. Read them with the `Read` tool. Scenarios: `main`, `compact`, `output`, `quick-run`, `dialogs`, `themes` (all themes on one sheet), `all`. Nothing is shown on any monitor — windows render off screen — and the data is a throwaway copy of the repo's `samples/`.
 
-Capture whatever states are relevant to the review's scope. If the user points at a specific screen (e.g. "the settings dialog" or "pipeline cards"), prioritise that. If the review is general, cover the main states: **idle window**, a **running** script, the **output panel**, and at least one **dialog**. If no existing scenario reaches the state you need, add one — copy the pattern of an existing `_scenario(app)` function in `driver.py` (schedule actions with `app.after(...)`, screenshot with `_shot(app, name)`), and add a branch in `main()`. The driver has direct access to the live app (`app._cards`, `app.db`, `card._run()`, etc.; see the run-ryos SKILL.md for the full list).
-
-If the app genuinely can't be launched in the current environment (no display), say so plainly and fall back to a source-only review — but flag that visual issues (crowding, contrast, alignment) are harder to catch that way, and review the screenshots already sitting in the `run-ryos/screenshots/` folder if any are recent.
+Capture whatever states are relevant to the review's scope. If the user points at a specific screen (e.g. "the settings dialog" or "pipeline cards"), prioritise that. If the review is general, cover the main states: **idle window**, a **finished and a failed run** with the **output panel**, **compact mode**, the **dialogs**, and more than one **theme** (a light and a dark one at least). If no scenario reaches the state you need, add one — see the run-ryos SKILL.md for the pattern and the window's hooks.
 
 ### 2. Read the relevant source
 
@@ -61,10 +63,12 @@ Save the report to `.claude/discarded/` as a markdown file (e.g. `ui-review-YYYY
 
 After the report, turn the High and Medium findings into concrete code changes. Prefer **small, surgical diffs** that respect the existing patterns:
 
-- Route colours through `theme.py` tokens. If a fix needs a new colour, add it to `C` with a comment, then reference it.
-- Keep the `_flat_button` factory and `Segoe UI` typography — extend them rather than introducing parallel styles.
-- Preserve behaviour: the worker-thread/queue output model, `after()` scheduling, and `pack(after=banner)` ordering are load-bearing (see `CLAUDE.md`). A visual change must not break threading or layout ordering.
+- Route colours through palette keys in `stylesheet.py` (text colours through `drawn_colors()`). If a fix needs a new colour, add a palette key in `themes.py` so every theme defines it, then reference it.
+- Style by object name in the stylesheet (`QPushButton#primary`, `QFrame#card`) rather than per-widget `setStyleSheet`, except where a card's colour depends on its own state (the Run button).
+- Put a rule that decides *what* shows (a label, a badge, a count) in the rule module (`cardstyle.py`, `sections.py`, ...) with a unit test, and let the Qt code draw it.
+- Preserve behaviour: the worker-thread/queue output model is load-bearing (see `CLAUDE.md`). A visual change must not touch a widget from a worker thread.
 - Show the edits as a clear before/after, grouped by file. Don't bundle unrelated refactors into a UI pass.
+- Run `tests/qt_smoke.py` after a change: several checks there are about looks (long text fits at 540 px, ticks are drawn, gaps read as gaps).
 
 After editing, **re-run the relevant `run-ryos` scenario and screenshot again** to verify the change actually looks better and didn't break the layout. Reading the new screenshot is the verification step — don't claim an improvement you haven't looked at.
 

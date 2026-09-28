@@ -1,9 +1,9 @@
 """The tray and the window's life: what shows, and what closing does.
 
-Toolkit-free and pystray-free, so the Tk app (pystray) and the Qt shell
-(`QSystemTrayIcon`) share one set of rules: the tooltip and menu for a
-snapshot of running jobs, and what closing, minimising, starting minimised,
-quitting and a second launch each do.
+Toolkit-free, so the rules are unit-tested; `qtui/tray.py` draws them with
+`QSystemTrayIcon`: the tooltip and menu for a snapshot of running jobs, and
+what closing, minimising, starting minimised, quitting and a second launch
+each do.
 """
 
 from __future__ import annotations

@@ -1,7 +1,14 @@
 RYOS is a Windows desktop launcher for your own scripts: a list of cards, each
 one a script or a pipeline you can run, with the output of every run in a
 terminal panel underneath. This is its interface language, extracted from
-`ryos/themes.py`, `ryos/ui/*` and `ryos/interpreter.py`.
+`ryos/themes.py`, `ryos/qtui/*` and `ryos/interpreter.py`.
+
+> **Being revised.** Parts of these notes were written against the original
+> Tk interface, removed in September 2026. The Qt interface uses the same
+> tokens and palettes, so every colour, type and spacing rule still holds;
+> where a note describes Tk mechanics (frames, ttk styles, `<Enter>`
+> bindings) or names a Tk file, `tokens.json` maps each component to its Qt
+> source. The component notes are to be rewritten with the next UI pass.
 
 The whole system is built to be re-skinned. A theme is **seven colours and a
 mode**, and `build_palette()` expands that seed into the 55-key palette every

@@ -17,18 +17,9 @@ import unittest
 import warnings
 from pathlib import Path
 
-# Allow importing script_runner without launching the Tkinter window
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Patch tkinter before importing so tests run headless (CI / no display)
-import unittest.mock as mock
-sys.modules.setdefault("tkinter", mock.MagicMock())
-sys.modules.setdefault("tkinter.ttk", mock.MagicMock())
-sys.modules.setdefault("tkinter.filedialog", mock.MagicMock())
-sys.modules.setdefault("tkinter.font", mock.MagicMock())
-sys.modules.setdefault("tkinter.messagebox", mock.MagicMock())
-sys.modules.setdefault("tkinter.scrolledtext", mock.MagicMock())
-sys.modules.setdefault("tkinter.simpledialog", mock.MagicMock())
+import unittest.mock as mock  # noqa: E402
 
 from ryos.db import TRIGGER_AFTER, TRIGGER_WITH, ScriptDB  # noqa: E402
 from ryos.interpreter import detect_interpreter, build_command  # noqa: E402
@@ -730,108 +721,6 @@ class TestThemeGallery(unittest.TestCase):
             name, seed = import_theme(fp)  # raises if invalid
             self.assertTrue(name, f"{fp.name} has no name")
             self.assertEqual(validate_seed(seed), [], f"{fp.name} invalid seed")
-
-
-# ---------------------------------------------------------------------------
-# Pipeline editor theming (regression: hardcoded hex vs the live palette)
-# ---------------------------------------------------------------------------
-
-class TestPipelineEditorTheming(unittest.TestCase):
-    """The pipeline editor once paired hardcoded near-white backgrounds with a
-    theme-aware fg, so its list and buttons were invisible in dark themes. These
-    read the widget colours straight out of the module source, so they fail if
-    anyone reintroduces a literal colour or picks an unreadable palette key."""
-
-    SRC_PATH = Path(__file__).resolve().parents[1] / "ryos" / "ui" / "pipeline.py"
-    GALLERY = Path(__file__).resolve().parents[1] / "theme-gallery"
-    HEX_RE = re.compile(r"#[0-9a-fA-F]{6}")
-    # White-on-accent is an app-wide brand convention owned by the theme engine,
-    # not by this dialog, so those pairs are out of scope here.
-    SKIP_FG_KEYS = {"fg_on_dark", "btn_fg"}
-
-    @classmethod
-    def setUpClass(cls):
-        cls.source = cls.SRC_PATH.read_text(encoding="utf-8")
-        cls.pairs = cls._extract_pairs(cls.source)
-        cls.gallery = {}
-        for fp in sorted(cls.GALLERY.glob("*.json")):
-            name, seed = import_theme(fp)
-            cls.gallery[fp.stem] = build_palette(seed)
-
-    @staticmethod
-    def _color_expr(node):
-        """('key', name) for C["name"], ('hex', value) for a literal, else None."""
-        if (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name)
-                and node.value.id == "C" and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)):
-            return ("key", node.slice.value)
-        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
-                and re.fullmatch(r"#[0-9a-fA-F]{6}", node.value)):
-            return ("hex", node.value)
-        return None
-
-    @classmethod
-    def _extract_pairs(cls, source):
-        """(line, widget, fg, bg, role) for every tk.* widget setting both a
-        statically resolvable foreground and background."""
-        out = []
-        for node in ast.walk(ast.parse(source)):
-            if not (isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "tk"):
-                continue
-            kw = {k.arg: k.value for k in node.keywords if k.arg}
-            fg = cls._color_expr(kw["fg"]) if "fg" in kw else None
-            if fg is None:
-                continue
-            for arg, role in (("bg", "idle"), ("activebackground", "hover")):
-                bg = cls._color_expr(kw[arg]) if arg in kw else None
-                if bg is not None:
-                    out.append((node.lineno, node.func.attr, fg, bg, role))
-        return out
-
-    @staticmethod
-    def _resolve(expr, palette):
-        kind, value = expr
-        return palette[value] if kind == "key" else value
-
-    def test_no_hardcoded_hex_colors(self):
-        # Catches the Cancel button, whose own fg/bg pair is legible but frozen
-        # to the light palette — a defect contrast alone cannot express.
-        hits = [(i, line.strip())
-                for i, line in enumerate(self.source.splitlines(), 1)
-                if self.HEX_RE.search(line)]
-        self.assertEqual(hits, [], f"colours must come from C[...]: {hits}")
-
-    def test_scan_finds_widget_pairs(self):
-        # Guard: an AST scan that matches nothing would make the rest vacuous.
-        self.assertGreaterEqual(len(self.pairs), 10, "AST scan found too few widgets")
-
-    def test_builtin_themes_meet_contrast(self):
-        for name in THEME_ORDER:
-            palette = BUILTIN_THEMES[name]
-            for line, widget, fg, bg, role in self.pairs:
-                if fg[0] == "key" and fg[1] in self.SKIP_FG_KEYS:
-                    continue
-                f, b = self._resolve(fg, palette), self._resolve(bg, palette)
-                with self.subTest(theme=name, line=line, widget=widget, role=role):
-                    self.assertGreaterEqual(
-                        contrast_ratio(f, b), 4.5,
-                        f"{name}: tk.{widget} line {line} ({role}) {f} on {b}")
-
-    def test_gallery_themes_stay_legible(self):
-        # Gallery themes are user content: hold idle states to a 3.0 floor.
-        # Hover pairs are excluded (btn_neutral_hover bottoms out at 2.7 there).
-        for name, palette in self.gallery.items():
-            for line, widget, fg, bg, role in self.pairs:
-                if role != "idle" or (fg[0] == "key" and fg[1] in self.SKIP_FG_KEYS):
-                    continue
-                f, b = self._resolve(fg, palette), self._resolve(bg, palette)
-                with self.subTest(theme=name, line=line, widget=widget):
-                    self.assertGreaterEqual(
-                        contrast_ratio(f, b), 3.0,
-                        f"{name}: tk.{widget} line {line} {f} on {b}")
 
 
 class TestDisambiguateLabels(unittest.TestCase):
@@ -1740,7 +1629,10 @@ class TestInstanceListener(unittest.TestCase):
         self.assertEqual(self._verb(), "RESTORE_CURSOR")
 
     def test_a_wrong_token_is_refused_without_a_signal(self):
-        self.assertEqual(self._send(b"nope RESTORE\n"), b"")
+        # An explicit refusal, not just a close: on Windows loopback a close
+        # with nothing sent was sometimes never seen, and the caller hung.
+        for _ in range(20):
+            self.assertEqual(self._send(b"nope RESTORE\n"), b"NO\n")
         self.assertTrue(self.lock.signals.empty())
 
 
@@ -2793,8 +2685,7 @@ class TestSourceIntegrity(unittest.TestCase):
 
     def _py_files(self):
         files = sorted((self._ROOT / "ryos").rglob("*.py"))
-        files += [self._ROOT / "tests" / "test_ryos.py",
-                  self._ROOT / "tests" / "gui_smoke.py"]
+        files += sorted((self._ROOT / "tests").glob("*.py"))
         return [p for p in files if "__pycache__" not in p.parts and p.exists()]
 
     def test_files_found(self):
@@ -2866,119 +2757,6 @@ class TestComputeHint(unittest.TestCase):
     def test_unnamed_group_maps_to_other_label_and_none_target(self):
         hint = compute_hint("x", "A", [("", 2)])
         self.assertEqual(hint.links, [HintLink("Other", None, 2)])
-
-
-# ---------------------------------------------------------------------------
-# Search filter — real-Tk pack-visibility integration test.
-#
-# The rest of this module runs headless with tkinter mocked (see the top of
-# the file), which cannot exercise real pack()/pack_forget()/winfo_manager().
-# This test therefore runs the reproduction in a *subprocess* with a fresh,
-# unmocked interpreter so real widgets are created. It builds real ScriptCards
-# plus an empty-favorites section whose only child is an empty-state placeholder
-# label, then drives the real RYOSApp._apply_search_filter /
-# _update_section_visibility bound methods and asserts pack visibility.
-#
-# Regression target: cards/placeholders are selected with hasattr(c, "_name"),
-# but EVERY Tk widget has an internal "_name" (its widget path, e.g. "!label"),
-# so empty-state placeholder labels are wrongly treated as cards and matched by
-# substring against that path name. As a result an empty section's placeholder
-# and header flip visibility depending on whether the query text happens to be a
-# substring of "!label" (e.g. "la", "e", "l" keep them; "deploy"/"zzqzz" hide
-# them). The fix identifies cards by isinstance(ScriptCard/PipelineCard).
-# ---------------------------------------------------------------------------
-
-_SEARCH_FILTER_DRIVER = r'''
-import sys, tempfile
-from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-try:
-    import tkinter as tk
-    _probe = tk.Tk(); _probe.destroy()
-except Exception:
-    sys.exit(77)   # no display / Tk unavailable -> caller skips
-
-import ryos.ui.app as appmod
-from ryos.db import ScriptDB
-
-tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False); tmp.close()
-seed = ScriptDB(Path(tmp.name))
-seed.create_group("Alpha")
-seed.create_group("Beta")
-seed.add("Deploy Prod", "deploy.py", "", "", "Alpha")  # matches "deploy"
-seed.add("Runner",      "run.py",    "", "", "Beta")   # does NOT match "deploy"/"la"
-
-appmod.ScriptDB = lambda *a, **k: ScriptDB(Path(tmp.name))
-_real_load = appmod._load_settings
-appmod._load_settings = lambda: {**_real_load(), "auto_check_update": False,
-                                 "start_minimized": False, "remember_last_group": False}
-
-app = appmod.RYOSApp()
-app.withdraw()
-app._active_group = None          # "All" view: every group is rendered
-app._refresh_cards()
-app.update()
-
-def run_query(text):
-    app._search_ph[0] = False
-    app._search_var.set(text)
-    app.update_idletasks()
-
-def wrapper_visible(gname):
-    for w in app._group_wrappers:
-        if getattr(w, "_grp_name", None) == gname:
-            return w.winfo_manager() == "pack"
-    return None
-
-def visible_script_names():
-    return sorted(c._name for c in app._cards if c.winfo_manager() == "pack")
-
-ok = True
-
-# 1) Real cards + their group blocks filter live: query "deploy" keeps only the
-#    Alpha group (and its Deploy Prod card); Beta must hide entirely.
-run_query("deploy")
-if visible_script_names() != ["Deploy Prod"]:
-    ok = False
-if wrapper_visible("Alpha") is not True or wrapper_visible("Beta") is not False:
-    ok = False
-
-# 2) Regression: "la" matches no real card. Beta must STILL hide. The bug is that
-#    "la" is a substring of the internal Tk widget name "!label" of the empty
-#    Favorites/Pipelines placeholder labels, which are mis-detected as cards, so
-#    Beta's group block wrongly stays visible.
-run_query("la")
-if visible_script_names() != []:
-    ok = False
-if wrapper_visible("Alpha") is not False or wrapper_visible("Beta") is not False:
-    ok = False
-
-app.destroy()
-sys.exit(0 if ok else 1)
-'''
-
-
-class TestSearchFilterRefreshRealTk(unittest.TestCase):
-    """Real-Tk pack-visibility of the search filter, run in a subprocess so the
-    module-level tkinter mock does not apply. Skips when Tk cannot initialise."""
-
-    def test_non_matching_group_hides_regardless_of_query_text(self):
-        repo_root = str(Path(__file__).resolve().parents[1])
-        proc = subprocess.run(
-            [sys.executable, "-c", _SEARCH_FILTER_DRIVER, repo_root],
-            capture_output=True, text=True,
-        )
-        if proc.returncode == 77:
-            self.skipTest("Tk not available for real-widget test")
-        self.assertEqual(
-            proc.returncode, 0,
-            msg=("search filter mis-detects empty-state placeholder labels as "
-                 "cards (hasattr(_name)); a group with no real match stays "
-                 f"visible for queries like 'la'. stdout={proc.stdout!r} "
-                 f"stderr={proc.stderr!r}"),
-        )
-
-
 
 
 class TestComputeInsertion(unittest.TestCase):
@@ -3115,9 +2893,10 @@ class TestScriptDBDetached(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Per-item highlight colours (card label tint)
 # ---------------------------------------------------------------------------
-from ryos.ui.theme import (  # noqa: E402
-    HIGHLIGHT_LABELS, HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, highlight_fg,
-)
+from ryos.cardmenu import HIGHLIGHTS as HIGHLIGHT_LABELS  # noqa: E402
+from ryos.themes import HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS  # noqa: E402
+# The shared rule both menus and cards use (Tk's highlight_fg wrapped it).
+from ryos.themes import readable_highlight as highlight_fg  # noqa: E402
 
 
 class TestLabelColorDB(unittest.TestCase):
@@ -3246,35 +3025,7 @@ class TestHighlightPalette(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Tray status (live tooltip + running-job menu)
 # ---------------------------------------------------------------------------
-import ryos.tray as tray_mod  # noqa: E402
-from ryos.tray import MENU_LABEL_MAX, TIP_MAX, TrayIcon, _ellipsize, tray_title  # noqa: E402
-
-
-class _StubPystray:
-    """Minimal stand-in for the pystray module.
-
-    CI installs no project dependencies, so pystray is genuinely absent there.
-    Without this stub _build_menu() raises, TrayIcon's best-effort guard
-    swallows it, and every menu assertion below quietly passes on a developer
-    machine while failing on a clean runner. Stubbing makes the menu path
-    exercise the same code everywhere; TestTrayWithoutPystray covers the
-    absent-package behaviour explicitly.
-    """
-
-    class Menu:
-        SEPARATOR = "---"
-
-        def __init__(self, *items):
-            self.items = list(items)
-
-        def __iter__(self):
-            return iter(self.items)
-
-    class MenuItem:
-        def __init__(self, text, action=None, default=False):
-            self.text = text
-            self.action = action
-            self.default = default
+from ryos.traypolicy import MENU_LABEL_MAX, TIP_MAX, _ellipsize, tray_title  # noqa: E402
 
 
 class TestTrayTitle(unittest.TestCase):
@@ -3328,149 +3079,12 @@ class TestTrayTitle(unittest.TestCase):
                 self.assertLessEqual(len(_ellipsize("y" * 100, n)), n)
 
 
-class _FakeIcon:
-    """Stands in for pystray.Icon: records what the tray pushes at it."""
-
-    def __init__(self):
-        self.title = None
-        self.menu = None
-        self.menu_writes = 0
-        self.title_writes = 0
-
-    def __setattr__(self, name, value):
-        if name == "title" and "title" in self.__dict__:
-            self.__dict__["title_writes"] += 1
-        if name == "menu" and "menu" in self.__dict__:
-            self.__dict__["menu_writes"] += 1
-        self.__dict__[name] = value
-
-
-class TestTrayJobSnapshot(unittest.TestCase):
-    """set_jobs() is the only thing that crosses the UI/pystray boundary."""
-
-    def setUp(self):
-        patcher = mock.patch.object(tray_mod, "pystray", _StubPystray)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.tray = TrayIcon(on_show=lambda: None, on_exit=lambda: None,
-                             icon_path=Path("icon.ico"), title="RYOS v9.9.9",
-                             on_job=lambda jid: self.clicked.append(jid))
-        self.clicked = []
-        self.icon = _FakeIcon()
-        self.tray._icon = self.icon
-
-    def test_menu_lists_jobs_above_the_standing_entries(self):
-        # Guards the stub itself: if the menu never gets built, the write
-        # assertions elsewhere in this class would pass vacuously.
-        self.tray.set_jobs([(1, "build"), (2, "test")])
-        labels = [getattr(i, "text", i) for i in self.icon.menu]
-        self.assertEqual(labels[:2], ["build", "test"])
-        self.assertIn("Show RYOS", labels)
-        self.assertIn("Exit", labels)
-
-    def test_first_snapshot_updates_tooltip_and_menu(self):
-        self.tray.set_jobs([(1, "build")])
-        self.assertIn("build", self.icon.title)
-        self.assertEqual(self.icon.menu_writes, 1)
-
-    def test_identical_snapshot_is_skipped(self):
-        # Pipelines re-push on every step; an unchanged label must not turn
-        # into a stream of Win32 calls.
-        self.tray.set_jobs([(1, "build")])
-        before = (self.icon.menu_writes, self.icon.title_writes)
-        self.tray.set_jobs([(1, "build")])
-        self.tray.set_jobs([(1, "build")])
-        self.assertEqual((self.icon.menu_writes, self.icon.title_writes), before)
-
-    def test_changed_label_updates_again(self):
-        self.tray.set_jobs([(1, "Step 1/3")])
-        self.tray.set_jobs([(1, "Step 2/3")])
-        self.assertIn("Step 2/3", self.icon.title)
-
-    def test_clearing_jobs_restores_the_idle_title(self):
-        self.tray.set_jobs([(1, "build")])
-        self.tray.set_jobs([])
-        self.assertEqual(self.icon.title, "RYOS v9.9.9")
-
-    def test_snapshot_is_copied_not_aliased(self):
-        # The UI thread keeps mutating its own lists; the tray must not see it.
-        live = [(1, "build")]
-        self.tray.set_jobs(live)
-        live.append((2, "test"))
-        self.assertEqual(self.tray._jobs, [(1, "build")])
-
-    def test_job_handler_reports_the_right_id(self):
-        self.tray.set_jobs([(7, "build"), (9, "test")])
-        self.tray._job_handler(9)()
-        self.assertEqual(self.clicked, [9])
-
-    def test_menu_refresh_failure_is_swallowed(self):
-        # The tray is best-effort: a pystray error must never reach the UI.
-        class _Boom(_FakeIcon):
-            def __setattr__(self, name, value):
-                if name == "menu" and "menu" in self.__dict__:
-                    raise RuntimeError("pystray exploded")
-                super().__setattr__(name, value)
-        self.tray._icon = _Boom()
-        self.tray.set_jobs([(1, "build")])   # must not raise
-
-    def test_set_jobs_without_a_started_icon_is_safe(self):
-        self.tray._icon = None
-        self.tray.set_jobs([(1, "build")])
-        self.assertEqual(self.tray._jobs, [(1, "build")])
-
-    def test_stop_resets_the_snapshot(self):
-        self.tray.set_jobs([(1, "build")])
-        self.tray._icon = None              # mimic an already-stopped icon
-        self.tray.stop()
-        self.assertEqual(self.tray._jobs, [])
-        self.assertEqual(self.tray._title, "RYOS v9.9.9")
-
-
 class TestTrayMenuLabels(unittest.TestCase):
     """Menu entries are built from the snapshot, not from live Job objects."""
 
     def test_long_job_labels_are_clamped(self):
         self.assertLessEqual(len(_ellipsize("Z" * 300, MENU_LABEL_MAX)),
                              MENU_LABEL_MAX)
-
-
-class TestTrayWithoutPystray(unittest.TestCase):
-    """pystray is an optional dependency; nothing may break when it is absent.
-
-    This is the environment CI actually runs in -- no project dependencies are
-    installed -- so the degraded path deserves to be pinned rather than left to
-    a swallowed exception nobody sees.
-    """
-
-    def setUp(self):
-        for attr, value in (("pystray", None), ("_AVAILABLE", False)):
-            patcher = mock.patch.object(tray_mod, attr, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        self.tray = TrayIcon(on_show=lambda: None, on_exit=lambda: None,
-                             icon_path=Path("icon.ico"), title="RYOS v9.9.9")
-
-    def test_not_available(self):
-        self.assertFalse(self.tray.available)
-
-    def test_start_is_a_noop(self):
-        self.tray.start()
-        self.assertIsNone(self.tray._icon)
-
-    def test_set_jobs_does_not_raise(self):
-        self.tray.set_jobs([(1, "build")])
-        self.assertEqual(self.tray._jobs, [(1, "build")])
-
-    def test_tooltip_is_still_computed(self):
-        # The tooltip needs no pystray, so the snapshot stays correct even
-        # when the menu cannot be built.
-        self.tray.set_jobs([(1, "build")])
-        self.assertIn("build", self.tray._title)
-
-    def test_stop_is_a_noop(self):
-        self.tray.stop()
-        self.assertEqual(self.tray._jobs, [])
 
 
 # ---------------------------------------------------------------------------
@@ -3601,40 +3215,6 @@ class TestAnchoredPosition(_MultiMonitor):
     def test_oversized_popup_still_lands_on_the_right_monitor(self):
         x, y = anchored_position(400, 1500, 4000, 4000, self.BELOW, 12, 12)
         self.assertEqual((x, y), (0, 1080))
-
-
-class TestPlacementCallSites(unittest.TestCase):
-    """No placement path may go back to Tk's primary-monitor screen metrics.
-
-    winfo_screenwidth()/winfo_screenheight() are what caused dialogs to open on
-    the wrong display, so their few remaining uses are pinned here: an
-    unreviewed new one should fail this test rather than ship the bug again.
-    """
-
-    ROOT = Path(__file__).resolve().parents[1] / "ryos"
-    # file -> why this use is legitimate
-    ALLOWED = {
-        "ui/app.py": "provisional pre-settings size, refined by _apply_initial_placement",
-        "ui/placement.py": "the documented non-Windows fallback",
-        "ui/theme.py": "the documented non-Windows fallback in _apply_snap_corner",
-    }
-
-    def test_no_unreviewed_screen_metric_uses(self):
-        offenders = {}
-        for path in sorted(self.ROOT.rglob("*.py")):
-            rel = path.relative_to(self.ROOT).as_posix()
-            src = path.read_text(encoding="utf-8")
-            if "winfo_screenwidth" in src or "winfo_screenheight" in src:
-                if rel not in self.ALLOWED:
-                    offenders[rel] = src.count("winfo_screen")
-        self.assertEqual(offenders, {},
-                         "use ryos.ui.placement instead of Tk screen metrics")
-
-    def test_allowlist_has_no_stale_entries(self):
-        for rel in self.ALLOWED:
-            src = (self.ROOT / rel).read_text(encoding="utf-8")
-            with self.subTest(file=rel):
-                self.assertIn("winfo_screen", src)
 
 
 # ---------------------------------------------------------------------------
@@ -4933,11 +4513,11 @@ class TestRowWidthsArePinned(unittest.TestCase):
 class TestPipelineEditorUnpacksDefensively(unittest.TestCase):
     """The editor's step rows must be sliced, not unpacked whole.
 
-    The GUI smoke test covers this behaviourally, but that only runs under
-    Xvfb; this catches a reintroduction in the headless suite too.
+    tests/qt_smoke.py covers this behaviourally; this catches a
+    reintroduction in the headless suite too.
     """
 
-    SRC = Path(__file__).resolve().parents[1] / "ryos" / "ui" / "pipeline.py"
+    SRC = Path(__file__).resolve().parents[1] / "ryos" / "qtui" / "pipeline.py"
 
     def test_no_fixed_arity_unpack_of_a_step_row(self):
         tree = ast.parse(self.SRC.read_text(encoding="utf-8"))
@@ -5885,8 +5465,7 @@ class TestDisabledState(unittest.TestCase):
 # nowhere to run from, so the ink is chosen between two fixed poles instead)
 # ---------------------------------------------------------------------------
 
-from ryos.ui.cards import run_button_style  # noqa: E402
-from ryos.ui.theme import C  # noqa: E402
+from ryos import cardstyle  # noqa: E402
 
 
 def _all_theme_seeds():
@@ -5968,44 +5547,26 @@ class TestRunFillInk(unittest.TestCase):
 
 class TestRunButtonInkIsWired(unittest.TestCase):
     """Palette-level correctness (TestRunFillInk) is not enough on its own --
-    run_button_style() has to actually hand the ink to the widget layer. This
-    is the class of bug CLAUDE.md calls out: the accessor's shape changed and
-    a call site silently kept unpacking the old one."""
-
-    def setUp(self):
-        self._saved_C = dict(C)
-
-    def tearDown(self):
-        C.clear()
-        C.update(self._saved_C)
-
-    def test_run_button_style_arity_is_pinned(self):
-        # Pinned, not >=: widening again must be a deliberate edit here AND at
-        # both fixed-width unpacks in cards.py, which Tk-mocked tests cannot
-        # catch. Same reasoning as TestRowWidthsArePinned.
-        C.clear()
-        C.update(build_palette(SEEDS["light"]))
-        for status in (None, "ok", "error"):
-            with self.subTest(status=status):
-                self.assertEqual(len(run_button_style(status)), 6)
+    the Run button has to be drawn from the right keys. The Qt card paints
+    cardstyle.run_button()'s fg on bg, and on hover ink_on(hover fill)."""
 
     def test_run_button_ink_clears_aa_for_every_theme_and_status(self):
         for name, seed in _all_theme_seeds().items():
-            C.clear()
-            C.update(build_palette(seed))
+            pal = build_palette(seed)
             for status in (None, "ok", "error"):
                 with self.subTest(theme=name, status=status):
-                    _text, fg, afg, bg, hover, _tip = run_button_style(status)
+                    spec = cardstyle.run_button(status)
+                    fg, bg = pal[spec.fg_key], pal[spec.bg_key]
                     self.assertGreaterEqual(
                         contrast_ratio(fg, bg), ON_FILL_MIN_RATIO,
                         f"{name}/{status}: run button fg={fg} on bg={bg}")
-                    # The hovered ink is the whole reason active_fg exists:
-                    # the retry state hovers from a mid red to a near-black
-                    # one, and dropping it silently gives 2.64:1 on the dark
-                    # themes.
+                    # The retry state hovers from a mid red to a near-black
+                    # one; the hovered ink is chosen for that fill.
+                    hover = pal[spec.hover_key]
+                    ink = ink_on(pal[spec.hover_fg_key])
                     self.assertGreaterEqual(
-                        contrast_ratio(afg, hover), ON_FILL_MIN_RATIO,
-                        f"{name}/{status}: hovered ink={afg} on hover={hover}")
+                        contrast_ratio(ink, hover), ON_FILL_MIN_RATIO,
+                        f"{name}/{status}: hovered ink={ink} on hover={hover}")
 
     def test_builtin_palettes_carry_legible_ink_verbatim(self):
         # BUILTIN_THEMES["light"|"dark"] come straight from REFERENCE, NOT
@@ -6039,10 +5600,6 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
     EXCLUDED = {
         "ryos/__init__.py": "two lines, just __version__",
         "ryos/__main__.py": "thin entry point",
-        "ryos/ui/app.py": "widget-driven; Tk's dynamic API false-positives",
-        "ryos/ui/dialogs.py": "widget-driven; same",
-        "ryos/ui/cards.py": "widget-driven; same",
-        "ryos/ui/theme_editor.py": "widget-driven; same",
         "ryos/startup.py": "Windows-only (winreg); fails --platform linux, "
                            "which is where the typecheck job runs",
         "ryos/qtui/widgets.py": "imports PySide6, an optional dependency the "
@@ -6781,30 +6338,12 @@ class TestMarquee(unittest.TestCase):
         with self.assertRaises(ValueError):
             marquee.pass_steps(100, speed=0)
 
-    def test_the_tk_widget_takes_its_constants_from_here(self):
-        # Checked in the source rather than on the class: this suite mocks
-        # tkinter, so ScrollingLabel subclasses a MagicMock and attribute
-        # lookup falls through to it rather than finding the real values.
-        root = Path(__file__).resolve().parents[1]
-        src = (root / "ryos/ui/widgets.py").read_text(encoding="utf-8")
-        for const in ("IDLE_MS", "SPEED", "TICK_MS", "GAP"):
-            with self.subTest(const=const):
-                self.assertIn(f"marquee.{const}", src,
-                              f"ScrollingLabel hardcodes {const} instead of "
-                              f"taking it from ryos.marquee")
-
-    def test_neither_front_end_reimplements_the_maths(self):
-        # The point of the module is that there is one implementation. Both
-        # widgets must call it rather than inline the arithmetic again.
-        root = Path(__file__).resolve().parents[1]
-        for rel in ("ryos/ui/widgets.py", "ryos/qtui/widgets.py"):
-            fp = root / rel
-            if not fp.exists():
-                continue
-            with self.subTest(module=rel):
-                src = fp.read_text(encoding="utf-8")
-                self.assertIn("marquee", src,
-                              f"{rel} does not use ryos.marquee")
+    def test_the_widget_does_not_reimplement_the_maths(self):
+        # The point of the module is one implementation: the widget calls it
+        # rather than inlining the arithmetic again.
+        src = (Path(__file__).resolve().parents[1]
+               / "ryos/qtui/widgets.py").read_text(encoding="utf-8")
+        self.assertIn("marquee", src, "qtui/widgets.py does not use ryos.marquee")
 
 
 class TestScriptFormValidation(unittest.TestCase):
@@ -7036,10 +6575,10 @@ class TestSettingsSchema(unittest.TestCase):
                 self.assertEqual(settings_schema.coerce(key, raw), want)
 
     def test_the_dialog_no_longer_hand_parses_these(self):
-        # The point of the module is one implementation; a reintroduced
-        # try/except in _save would silently diverge from the Qt form.
+        # The point of the module is one implementation; hand parsing in
+        # the form would silently diverge from it.
         src = (Path(__file__).resolve().parents[1]
-               / "ryos/ui/dialogs.py").read_text(encoding="utf-8")
+               / "ryos/qtui/dialogs.py").read_text(encoding="utf-8")
         self.assertIn("settings_schema.coerce", src)
         self.assertNotIn("max(100, int(", src)
         self.assertNotIn("max(400, int(", src)
@@ -7591,7 +7130,7 @@ class TestQuickRunBarRules(unittest.TestCase):
         # It used to be written out in four places in app.py; a reworded
         # placeholder in one of them would become an acceptable "file".
         root = Path(__file__).resolve().parents[1]
-        for rel in ("ryos/ui/app.py", "ryos/qtui/quickrun.py"):
+        for rel in ("ryos/qtui/quickrun.py",):
             with self.subTest(module=rel):
                 src = (root / rel).read_text(encoding="utf-8")
                 self.assertNotIn("Indexing files", src)
@@ -8183,7 +7722,7 @@ class TestUpdateStatus(unittest.TestCase):
 
 
 class TestTrayPolicy(unittest.TestCase):
-    """Tray contents and the window's life, shared by pystray and Qt trays."""
+    """Tray contents and the window's life (traypolicy), drawn by qtui/tray.py."""
 
     def test_menu_lists_jobs_then_show_and_exit(self):
         keys = [e.key for e in traypolicy.tray_menu([(3, "a"), (7, "b")])]
@@ -8474,12 +8013,6 @@ class TestGroupMenuRules(unittest.TestCase):
 
 
 class TestReadableHighlight(unittest.TestCase):
-    def test_toolkit_free_and_same_as_tk(self):
-        from ryos.ui.theme import highlight_fg
-        for key in cardmenu.HIGHLIGHTS:
-            self.assertEqual(themes.readable_highlight(key, "#1d232d"),
-                             highlight_fg(key, "#1d232d"))
-
     def test_needs_a_surface_and_a_known_key(self):
         self.assertIsNone(themes.readable_highlight("red"))
         self.assertIsNone(themes.readable_highlight("nope", "#000000"))

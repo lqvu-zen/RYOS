@@ -1,9 +1,7 @@
 """Turn a RYOS palette into a Qt stylesheet.
 
-This is the Qt half of what `ryos/ui/theme.py` does by hand. The Tk layer
-propagates the ``C`` dict to every widget at construction, so re-theming means
-walking and rebuilding the whole tree; Qt reads one stylesheet, so a theme
-change is a single `setStyleSheet` call.
+Qt reads one stylesheet, so a theme change is a single `setStyleSheet`
+call rather than a walk over every widget.
 
 The generator is a **pure function of the palette** — no Qt import, no widget,
 no display — so it is unit-testable exactly like `themes.build_palette()`,

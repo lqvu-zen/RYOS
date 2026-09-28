@@ -1,16 +1,13 @@
-"""Real-Qt checks for the PySide6 front-end being built alongside the Tk one.
+"""Real-Qt checks for the app's windows, dialogs and cards, one feature at a time.
 
-The Tk equivalent is `tests/gui_smoke.py`. This one is separate because
-PySide6 is an optional dependency: the app, the unit suite and CI all run
-without Qt installed, so this exits 0 with a notice when it is missing rather
-than failing.
+The unit suite runs without Qt, so this is where widgets are built for real:
+Qt gives real event synthesis (QTest) and real rendering, so checks here can
+assert on what is actually painted. It exits 0 with a notice if PySide6 is
+missing. tests/session_smoke.py drives a whole session instead.
 
 Run it with:
 
     uv run --no-project --with PySide6 python tests/qt_smoke.py
-
-Unlike the Tk harness, Qt gives real event synthesis (QTest) and real
-rendering, so checks here can assert on what is actually painted.
 """
 
 import sys
@@ -1184,9 +1181,9 @@ def check_small_dialogs(app):
 def check_quick_run(app):
     """The Qt Quick Run bar, end to end, with the real background index.
 
-    The Tk harness could never check the index's worker-thread hand-off: its
-    after(0, ...) raises when no mainloop is running, so check_quick_run_bar
-    in gui_smoke.py primes the index by hand. Here the index is built on its
+    The old Tk harness could never check the index's worker-thread hand-off:
+    its after(0, ...) raised when no mainloop was running, so it primed the
+    index by hand. Here the index is built on its
     real worker thread and the result has to arrive on the UI thread through
     MainThreadInvoker -- which is the part most likely to be silently broken,
     since the obvious QTimer.singleShot would simply never fire.

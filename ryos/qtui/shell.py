@@ -2066,7 +2066,9 @@ class MainWindow(QMainWindow):
             rec["status"] = (pipelines if kind == cardmenu.PIPELINE
                              else scripts).get(item_id)
         for page in [*self.card_lists.values(), *self.all_pages.values()]:
-            for card in page.cards:
+            # The favourite copies too: `cards` leaves them out, and a
+            # favourite's top card kept showing its old outcome.
+            for card in [*page.cards, *page.favorite_cards]:
                 if isinstance(card, PipelineCard):
                     card.set_last_status(pipelines.get(card.pipeline_id))
                 else:

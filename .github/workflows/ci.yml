@@ -26,38 +26,9 @@ jobs:
         run: uvx ruff check .
 
       - name: Run tests
-        # Tests mock tkinter and manage sys.path themselves, so no project
-        # sync (and no system Tk) is required to run them.
+        # The unit tests need no display and no Qt, and manage sys.path
+        # themselves, so no project sync is required to run them.
         run: uv run --no-project --with pytest pytest -q
-
-  gui-smoke:
-    name: gui-smoke (ubuntu, xvfb)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      # The headless unit suite mocks tkinter; this job runs the REAL RYOSApp on
-      # a virtual X display to cover the widget + JobController paths the mocked
-      # suite can't reach. System python carries _tkinter (via python3-tk); a
-      # venv inherits it and adds tkinterdnd2.
-      #
-      # pystray/pillow are deliberately NOT installed here. They are hard
-      # dependencies for users, but a tray needs a real desktop backend, and
-      # pulling one into a headless runner buys flakiness rather than
-      # coverage. The consequence is that no CI job exercises the tray with
-      # pystray present -- only the absent path, via TestTrayWithoutPystray.
-      # Tray changes need a manual check on Windows.
-      - name: Install Tk and Xvfb
-        run: sudo apt-get update && sudo apt-get install -y python3-tk python3-venv xvfb
-
-      - name: Create venv with system Tk and install tkinterdnd2
-        run: |
-          python3 -m venv .venv-gui
-          .venv-gui/bin/python -m pip install --upgrade pip
-          .venv-gui/bin/python -m pip install tkinterdnd2
-
-      - name: GUI smoke under Xvfb
-        run: xvfb-run -a .venv-gui/bin/python tests/gui_smoke.py
 
   qt-smoke:
     name: qt-smoke (ubuntu, offscreen)

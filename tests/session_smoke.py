@@ -455,11 +455,39 @@ def step_favourite_and_delete(s: Session) -> None:
     win = s.win
     s.card("Project", "Say hello").fav_button.click()
     s.pump(0.4)
-    favs = [c._name for c in win.card_lists["Project"].cards
-            if c.isVisibleTo(win) and getattr(c, "section", None) == "favorites"]
+    favs = [c._name for c in win.card_lists["Project"].favorite_cards
+            if c.isVisibleTo(win)]
     rec = next(r for r in s.db.list_all() if r[1] == "Say hello")
     if not rec[10]:
         problem("the favourite was not saved")
+    if favs != ["Say hello"]:
+        problem(f"Favorites shows {favs}, not the new favourite")
+
+    # A favourite has two cards; a run's outcome must reach both at once.
+    # The refresh walked only the group's own cards, so the copy at the top
+    # kept its old state (found on a screenshot).
+    # "Mark" last succeeded, so both its cards start as Run; pointed at a
+    # folder instead of a file, its next run fails.
+    from ryos import cardstyle
+    mark = s.script_id("Mark")
+    rec = s.db.get(mark)
+    s.db.update(mark, rec[1], rec[2], str(s.work), rec[4], rec[5])
+    s.card("Project", "Mark").fav_button.click()        # reloads the cards
+    s.pump(0.4)
+    page = win.card_lists["Project"]
+
+    def mark_states():
+        both = [c for c in (*page.favorite_cards, *page.cards) if c._name == "Mark"]
+        return [c.run_button.property("runState") for c in both]
+    if mark_states() != [cardstyle.RUN] * 2:
+        problem(f"before the run, Mark's two cards show {mark_states()}")
+    runs = len(s.runs(script_id=mark))
+    next(c for c in page.favorite_cards if c._name == "Mark").run_button.click()
+    s.wait_for(lambda: len(s.runs(script_id=mark)) > runs, "the favourite's run")
+    s.idle("favourite run")
+    s.pump(0.3)
+    if mark_states() != [cardstyle.RETRY] * 2:
+        problem(f"after a failed run, the favourite's two cards show {mark_states()}")
 
     cleanup = s.script_id("Cleanup")
     pid = next(p[0] for p in s.db.list_pipelines("Project") if p[1] == "Release")
@@ -603,7 +631,7 @@ def main() -> int:
         settings["snap_corner"] = "none"
         if args.visible:
             sys.path.insert(0, str(ROOT / "tests"))
-            from gui_smoke import smoke_screen
+            from smoke_screen import smoke_screen
             area = smoke_screen()
             if area:
                 settings["window_geometry"] = f"540x700+{area[0] + 40}+{area[1] + 40}"

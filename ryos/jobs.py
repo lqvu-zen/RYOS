@@ -1,17 +1,11 @@
 """Job state and helpers for running scripts and pipelines.
 
-The Job container and the pure elapsed-time formatter live here, separate from
-the Tkinter app, as the first step toward a self-contained job subsystem. Job
-holds references to Tk widgets/vars, but only as annotations, so this module
-does not import tkinter (``from __future__ import annotations`` keeps them lazy).
+The Job container and the pure elapsed-time formatter, free of any toolkit:
+the window keeps its own widgets for a job (see qtui/running.py).
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import tkinter as tk
 
 
 class Job:
@@ -65,9 +59,6 @@ class Job:
         self.group_failed_at: int | None = None
         self.group_labels: dict = {}       # token -> step name, for output prefixing
         self.group_size: int = 0
-        self.name_var: tk.StringVar | None = None
-        self.time_var: tk.StringVar | None = None
-        self.running_row: tk.Frame | None = None
 
     def active_processes(self) -> list:
         """Live handles for every in-flight step of this job (snapshot)."""
@@ -105,8 +96,8 @@ def split_by_capacity(requested: int, running: int, max_jobs: int) -> tuple[int,
 class JobRegistry:
     """Owns the active jobs and allocates job ids.
 
-    Pure bookkeeping — no Tk, no threads — so it can be unit-tested directly.
-    The Tkinter app delegates its in-memory job table to an instance of this.
+    Pure bookkeeping — no toolkit, no threads — so it can be unit-tested
+    directly. The job bridge (qtui/jobs.py) keeps its job table in one.
     """
 
     def __init__(self) -> None:

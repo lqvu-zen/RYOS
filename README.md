@@ -2,7 +2,7 @@
 
 A lightweight Windows desktop app for organizing and running your scripts from a clean, card-based UI. Save your Python, Node, Bash, PowerShell, Batch — or any executable — once, then run it with a single click. No terminal juggling, no remembering paths and arguments.
 
-Built with Python + Tkinter. Ships as a single standalone `.exe` (no Python required on the target machine) or runs straight from source.
+Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python required on the target machine) or runs straight from source.
 
 ![The RYOS main window](docs/tutorial/images/01-main-window.png)
 
@@ -57,9 +57,7 @@ The script database (`scripts.db`) is created next to the exe on first run.
 uv run ryos
 ```
 
-or double-click `run.bat`. `uv` provisions Python ≥3.10 in an isolated environment, installs the lone dependency (`tkinterdnd2`), and launches the app — no manual `pip install` or virtualenv needed. If `uv` isn't installed, run `install_uv.bat` or follow the [uv install guide](https://docs.astral.sh/uv/getting-started/installation/).
-
-> On Linux, Tkinter may need a system package (`sudo apt install python3-tk` on Debian/Ubuntu).
+or double-click `run.bat`. `uv` provisions Python ≥3.10 in an isolated environment, installs the lone dependency (`PySide6`, the Qt toolkit), and launches the app — no manual `pip install` or virtualenv needed. If `uv` isn't installed, run `install_uv.bat` or follow the [uv install guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 ## How to Use
 
@@ -156,7 +154,7 @@ Leave **Interpreter** blank for auto-detection, or type any custom command to ru
 The primary packager is **cx_Freeze** (produces a folder you distribute or zip):
 
 ```bash
-uv run --with cx_Freeze --with tkinterdnd2 python setup_cxfreeze.py build_exe
+uv run --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat
 ```
 
@@ -164,7 +162,7 @@ Output: `dist/cxfreeze/` containing `RYOS.exe` plus the required DLLs — distri
 
 ## Architecture
 
-Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script.
+Qt (PySide6) desktop app organized as the `ryos/` package. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script.
 
 | Concern | Module |
 |---------|--------|
@@ -174,9 +172,9 @@ Tkinter desktop app organized as the `ryos/` package. Entry point is `ryos.__mai
 | `ScriptDB` (all SQLite logic) | `ryos/db.py` |
 | `detect_interpreter`, `build_command` | `ryos/interpreter.py` |
 | Logging utility | `ryos/logger.py` |
-| Theme, widgets, dialogs, cards, pipelines, app | `ryos/ui/*` |
+| Window, dialogs, cards, tray, start-up (Qt) | `ryos/qtui/*` |
 
-Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` and drained by a recurring `after(80, ...)` timer on the main UI thread, so the worker never touches the Tk widgets directly.
+Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` and drained by a `QTimer` on the UI thread every 80 ms, so the worker never touches a widget directly.
 
 ## Documentation
 

@@ -1,8 +1,8 @@
 """Pure helpers for the Quick Run feature: path containment, file-index entry
 shape, suggestion ranking, and name resolution.
 
-Extracted from ryos.ui.app so this logic can be unit-tested without building
-the Tkinter application. None of it imports the UI layer. The "index" passed
+Kept out of the interface so this logic can be unit-tested without building
+a window. None of it imports the UI layer. The "index" passed
 to rank_suggestions is a list of entries in the shape produced by build_entry():
 
     (rel_str, name_lower, stem_lower, rel_lower)

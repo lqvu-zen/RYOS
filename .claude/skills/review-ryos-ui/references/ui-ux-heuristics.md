@@ -3,8 +3,8 @@
 A checklist tuned to RYOS: a single-window, mouse-and-keyboard, local desktop tool for running scripts. Use it to judge each screen. These are lenses, not laws — when a heuristic doesn't fit a screen, say why rather than forcing it. Skip anything irrelevant to the screen under review.
 
 ## 1. Visual hierarchy
-- The primary action on any screen should be the most prominent thing. On a script card that's **Run** (`C["btn_run_bg"]`, emerald). Secondary actions (⚙ modify, ▶+ run-with-param) should read as clearly secondary (`C["btn_neutral_bg"]`).
-- Card title vs. path: the script name should dominate; the path is supporting (`C["path_fg"]`, smaller). Check the two aren't competing.
+- The primary action on any screen should be the most prominent thing. On a script card that's **Run** (`btn_run_bg`, emerald). Secondary actions (⚙ modify, ▶+ run-with-param) should read as clearly secondary (`btn_neutral_bg`).
+- Card title vs. path: the script name should dominate; the path is supporting (`path_fg`, smaller). Check the two aren't competing.
 - Group tabs: the active tab must be unmistakably active. Check `_apply_tab_style` — active vs. inactive should differ in more than a hairline.
 
 ## 2. Spacing & alignment
@@ -51,4 +51,4 @@ A checklist tuned to RYOS: a single-window, mouse-and-keyboard, local desktop to
 - Title case / sentence case should be consistent across labels.
 
 ## What's load-bearing — don't break it
-Per `CLAUDE.md`: output flows worker-thread → `Queue` → main-loop `after(80,...)`; never write to the Text widget off-thread. The Quick Run bar re-packs with `pack(after=banner)` to preserve order. Process handle lives in `self.current_process`. A UI change must leave these intact.
+Per `CLAUDE.md`: output flows worker-thread → `Queue` → a `QTimer` on the UI thread; never touch a widget off-thread. Running processes live in `Job.processes`, stopped through `job.active_processes()`. The window's real effects (settings, toasts, update check, quitting) are injected — a UI change must not reach for them directly. A UI change must leave these intact.

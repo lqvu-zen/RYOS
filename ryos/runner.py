@@ -99,7 +99,7 @@ class OutputAction:
 
     Decodes the queue protocol into a flat decision so the drain loop in the UI
     is a straight translation to widget calls — and so the index handling is
-    unit-testable without Tkinter.
+    unit-testable without a display.
     """
     text: str | None        # text to append (None = append nothing)
     tag: str | None          # output tag: "info" / "stderr" / "ok" / None (stdout default)

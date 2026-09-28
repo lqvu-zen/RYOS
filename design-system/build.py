@@ -33,27 +33,19 @@ import json
 import re
 import struct
 import sys
-import unittest.mock as mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(__file__).resolve().parent / "project"
 sys.path.insert(0, str(ROOT))
 
-# HIGHLIGHT_SEEDS and HIGHLIGHT_MIN_RATIO are pure data, but they live in
-# ryos/ui/theme.py, which imports tkinter. Reading them by mocking tkinter --
-# the same trick tests/test_ryos.py uses -- keeps this script runnable on a
-# headless CI runner AND keeps the values single-sourced, which is the whole
-# point: a seed changed in the app must show up as a design-system diff.
-sys.modules.setdefault("tkinter", mock.MagicMock())
-sys.modules.setdefault("tkinter.ttk", mock.MagicMock())
-sys.modules.setdefault("tkinter.font", mock.MagicMock())
-
+# Every value below is read from the app's own modules, so a seed changed in
+# the app shows up as a design-system diff -- the whole point.
 from ryos.interpreter import _script_tag  # noqa: E402
 from ryos.themes import (  # noqa: E402
-    _rel_luminance, _shade, build_palette, contrast_ratio,
+    HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, _rel_luminance, _shade,
+    build_palette, contrast_ratio,
 )
-from ryos.ui.theme import HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS  # noqa: E402
 
 # --- which palettes ship -----------------------------------------------------
 # The artifact format caps a system at EIGHT colour themes, and RYOS ships
@@ -335,22 +327,22 @@ def _provenance() -> dict:
         "package": "ryos",
         "generator": "design-system/build.py",
         "paths": {
-            "tokens": ["ryos/themes.py", "ryos/ui/theme.py", "ryos/interpreter.py",
+            "tokens": ["ryos/themes.py", "ryos/qtui/stylesheet.py", "ryos/interpreter.py",
                        "ryos/presets/*.json", "theme-gallery/*.json"],
             "fonts": [],
             "assets": ["icon.ico", "make_icon.py"],
             "docs": ["README.md", "CLAUDE.md", "docs/ARCHITECTURE.md", "theme-gallery/"],
         },
         "components": {
-            "ScriptCard": "ryos/ui/cards.py", "PipelineCard": "ryos/ui/cards.py",
-            "FlatButton": "ryos/ui/theme.py", "IconButton": "ryos/ui/cards.py",
-            "RunButton": "ryos/ui/cards.py", "StatusBadge": "ryos/ui/cards.py",
-            "ScriptTypeBadge": "ryos/interpreter.py", "LabelHighlight": "ryos/ui/theme.py",
-            "Tooltip": "ryos/ui/widgets.py", "AppHeader": "ryos/ui/app.py",
-            "GroupTab": "ryos/ui/app.py", "SelectBar": "ryos/ui/app.py",
-            "StatusBar": "ryos/ui/app.py", "SearchField": "ryos/ui/app.py",
-            "QuickRunBar": "ryos/ui/app.py", "FormControls": "ryos/ui/theme.py",
-            "OutputPanel": "ryos/ui/app.py",
+            "ScriptCard": "ryos/qtui/cards.py", "PipelineCard": "ryos/qtui/cards.py",
+            "FlatButton": "ryos/qtui/stylesheet.py", "IconButton": "ryos/qtui/cards.py",
+            "RunButton": "ryos/qtui/cards.py", "StatusBadge": "ryos/qtui/cards.py",
+            "ScriptTypeBadge": "ryos/interpreter.py", "LabelHighlight": "ryos/themes.py",
+            "Tooltip": "ryos/qtui/widgets.py", "AppHeader": "ryos/qtui/shell.py",
+            "GroupTab": "ryos/qtui/shell.py", "SelectBar": "ryos/qtui/shell.py",
+            "StatusBar": "ryos/qtui/shell.py", "SearchField": "ryos/qtui/shell.py",
+            "QuickRunBar": "ryos/qtui/quickrun.py", "FormControls": "ryos/qtui/stylesheet.py",
+            "OutputPanel": "ryos/qtui/shell.py",
         },
     }
 
