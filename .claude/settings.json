@@ -11,7 +11,8 @@
       "Edit(/.claude/skills/ryos-tutorial-generator/**)",
       "Edit(/.claude/skills/run-ryos/**)",
       "Bash(PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen timeout 290 uv run --no-project --with PySide6 python tests/qt_smoke.py)",
-      "Bash(PYTHONIOENCODING=utf-8 timeout 200 uv run python tests/gui_smoke.py)"
+      "Bash(PYTHONIOENCODING=utf-8 timeout 200 uv run python tests/gui_smoke.py)",
+      "Bash(PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen uv run --no-project --with PySide6 python -c ' *)"
     ]
   }
 }
