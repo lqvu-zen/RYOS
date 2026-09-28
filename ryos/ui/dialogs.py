@@ -1257,13 +1257,8 @@ class AdvancedOptionsDialog(tk.Toplevel):
                    buttonbackground=C["card_bg"],
                    font=("Segoe UI", 9)).pack(side="left", padx=(8, 0))
 
-    @staticmethod
-    def _normalize_ext(token: str) -> str:
-        """Lowercase, dot-prefixed extension; '' for blank input."""
-        token = token.strip().lower()
-        if not token:
-            return ""
-        return token if token.startswith(".") else "." + token
+    # The rule is shared: the Qt form tidies through the same function.
+    _normalize_ext = staticmethod(settings_schema.normalize_ext)
 
     def _qr_refresh_list(self) -> None:
         self._qr_listbox.delete(0, "end")

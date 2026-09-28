@@ -6983,6 +6983,16 @@ class TestSettingsSchema(unittest.TestCase):
             settings_schema.coerce("quick_run_index_extensions", [".py"]),
             [".py"])
 
+    def test_indexed_extensions_are_tidied(self):
+        # Qt's form takes them comma-separated as typed; Tk's list editor
+        # tidied each one. Quick Run lowercases but adds no dot, so "py"
+        # indexed nothing.
+        self.assertEqual(
+            settings_schema.coerce("quick_run_index_extensions",
+                                   ["py", " .JS ", "", ".py", "Code-Workspace"]),
+            [".py", ".js", ".code-workspace"])
+        self.assertEqual(settings_schema.normalize_ext("  "), "")
+
     def test_a_list_setting_rejects_a_non_list(self):
         self.assertEqual(
             settings_schema.coerce("quick_run_index_extensions", "nope"),

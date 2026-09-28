@@ -14,6 +14,7 @@ to the documented default rather than propagating a bad value into settings.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from .settings import _SETTINGS_DEFAULTS
 
@@ -31,6 +32,15 @@ INT = "int"
 TEXT = "text"
 CHOICE = "choice"
 LIST = "list"
+
+
+def normalize_ext(token: str) -> str:
+    """A file extension as Quick Run's index compares it: lowercase, with its
+    dot. '' for a blank entry."""
+    token = str(token).strip().lower()
+    if not token:
+        return ""
+    return token if token.startswith(".") else "." + token
 
 
 @dataclass(frozen=True)
@@ -51,6 +61,9 @@ class Field:
     #: "Maximum parallel jobs" meant *no limit*, not "back to 10". Recorded
     #: rather than changed.
     empty: int | None = None
+    #: For a LIST: how each entry is tidied. Blank results are dropped, and
+    #: repeats after the first.
+    item: Callable[[str], str] | None = None
 
     @property
     def default(self):
@@ -107,8 +120,10 @@ FIELDS: tuple[Field, ...] = (
     # -- Quick Run ---------------------------------------------------------
     Field("quick_run_enabled", BOOL, "Enable the Quick Run bar", QUICK_RUN),
     Field("quick_run_autocomplete", BOOL, "Suggest as you type", QUICK_RUN),
+    # Tidied because the Qt form takes them comma-separated as typed, and the
+    # index needs the dot: "py" used to index nothing.
     Field("quick_run_index_extensions", LIST, "Indexed extensions", QUICK_RUN,
-          help="Blank indexes every file."),
+          help="Blank indexes every file.", item=normalize_ext),
     Field("quick_run_index_max_files", INT, "Maximum files indexed", QUICK_RUN,
           minimum=0, empty=0),
     Field("quick_run_index_ttl", INT, "Index lifetime (s)", QUICK_RUN,
@@ -156,9 +171,12 @@ def coerce(key: str, raw):
     if spec.kind == CHOICE:
         return raw if raw in spec.choices else spec.default
     if spec.kind == LIST:
-        if isinstance(raw, (list, tuple)):
+        if not isinstance(raw, (list, tuple)):
+            return spec.default
+        if spec.item is None:
             return list(raw)
-        return spec.default
+        tidied = (spec.item(entry) for entry in raw)
+        return list(dict.fromkeys(t for t in tidied if t))
     return "" if raw is None else str(raw)
 
 
