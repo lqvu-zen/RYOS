@@ -23,28 +23,33 @@ uv run ryos            # launches the app; double-clicking run.bat does the same
 ```
 
 `uv` reads `pyproject.toml`, builds an isolated environment, installs the lone
-runtime dependency (`tkinterdnd2`), and invokes the `ryos` console-script
-(`ryos.__main__:main`).
+runtime dependency (`PySide6`), and invokes the `ryos` console-script
+(`ryos.__main__:main`), which starts the Qt app.
 
 ## Run the tests and linter
 
 ```bash
-uv run --no-project --with pytest pytest -q   # ~160 tests, runs headless
+uv run --no-project --with pytest pytest -q   # ~1,000 tests, runs headless
 uvx ruff check .                              # lint
 ```
 
-The test suite mocks `tkinter`, so it runs without a display — the same way CI
-does. `--no-project` skips the project sync because the tests manage `sys.path`
-themselves and need no system Tk. Only `tests/test_ryos.py` is collected; the
-other files in `tests/` (e.g. `hello_python.py`, `slow_counter.py`) are sample
-scripts used as subprocess fixtures, not test modules — see the
-`[tool.pytest.ini_options]` block in `pyproject.toml`.
+The unit tests need no display — the same way CI runs them. `--no-project`
+skips the project sync because the tests manage `sys.path` themselves. Only
+`tests/test_ryos.py` is collected; the other files in `tests/` are the GUI
+smokes (`qt_smoke.py`, `session_smoke.py`, …, see `CLAUDE.md`) and a few tiny
+fixtures the unit tests run as subprocesses (`echo_args.bat`, `uv_hello.py`,
+`uv_runner.bat`) — see the `[tool.pytest.ini_options]` block in
+`pyproject.toml`.
 
-To seed a database with sample scripts for manual UI testing:
+To try the app by hand with sample scripts, generate an import file and load
+it with Options → Import config (it adds a "Samples" group; your data is
+otherwise untouched):
 
 ```bash
-uv run python tests/seed_db.py
+uv run python samples/make_import.py
 ```
+
+`samples/README.txt` says what each script is for.
 
 ## Project layout
 

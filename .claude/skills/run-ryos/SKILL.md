@@ -72,7 +72,7 @@ uv run python -m unittest discover -s tests -v
 - **auto_check_update**: The driver disables this via `s._SETTINGS_DEFAULTS["auto_check_update"] = False` before creating `RYOSApp`. Without this, the app may open a browser on first launch when an update is available.
 - **Pack order after `pack_forget()`**: Calling `frame.pack()` after `pack_forget()` appends to the end of the parent's pack list. The Quick Run bar avoids this by storing a `"banner"` reference and using `pack(after=banner)`.
 - **Tkinter must run on the main thread**: The driver uses `app.after()` to schedule all actions from within the event loop. Never call Tkinter widget methods directly from a background thread.
-- **`run-first` timing**: The 2500 ms wait after `card._run()` is enough for fast scripts. For slow scripts (e.g. `slow_counter.py`) the output panel will not be fully populated yet.
+- **`run-first` timing**: The 2500 ms wait after `card._run()` is enough for fast scripts. For slow scripts (e.g. `samples/slow_counter.py`) the output panel will not be fully populated yet.
 
 ## Troubleshooting
 

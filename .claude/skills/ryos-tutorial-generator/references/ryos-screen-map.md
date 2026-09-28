@@ -102,5 +102,6 @@ Use neutral, believable names so screenshots look real without exposing the user
 - Group: "Work".
 - Pipeline: "Deploy" with steps Build → Test → Publish.
 
-Or run `uv run tests/seed_db.py` for a ready-made set of Hello-world scripts in several
-languages.
+Or run `uv run python samples/make_import.py` and import `samples/ryos-samples.json`
+(Options → Import config) for a ready-made "Samples" group: ten scripts (Python, a .bat and a
+.ps1) and three pipelines. `samples/README.txt` describes them.

@@ -13,7 +13,7 @@ When it finishes, the card shows the result: a green **✓ OK** badge if it succ
 Click the **Output** bar at the bottom (or **Show Output**) to expand it. You'll see exactly what the script printed.
 
 ![The expanded Output panel showing a per-run tab, the command line that was run, the program's output, and a green exit-code line](images/03-run-output.png)
-*Screenshot pending — capture the expanded **Output** panel after running a short script (e.g. `args_echo`), showing the per-run tab, the echoed command, the output text, and the green `exit code 0` line.*
+*Screenshot pending — capture the expanded **Output** panel after running a short script (e.g. the "Say hello" sample), showing the per-run tab, the echoed command, the output text, and the green `exit code 0` line.*
 
 What you'll see in the panel:
 

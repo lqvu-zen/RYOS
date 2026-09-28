@@ -49,7 +49,8 @@ gates desktop control, but go a step further and pause to confirm at these point
 - **Before launching RYOS** — tell the user how you'll start it (`open_application`,
   `uv run ryos`, or `run.bat`) and wait for the OK, in case they want to launch it themselves
   or it's already open.
-- **Before running the seed script** — `uv run tests/seed_db.py` writes to their `scripts.db`.
+- **Before importing the samples** — `uv run python samples/make_import.py` writes an import
+  file; loading it (Options → Import config) adds a "Samples" group to their `scripts.db`.
   Ask first; offer the "add a sample script through the UI" alternative if they'd rather not
   modify their database.
 - **Before deleting or overwriting** anything in an existing `docs/tutorial/` (or other output
@@ -141,9 +142,9 @@ so they can fix the stale doc.
 
 6. **Have something to show.** Empty screens make a sad tutorial. You have two good options,
    and the second is usually better:
-   - Run the seed script on the user's machine (`uv run tests/seed_db.py` from the repo) to
-     populate example scripts — **only after asking**, since it writes to their `scripts.db` —
-     **or**
+   - Import the samples (`uv run python samples/make_import.py` from the repo, then Options →
+     Import config → `samples/ryos-samples.json`) for ten example scripts and three pipelines —
+     **only after asking**, since the import writes to their `scripts.db` — **or**
    - Just create a sample script or two *through the UI as the first documented steps* — the
      act of adding them IS the "Adding a script" page, so you get realistic content and the
      screenshots for that page in one move. Prefer this; it's honest and efficient.
