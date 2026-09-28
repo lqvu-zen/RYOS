@@ -112,7 +112,10 @@ class TestDetectInterpreter(unittest.TestCase):
         self.assertEqual(detect_interpreter("run.sh"), "bash")
 
     def test_powershell(self):
-        self.assertEqual(detect_interpreter("setup.ps1"), "powershell")
+        # Bypass for this one run: Windows' default policy refuses to run any
+        # .ps1, so plain "powershell file.ps1" failed on a fresh machine.
+        self.assertEqual(detect_interpreter("setup.ps1"),
+                         "powershell -ExecutionPolicy Bypass -File")
 
     def test_batch_no_interpreter(self):
         self.assertEqual(detect_interpreter("install.bat"), "")
@@ -1533,6 +1536,38 @@ class TestResolveInterpreter(unittest.TestCase):
         self.assertEqual(resolve_interpreter("x.py", "RYOS.exe"), sys.executable)
         self.assertEqual(resolve_interpreter("x.js", "/usr/local/bin/ryos.exe"), "node")
         self.assertEqual(resolve_interpreter("x.js", "ryos"), "node")
+
+    def test_old_powershell_defaults_run_under_bypass(self):
+        # Dropping a file and Quick Run store the detected interpreter, so
+        # scripts added before the fix hold "powershell"; the dialog offered
+        # "powershell -File". Both were refused by the default policy.
+        bypass = "powershell -ExecutionPolicy Bypass -File"
+        for stored in ("powershell", "powershell -File", "  PowerShell -file ",
+                       "powershell.exe", "powershell.exe -File"):
+            with self.subTest(stored=stored):
+                self.assertEqual(resolve_interpreter("x.ps1", stored), bypass)
+        # Anything else the user typed is theirs.
+        self.assertEqual(resolve_interpreter("x.ps1", "pwsh -File"), "pwsh -File")
+        self.assertEqual(resolve_interpreter("x.ps1", "powershell -NoProfile -File"),
+                         "powershell -NoProfile -File")
+        # And only for .ps1 files.
+        self.assertEqual(resolve_interpreter("x.txt", "powershell"), "powershell")
+
+    @unittest.skipUnless(sys.platform == "win32", "PowerShell execution policy is Windows")
+    def test_a_ps1_really_runs(self):
+        # Under the machine's own policy -- Restricted by default -- through
+        # the same path a run takes. It failed before the fix.
+        with tempfile.TemporaryDirectory() as d:
+            script = os.path.join(d, "hi.ps1")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write('Write-Output "ps1 ran with $($args -join \',\')"\n')
+            for stored in ("", "powershell"):
+                with self.subTest(stored=stored):
+                    cmd = build_command(script, "a b",
+                                        resolve_interpreter(script, stored))
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertIn("ps1 ran with a,b", r.stdout)
 
 
 class TestScriptTag(unittest.TestCase):

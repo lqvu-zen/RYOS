@@ -16,7 +16,7 @@ import json
 import os
 from dataclasses import dataclass, field
 
-from .interpreter import format_env_text, parse_env_text
+from .interpreter import POWERSHELL_RUN, format_env_text, parse_env_text
 from .quickrun import _is_inside
 
 from . import verdict
@@ -108,7 +108,9 @@ def param_options(default_params: str, presets) -> list[tuple[str, str, str]]:
 # Both dialogs draw these fields; what they offer, how a stored script loads
 # into them and how they are written back are decided here, once.
 
-INTERPRETER_CHOICES = ("cmd /c", "powershell -File", "pwsh -File", "python",
+# PowerShell's preset carries Bypass, as auto-detection does: without it the
+# default policy refuses the script (see interpreter.POWERSHELL_RUN).
+INTERPRETER_CHOICES = ("cmd /c", POWERSHELL_RUN, "pwsh -File", "python",
                        "node", "bash")
 INTERPRETER_HINT = "Leave blank for auto-detection, or pick a preset"
 TEMP_PARAM_LABEL = "Ask for a temporary parameter on each run (not saved)"

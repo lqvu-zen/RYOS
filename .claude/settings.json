@@ -9,7 +9,9 @@
       "Bash(rm -f args_echo.py env_info.py exit_error.py flood_output.py hello_bash.sh hello_batch.bat hello_cmd.cmd hello_node.js hello_powershell.ps1 hello_python.py infinite_loop.py seed_db.py slow_counter.py)",
       "Bash(rm -rf __pycache__)",
       "Edit(/.claude/skills/ryos-tutorial-generator/**)",
-      "Edit(/.claude/skills/run-ryos/**)"
+      "Edit(/.claude/skills/run-ryos/**)",
+      "Bash(PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen timeout 290 uv run --no-project --with PySide6 python tests/qt_smoke.py)",
+      "Bash(PYTHONIOENCODING=utf-8 timeout 200 uv run python tests/gui_smoke.py)"
     ]
   }
 }
