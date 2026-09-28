@@ -13,7 +13,12 @@
       "Bash(PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen timeout 290 uv run --no-project --with PySide6 python tests/qt_smoke.py)",
       "Bash(PYTHONIOENCODING=utf-8 timeout 200 uv run python tests/gui_smoke.py)",
       "Bash(PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen uv run --no-project --with PySide6 python -c ' *)",
-      "Bash(awk -F: '$1>2860 && $1<3700')"
+      "Bash(awk -F: '$1>2860 && $1<3700')",
+      "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python .claude/skills/run-ryos/driver.py main --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python tests/session_smoke.py)",
+      "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python tests/session_smoke.py --visible)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python tests/launch_smoke.py)",
+      "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python .claude/skills/run-ryos/driver.py output dialogs --theme dark)"
     ]
   }
 }
