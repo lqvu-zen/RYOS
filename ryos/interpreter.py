@@ -27,6 +27,18 @@ def _find_python() -> str:
     return sys.executable
 
 
+#: How a .ps1 runs. Windows' default execution policy (Restricted) refuses to
+#: run any script file, so plain "powershell file.ps1" failed on a machine
+#: nobody had configured. Bypass applies to this one process only: the
+#: machine's policy is unchanged, and the user chose to add the script.
+POWERSHELL_RUN = "powershell -ExecutionPolicy Bypass -File"
+
+#: What .ps1 scripts were stored with before: the old detected value (kept in
+#: the database by file drops and Quick Run) and the dialog's old preset.
+_OLD_POWERSHELL = {"powershell", "powershell -file",
+                   "powershell.exe", "powershell.exe -file"}
+
+
 def detect_interpreter(path: str) -> str:
     ext = Path(path).suffix.lower()
     mapping = {
@@ -37,7 +49,7 @@ def detect_interpreter(path: str) -> str:
         ".pl":  "perl",
         ".php": "php",
         ".sh":  "bash",
-        ".ps1": "powershell",
+        ".ps1": POWERSHELL_RUN,
         ".bat": "",
         ".cmd": "",
         ".exe": "",
@@ -76,10 +88,17 @@ def resolve_interpreter(path: str, stored: str) -> str:
     Also falls back to auto-detection when *stored* resolves to RYOS.exe
     itself (a database entry left over from running under a compiled build
     where sys.executable was RYOS.exe).
+
+    A .ps1 stored with one of the old PowerShell defaults runs as
+    `POWERSHELL_RUN` instead, so scripts added before that change work too;
+    the database is left as it is. Anything else typed is used as typed.
     """
     interp = stored.strip() if stored.strip() else detect_interpreter(path)
     if interp and Path(interp).stem.lower() == "ryos":
         interp = detect_interpreter(path)
+    if (Path(path).suffix.lower() == ".ps1"
+            and " ".join(interp.lower().split()) in _OLD_POWERSHELL):
+        interp = POWERSHELL_RUN
     return interp
 
 
