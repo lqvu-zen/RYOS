@@ -114,7 +114,7 @@ def pipeline_menu(*, favorite: bool, color: str | None) -> list[MenuItem]:
         _favorite_item(favorite),
         _highlight_menu(color),
         SEPARATOR,
-        MenuItem(EDIT, "⚙  Edit"),
+        MenuItem(EDIT, "✎  Edit"),
         MenuItem(SCHEDULE, "🕒  Schedule…"),
         MenuItem(HISTORY, "🕘  Run History…"),
         MenuItem(CLONE, "⧉  Clone"),

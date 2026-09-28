@@ -13,6 +13,7 @@ Every shape above may carry one extra trailing element, a step_token, appended
 only when the producer supplies one (concurrent pipeline steps); untagged
 callers keep the shorter tuple unchanged.
 """
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -22,6 +23,21 @@ from .interpreter import RunSpec, working_dir_for
 from .logger import get_logger
 
 _log = get_logger("runner")
+
+
+def child_env(env: dict | None, base=None) -> dict | None:
+    """The environment a run starts with: ``env`` (None = RYOS's own), plus
+    PYTHONUNBUFFERED=1 unless either already sets it.
+
+    stdout and stderr share one pipe, and Python block-buffers stdout into a
+    pipe but not stderr -- so a failing script's error lines arrived before
+    the output printed ahead of them. Unbuffered, they keep their order. A
+    value the machine or the script sets wins.
+    """
+    source = (os.environ if base is None else base) if env is None else env
+    if "PYTHONUNBUFFERED" in source:
+        return env
+    return {**source, "PYTHONUNBUFFERED": "1"}
 
 
 def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, step_token=None):
@@ -54,9 +70,7 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
             bufsize=1,
             text=True,
             cwd=spec.cwd,
-            # None inherits the parent environment, which is what Popen does by
-            # default — so a script with no overrides makes the identical call.
-            env=spec.env,
+            env=child_env(spec.env),
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
         )
         job.current_process = proc

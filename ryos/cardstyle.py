@@ -172,7 +172,9 @@ def last_run_text(iso: str | None) -> str:
     return iso.replace("T", " ")[:16]
 
 
-NO_STEPS = "No steps — click ⚙ to add scripts"
+#: The Edit button's glyph, and how the steps hint refers to it.
+EDIT_GLYPH = "✎"
+NO_STEPS = f"No steps — click {EDIT_GLYPH} to add scripts"
 
 
 def steps_summary(names) -> str:

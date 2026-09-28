@@ -576,44 +576,55 @@ class MainWindow(QMainWindow):
             self._close_output_tab(self.output_tabs.indexOf(pane))
 
     def _build_menu(self) -> None:
+        # File makes and moves things, Options changes how RYOS behaves, Help
+        # checks for updates. Everything once sat under Options, with Exit
+        # alone in File -- where people look for New and Import.
         bar = self.menuBar()
         file_menu = bar.addMenu("&File")
+        for label, slot in (("New &Script…", self.add_script),
+                            ("New &Pipeline…", self.new_pipeline),
+                            ("New &Group…", self.new_group)):
+            action = QAction(label, self)
+            action.triggered.connect(slot)
+            file_menu.addAction(action)
+        file_menu.addSeparator()
+        for label, slot in (("&Import config…", self.import_config),
+                            ("&Export all groups…", self.export_all)):
+            action = QAction(label, self)
+            action.triggered.connect(slot)
+            file_menu.addAction(action)
+        file_menu.addSeparator()
         quit_action = QAction("E&xit", self)
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
+
         options = bar.addMenu("&Options")
-        self.select_action = QAction(selection.ENTER_LABEL, self)
-        self.select_action.triggered.connect(
-            lambda: self.set_select_mode(not self.select_mode))
-        options.addAction(self.select_action)
-        options.addSeparator()
-        for label, slot in (("＋  New group…", self.new_group),
-                            ("📤  Export all groups", self.export_all),
-                            ("📥  Import config", self.import_config)):
-            action = QAction(label, self)
-            action.triggered.connect(slot)
-            options.addAction(action)
-        options.addSeparator()
-        self.delete_all_action = QAction("🗑  Delete All", self)
-        self.delete_all_action.triggered.connect(self.delete_all)
-        options.addAction(self.delete_all_action)
-        options.addSeparator()
-        self.options_action = QAction("⚙  Advanced options…", self)
+        self.options_action = QAction("&Options…", self)
         self.options_action.triggered.connect(self.open_options)
         options.addAction(self.options_action)
-        self.appearance_action = QAction("🎨  Appearance…", self)
+        self.appearance_action = QAction("&Appearance…", self)
         self.appearance_action.triggered.connect(self.open_appearance)
         options.addAction(self.appearance_action)
-        self.startup_action = QAction("Start with Windows", self)
+        self.startup_action = QAction("Start with &Windows", self)
         self.startup_action.setCheckable(True)
         self.startup_action.setChecked(self._startup.enabled())
         self.startup_action.toggled.connect(self.set_start_with_windows)
         options.addAction(self.startup_action)
         options.addSeparator()
-        self.update_action = QAction("🔔  Check for updates", self)
+        self.select_action = QAction(selection.ENTER_LABEL, self)
+        self.select_action.triggered.connect(
+            lambda: self.set_select_mode(not self.select_mode))
+        options.addAction(self.select_action)
+        options.addSeparator()
+        self.delete_all_action = QAction("🗑  Delete All", self)
+        self.delete_all_action.triggered.connect(self.delete_all)
+        options.addAction(self.delete_all_action)
+
+        help_menu = bar.addMenu("&Help")
+        self.update_action = QAction("Check for &updates", self)
         self.update_action.triggered.connect(
             lambda: self.check_for_updates(manual=True))
-        options.addAction(self.update_action)
+        help_menu.addAction(self.update_action)
 
     # -- cards -------------------------------------------------------------
     def set_cards(self, group_name: str, records, base_dir: str = "", *,
@@ -636,19 +647,29 @@ class MainWindow(QMainWindow):
         hcol = QVBoxLayout(holder)
         hcol.setContentsMargins(0, 0, 0, 0)
         hcol.setSpacing(2)
+        quick = (self._build_quick_run(group_name, base_dir)
+                 if base_dir and self._settings.get("quick_run_enabled", True)
+                 else None)
         if group_name:
             from .widgets import ElidedLabel
             banner = ElidedLabel(sections.banner_text(base_dir))
             banner.setObjectName("groupBanner" if base_dir else "groupBannerEmpty")
             banner.setCursor(Qt.CursorShape.PointingHandCursor)
             # A label, so a long folder is shortened instead of widening the
-            # page; clicking it opens the base-folder dialog, as in Tk.
+            # page; clicking it opens the base-folder dialog.
             banner.mousePressEvent = (
                 lambda _e, g=group_name: self.on_group_menu(g, cardmenu.BASE_DIR))
-            hcol.addWidget(banner)
+            # Quick Run shares the banner's row: on a row of its own it cost a
+            # line of every group page before the first card.
+            row = QHBoxLayout()
+            row.setSpacing(6)
+            row.addWidget(banner, 1)
+            if quick is not None:
+                row.addWidget(quick[0])
+            hcol.addLayout(row)
             self.group_banners[group_name] = banner
-        if base_dir and self._settings.get("quick_run_enabled", True):
-            hcol.addWidget(self._build_quick_run(group_name, base_dir))
+        if quick is not None:
+            hcol.addWidget(quick[1])
         hcol.addWidget(scroll, 1)
         index = self.group_tabs.addTab(
             holder, literal(label if label is not None else group_name))
@@ -858,12 +879,14 @@ class MainWindow(QMainWindow):
         for bar in self.quick_run_bars.values():
             bar.on_index_ready(base_dir)
 
-    def _build_quick_run(self, group_name: str, base_dir: str) -> QWidget:
-        box = QWidget()
-        col = QVBoxLayout(box)
-        col.setContentsMargins(0, 0, 0, 0)
+    def _build_quick_run(self, group_name: str, base_dir: str) -> tuple:
+        """(the toggle, the bar) -- the toggle sits beside the folder banner.
+
+        Neutral, not filled: filled near-black in the light themes, it was the
+        heaviest thing on the page, outweighing the green Run buttons.
+        """
         toggle = QPushButton("⚡ Quick Run")
-        toggle.setObjectName("dark")
+        toggle.setObjectName("quickRunToggle")
         bar = QuickRunBar(
             base_dir=base_dir, index=self._quick_run_index(),
             index_args=self._qr_index_args,
@@ -874,10 +897,8 @@ class MainWindow(QMainWindow):
             lambda: bar.close_bar() if bar.isVisible() else bar.open())
         bar.submitted.connect(
             lambda raw, g=group_name, b=base_dir: self.quick_run_submit(g, b, raw))
-        col.addWidget(toggle, 0, Qt.AlignmentFlag.AlignLeft)
-        col.addWidget(bar)
         self.quick_run_bars[group_name] = bar
-        return box
+        return toggle, bar
 
     def quick_run_submit(self, group_name: str, base_dir: str, raw: str, *,
                          choose=None, on_error=None) -> bool:

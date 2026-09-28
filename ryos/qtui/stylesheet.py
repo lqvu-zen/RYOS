@@ -17,13 +17,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..themes import (INK_LIGHT_POLE, REFERENCE, _readable_on, contrast_ratio,
-                      ink_on)
+from ..themes import (INK_LIGHT_POLE, REFERENCE, _readable_on, _rel_luminance,
+                      _shade, contrast_ratio, ink_on)
 
 
 #: Text needs 4.5:1 against its fill (WCAG AA); a glyph or a large
-#: selected-tab label needs 3:1.
-TEXT_MIN, GLYPH_MIN = 4.5, 3.0
+#: selected-tab label needs 3:1. A control's edge only has to show.
+TEXT_MIN, GLYPH_MIN, EDGE_MIN = 4.5, 3.0, 1.6
+
+
+def _edge(start: str, *surfaces: str, floor: float = EDGE_MIN) -> str:
+    """``start`` shaded away from ``surfaces`` until it shows on all of them."""
+    step = -0.06 if _rel_luminance(surfaces[0]) > 0.45 else 0.06
+    cur = start
+    for _ in range(30):
+        if all(contrast_ratio(cur, s) >= floor for s in surfaces):
+            break
+        cur = _shade(cur, step)
+    return cur
 
 
 def _legible(fg: str, *fills: str, floor: float = TEXT_MIN) -> str:
@@ -52,6 +63,9 @@ def drawn_colors(c: dict) -> dict:
         "tab_selected_fg": _legible(c["accent"], c["card_bg"], floor=GLYPH_MIN),
         # Gold stays gold, shaded until it reads on the wash.
         "star": _readable_on(c.get("bolt", "#FFD23F"), (c["accent_wash"],)),
+        # A neutral button's outline. In Light its fill is 1.01:1 against the
+        # window, so without an edge Save and Cancel read as plain text.
+        "control_edge": _edge(c["border"], c["bg"], c["card_bg"]),
     }
 
 
@@ -65,6 +79,7 @@ DRAWN_PAIRS = (
     ("status_fg", ("status_bg",), TEXT_MIN),
     ("tab_selected_fg", ("card_bg",), GLYPH_MIN),
     ("star", ("accent_wash",), GLYPH_MIN),
+    ("control_edge", ("bg", "card_bg"), EDGE_MIN),
 )
 
 
@@ -157,7 +172,7 @@ QLabel#cardPath {{ color: {c['path_fg']}; font-size: 9pt; }}
 QPushButton {{
     background: {c['btn_neutral_bg']};
     color: {d['neutral_fg']};
-    border: none;
+    border: 1px solid {d['control_edge']};
     border-radius: 3px;
     padding: 5px 12px;
 }}
@@ -174,10 +189,24 @@ QPushButton#primary {{ background: {c['accent']}; color: {d['primary_fg']}; }}
 QPushButton#primary:hover {{ background: {c['accent2']}; color: {d['primary_hover_fg']}; }}
 QPushButton#dark {{ background: {c['btn_dark_bg']}; color: {c['btn_fg']}; }}
 QPushButton#dark:hover {{ background: {c['btn_dark_hover']}; }}
+/* A dialog's default button (Save, OK) is its primary action, as + Script is
+   the window's; it follows focus between a dialog's buttons, as on Windows. */
+QPushButton:default {{ background: {c['accent']}; color: {d['primary_fg']}; }}
+QPushButton:default:hover {{ background: {c['accent2']}; color: {d['primary_hover_fg']}; }}
+QPushButton:default:disabled {{
+    background: {c['btn_disabled_bg']}; color: {c['btn_disabled_fg']};
+}}
+/* Filled buttons say what they are with the fill; the edge is for neutral ones. */
+QPushButton#run, QPushButton#stop, QPushButton#primary, QPushButton#dark,
+QPushButton:default {{ border: none; }}
 /* A card's button strip holds glyphs, not words (▶ ↻ ★ ⚙ ▸+): at the body
    size they drew a few pixels tall, and ↻ -- the retry -- was hard to make
    out. Tk draws them larger too. */
 QFrame#card QPushButton {{ font-size: 13pt; padding: 2px 0; }}
+/* Glyphs from Segoe UI Symbol first: left to font fallback, ⚙ came from the
+   colour-emoji font in its own pale lavender, ignoring the button's ink --
+   all but invisible on Light. */
+QFrame#card QPushButton {{ font-family: "Segoe UI Symbol", "Segoe UI"; }}
 /* A favourite's star is gold on the accent wash, as in Tk. */
 QFrame#card QPushButton#favOn {{
     color: {d['star']}; background: {c['accent_wash']};
@@ -207,6 +236,14 @@ QPlainTextEdit#output, QTextEdit#output {{
     font-family: Consolas, "Courier New", monospace;
 }}
 QTabBar#outputTabs::tab {{ background: {c['out_tabbar']}; }}
+/* Typed into, so it looks like the other fields -- not like the terminal. */
+QPlainTextEdit#envEdit {{
+    background: {c['card_bg']};
+    color: {c['name_fg']};
+    border: 1px solid {c['border']};
+    border-radius: 3px;
+    font-family: Consolas, "Courier New", monospace;
+}}
 
 /* --- inputs --------------------------------------------------------- */
 QLineEdit, QComboBox, QSpinBox {{

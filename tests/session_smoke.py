@@ -206,6 +206,13 @@ def make_files(work: Path) -> Path:
 def step_groups_and_scripts(s: Session, project: Path) -> None:
     win = s.win
 
+    # File is where New and Import are looked for; they all sat under Options.
+    menus = {m.title().replace("&", ""): [a.text().replace("&", "")
+                                          for a in m.actions() if a.text()]
+             for m in (a.menu() for a in win.menuBar().actions()) if m}
+    if not {"New Script…", "New Group…", "Import config…"} <= set(menus.get("File", [])):
+        problem(f"the File menu holds {menus.get('File')}")
+
     # A group with a base folder, made in the New Group dialog.
     def fill_group(dlg):
         dlg.e_name.setText("Project")
@@ -316,8 +323,14 @@ def step_failure_and_retry(s: Session) -> None:
 
 def step_stop(s: Session) -> None:
     slow = s.script_id("Slow")
+    # The Running list shows only while something runs; idle, it took a row
+    # to say "Nothing running." beside a status bar saying "Ready".
+    if s.win.running.isVisibleTo(s.win):
+        problem("the Running list shows with nothing running")
     s.card("Project", "Slow").run_button.click()
     s.wait_for(lambda: "tick 3" in s.output("Slow"), "the slow script to tick")
+    if not s.win.running.isVisibleTo(s.win):
+        problem("the Running list is hidden while a job runs")
     rows = list(s.win.running._rows.values())
     if len(rows) != 1:
         problem(f"{len(rows)} rows in Running for one job")
@@ -328,6 +341,8 @@ def step_stop(s: Session) -> None:
     s.idle("stop", timeout=10)
     if any(p.poll() is None for p in procs):
         problem("the stopped script's process is still alive")
+    if s.win.running.isVisibleTo(s.win):
+        problem("the Running list stays up after the job ended")
     if s.win.running.count != 0:
         problem("the stopped job is still listed as running")
     runs = s.runs(script_id=slow)

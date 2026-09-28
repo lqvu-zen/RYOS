@@ -298,11 +298,15 @@ def build_tokens() -> dict:
             ],
         },
         "radius": {
-            "note": ("RYOS is square. Tk frames have no corner radius and the app never "
-                     "fakes one; the single exception is the application icon, whose "
-                     "rounded rectangle is drawn at 24% of its canvas."),
+            "note": ("RYOS is near-square: small radii that sit with Windows 11's own "
+                     "controls, and no shadows. Separation still comes from a hairline, "
+                     "a fill or the rail, never from a corner. (The Tk interface was "
+                     "fully square; the Qt one keeps these, decided 2026-09-28.)"),
             "tokens": [
-                {"name": "radius-none", "value": "0", "usage": "Every card, button, badge, tab, banner, tooltip and panel. Separation comes from a hairline and a fill, never a corner."},
+                {"name": "radius-card", "value": "4px", "usage": "Script and pipeline cards, and the update banner."},
+                {"name": "radius-control", "value": "3px", "usage": "Buttons, text fields, drop-downs, spin boxes."},
+                {"name": "radius-badge", "value": "2px", "usage": "Type badges, tag badges and status chips on a card."},
+                {"name": "radius-none", "value": "0", "usage": "Tabs, the group banner, section headers, the output panel -- the page's structure, not its objects."},
                 {"name": "radius-icon", "value": "24%", "usage": "The application icon's rounded rectangle only (make_icon.py). Not a UI value."},
             ],
         },

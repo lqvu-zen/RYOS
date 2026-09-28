@@ -74,7 +74,10 @@ class RunningRow(QFrame):
 
 
 class RunningSection(QWidget):
-    """The list of running jobs, with its own empty state.
+    """The list of running jobs, shown only while there are any.
+
+    With nothing running it used to say so, on a row of its own between the
+    cards and the output bar -- next to a status bar already saying "Ready".
 
     `on_stop` is called with the job; stopping is the caller's business, and
     the row is removed when the job actually finishes rather than when the
@@ -92,13 +95,12 @@ class RunningSection(QWidget):
         self._col = QVBoxLayout(self)
         self._col.setContentsMargins(0, 0, 0, 0)
         self._col.setSpacing(3)
-        self._empty = QLabel("Nothing running.")
-        self._empty.setObjectName("cardPath")
-        self._col.addWidget(self._empty)
+        self._col.addStretch(0)
 
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS)
         self._timer.timeout.connect(self._tick)
+        self._refresh_empty()
 
     # -- rows --------------------------------------------------------------
     def add(self, job) -> RunningRow:
@@ -138,7 +140,7 @@ class RunningSection(QWidget):
 
     # -- internals ---------------------------------------------------------
     def _refresh_empty(self) -> None:
-        self._empty.setVisible(not self._rows)
+        self.setVisible(bool(self._rows))
 
     def _tick(self) -> None:
         for row in list(self._rows.values()):

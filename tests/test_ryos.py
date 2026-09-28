@@ -2311,6 +2311,25 @@ class TestRunSubprocess(unittest.TestCase):
         self.assertEqual(done[3], "error")
         self.assertIn("exit code 3", done[5])
 
+    def test_a_python_scripts_output_keeps_its_order(self):
+        # stdout and stderr share one pipe; Python buffered stdout into it but
+        # not stderr, so an error printed after a line arrived before it.
+        q = _queue.Queue()
+        code = ("import sys; print('first'); print('second', file=sys.stderr); "
+                "print('third')")
+        run_subprocess(q, self._job(), [sys.executable, "-c", code], "t", 1)
+        lines = [i[2].strip() for i in self._drain(q) if i[0] == "stdout"]
+        self.assertEqual(lines, ["first", "second", "third"])
+
+    def test_child_env_adds_unbuffered_unless_already_set(self):
+        from ryos.runner import child_env
+        self.assertEqual(child_env(None, base={"PATH": "x"}),
+                         {"PATH": "x", "PYTHONUNBUFFERED": "1"})
+        self.assertEqual(child_env({"A": "1"}), {"A": "1", "PYTHONUNBUFFERED": "1"})
+        # The machine's or the script's own value wins.
+        self.assertIsNone(child_env(None, base={"PYTHONUNBUFFERED": "0"}))
+        self.assertEqual(child_env({"PYTHONUNBUFFERED": "0"}), {"PYTHONUNBUFFERED": "0"})
+
     def test_sets_current_process(self):
         q = _queue.Queue()
         job = self._job()
@@ -6494,11 +6513,12 @@ class TestSettingsSchema(unittest.TestCase):
                 self.assertTrue(settings_schema.fields_for(tab))
 
     def test_only_internal_settings_are_left_out(self):
-        # A new user-facing setting should be added to the schema; these four
-        # are driven by their own controls or written by the app itself.
+        # A new user-facing setting should be added to the schema; these are
+        # driven by their own controls (the Appearance dialog owns theme,
+        # accent and the themes folder) or written by the app itself.
         uncovered = set(_SETTINGS_DEFAULTS) - set(settings_schema.BY_KEY)
         self.assertEqual(uncovered, {"accent_color", "last_group", "theme",
-                                     "window_geometry"})
+                                     "themes_dir", "window_geometry"})
 
     # -- coercion ----------------------------------------------------------
     def test_a_number_below_the_minimum_is_clamped(self):

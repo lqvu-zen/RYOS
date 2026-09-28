@@ -261,7 +261,10 @@ class ScriptCard(_CardBase):
                                        "Remove from favorites" if is_favorite
                                        else "Add to favorites",
                                        object_name="favOn" if is_favorite else "")
-        self.edit_button = self._button("⚙", "Edit")
+        # A pencil, the usual sign for Edit. It was ⚙, which Windows draws
+        # from its colour-emoji font in pale lavender -- all but invisible on
+        # Light -- and as a thin ring in Segoe UI Symbol.
+        self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
         self.param_button = self._button("▶+", "Run with parameter")
         self.run_button = self._run_button(last_status)
         for b in (self.fav_button, self.edit_button, self.param_button,
@@ -346,7 +349,10 @@ class PipelineCard(_CardBase):
                                        "Remove from favorites" if is_favorite
                                        else "Add to favorites",
                                        object_name="favOn" if is_favorite else "")
-        self.edit_button = self._button("⚙", "Edit")
+        # A pencil, the usual sign for Edit. It was ⚙, which Windows draws
+        # from its colour-emoji font in pale lavender -- all but invisible on
+        # Light -- and as a thin ring in Segoe UI Symbol.
+        self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
         self.spacer = self._spacer()          # where ▶+ sits on a script card
         self.run_button = self._run_button(last_status)
         for w in (self.fav_button, self.edit_button, self.spacer,

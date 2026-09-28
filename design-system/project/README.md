@@ -16,10 +16,13 @@ widget reads. Design to the token names below and your work themes itself.
 
 ## Principles
 
-**Flat, square, hairlined.** Nothing is rounded and nothing casts a shadow.
-Separation comes from a `hairline` border, a fill change, or a coloured `rail`
-down the left edge. `radius-none` is not a default you may override — it is the
-system. A rounded card in RYOS reads as foreign.
+**Flat, near-square, hairlined.** Nothing casts a shadow, and corners are
+small: `radius-card` (4px) on cards, `radius-control` (3px) on buttons and
+fields, `radius-badge` (2px) on badges and chips, and none on the page's
+structure — tabs, banners, section headers, panels. Separation comes from a
+`hairline` border, a fill change, or a coloured `rail` down the left edge,
+never from a corner. (The Tk interface was fully square; the small radii sit
+better beside Windows 11's own controls.)
 
 **Colour carries meaning, never decoration.** `accent` means *script*,
 `pipe_accent` means *pipeline*, `bolt` means *the app itself*, `error` means

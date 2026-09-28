@@ -124,7 +124,7 @@ class ScriptDialog(QDialog):
                     self._with_button(self.e_workdir, "Browse", self.browse_workdir))
 
         self.t_env = QPlainTextEdit()
-        self.t_env.setObjectName("output")
+        self.t_env.setObjectName("envEdit")
         self.t_env.setMaximumHeight(90)
         form.addRow(QLabel("Environment:"), self.t_env)
         env_hint = QLabel(scriptform.ENV_HINT)

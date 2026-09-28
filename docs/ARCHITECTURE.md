@@ -62,7 +62,7 @@ without a display, and that is still where new logic belongs.
 | `ryos/job_controller.py` | `JobController` — launch planning, pipeline sequencing (`run_next_pipeline_step`) and step completion (`handle_step_done`). UI-free; reaches the window only through injected callbacks. See `docs/adr/0001`. | yes |
 | `ryos/interpreter.py` | Extension→interpreter detection, command building, working-directory selection, RYOS.exe self-relaunch guard. | yes |
 | `ryos/settings.py` | App-data paths, defaults, tolerant load/save. | yes |
-| `ryos/settings_schema.py` | Declarative description of the 32 user-facing settings — kind, label, tab, bounds, per-item tidying — plus `coerce()`, which turns a form's raw text into a usable value and never raises. The Options dialog is generated from it. | yes |
+| `ryos/settings_schema.py` | Declarative description of the 31 settings the Options dialog shows — kind, label, tab, bounds, per-item tidying — plus `coerce()`, which turns a form's raw text into a usable value and never raises. The Options dialog is generated from it. | yes |
 | `ryos/notifications.py` | Windows toast + GitHub update check (`_parse_version`, `_fetch_latest_release`), and what a check's result means (`update_status`). | partial |
 | `ryos/logger.py` | Rotating-file logger setup for the `ryos` namespace, plus a global excepthook. | — |
 | `ryos/startup.py` | Windows "run at login" registry entry. `RYOS_NO_REGISTRY=1` blocks writes (the smokes set it). | — |

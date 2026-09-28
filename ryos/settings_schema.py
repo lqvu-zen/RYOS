@@ -19,12 +19,14 @@ from typing import Callable
 from .settings import _SETTINGS_DEFAULTS
 
 # Tabs, in the order the dialog shows them.
-APPEARANCE = "Appearance"
+# "Cards", not "Appearance": themes and the themes folder are the Appearance
+# dialog's, and a tab with the same name here made two places for one thing.
+CARDS = "Cards"
 STARTUP = "Startup & Window"
 OUTPUT = "Output"
 QUICK_RUN = "Quick Run"
 LOGGING = "Logging"
-TABS = (APPEARANCE, STARTUP, OUTPUT, QUICK_RUN, LOGGING)
+TABS = (CARDS, STARTUP, OUTPUT, QUICK_RUN, LOGGING)
 
 # Control kinds a front-end must be able to draw.
 BOOL = "bool"
@@ -76,16 +78,16 @@ class Field:
 
 
 #: Every setting the options dialog exposes. Settings not listed here are
-#: internal state the user never edits directly (window_geometry, last_group,
-#: theme and accent_color, which the Appearance tab drives through its own
-#: previewing controls rather than a plain field).
+#: internal state the user never edits directly (window_geometry, last_group),
+#: or belong to the Appearance dialog, which drives theme, accent_color and
+#: themes_dir through its own previewing controls rather than a plain field.
 FIELDS: tuple[Field, ...] = (
-    # -- Appearance --------------------------------------------------------
-    Field("compact_mode", BOOL, "Compact cards (denser layout)", APPEARANCE),
-    Field("card_size", CHOICE, "Card size", APPEARANCE,
+    # -- Cards ------------------------------------------------------------
+    Field("compact_mode", BOOL, "Compact cards (denser layout)", CARDS),
+    Field("card_size", CHOICE, "Card size", CARDS,
           choices=("small", "medium", "large")),
     Field("hover_preview", BOOL, "Show details on hover (compact mode)",
-          APPEARANCE),
+          CARDS),
     # -- Startup & window --------------------------------------------------
     Field("always_on_top", BOOL, "Keep window on top", STARTUP),
     Field("snap_corner", CHOICE, "Snap to corner", STARTUP,
@@ -136,7 +138,6 @@ FIELDS: tuple[Field, ...] = (
           choices=("DEBUG", "INFO", "WARNING", "ERROR")),
     Field("log_runs_output", BOOL, "Log script output too", LOGGING),
     Field("auto_check_update", BOOL, "Check for updates on start", LOGGING),
-    Field("themes_dir", TEXT, "Themes folder", APPEARANCE),
 )
 
 BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}
