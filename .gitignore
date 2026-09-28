@@ -20,6 +20,11 @@ tests/*
 !tests/real_data_smoke.py
 !tests/session_smoke.py
 
+# Samples: the scripts are tracked; the import file holds this machine's
+# absolute paths (samples/make_import.py writes it), and reports/ is output.
+samples/ryos-samples.json
+samples/reports/
+
 # Database
 scripts.db
 
