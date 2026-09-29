@@ -1,54 +1,104 @@
-# RYOS UI/UX heuristics
+# RYOS: what good looks like here
 
-A checklist tuned to RYOS: a single-window, mouse-and-keyboard, local desktop tool for running scripts. Use it to judge each screen. These are lenses, not laws — when a heuristic doesn't fit a screen, say why rather than forcing it. Skip anything irrelevant to the screen under review.
+The design language the app has settled on, and the rules that keep it
+consistent. Judge a screen against this first: it is what makes a finding
+RYOS-appropriate rather than generic. The lens files (`critique.md`,
+`accessibility.md`, `copy.md`, `design-system.md`) go deeper on one angle each.
 
-## 1. Visual hierarchy
-- The primary action on any screen should be the most prominent thing. On a script card that's **Run** (`btn_run_bg`, emerald). Secondary actions (⚙ modify, ▶+ run-with-param) should read as clearly secondary (`btn_neutral_bg`).
-- Card title vs. path: the script name should dominate; the path is supporting (`path_fg`, smaller). Check the two aren't competing.
-- Group tabs: the active tab must be unmistakably active. Check `_apply_tab_style` — active vs. inactive should differ in more than a hairline.
+RYOS is a single-window, mouse-and-keyboard desktop tool for running one's own
+scripts. People open it, find a script, press Run, watch the output, go back to
+work. Most visits are seconds long. Everything below serves that loop.
 
-## 2. Spacing & alignment
-- Consistent padding. RYOS uses `padx`/`pady` throughout — look for one-off values that break rhythm (e.g. a card with `pady=5` next to one with `pady=8`).
-- Cards should breathe: enough gap between cards that they read as distinct objects, not a wall.
-- Buttons in a row should align on a baseline and have even gaps. Watch for ragged right edges from mismatched `width=` values.
-- Dialogs: form labels and fields should align into columns, not stagger.
+## The design language
 
-## 3. Colour & contrast
-- Text-on-background contrast should be comfortable. The dark output panel (`out_bg` #1e1e1e) with `out_stdout` #d4d4d4 is good; check muted text like `path_fg` (#626975 on white) and `fg_on_dark_2` (#aaaaaa on navy) — muted is fine for secondary text but must stay legible.
-- Semantic colour should be consistent: green = run/success, red = stop/error, amber = warning/select-mode. Flag any place these are crossed.
-- Don't rely on colour alone to convey state — pair it with an icon or label (e.g. the ⏹ Stop button changes colour *and* enabled-look between idle and live; the status badges use ✓ / ▶ / ✕ glyphs alongside colour). This also helps colour-blind users.
+| Element | How it is drawn | Where |
+| --- | --- | --- |
+| Header bar | Theme's `header_bg`; bolt, name, the File/Options/Help menus, `+ Pipeline` `+ Group` (words) and `+ Script` (filled accent: the window's one primary button) | `shell.py` `_build_header`; `#appHeader` |
+| Group tabs | Pills: chosen = `name_fg` filled with `pill_fg` ink; others muted words; a dashed round `+` between the groups and All | `GroupTabBar`; `QTabBar#groupTabBar` |
+| Sections | One panel per section (`#sectionPanel`, `card_bg`, 1 px `border`, 4 px radius); rows split by hairlines; small ▾/▸ fold arrow and a capitalised label | `qtui/sections.py`, `ryos/sections.py` |
+| Rows (cards) | 3 px left rail (`accent`, pipelines `pipe_accent`); line 1: kind word, name, outcome; line 2: path or steps, and the preset as a small chip. At rest only Run (and a favourite's gold star) show; ✎, run-with and ☆ appear under the pointer in space kept for them | `qtui/cards.py`, rules `cardstyle.py` |
+| Compact rows | One line: star, name, kind, outcome, Run | same |
+| Favourites | A wrapping strip of pills: name, outcome dot, small Run | `CardList(flow=True)`, `QFrame#card[chip="true"]` |
+| Run | A green circle (`btn_run_bg`), ↻ on red (`error`) after a failure. The only filled thing on a row | `cardstyle.run_button()` |
+| Words for state | Kind, badges and outcome are coloured words ("● OK", "● Failed"), never filled chips | `_tag`, `_status_chip` |
+| Maximised | List on the left (compact rows), the chosen item on the right: name, Run/Retry, Run with…, Schedule…, Run history, preset chips, steps, facts, output | `qtui/detail.py`, rules `ryos/detail.py` |
+| Output | Dark terminal (`out_*` keys) under the list, or under the detail when maximised; a small pill tab per run | `shell.py` `OutputPane` |
 
-## 4. Affordances & feedback
-- Anything clickable should look clickable and react on hover. RYOS uses `cursor="hand2"` + a hover colour swap in `_flat_button`; check that custom widgets (canvas labels, tab wrappers) do the same.
-- Destructive actions (delete script/group, clone) should be distinguishable and ideally confirmed. Check context menus use `menu_danger` for destructive items.
-- Running feedback: when a script runs, the user must see it start (elapsed timer, RUNNING badge, output appearing). Stale or silent states are a usability bug.
-- Tooltips (via `widgets.Tooltip`) should explain icon-only buttons (⚙, ▶+, ⏹). An icon with no label and no tooltip is a guessing game.
+**Principles** (from `design-system/project/README.md`): flat, near-square,
+hairlined; one filled action per area; colour from the palette only; words
+before chips; quiet until needed.
 
-## 5. Empty & edge states
-- First-run / empty group: does the user see a helpful empty state ("No scripts yet — drag a file here or click +Script") or a blank void? Empty states are prime onboarding real estate.
-- Long content: long script names use `ScrollingLabel`; check long paths, long group names, and many cards don't break layout or overflow.
-- Error states: failed runs should be obvious (✕ Failed badge, `out_stderr` red) without hunting.
+## Heuristics
 
-## 6. Consistency
-- Buttons of the same role should look identical everywhere (all "create" buttons share `btn_create_bg`). Flag parallel styles doing the same job.
-- Typography: one family (`Segoe UI`), a small set of sizes/weights. Flag random font sizes.
-- Iconography: the same concept should use the same glyph across screens (don't use ▶ for run in one place and ► in another).
-- Corner radius, border weight, and elevation cues should be uniform across cards and dialogs.
+### 1. Hierarchy: one thing to press
 
-## 7. Layout & responsiveness (desktop sense)
-- The window resizes — content should reflow sanely, not clip or leave huge dead space. Check what happens narrow and wide.
-- Scrolling: the card area should scroll smoothly with a visible, usable scrollbar; the dark output panel should auto-scroll to newest output but let the user scroll back.
-- Modal dialogs should be sized to their content and centred over the parent, not tiny or oversized.
+- Each area has one filled, prominent control: + Script in the header, Run on
+  a row, Run/Retry in the detail pane, Save (`QPushButton:default`) in a
+  dialog. A second filled button competing with it is a finding.
+- On a row the name dominates; kind, path and preset are supporting
+  (`path_fg`, smaller). The outcome word may be coloured but not larger.
+- The chosen group pill must be unmistakable from across the desk.
 
-## 8. Keyboard & accessibility
-- Desktop users expect keyboard support: Tab order through dialog fields, Enter to submit, Esc to cancel. Check dialogs bind these.
-- Focus should be visible. Disabled controls should look disabled (the idle Stop button is a good model).
-- Hit targets: icon buttons should be comfortably clickable (not 12px squares). `padx`/`pady` in `_flat_button` set this.
+### 2. Quiet until needed
 
-## 9. Copy & microcopy
-- Button and label text should be specific ("Run", "Add Script") over vague ("OK", "Go"). See the `design:ux-copy` skill if deep copy work is needed.
-- Error and confirm messages should say what happened and what to do next, in plain language.
-- Title case / sentence case should be consistent across labels.
+- Secondary actions wait for the pointer (rows) or live in the right-click
+  menu. Adding an always-visible control to a row needs a reason.
+- **But hover is an enhancement, never the only way in**: every hover-only
+  action must also be in the right-click menu (`cardmenu.py`) or reachable by
+  keyboard. The audit lists hover-only controls; check each has a twin.
 
-## What's load-bearing — don't break it
-Per `CLAUDE.md`: output flows worker-thread → `Queue` → a `QTimer` on the UI thread; never touch a widget off-thread. Running processes live in `Job.processes`, stopped through `job.active_processes()`. The window's real effects (settings, toasts, update check, quitting) are injected — a UI change must not reach for them directly. A UI change must leave these intact.
+### 3. Spacing and alignment
+
+- Rows in a panel share one padding table (`cardstyle.CARD_PADDING`); Run
+  sits at the same x on every row, script or pipeline (`qt_smoke` checks).
+- Button columns line up across script and pipeline rows (the spacer cell).
+- Dialog labels and fields align in columns; buttons sit bottom-right with
+  the primary rightmost.
+
+### 4. Colour and state
+
+- Semantic colour is consistent: green = run/OK, red = failed/stop, accent =
+  interactive, `pipe_accent` = pipeline, amber `warn_*` = select mode.
+- Every colour comes from a palette key; text colours go through
+  `drawn_colors()`/`_readable_on` so they read in every theme.
+- Colour is never alone: OK/Failed carry a word, Retry a different glyph.
+  A dot with no word (the favourite chip) needs a tooltip and a second cue.
+
+### 5. Feedback
+
+- A run must visibly start (Running list, the row's state, output) and end
+  (outcome word, Retry, status bar). Silence is a bug.
+- Destructive actions (delete, Delete All) confirm, name what goes, and use
+  `menu_danger` in menus.
+
+### 6. Empty and edge states
+
+- Empty sections and groups say what goes there and how to add it
+  (`sections.EMPTY`, `ALL_EMPTY`).
+- Long names scroll (`ScrollingLabel`) or elide (`ElidedLabel`) -- nothing
+  pushes Run off the edge at the 480 px minimum (`qt_smoke` checks 540).
+- Many groups: the pill row scrolls; the + stays with the groups.
+
+### 7. Layout
+
+- Normal and compact fit 480 px wide. Maximised switches to list + detail.
+- Dialogs are sized to their content and open over the window.
+
+### 8. Keyboard and accessibility
+
+- See `accessibility.md`. In short: everything reachable by Tab, Enter
+  submits, Esc cancels, focus visible, targets at least 24 px, controls named.
+
+### 9. Copy
+
+- See `copy.md`. In short: verbs on buttons, sentence case, the same word for
+  the same thing everywhere, errors that say what to do next.
+
+## What's load-bearing -- don't break it
+
+Per `CLAUDE.md`: output flows worker thread → `Queue` → a `QTimer` on the UI
+thread; never touch a widget off-thread. Running processes live in
+`Job.processes`, stopped through `job.active_processes()`. The window's real
+effects (settings, toasts, update check, quitting) are injected -- a UI change
+must not reach for them directly. The detail pane acts only through the chosen
+row's own buttons; keep it that way so the two cannot drift.

@@ -1,19 +1,26 @@
 ---
 name: review-ryos-ui
-description: Review and improve the RYOS desktop app's UI and UX. Use this whenever the user wants a design/usability review of RYOS, mentions the app "looks off," wants feedback on layout, spacing, colors, contrast, visual hierarchy, affordances, empty states, or accessibility — or asks to polish, clean up, modernize, or improve the look and feel of any RYOS screen (script cards, pipeline cards, tabs, dialogs, the output panel, the Quick Run bar, status bar, headers). Trigger even when the user doesn't say the words "UI" or "UX" but is clearly asking whether a screen is good, what to fix, or to make it nicer. Produces a prioritized findings report and then concrete edits to ryos/qtui/* (and the rule modules they draw). Do NOT use it to add a feature or change behavior (use add-ryos-feature), to fix a functional bug or crash (use fix-ryos-bug), or to just launch the app (use run-ryos).
+description: Review and improve the RYOS desktop app's UI and UX. Use this whenever the user wants a design/usability review of RYOS, mentions the app "looks off," wants feedback on layout, spacing, colors, contrast, visual hierarchy, affordances, empty states, wording, keyboard use or accessibility — or asks to polish, clean up, modernize, or improve the look and feel of any RYOS screen (rows, pipeline rows, favourites, group pills, dialogs, the output panel, the maximised detail pane, the Quick Run bar, headers). Also use it for an accessibility audit (WCAG, keyboard, focus order, screen-reader names), a UX-copy pass (button labels, error messages, empty states, confirmations), an interaction review (hover/disabled/busy states, preventing mistakes on destructive actions) or a design critique of RYOS screenshots. Trigger even when the user doesn't say "UI" or "UX" but is clearly asking whether a screen is good, what to fix, or to make it nicer. Produces a measured audit, a prioritised findings report across five lenses, and concrete edits to ryos/qtui/* and the rule modules they draw. Do NOT use it to add a feature or change behavior (use add-ryos-feature), to fix a functional bug or crash (use fix-ryos-bug), or to just launch the app (use run-ryos).
 ---
 
 # Reviewing & improving RYOS UI/UX
 
-RYOS is a Qt (PySide6) desktop app for running user scripts. Its interface lives in `ryos/qtui/`, drawing rules kept in top-level modules (`cardstyle.py`, `cardmenu.py`, `sections.py`, ...). A good review of this app combines two things that neither alone gives you: **what the app actually looks like when running** (screenshots) and **why it looks that way** (the source). You will gather both, judge against the heuristics below, then propose fixes that respect the app's existing design language instead of importing generic web-design advice that doesn't fit a native desktop tool.
+RYOS is a Qt (PySide6) desktop app for running one's own scripts. Its
+interface lives in `ryos/qtui/`, drawing rules kept in top-level modules
+(`cardstyle.py`, `cardmenu.py`, `sections.py`, `detail.py`, ...). A good review
+combines three things none gives alone: **what the app looks like running**
+(screenshots), **what can be measured** (the audit), and **why it is that way**
+(the source). Judge them through five lenses, then fix what matters in the
+app's own design language -- not generic web advice.
 
 ## Where the UI lives
 
 | Concern | File |
-|---|---|
-| Main window, menus, tabs, search, select mode, output panel, layout | `ryos/qtui/shell.py` |
-| Group sections, All tab | `ryos/qtui/sections.py` (rules: `ryos/sections.py`) |
-| Script cards & pipeline cards (the main content) | `ryos/qtui/cards.py` (rules: `ryos/cardstyle.py`) |
+| --- | --- |
+| Main window, header, menus, pills, search, select mode, output panel, maximised layout | `ryos/qtui/shell.py` |
+| Maximised detail pane | `ryos/qtui/detail.py` (rules: `ryos/detail.py`) |
+| Sections, favourites strip, All tab | `ryos/qtui/sections.py`, `ryos/qtui/dragdrop.py` (rules: `ryos/sections.py`) |
+| Rows (script and pipeline cards), chips | `ryos/qtui/cards.py` (rules: `ryos/cardstyle.py`) |
 | Script dialog | `ryos/qtui/scriptdialog.py` |
 | Options (generated), small dialogs | `ryos/qtui/dialogs.py`, `ryos/qtui/smalldialogs.py` |
 | Pipeline editor | `ryos/qtui/pipeline.py` |
@@ -22,56 +29,133 @@ RYOS is a Qt (PySide6) desktop app for running user scripts. Its interface lives
 | **Stylesheet (every colour, font and spacing rule)** | `ryos/qtui/stylesheet.py` |
 | Palettes, themes, contrast helpers | `ryos/themes.py` |
 
-**The palette is the design-token source of truth**, and `stylesheet.py` is where it becomes Qt styling. Before recommending any colour change, refer to palette keys by name (e.g. `c['accent']`, `c['btn_run_bg']`). Never hard-code a hex value when a key exists or should exist. Text colours go through `drawn_colors()` so they stay legible on their fill in every theme — `TestQtStylesheet` checks every drawn pair across all shipped themes, so a change that fails it is a real contrast problem. Typography is Segoe UI, set once in the stylesheet. The design system (`design-system/project/`) documents tokens and intent; its component notes predate the Qt interface and are due for revision.
+**The palette is the design-token source of truth**, and `stylesheet.py` is
+where it becomes Qt styling. Refer to palette keys by name (`c['accent']`,
+`c['btn_run_bg']`); never hard-code a hex. Text colours go through
+`drawn_colors()` so they stay legible in every theme -- `DRAWN_PAIRS` is
+checked across all shipped themes by the unit suite.
 
-## The review workflow
+## The five lenses
+
+Each lens has a reference file. They are adapted from general design skills
+(named in each file) and rewritten for a Qt desktop tool, so this skill works
+without those plugins installed.
+
+| Lens | Tag | Reference | Asks |
+| --- | --- | --- | --- |
+| Critique | `[critique]` | `references/critique.md` | Where does the eye land? Can people do the main tasks in few steps? |
+| Accessibility | `[a11y]` | `references/accessibility.md` | WCAG 2.2 AA in Qt terms: contrast, keyboard, focus, names, targets, colour alone |
+| Copy | `[copy]` | `references/copy.md` | Do buttons, messages, empty states and confirmations say the right thing? |
+| Interaction | `[interaction]` | `references/interaction.md` | Are all states there (hover, disabled, busy, failed)? Are mistakes prevented? |
+| Design system | `[system]` | `references/design-system.md` | Tokens, type scale, component states, drift |
+
+`references/ui-ux-heuristics.md` describes RYOS's own design language and
+what not to break. Read it first on every review; it is what makes a finding
+fit this app.
+
+**Scope.** A general review runs all five. When the user asks for one thing
+("check accessibility", "review the wording", "is the delete flow safe?"),
+run that lens -- plus the audit, which is cheap -- and say which you ran.
+
+## The workflow
 
 ### 1. See the app running
 
-You cannot review look-and-feel from source alone — spacing, contrast, alignment, and crowding only reveal themselves on screen. Use the **`run-ryos` skill** (`.claude/skills/run-ryos/`), which launches the app and captures screenshots via its driver. From the project root:
+Use the **run-ryos** skill's driver (renders off screen; nothing appears on
+any monitor; throwaway copy of `samples/`):
 
 ```
 uv run python .claude/skills/run-ryos/driver.py <scenario ...> [--theme ID]
 ```
 
-Screenshots land in `.claude/skills/run-ryos/screenshots/`. Read them with the `Read` tool. Scenarios: `main`, `compact`, `output`, `quick-run`, `dialogs`, `themes` (all themes on one sheet), `all`. Nothing is shown on any monitor — windows render off screen — and the data is a throwaway copy of the repo's `samples/`.
+Scenarios: `main`, `compact`, `output`, `workspace` (maximised), `quick-run`,
+`dialogs`, `themes` (every theme on one sheet), `all`. Screenshots land in
+`.claude/skills/run-ryos/screenshots/`; read them with `Read`. For a general
+review capture at least `main`, `output`, `compact`, `workspace` and `dialogs`
+in a light and a dark theme. If no scenario reaches a state you need (hover,
+running, select mode, an error), add one -- see the run-ryos SKILL.md.
 
-Capture whatever states are relevant to the review's scope. If the user points at a specific screen (e.g. "the settings dialog" or "pipeline cards"), prioritise that. If the review is general, cover the main states: **idle window**, a **finished and a failed run** with the **output panel**, **compact mode**, the **dialogs**, and more than one **theme** (a light and a dark one at least). If no scenario reaches the state you need, add one — see the run-ryos SKILL.md for the pattern and the window's hooks.
+### 2. Measure
 
-### 2. Read the relevant source
+```
+uv run python .claude/skills/review-ryos-ui/scripts/audit.py [--theme light dark]
+```
 
-For each screen under review, read the file(s) that build it. You're looking for the *structural causes* of what you see: padding/`pady`/`padx` values, `pack`/`grid` choices, font sizes, colour tokens, hover bindings, disabled states, hardcoded widths. A finding is only actionable if you can point to the line that produces it.
+It walks every screen and dialog and writes
+`.claude/discarded/ui-audit-<date>.md`: targets under 24 px, buttons with no
+accessible name, inputs with no linked label, keyboard reach, hover-only
+controls, clipped text, default buttons, tab order, key contrast pairs in every
+theme, hard-coded colours, font sizes, and deuteranopia simulations of the
+main screens (`*_deutan.png`). Treat each line as a lead: confirm it in a
+screenshot or the source before it becomes a finding, and say why when you
+decide one is fine for RYOS.
 
-### 3. Judge against the heuristics
+### 3. Read the relevant source
 
-Read `references/ui-ux-heuristics.md` and evaluate each screen against it. The heuristics are tuned to RYOS — a single-window, keyboard-and-mouse, local desktop tool — not a mobile app or a website. Don't apply web conventions (hamburger menus, infinite scroll, mobile breakpoints) that don't belong here.
+For each screen, read the files that build it. A finding is actionable only
+when you can point at the line, rule or palette key that produces it.
 
-### 4. Write the report
+### 4. Judge through the lenses
 
-Use the template in `assets/report-template.md`. The core of a useful report is **prioritised, located, justified** findings:
+Read `references/ui-ux-heuristics.md`, then each lens file in scope, and go
+through the screenshots, the audit and the source with each. Start with the
+critique's two-second look, before the details colour your eye.
 
-- **Severity** — `High` (hurts usability or looks broken), `Medium` (noticeable friction or inconsistency), `Low` (polish).
-- **Location** — the screen and the exact `file:line` (or token name) responsible.
-- **What & why** — what's wrong and *why it matters to the user*, not just "this violates a rule."
-- **Recommendation** — a concrete, RYOS-appropriate fix.
+**Deeper dives (optional).** If the plugin skills are installed and the user
+wants more on one angle, you may also invoke `design:design-critique`,
+`design:accessibility-review`, `design:ux-copy` or `design:design-system` on
+the screenshots. Translate their output into RYOS terms (palette keys, Qt
+calls, rule modules) before it goes in the report -- their templates assume
+Figma and the web.
 
-Order findings by severity. Lead with a 2–3 sentence summary of the overall impression so the user gets the gist before the details. Reference screenshots by filename so the user can look at exactly what you saw.
+### 5. Write the report
 
-Save the report to `.claude/discarded/` as a markdown file (e.g. `ui-review-YYYY-MM-DD.md`). This folder is gitignored — review files are working documents, not project artefacts.
+Use `assets/report-template.md`. The core is **prioritised, located,
+justified** findings, each tagged with its lens:
 
-### 5. Propose the edits
+- **Severity** -- `High` (blocks someone or looks broken), `Medium`
+  (noticeable friction or inconsistency), `Low` (polish).
+- **Location** -- screen and `file:line`, palette key or rule module.
+- **What & why** -- why it matters to the person using the app.
+- **Recommendation** -- a concrete, RYOS-appropriate fix.
+- **Evidence** -- the screenshot, the audit line or the measured ratio.
 
-After the report, turn the High and Medium findings into concrete code changes. Prefer **small, surgical diffs** that respect the existing patterns:
+Lead with a 2–3 sentence summary and the first-look table; fill the audit's
+"Before" column. Include the copy table when the copy lens ran, and a "what
+already works" list. Save to `.claude/discarded/ui-review-YYYY-MM-DD.md`
+(gitignored: working documents, not project artefacts).
 
-- Route colours through palette keys in `stylesheet.py` (text colours through `drawn_colors()`). If a fix needs a new colour, add a palette key in `themes.py` so every theme defines it, then reference it.
-- Style by object name in the stylesheet (`QPushButton#primary`, `QFrame#card`) rather than per-widget `setStyleSheet`, except where a card's colour depends on its own state (the Run button).
-- Put a rule that decides *what* shows (a label, a badge, a count) in the rule module (`cardstyle.py`, `sections.py`, ...) with a unit test, and let the Qt code draw it.
-- Preserve behaviour: the worker-thread/queue output model is load-bearing (see `CLAUDE.md`). A visual change must not touch a widget from a worker thread.
-- Show the edits as a clear before/after, grouped by file. Don't bundle unrelated refactors into a UI pass.
-- Run `tests/qt_smoke.py` after a change: several checks there are about looks (long text fits at 540 px, ticks are drawn, gaps read as gaps).
+### 6. Make the edits
 
-After editing, **re-run the relevant `run-ryos` scenario and screenshot again** to verify the change actually looks better and didn't break the layout. Reading the new screenshot is the verification step — don't claim an improvement you haven't looked at.
+Turn the High and Medium findings into small, surgical changes that respect
+the existing patterns:
+
+- Colours through palette keys in `stylesheet.py` (text through
+  `drawn_colors()`, with a `DRAWN_PAIRS` entry). A new colour role is a new
+  palette key in `themes.py`, so every theme defines it.
+- Style by object name in the stylesheet (`QPushButton#primary`,
+  `QFrame#card`), not per-widget `setStyleSheet` -- except where a widget's
+  colour depends on its own state (Run/Retry).
+- Accessible names with `setAccessibleName`; labels linked with `setBuddy`;
+  tab order with `setTabOrder`.
+- Wording and "what shows" rules in the rule module, with its unit test
+  updated; the Qt code only draws.
+- Preserve behaviour: the worker-thread/queue output model is load-bearing
+  (see `CLAUDE.md`). The detail pane acts through the chosen row's buttons.
+- Show edits as before/after grouped by file; no unrelated refactors.
+
+### 7. Verify
+
+Re-run the scenarios and the audit, **read the new screenshots**, and fill the
+report's "After" column -- don't claim an improvement you haven't looked at or
+measured. Then run the gate: `uv run --no-project --with pytest pytest -q`,
+`tests/qt_smoke.py` (offscreen: `QT_QPA_PLATFORM=offscreen`), `uvx ruff check .`.
+Several `qt_smoke` checks are about looks (text fits at 540 px, Run doesn't
+move on hover, chips are round, ticks are drawn).
 
 ## Tone
 
-Be a candid, constructive design reviewer. The goal is a better app, so don't pad findings with false praise, but do note what already works well — consistency and clear patterns are worth preserving, and the user needs to know what *not* to touch. Explain the reasoning behind each recommendation so the user can make their own call rather than following orders blindly.
+A candid, constructive design reviewer. Don't pad findings with praise, but
+name what works -- consistency is worth preserving and the user needs to know
+what not to touch. Explain the reasoning behind each recommendation so the
+user can make their own call.
