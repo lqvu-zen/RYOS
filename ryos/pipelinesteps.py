@@ -26,26 +26,35 @@ _DETACHED = 13
 
 
 def policy_marks(step) -> str:
-    """Compact suffix showing a step's non-default policy, or "" if all default.
+    """A suffix naming a step's non-default policy in words, or "" if all
+    default: "  ·  keeps going  ·  3 retries  ·  only after a failure".
 
     Only deviations are marked, so an ordinary pipeline's rows look exactly as
-    they did before step policies existed.
+    they did before step policies existed. Words, not codes: "! ↻3 ?fail" had
+    to be decoded with a legend under the list.
     """
     marks = []
     if len(step) > _ON_FAILURE and step[_ON_FAILURE] == FAIL_CONTINUE:
-        marks.append("!")
+        marks.append(MARK_CONTINUE)
     if len(step) > _RETRIES and step[_RETRIES]:
-        marks.append(f"↻{step[_RETRIES]}")
+        n = step[_RETRIES]
+        marks.append(f"{n} retr{'y' if n == 1 else 'ies'}")
     if len(step) > _RUN_WHEN and step[_RUN_WHEN] == WHEN_ON_SUCCESS:
-        marks.append("?ok")
+        marks.append(MARK_ON_SUCCESS)
     elif len(step) > _RUN_WHEN and step[_RUN_WHEN] == WHEN_ON_FAILURE:
-        marks.append("?fail")
+        marks.append(MARK_ON_FAILURE)
     if len(step) > _DETACHED and step[_DETACHED]:
         # Not a policy the editor sets -- it comes from the script -- but the
         # list is where you would wonder why a step doesn't hold the pipeline
         # up.
-        marks.append("→launch")
-    return ("   " + " ".join(marks)) if marks else ""
+        marks.append(MARK_LAUNCHER)
+    return "".join(f"  ·  {m}" for m in marks)
+
+
+MARK_CONTINUE = "keeps going"
+MARK_ON_SUCCESS = "only after success"
+MARK_ON_FAILURE = "only after a failure"
+MARK_LAUNCHER = "launcher"
 
 
 def step_label(step, index: int) -> str:
@@ -107,10 +116,8 @@ def first_step_cannot_run_with_previous(index: int | None) -> bool:
 # choice and the Add Step list. Shared so the two editors cannot drift -- they
 # already had, with different "run when" wording and a different legend.
 
-LEGEND = ("∥ = starts together with the step above   ·   "
-          "! = keeps going if it fails   ·   ↻n = retries   ·   "
-          "?ok / ?fail = only after success / failure   ·   "
-          "→launch = launcher; doesn't hold up the next step")
+#: The one symbol left on the step list; the rest is said in words.
+LEGEND = "∥ = starts together with the step above"
 
 FAIL_LABELS = {FAIL_STOP: "Stop the pipeline", FAIL_CONTINUE: "Keep going"}
 WHEN_LABELS = {WHEN_ALWAYS: "Always",

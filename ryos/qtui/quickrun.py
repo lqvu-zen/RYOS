@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLineEdit, QListWidget,
                                QPushButton, QVBoxLayout, QWidget)
 
 from .. import quickrun as qr
+from .widgets import set_tooltip
 
 PLACEHOLDER = "script name [params...]"
 
@@ -58,8 +59,11 @@ class QuickRunBar(QWidget):
         self.run_button = QPushButton("Run")
         self.run_button.setObjectName("primary")
         self.close_button = QPushButton("✕")
-        self.close_button.setObjectName("dark")
+        # Quiet: closing is the least important thing here, and a filled
+        # dark square outweighed Run beside it.
+        self.close_button.setObjectName("quiet")
         self.close_button.setFixedWidth(34)
+        set_tooltip(self.close_button, "Close Quick Run")
         row.addWidget(self.entry, 1)
         row.addWidget(self.run_button)
         row.addWidget(self.close_button)

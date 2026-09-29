@@ -95,7 +95,7 @@ def all_view_groups(groups, has_ungrouped: bool) -> list[tuple[str, str | None]]
 
 # --- the group banner -------------------------------------------------------------
 
-NO_BASE_DIR = "No base directory — click to set"
+NO_BASE_DIR = "No base folder — click to set"
 
 
 def banner_text(base_dir: str) -> str:

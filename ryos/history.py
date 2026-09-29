@@ -17,10 +17,11 @@ _W_STATUS = 9
 _W_TOOK = 8
 _W_EXIT = 5
 
+#: The same words the rows use for an outcome ("● OK", "● Failed").
 _STATUS_MARK = {
-    "ok": "✓ ok",
-    "error": "✗ error",
-    "stopped": "· stopped",
+    "ok": "✓ OK",
+    "error": "✗ Failed",
+    "stopped": "· Stopped",
 }
 
 
@@ -95,6 +96,13 @@ def header_row() -> str:
     """Column headings aligned to format_run_row."""
     return (f"{'WHEN':<{_W_WHEN}}{'STATUS':<{_W_STATUS}}{'TOOK':>{_W_TOOK}}  "
             f"{'EXIT':>{_W_EXIT}}   WHAT")
+
+
+def clear_prompt(count: int) -> str:
+    """The Clear history question: how many runs go, and that it is final."""
+    plural = "s" if count != 1 else ""
+    return (f"Delete the {count} recorded run{plural} shown here? "
+            "This can't be undone.")
 
 
 def summarize(rows) -> str:

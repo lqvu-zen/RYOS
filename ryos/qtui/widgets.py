@@ -41,13 +41,18 @@ def literal(text: str) -> str:
 
 
 def set_tooltip(widget: QWidget, text: str) -> None:
-    """Attach a tooltip.
+    """Attach a tooltip -- and, to a button drawn as a glyph, a name.
 
-    A wrapper over one Qt call, kept so call sites ported from Tk read the
-    same. `ui/widgets.Tooltip` was 60 lines of timer and popup management that
-    Qt does for free.
+    Qt names a button after its text, so a screen reader announced Run as
+    "black right-pointing triangle" and Edit as nothing useful. For a button
+    whose text has no letters (▶ ✎ ☆ + ⋯ ✕, or an icon), the tooltip is the
+    name worth saying; a worded button keeps its words as its name.
     """
     widget.setToolTip(text)
+    from PySide6.QtWidgets import QAbstractButton
+    if isinstance(widget, QAbstractButton) and not any(
+            ch.isalpha() for ch in widget.text()):
+        widget.setAccessibleName(text)
 
 
 class ScrollingLabel(QWidget):

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
 from .. import cardmenu, cardstyle, detail
 from ..interpreter import _script_tag
 from ..themes import _readable_on, ink_on
-from .widgets import ElidedLabel, literal
+from .widgets import ElidedLabel, literal, set_tooltip
 
 
 def _alive(widget) -> bool:
@@ -160,7 +160,7 @@ class DetailPane(QWidget):
     def _link(text: str, tip: str) -> QPushButton:
         b = QPushButton(text)
         b.setObjectName("detailLink")
-        b.setToolTip(tip)
+        set_tooltip(b, tip)
         return b
 
     @staticmethod
@@ -221,7 +221,7 @@ class DetailPane(QWidget):
         spec = cardstyle.run_button(status)
         c = self._palette
         self.run.setText(detail.run_label(status))
-        self.run.setToolTip(spec.tooltip)
+        set_tooltip(self.run, spec.tooltip)
         self.run.setProperty("runState", spec.state)
         self.run.setStyleSheet(
             f"QPushButton#detailRun {{ background: {c[spec.bg_key]};"
@@ -231,7 +231,7 @@ class DetailPane(QWidget):
             f" color: {ink_on(c[spec.hover_fg_key])}; }}")
         favorite = bool(self.rec.get("favorite"))
         self.star.setText("★" if favorite else "☆")
-        self.star.setToolTip("Remove from favorites" if favorite else "Add to favorites")
+        set_tooltip(self.star, "Remove from favorites" if favorite else "Add to favorites")
         self.star.setProperty("on", favorite)
         self.star.style().unpolish(self.star)
         self.star.style().polish(self.star)

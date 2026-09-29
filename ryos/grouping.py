@@ -133,8 +133,8 @@ def base_dir_change(group: str, current: str,
         return None
     if not answer:
         return BaseDirChange(BASE_DIR_CLEAR, "", (
-            "Clear base directory",
-            f"Remove base directory restriction for '{group}'?\n\n"
+            "Clear base folder",
+            f"Remove base folder restriction for '{group}'?\n\n"
             "Existing script paths will not be changed."))
     confirm = None
     if current:
@@ -149,15 +149,15 @@ def apply_base_dir_change(db, group: str, change: BaseDirChange
     """Store ``change``. Returns (status line, warning (title, text) or None)."""
     if change.kind == BASE_DIR_CLEAR:
         db.set_group_base_dir(group, "")
-        return f"Base directory cleared for '{group}'.", None
+        return f"Base folder cleared for '{group}'.", None
     remapped, untouched = db.set_group_base_dir(group, change.new_dir)
     warning = None
     if untouched:
         warning = ("Some paths not remapped",
                    f"{len(untouched)} script(s) have paths outside the old "
-                   "base directory and were not remapped:\n"
+                   "base folder and were not remapped:\n"
                    + "\n".join(untouched[:10]))
-    return (f"Base directory set for '{group}'. {remapped} path(s) remapped.",
+    return (f"Base folder set for '{group}'. {remapped} path(s) remapped.",
             warning)
 
 

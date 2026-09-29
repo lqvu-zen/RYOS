@@ -76,7 +76,7 @@ def validate(*, name: str, path: str, interpreter: str, base_dir: str = "",
             verdict.WARNING)
     if path and base_dir and not _is_inside(path, base_dir):
         return Check(REFUSE, "Path outside group directory",
-                     f"The path\n{path}\nis outside the base directory for "
+                     f"The path\n{path}\nis outside the base folder for "
                      f"group '{group_name}':\n{base_dir}")
     if path and not interpreter and not path_exists:
         # A question, not a refusal: the file may not be written yet, or may
@@ -320,7 +320,7 @@ def dropped_script(path) -> tuple[str, str, str]:
 
 
 def outside_base_notice(group: str, skipped) -> tuple[str, str]:
-    return ("Files outside base directory",
+    return ("Files outside base folder",
             f"{len(skipped)} file(s) were skipped because their paths are "
-            f"outside the base directory for group '{group}':\n"
+            f"outside the base folder for group '{group}':\n"
             + "\n".join(str(p) for p in list(skipped)[:10]))

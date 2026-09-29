@@ -61,8 +61,8 @@ INPUTS = (QLineEdit, QComboBox, QAbstractSpinBox, QPlainTextEdit, QTextEdit)
 # most. drawn_colors() keys are prefixed "d:".
 KEY_PAIRS = [
     ("row name", "name_fg", "card_bg", 4.5),
-    ("row path / muted text", "path_fg", "card_bg", 4.5),
-    ("muted text on window", "path_fg", "bg", 4.5),
+    ("row path / muted text", "d:muted_fg", "card_bg", 4.5),
+    ("muted text on window", "d:muted_fg", "bg", 4.5),
     ("idle group pill", "d:pill_idle_fg", "bg", 4.5),
     ("chosen group pill", "d:pill_fg", "name_fg", 4.5),
     ("header text", "d:header_fg", "header_bg", 4.5),
@@ -94,15 +94,18 @@ def _labelled(w: QWidget, top: QWidget) -> bool:
         return True
     if isinstance(w, QComboBox) and w.isEditable() and w.lineEdit().placeholderText():
         return True
+    # The field, or the row widget it sits in (a field with a Browse button
+    # beside it): a label may point at either.
+    chain = [w]
+    while chain[-1] is not top and chain[-1].parentWidget() is not None:
+        chain.append(chain[-1].parentWidget())
     for label in top.findChildren(QLabel):
-        if label.buddy() is w:
+        if label.buddy() in chain:
             return True
-    parent = w.parentWidget()
-    while parent is not None:
-        lay = parent.layout()
-        if isinstance(lay, QFormLayout) and lay.labelForField(w) is not None:
+    # Form layouts nest inside other layouts, so look at every one.
+    for form in top.findChildren(QFormLayout):
+        if any(form.labelForField(x) is not None for x in chain):
             return True
-        parent = parent.parentWidget() if parent is not top else None
     return False
 
 

@@ -59,8 +59,10 @@ class AppearanceDialog(QDialog):
         self.ask_dir: Callable[[str], str | None] = self._ask_dir
 
         col = QVBoxLayout(self)
-        col.addWidget(QLabel("THEME"))
+        theme_label = QLabel("THEME")
+        col.addWidget(theme_label)
         self.theme_combo = QComboBox()
+        theme_label.setBuddy(self.theme_combo)
         self.theme_combo.currentIndexChanged.connect(self._on_pick)
         col.addWidget(self.theme_combo)
 

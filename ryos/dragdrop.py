@@ -125,7 +125,7 @@ def outside_base_warning(path: str, group: str, base_dir: str) -> "str | None":
     if not base_dir or not path or _is_inside(path, base_dir):
         return None
     return (f"Warning: script moved to '{group}' but its path is outside "
-            f"the group's base directory.")
+            f"the group's base folder.")
 
 
 # --- applying a drop ------------------------------------------------------------

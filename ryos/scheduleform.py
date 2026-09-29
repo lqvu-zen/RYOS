@@ -81,14 +81,16 @@ def check(spec) -> verdict.Verdict:
     return verdict.PROCEED if spec is not None else INVALID
 
 
-#: What a new schedule's form starts at: every 30 minutes, 09:00, Mondays.
+#: What a new schedule's form starts at: every 30 minutes, 09:00, Mondays --
+#: and on. The dialog was opened to schedule something; starting it off meant
+#: Save stored a schedule that never ran, the unticked box easy to miss.
 DEFAULT_FORM: dict = {
     "mode": INTERVAL,
     "minutes": "30",
     "at": "09:00",
     "days": [0],
     "catch_up": CATCH_UP_ONCE,
-    "enabled": False,
+    "enabled": True,
 }
 
 

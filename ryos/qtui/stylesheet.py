@@ -60,6 +60,11 @@ def drawn_colors(c: dict) -> dict:
         "neutral_hover_fg": _legible(c["btn_neutral_fg"], c["btn_neutral_hover"]),
         "tooltip_fg": _legible(c["name_fg"], c["tooltip_bg"]),
         "status_fg": _legible(c["path_fg"], c["status_bg"]),
+        # Paths, hints, captions: the theme's muted colour, shaded only as
+        # far as it takes to read on a row, a hovered row and the window.
+        # Kept as a shade rather than _legible's black or white, so it stays
+        # muted; two Solarized themes were at 4.1 and 4.2 to 1.
+        "muted_fg": _readable_on(c["path_fg"], (c["card_bg"], c["card_hover"], c["bg"])),
         "tab_selected_fg": _legible(c["accent"], c["card_bg"], floor=GLYPH_MIN),
         # Gold stays gold, shaded until it reads on a row, hovered or not.
         "star": _readable_on(c.get("bolt", "#FFD23F"),
@@ -85,6 +90,7 @@ DRAWN_PAIRS = (
     ("neutral_hover_fg", ("btn_neutral_hover",), TEXT_MIN),
     ("tooltip_fg", ("tooltip_bg",), TEXT_MIN),
     ("status_fg", ("status_bg",), TEXT_MIN),
+    ("muted_fg", ("card_bg", "card_hover", "bg"), TEXT_MIN),
     ("tab_selected_fg", ("card_bg",), GLYPH_MIN),
     ("star", ("card_bg", "card_hover", "accent_wash"), GLYPH_MIN),
     ("header_fg", ("header_bg",), TEXT_MIN),
@@ -149,6 +155,10 @@ def stylesheet(palette: dict) -> str:
     d = drawn_colors(c)
     tick = icon_path("check-light.svg" if ink_on(c["accent"]) == INK_LIGHT_POLE
                      else "check-dark.svg")
+    # Chevrons in the field's own ink: dark on a light field, light on dark.
+    ink = "dark" if _rel_luminance(c["card_bg"]) > 0.45 else "light"
+    chevron_down = icon_path(f"chevron-down-{ink}.svg")
+    chevron_up = icon_path(f"chevron-up-{ink}.svg")
     # A header button under the pointer: the header lifted toward its ink.
     header_hover = _mix(c["header_bg"], d["header_fg"], 0.14)
     return f"""
@@ -187,18 +197,19 @@ QWidget#sectionPanel[flow="true"] {{ background: transparent; border: none; }}
 QFrame#card[chip="true"] {{
     background: {c['card_bg']};
     border: 1px solid {c['border']};
-    border-radius: 15px;
+    /* Half its height: Run (24) + padding (6) + the edge (2). */
+    border-radius: 16px;
 }}
 QFrame#card[chip="true"]:hover {{ background: {c['card_hover']}; }}
 QLabel#cardName {{ color: {c['name_fg']}; font-weight: 600; }}
 /* The name is a ScrollingLabel, not a QLabel: without this it was not bold. */
-QWidget#cardName {{ font-weight: 700; font-size: 10.5pt; }}
+QWidget#cardName {{ font-weight: 700; font-size: 11pt; }}
 QFrame#card[compact="true"] QWidget#cardName {{ font-weight: 600; font-size: 10pt; }}
 /* Text on a card sits on the card, not in a box of the window colour. */
 QFrame#card QLabel, QFrame#card #cardName {{ background: transparent; }}
 /* The empty column on a pipeline card is a gap in the card (#7). */
 QWidget#cardSpacer {{ background: transparent; }}
-QLabel#cardPath {{ color: {c['path_fg']}; font-size: 9pt; }}
+QLabel#cardPath {{ color: {d['muted_fg']}; font-size: 9pt; }}
 
 /* --- buttons -------------------------------------------------------- */
 QPushButton {{
@@ -231,6 +242,13 @@ QPushButton:default:disabled {{
 /* Filled buttons say what they are with the fill; the edge is for neutral ones. */
 QPushButton#run, QPushButton#stop, QPushButton#primary, QPushButton#dark,
 QPushButton:default {{ border: none; }}
+/* A quiet button anywhere: a glyph or word, boxed only under the pointer
+   (Quick Run's close, the update banner's dismiss). */
+QPushButton#quiet {{
+    background: transparent; border: none; color: {d['muted_fg']};
+    border-radius: 4px; padding: 4px 8px; min-height: 24px;
+}}
+QPushButton#quiet:hover {{ background: {c['accent_wash']}; color: {c['name_fg']}; }}
 /* A card's button strip holds glyphs, not words (▶ ↻ ★ ✎ ▶+): at the body
    size they drew a few pixels tall, and ↻ -- the retry -- was hard to make
    out. Tk draws them larger too. */
@@ -243,7 +261,7 @@ QFrame#card QPushButton {{ font-family: "Segoe UI Symbol", "Segoe UI"; }}
    round and filled -- is the one thing on the row that looks pressable. */
 QFrame#card QPushButton {{
     background: transparent;
-    color: {c['path_fg']};
+    color: {d['muted_fg']};
     border: none;
     border-radius: 4px;
     min-height: 28px;
@@ -261,7 +279,8 @@ QFrame#card QPushButton#paramPick {{
     color: {d['tab_selected_fg']};
     border: none;
     border-radius: 3px;
-    min-height: 0;
+    /* A 24 px target, though it reads as a word (WCAG 2.5.8). */
+    min-height: 24px;
     padding: 0 6px;
     font-family: Consolas, "Courier New", monospace;
     font-size: 9pt;
@@ -312,7 +331,7 @@ QPushButton#newGroupPill {{
     border: 1px dashed {d['control_edge']};
     border-radius: 13px;
     padding: 0;
-    font-size: 12pt;
+    font-size: 13pt;
     min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
 }}
 QPushButton#newGroupPill:hover {{ background: {c['tab_inactive_hover']}; }}
@@ -369,6 +388,33 @@ QLineEdit, QComboBox, QSpinBox {{
     selection-background-color: {c['accent']};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; }}
+/* The arrows: a thin chevron in the field, not Qt's own boxed button --
+   drawn with a heavy dark bar in Light and white boxes in Dark, they read as
+   a rendering fault among hairlined panels. */
+QComboBox {{ padding-right: 22px; }}
+QComboBox::drop-down {{
+    subcontrol-origin: padding; subcontrol-position: center right;
+    width: 22px; border: none; background: transparent;
+}}
+QComboBox::down-arrow {{ image: url("{chevron_down}"); width: 10px; height: 10px; }}
+QComboBox QAbstractItemView {{
+    background: {c['card_bg']};
+    color: {c['name_fg']};
+    border: 1px solid {c['border']};
+    selection-background-color: {c['accent_wash']};
+    selection-color: {c['name_fg']};
+}}
+QAbstractSpinBox {{ padding-right: 20px; }}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
+    subcontrol-origin: border; width: 20px; border: none; background: transparent;
+}}
+QAbstractSpinBox::up-button {{ subcontrol-position: top right; }}
+QAbstractSpinBox::down-button {{ subcontrol-position: bottom right; }}
+QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{
+    background: {c['accent_wash']};
+}}
+QAbstractSpinBox::up-arrow {{ image: url("{chevron_up}"); width: 10px; height: 10px; }}
+QAbstractSpinBox::down-arrow {{ image: url("{chevron_down}"); width: 10px; height: 10px; }}
 /* Lists (the script dialog's presets, the pipeline editor's steps) show
    their edge even when empty, so they read as a place to put things. */
 QListView {{
@@ -457,7 +503,7 @@ QMenuBar#appMenu::item:selected, QMenuBar#appMenu::item:pressed {{
 QLabel#groupBanner, QLabel#groupBannerEmpty {{
     background: transparent;
     border: none;
-    color: {c['path_fg']};
+    color: {d['muted_fg']};
     font-size: 9pt;
     padding: 2px 2px;
 }}
@@ -468,13 +514,14 @@ QPushButton#quickRunToggle {{
     color: {d['tab_selected_fg']};
     font-weight: 600;
     padding: 2px 6px;
+    min-height: 24px;
 }}
 QPushButton#quickRunToggle:hover {{ background: {c['accent_wash']}; }}
 
 /* --- sections ------------------------------------------------------ */
 QPushButton#sectionHeader {{
     background: transparent;
-    color: {c['path_fg']};
+    color: {d['muted_fg']};
     font-size: 8pt;
     font-weight: 700;
     text-align: left;
@@ -483,13 +530,13 @@ QPushButton#sectionHeader {{
     border-radius: 0;
 }}
 QPushButton#sectionHeader:hover {{ color: {c['name_fg']}; }}
-QLabel#groupHeader {{ color: {c['path_fg']}; font-size: 8pt; font-weight: 700; padding: 14px 0 2px 0; }}
+QLabel#groupHeader {{ color: {d['muted_fg']}; font-size: 8pt; font-weight: 700; padding: 14px 0 2px 0; }}
 
 /* --- the maximised layout: the chosen row and the detail pane ------- */
 QFrame#card[selected="true"] {{ background: {c['accent_wash']}; }}
 QLabel#detailName, QWidget#detailName {{ font-size: 16pt; font-weight: 700; }}
 QLabel#detailHeading {{
-    color: {c['path_fg']}; font-size: 8pt; font-weight: 700; letter-spacing: 0.8px;
+    color: {d['muted_fg']}; font-size: 8pt; font-weight: 700; letter-spacing: 0.8px;
 }}
 QPushButton#detailLink, QPushButton#detailStar {{
     background: transparent;
@@ -502,7 +549,7 @@ QPushButton#detailLink, QPushButton#detailStar {{
 QPushButton#detailLink:hover, QPushButton#detailStar:hover {{
     background: {c['accent_wash']};
 }}
-QPushButton#detailStar {{ color: {c['path_fg']}; font-size: 14pt; padding: 2px 8px; }}
+QPushButton#detailStar {{ color: {d['muted_fg']}; font-size: 13pt; padding: 2px 8px; }}
 QPushButton#detailStar[on="true"] {{ color: {d['star']}; }}
 QPushButton#paramChip {{
     background: transparent;
@@ -524,9 +571,27 @@ QPushButton#paramChip:checked {{
 QFrame#stepRow {{ background: transparent; border: none; border-bottom: 1px solid {c['border']}; }}
 QFrame#stepRow[last="true"] {{ border-bottom: none; }}
 QFrame#stepRow QLabel, QFrame#stepRow QWidget {{ background: transparent; }}
-QLabel#factKey, QWidget#factKey {{ color: {c['path_fg']}; font-size: 9pt; }}
-QWidget#factValue {{ font-size: 9.5pt; }}
+QLabel#factKey, QWidget#factKey {{ color: {d['muted_fg']}; font-size: 9pt; }}
+QWidget#factValue {{ font-size: 10pt; }}
 QSplitter#outerSplit::handle {{ background: {c['border']}; width: 1px; }}
+
+/* --- keyboard focus ----------------------------------------------- */
+/* Styling a button's border removes Qt's own focus frame, so Tab moved
+   through dialogs with nothing showing where it was. Neutral buttons take an
+   accent edge; quiet ones (rows, header, links) the wash their hover uses. */
+QPushButton:focus {{ border: 1px solid {c['accent']}; }}
+QPushButton#primary:focus, QPushButton:default:focus {{
+    border: 1px solid {d['primary_fg']};
+}}
+QFrame#card QPushButton:focus, QPushButton#detailLink:focus,
+QPushButton#detailStar:focus, QPushButton#quiet:focus,
+QPushButton#quickRunToggle:focus, QFrame#outputHeader QPushButton:focus {{
+    background: {c['accent_wash']}; border: none;
+}}
+QFrame#appHeader QPushButton:focus {{ background: {header_hover}; border: none; }}
+QFrame#appHeader QPushButton#primary:focus {{
+    background: {c['accent2']}; border: 1px solid {d['primary_fg']};
+}}
 
 /* --- select mode --------------------------------------------------- */
 QFrame#selectBar {{

@@ -70,7 +70,7 @@ class ScriptDialog(QDialog):
         # ...or the base folder and a path under it.
         self.base_label = QLabel("")
         self.base_label.setObjectName("cardPath")
-        form.addRow(QLabel("Base dir:"), self.base_label)
+        form.addRow(QLabel("Base folder:"), self.base_label)
         self._base_caption = form.labelForField(self.base_label)
         self.e_relpath = QLineEdit()
         self.rel_row = self._with_button(self.e_relpath, "Browse…", self.browse)
@@ -87,7 +87,7 @@ class ScriptDialog(QDialog):
         self.presets.setMaximumHeight(90)
         self.presets.itemDoubleClicked.connect(lambda _item: self.use_preset())
         preset_buttons = QHBoxLayout()
-        for label, slot in (("← Use", self.use_preset), ("Edit", self.edit_preset),
+        for label, slot in (("Use", self.use_preset), ("Edit", self.edit_preset),
                             ("Remove", self.remove_preset)):
             b = QPushButton(label)
             b.clicked.connect(slot)
@@ -120,8 +120,8 @@ class ScriptDialog(QDialog):
         form.addRow(QLabel(""), self.launcher)
 
         self.e_workdir = QLineEdit()
-        form.addRow(QLabel("Working dir:"),
-                    self._with_button(self.e_workdir, "Browse", self.browse_workdir))
+        form.addRow(QLabel("Working folder:"),
+                    self._with_button(self.e_workdir, "Browse…", self.browse_workdir))
 
         self.t_env = QPlainTextEdit()
         self.t_env.setObjectName("envEdit")
@@ -310,5 +310,5 @@ class ScriptDialog(QDialog):
         return path or None
 
     def _ask_dir(self, start_dir: str) -> str | None:
-        return QFileDialog.getExistingDirectory(self, "Working directory",
+        return QFileDialog.getExistingDirectory(self, "Working folder",
                                                 start_dir) or None

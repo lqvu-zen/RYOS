@@ -697,7 +697,7 @@ def check_pipeline_editor(app):
     dlg.run_when.setCurrentText(pipelinesteps.WHEN_LABELS[WHEN_ON_FAILURE])
     if pipelinesteps.policy_of(steps()[1]) != (FAIL_CONTINUE, 3, WHEN_ON_FAILURE):
         PROBLEMS.append(f"policy stored {pipelinesteps.policy_of(steps()[1])}")
-    if "!" not in shown()[1] or "↻3" not in shown()[1]:
+    if "keeps going" not in shown()[1] or "3 retries" not in shown()[1]:
         PROBLEMS.append(f"the row lost its marks: {shown()[1]!r}")
     dlg.list.setCurrentRow(0)
     if dlg.retries.currentText() != "0":
@@ -3924,6 +3924,73 @@ def check_strip_and_preset(app):
           "the preset chip's menu chooses what Run passes")
 
 
+def check_review_fixes(app):
+    """What the 2026-09-29 UI review fixed, kept fixed.
+
+    A script's Edit and Run with parameters are in its right-click menu (the
+    row shows their buttons only under the pointer); glyph buttons have names
+    a screen reader can say; Run history's default is Close, not Clear; a new
+    schedule starts on.
+    """
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtWidgets import QDialogButtonBox
+
+    from ryos import cardmenu
+    from ryos.db import ScriptDB
+    from ryos.qtui.scriptdialog import ScriptDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import (PresetEntryDialog, RunHistoryDialog,
+                                        ScheduleDialog)
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "s.py"
+    script.write_text("print('hi')\n", encoding="utf-8")
+    db = ScriptDB(tmp / "review.db")
+    db.create_group("G")
+    sid = db.add("tool", str(script), "", _sys.executable, "G")
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    opened: list = []
+    win.run_dialog = lambda dlg: (opened.append(dlg), dlg.reject())
+    try:
+        keys = [i.key for i in win.card_menu_items(cardmenu.SCRIPT, sid)]
+        if keys[:2] != [cardmenu.EDIT, cardmenu.RUN_WITH]:
+            PROBLEMS.append(f"the script menu starts {keys[:3]}")
+        win.on_card_menu(cardmenu.SCRIPT, sid, cardmenu.EDIT)
+        win.on_card_menu(cardmenu.SCRIPT, sid, cardmenu.RUN_WITH)
+        kinds = [type(d) for d in opened]
+        if kinds != [ScriptDialog, PresetEntryDialog]:
+            PROBLEMS.append(f"the menu's Edit / Run with opened {kinds}")
+
+        row = win.card_lists["G"].section("scripts").cards[0]
+        names = {b.accessibleName() for b in (row.run_button, row.edit_button,
+                                              row.param_button, row.fav_button)}
+        if names != {"Run tool", "Edit", "Run with parameters…", "Add to favorites"}:
+            PROBLEMS.append(f"row buttons are named {sorted(names)}")
+        if not win.new_group_button.accessibleName():
+            PROBLEMS.append("the + pill has no name")
+
+        hist = RunHistoryDialog(win, db=db, script_id=sid, title="tool")
+        close = hist.findChild(QDialogButtonBox).button(
+            QDialogButtonBox.StandardButton.Close)
+        if not close.isDefault() or hist.clear_button.autoDefault():
+            PROBLEMS.append("Run history's default is not Close")
+        hist.deleteLater()
+
+        sched = ScheduleDialog(win, db=db, script_id=sid, title="tool")
+        if not sched.enabled.isChecked():
+            PROBLEMS.append("a new schedule starts off")
+        sched.deleteLater()
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] review fixes: menu has Edit / Run with, buttons named, "
+          "history defaults to Close, new schedules start on")
+
+
 def check_maximised_layout(app):
     """Maximised: the list beside the chosen item, acting through its row.
 
@@ -4143,6 +4210,7 @@ def main() -> int:
     check_long_text_fits(app)
     check_ticks_are_drawn(app)
     check_strip_and_preset(app)
+    check_review_fixes(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

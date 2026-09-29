@@ -66,7 +66,7 @@ def script_facts(rec: dict) -> list[tuple[str, str]]:
     """(label, value) rows for a script: where it is and how it runs."""
     return [
         ("Path", _or_dash(rec.get("path"))),
-        ("Group folder", _or_dash(rec.get("base_dir"))),
+        ("Base folder", _or_dash(rec.get("base_dir"))),
         ("Parameters", _or_dash(rec.get("params"))),
         ("Asks each run", "Yes" if rec.get("temp_param") else "No"),
         ("Schedule", "Runs on a schedule" if rec.get("scheduled") else "None"),

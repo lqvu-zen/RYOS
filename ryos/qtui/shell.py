@@ -47,7 +47,7 @@ from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from .stylesheet import stylesheet
-from .widgets import literal
+from .widgets import literal, set_tooltip
 
 #: Matches the Tk placeholder, so the two shells prompt identically.
 SEARCH_PLACEHOLDER = "Search scripts and pipelines…"
@@ -410,7 +410,7 @@ class MainWindow(QMainWindow):
         self.group_tab_bar.reordered.connect(self._on_tabs_reordered)
         self.new_group_button = QPushButton("+")
         self.new_group_button.setObjectName("newGroupPill")
-        self.new_group_button.setToolTip("New group")
+        set_tooltip(self.new_group_button, "New group")
         self.new_group_button.clicked.connect(self.new_group)
         # Just after the last pill, where the next group will appear.
         self.group_tab_bar.set_trailing(self.new_group_button)
@@ -454,9 +454,11 @@ class MainWindow(QMainWindow):
         self.output_findbar.setObjectName("outputHeader")
         find = QHBoxLayout(self.output_findbar)
         find.setContentsMargins(8, 0, 8, 2)
-        find.addWidget(QLabel(outputpanel.FIND))
+        find_label = QLabel(outputpanel.FIND)
+        find.addWidget(find_label)
         self.output_find = QLineEdit()
         self.output_find.setObjectName("outputFind")
+        find_label.setBuddy(self.output_find)
         self.output_find.setMinimumWidth(60)
         self.output_find.textChanged.connect(self._on_output_query)
         self.output_find.installEventFilter(self)
@@ -1412,6 +1414,8 @@ class MainWindow(QMainWindow):
         self.update_download.clicked.connect(lambda: self.open_url(url))
         row.addWidget(self.update_download)
         dismiss = QPushButton("✕")
+        dismiss.setObjectName("quiet")
+        set_tooltip(dismiss, "Dismiss")
         dismiss.clicked.connect(self.dismiss_update_banner)
         row.addWidget(dismiss)
         self._top_col.insertWidget(0, banner)
@@ -1921,9 +1925,24 @@ class MainWindow(QMainWindow):
         elif key == cardmenu.EDIT and kind == cardmenu.PIPELINE:
             self._edit_pipeline(item_id, name)
             return
+        elif key == cardmenu.EDIT:
+            self.edit_script(item_id)
+            return
+        elif key == cardmenu.RUN_WITH and kind == cardmenu.SCRIPT:
+            # Through the row, as its ▶+ does: its preset is the starting point.
+            card = self._card_for(kind, item_id, section)
+            if card is not None:
+                self.run_with_param(card, rec)
+            return
         else:
             return
         self._defer_reload()
+
+    def _card_for(self, kind: str, item_id: int, section: str = sections.SCRIPTS):
+        """The row showing an item: in ``section`` if it is there, else any."""
+        rows = [c for c in self._cards if c.drag_payload is not None
+                and (c.drag_payload.kind, c.drag_payload.item_id) == (kind, item_id)]
+        return next((c for c in rows if c.section == section), rows[0] if rows else None)
 
     def _set_favorite(self, kind: str, item_id: int, favorite: bool) -> None:
         if self._db is not None:

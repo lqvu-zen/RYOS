@@ -22,6 +22,7 @@ MOVE_TOP = "move_top"
 MOVE_UP = "move_up"
 MOVE_DOWN = "move_down"
 EDIT = "edit"
+RUN_WITH = "run_with"
 SCHEDULE = "schedule"
 HISTORY = "history"
 CLONE = "clone"
@@ -86,23 +87,36 @@ def _highlight_menu(current: str | None) -> MenuItem:
 
 
 def _favorite_item(favorite: bool) -> MenuItem:
-    return MenuItem(FAVORITE, "☆ Remove from Favorites" if favorite
-                    else "★ Add to Favorites")
+    return MenuItem(FAVORITE, "☆  Remove from favorites" if favorite
+                    else "★  Add to favorites")
+
+
+#: Opens the item's dialog. First on both menus: a row shows its pencil only
+#: under the pointer, so the menu is the way in that is always there.
+EDIT_ITEM = MenuItem(EDIT, "✎  Edit…")
 
 
 def script_menu(*, favorite: bool, color: str | None,
                 can_move_up: bool, can_move_down: bool) -> list[MenuItem]:
-    """The script card's menu. Moves are disabled at the ends of the list."""
+    """The script card's menu. Moves are disabled at the ends of the list.
+
+    Edit and Run with parameters come first: the row keeps their buttons for
+    the pointer, so without these a keyboard -- or anyone who never hovers
+    the right spot -- had no way to either.
+    """
     return [
+        EDIT_ITEM,
+        MenuItem(RUN_WITH, "▶  Run with parameters…"),
+        SEPARATOR,
         _favorite_item(favorite),
         _highlight_menu(color),
         SEPARATOR,
-        MenuItem(MOVE_TOP, "⤒  Move to Top", enabled=can_move_up),
-        MenuItem(MOVE_UP, "▲  Move Up", enabled=can_move_up),
-        MenuItem(MOVE_DOWN, "▼  Move Down", enabled=can_move_down),
+        MenuItem(MOVE_TOP, "⤒  Move to top", enabled=can_move_up),
+        MenuItem(MOVE_UP, "▲  Move up", enabled=can_move_up),
+        MenuItem(MOVE_DOWN, "▼  Move down", enabled=can_move_down),
         SEPARATOR,
         MenuItem(SCHEDULE, "🕒  Schedule…"),
-        MenuItem(HISTORY, "🕘  Run History…"),
+        MenuItem(HISTORY, "🕘  Run history…"),
         MenuItem(CLONE, "⧉  Clone"),
         SEPARATOR,
         MenuItem(DELETE, "🗑  Delete", danger=True),
@@ -111,12 +125,13 @@ def script_menu(*, favorite: bool, color: str | None,
 
 def pipeline_menu(*, favorite: bool, color: str | None) -> list[MenuItem]:
     return [
+        EDIT_ITEM,
+        SEPARATOR,
         _favorite_item(favorite),
         _highlight_menu(color),
         SEPARATOR,
-        MenuItem(EDIT, "✎  Edit"),
         MenuItem(SCHEDULE, "🕒  Schedule…"),
-        MenuItem(HISTORY, "🕘  Run History…"),
+        MenuItem(HISTORY, "🕘  Run history…"),
         MenuItem(CLONE, "⧉  Clone"),
         SEPARATOR,
         MenuItem(DELETE, "🗑  Delete", danger=True),
@@ -127,7 +142,7 @@ def group_menu() -> list[MenuItem]:
     return [
         MenuItem(RENAME_GROUP, "✏  Rename"),
         MenuItem(CLONE_GROUP, "📋  Clone Group"),
-        MenuItem(BASE_DIR, "📁  Base directory…"),
+        MenuItem(BASE_DIR, "📁  Base folder…"),
         MenuItem(EXPORT_GROUP, "📤  Export group"),
         SEPARATOR,
         MenuItem(DELETE_GROUP, "🗑  Delete Group", danger=True),

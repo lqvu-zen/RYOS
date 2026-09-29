@@ -43,9 +43,14 @@ def _warn(parent: QWidget, title: str, message: str) -> None:
     QMessageBox.warning(parent, title, message)
 
 
-def _ok_cancel(parent: QDialog, on_ok: Callable[[], None]) -> QDialogButtonBox:
+def _ok_cancel(parent: QDialog, on_ok: Callable[[], None],
+               ok_text: str | None = None) -> QDialogButtonBox:
+    """OK and Cancel. ``ok_text`` names what OK does ("Create group"):
+    a button that says its action needs no reading of the dialog."""
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                | QDialogButtonBox.StandardButton.Cancel)
+    if ok_text:
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(ok_text)
     buttons.accepted.connect(on_ok)
     buttons.rejected.connect(parent.reject)
     return buttons
@@ -74,9 +79,12 @@ class NewGroupDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(self.e_dir, 1)
         row.addWidget(browse)
-        form.addRow(QLabel("Name"), self.e_name)
-        form.addRow(QLabel("Base folder (optional)"), row)
-        form.addRow(_ok_cancel(self, self.accept_form))
+        form.addRow(QLabel("Name:"), self.e_name)
+        base_label = QLabel("Base folder (optional):")
+        # The field sits in a row with Browse, so the form cannot link them.
+        base_label.setBuddy(self.e_dir)
+        form.addRow(base_label, row)
+        form.addRow(_ok_cancel(self, self.accept_form, "Create group"))
 
     def _browse(self) -> None:
         chosen = QFileDialog.getExistingDirectory(self, "Base folder",
@@ -331,7 +339,13 @@ class RunHistoryDialog(QDialog):
         col.addWidget(self.table, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        self.clear_button = QPushButton("Clear history")
+        close = buttons.button(QDialogButtonBox.StandardButton.Close)
+        close.setDefault(True)
+        self.clear_button = QPushButton("Clear history…")
+        # Never the default: as the first auto-default button it was drawn
+        # filled -- the most prominent thing in a read-only view was the one
+        # that deletes it.
+        self.clear_button.setAutoDefault(False)
         self.clear_button.clicked.connect(self._confirm_clear)
         buttons.rejected.connect(self.reject)
         col.addWidget(button_row(buttons, self.clear_button))
@@ -351,9 +365,14 @@ class RunHistoryDialog(QDialog):
         self.clear_button.setEnabled(bool(rows))
 
     def _confirm_clear(self) -> None:
-        answer = QMessageBox.question(
-            self, "Clear history", "Delete every recorded run shown here?")
-        if answer == QMessageBox.StandardButton.Yes:
+        """Ask with buttons that name the choice; Keep is the default."""
+        box = QMessageBox(QMessageBox.Icon.Warning, "Clear history",
+                          history.clear_prompt(len(self.rows())), parent=self)
+        clear = box.addButton("Clear history", QMessageBox.ButtonRole.DestructiveRole)
+        keep = box.addButton("Keep", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(keep)
+        box.exec()
+        if box.clickedButton() is clear:
             self.clear()
 
     def clear(self) -> int:
@@ -404,6 +423,7 @@ class ScheduleDialog(QDialog):
         self.mode.addItem("Every day at", DAILY)
         self.mode.addItem("On chosen days at", WEEKLY)
         self.mode.setCurrentIndex(self.mode.findData(values["mode"]))
+        self.mode.setAccessibleName("Repeats")
         col.addWidget(self.mode)
 
         self.pages = QStackedWidget()
@@ -413,7 +433,9 @@ class ScheduleDialog(QDialog):
         self.minutes = QSpinBox()
         self.minutes.setRange(1, 7 * 24 * 60)
         self.minutes.setValue(_int_or(values["minutes"], 30))
-        irow.addWidget(QLabel("Every"))
+        every = QLabel("Every")
+        every.setBuddy(self.minutes)
+        irow.addWidget(every)
         irow.addWidget(self.minutes)
         irow.addWidget(QLabel("minutes"))
         irow.addStretch(1)
@@ -424,7 +446,9 @@ class ScheduleDialog(QDialog):
         trow = QHBoxLayout()
         self.at = QLineEdit(values["at"])
         self.at.setPlaceholderText("09:00")
-        trow.addWidget(QLabel("At"))
+        at_label = QLabel("At")
+        at_label.setBuddy(self.at)
+        trow.addWidget(at_label)
         trow.addWidget(self.at)
         trow.addStretch(1)
         tcol.addLayout(trow)
@@ -442,8 +466,10 @@ class ScheduleDialog(QDialog):
         col.addWidget(self.pages)
 
         crow = QHBoxLayout()
-        crow.addWidget(QLabel("If RYOS was closed when a run was due:"))
+        catch_label = QLabel("If RYOS was closed when a run was due:")
+        crow.addWidget(catch_label)
         self.catch_up = QComboBox()
+        catch_label.setBuddy(self.catch_up)
         for key, label in scheduleform.CATCH_UP_LABELS.items():
             self.catch_up.addItem(label, key)
         self.catch_up.setCurrentIndex(self.catch_up.findData(values["catch_up"]))

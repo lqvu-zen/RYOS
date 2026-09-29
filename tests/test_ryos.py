@@ -1324,7 +1324,7 @@ class TestResolve(unittest.TestCase):
             abs_path, candidates, err = resolve(base, "../escape.txt")
             self.assertIsNone(abs_path)
             self.assertEqual(candidates, [])
-            self.assertIn("outside the base directory", err)
+            self.assertIn("outside the base folder", err)
 
     def test_skip_dirs_ignored(self):
         with _tempfile.TemporaryDirectory() as base:
@@ -3933,9 +3933,16 @@ class TestRunHistoryFormatting(unittest.TestCase):
         self.assertEqual(format_duration("2026-09-14T10:00:00", "2026-09-14T09:00:00"), "—")
 
     def test_status_marks(self):
-        self.assertIn("ok", format_status("ok"))
-        self.assertIn("error", format_status("error"))
+        # The rows' own words for an outcome, so the two never disagree.
+        self.assertEqual(format_status("ok"), "✓ OK")
+        self.assertEqual(format_status("error"), "✗ Failed")
         self.assertEqual(format_status(None), "—")
+
+    def test_clear_prompt_counts_and_warns(self):
+        from ryos.history import clear_prompt
+        self.assertEqual(clear_prompt(1),
+                         "Delete the 1 recorded run shown here? This can't be undone.")
+        self.assertIn("12 recorded runs", clear_prompt(12))
 
     def test_unknown_status_passes_through(self):
         self.assertEqual(format_status("weird"), "weird")
@@ -4661,14 +4668,15 @@ class TestPolicyMarks(unittest.TestCase):
         self.assertEqual(_policy_marks((1, 1, "s", "/s.py", "", "", None, "after")), "")
 
     def test_continue(self):
-        self.assertIn("!", _policy_marks(_policy_step(on_failure=FAIL_CONTINUE)))
+        self.assertIn("keeps going", _policy_marks(_policy_step(on_failure=FAIL_CONTINUE)))
 
     def test_retries(self):
-        self.assertIn("↻3", _policy_marks(_policy_step(retries=3)))
+        self.assertIn("3 retries", _policy_marks(_policy_step(retries=3)))
+        self.assertIn("1 retry", _policy_marks(_policy_step(retries=1)))
 
     def test_conditions(self):
-        self.assertIn("?ok", _policy_marks(_policy_step(run_when=WHEN_ON_SUCCESS)))
-        self.assertIn("?fail", _policy_marks(_policy_step(run_when=WHEN_ON_FAILURE)))
+        self.assertIn("only after success", _policy_marks(_policy_step(run_when=WHEN_ON_SUCCESS)))
+        self.assertIn("only after a failure", _policy_marks(_policy_step(run_when=WHEN_ON_FAILURE)))
 
 
 class TestStepPolicyStorage(unittest.TestCase):
@@ -6647,8 +6655,8 @@ class TestPipelineStepRows(unittest.TestCase):
     def test_policy_marks_ride_along(self):
         label = pipelinesteps.step_label(
             self._step(on_failure=FAIL_CONTINUE, retries=2), 0)
-        self.assertIn("!", label)
-        self.assertIn("↻2", label)
+        self.assertIn("keeps going", label)
+        self.assertIn("2 retries", label)
 
     def test_labels_are_numbered_in_order(self):
         steps = [self._step(sid=i, name=f"s{i}") for i in range(3)]
@@ -7281,7 +7289,7 @@ class TestFileDropAndCardDetails(unittest.TestCase):
 
     def test_outside_notice(self):
         title, text = scriptform.outside_base_notice("G", ["x"] * 12)
-        self.assertEqual(title, "Files outside base directory")
+        self.assertEqual(title, "Files outside base folder")
         self.assertIn("12 file(s)", text)
         self.assertEqual(text.count("x"), 10)
 
@@ -7501,8 +7509,8 @@ class TestPipelineEditorRules(unittest.TestCase):
         self.assertEqual(set(pipelinesteps.FAIL_LABELS), {FAIL_STOP, FAIL_CONTINUE})
         self.assertEqual(set(pipelinesteps.WHEN_LABELS),
                          {WHEN_ALWAYS, WHEN_ON_SUCCESS, WHEN_ON_FAILURE})
-        for mark in ("∥", "!", "↻n", "?ok", "?fail", "→launch"):
-            self.assertIn(mark, pipelinesteps.LEGEND)
+        # Only the one symbol the list still uses needs explaining.
+        self.assertIn("∥", pipelinesteps.LEGEND)
 
 
 class TestPaletteFor(unittest.TestCase):
@@ -7885,14 +7893,25 @@ class TestCardMenu(unittest.TestCase):
     def keys(self, items):
         return [i.key for i in items]
 
-    def test_script_menu_order_matches_what_tk_always_showed(self):
+    def test_script_menu_order(self):
+        # Edit and Run with parameters lead: the row shows their buttons
+        # only under the pointer, so the menu is the way in that is always there.
         items = cardmenu.script_menu(favorite=False, color=None,
                                      can_move_up=True, can_move_down=True)
         self.assertEqual(self.keys(items), [
+            cardmenu.EDIT, cardmenu.RUN_WITH, None,
             cardmenu.FAVORITE, cardmenu.HIGHLIGHT, None, cardmenu.MOVE_TOP,
             cardmenu.MOVE_UP, cardmenu.MOVE_DOWN, None, cardmenu.SCHEDULE,
             cardmenu.HISTORY, cardmenu.CLONE, None, cardmenu.DELETE])
         self.assertTrue(items[-1].danger)
+
+    def test_pipeline_menu_leads_with_edit(self):
+        items = cardmenu.pipeline_menu(favorite=False, color=None)
+        self.assertEqual(items[0].key, cardmenu.EDIT)
+        self.assertTrue(items[0].label.endswith("…"))
+
+    def _entry(self, items, key):
+        return next(i for i in items if i.key == key)
 
     def test_moves_disable_at_the_ends(self):
         items = {i.key: i for i in cardmenu.script_menu(
@@ -7902,18 +7921,22 @@ class TestCardMenu(unittest.TestCase):
         self.assertTrue(items[cardmenu.MOVE_DOWN].enabled)
 
     def test_favorite_label_follows_state(self):
-        on = cardmenu.pipeline_menu(favorite=True, color=None)[0]
-        off = cardmenu.pipeline_menu(favorite=False, color=None)[0]
+        on = self._entry(cardmenu.pipeline_menu(favorite=True, color=None),
+                         cardmenu.FAVORITE)
+        off = self._entry(cardmenu.pipeline_menu(favorite=False, color=None),
+                          cardmenu.FAVORITE)
         self.assertIn("Remove", on.label)
         self.assertIn("Add", off.label)
 
     def test_highlight_submenu_marks_the_current_colour(self):
-        sub = cardmenu.pipeline_menu(favorite=False, color="teal")[1]
+        sub = self._entry(cardmenu.pipeline_menu(favorite=False, color="teal"),
+                          cardmenu.HIGHLIGHT)
         marked = [c.key for c in sub.children if c.label.startswith("\u25cf")]
         self.assertEqual(marked, [cardmenu.highlight_key("teal")])
 
     def test_unknown_stored_colour_marks_none(self):
-        sub = cardmenu.pipeline_menu(favorite=False, color="chartreuse")[1]
+        sub = self._entry(cardmenu.pipeline_menu(favorite=False, color="chartreuse"),
+                          cardmenu.HIGHLIGHT)
         marked = [c.key for c in sub.children if c.label.startswith("\u25cf")]
         self.assertEqual(marked, [cardmenu.highlight_key(None)])
 
@@ -8003,7 +8026,7 @@ class TestGroupMenuRules(unittest.TestCase):
     def test_base_dir_clear_always_confirms(self):
         change = grouping.base_dir_change("G", "/a", "")
         self.assertEqual(change.kind, grouping.BASE_DIR_CLEAR)
-        self.assertEqual(change.confirm[0], "Clear base directory")
+        self.assertEqual(change.confirm[0], "Clear base folder")
 
     def test_base_dir_first_set_needs_no_confirm(self):
         change = grouping.base_dir_change("G", "", "/b")

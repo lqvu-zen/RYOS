@@ -41,11 +41,13 @@ class PipelineEditorDialog(QDialog):
         col = QVBoxLayout(self)
         form = QFormLayout()
         self.name_edit = QLineEdit(name)
-        form.addRow(QLabel("Pipeline Name"), self.name_edit)
+        form.addRow(QLabel("Name:"), self.name_edit)
         col.addLayout(form)
 
-        col.addWidget(QLabel("Steps"))
+        steps_label = QLabel("Steps")
+        col.addWidget(steps_label)
         self.list = QListWidget()
+        steps_label.setBuddy(self.list)
         col.addWidget(self.list, 1)
 
         controls = QHBoxLayout()
@@ -78,13 +80,15 @@ class PipelineEditorDialog(QDialog):
         policy.addRow(QLabel("Step preset:"), self.preset)
         col.addLayout(policy)
 
-        col.addWidget(QLabel("Add Step"))
+        add_label = QLabel("Add step")
+        col.addWidget(add_label)
         add_row = QHBoxLayout()
         self.add_combo = QComboBox()
+        add_label.setBuddy(self.add_combo)
         self._add_choices = pipelinesteps.add_step_choices(db.list_all(), group)
         self.add_combo.addItems(list(self._add_choices))
+        # Not filled: Save is the dialog's one primary button.
         self.add_button = QPushButton("Add")
-        self.add_button.setObjectName("primary")
         self.add_button.setEnabled(bool(self._add_choices))
         add_row.addWidget(self.add_combo, 1)
         add_row.addWidget(self.add_button)

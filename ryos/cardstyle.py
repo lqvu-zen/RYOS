@@ -46,7 +46,7 @@ ROW_METRICS: dict[tuple[bool, str], tuple[int, int, int, int]] = {
 #: The round Run button's diameter: a full row's, and a compact row's.
 RUN_DIAMETER = {False: 32, True: 26}
 #: A favourite chip's Run, and the chip's (padx, pady).
-CHIP_RUN_DIAMETER = 22
+CHIP_RUN_DIAMETER = 24          # the smallest comfortable target (WCAG 2.5.8)
 CHIP_PADDING = (12, 3)
 
 

@@ -112,7 +112,7 @@ class _CardBase(QFrame):
         """A kind label -- BATCH, ⚡ PIPELINE -- as small coloured capitals."""
         label = QLabel(text.upper())
         label.setObjectName(object_name)
-        label.setStyleSheet(f"color: {self._ink(color)}; font-size: 7.5pt;"
+        label.setStyleSheet(f"color: {self._ink(color)}; font-size: 8pt;"
                             f" font-weight: 700; letter-spacing: 0.4px;")
         return label
 
@@ -280,6 +280,9 @@ class _CardBase(QFrame):
         spec = cardstyle.run_button(last_status)
         b.setText(spec.glyph)
         set_tooltip(b, spec.tooltip)
+        # The tooltip explains; the name is the action.
+        b.setAccessibleName(f"Retry {self._name}" if spec.is_retry
+                            else f"Run {self._name}")
         c = self._palette
         # Per-button colours, because the state is per-card rather than
         # per-class; everything else is left to the stylesheet. The radius
@@ -293,7 +296,9 @@ class _CardBase(QFrame):
             f" min-width: {side}px; max-width: {side}px;"
             f" min-height: {side}px; max-height: {side}px; }}"
             f"QPushButton#run:hover {{ background: {c[spec.hover_key]};"
-            f" color: {ink_on(c[spec.hover_fg_key])}; }}")
+            f" color: {ink_on(c[spec.hover_fg_key])}; }}"
+            # Keyboard focus: a ring in the text colour, on any fill.
+            f"QPushButton#run:focus {{ border: 2px solid {c['name_fg']}; }}")
         b.setProperty("runState", spec.state)
 
     def _tag_badges(self, header: QHBoxLayout, badges) -> None:
@@ -304,7 +309,7 @@ class _CardBase(QFrame):
             badge.setObjectName("tagBadge")
             badge.setStyleSheet(
                 f"color: {self._ink(self._palette[spec.bg_key])};"
-                f" font-size: 7.5pt; font-weight: 700;")
+                f" font-size: 8pt; font-weight: 700;")
             set_tooltip(badge, spec.tooltip)
             header.addWidget(badge)
             self.badges.append(badge)
@@ -318,7 +323,11 @@ class _CardBase(QFrame):
         chip = QLabel("●" if self._chip else spec.text)
         chip.setObjectName("statusChip")
         if self._chip:
-            chip.setToolTip(spec.text.lstrip("● "))
+            # A dot alone is colour alone: say it, to the pointer and to a
+            # screen reader.
+            word = spec.text.lstrip("● ")
+            chip.setToolTip(f"Last run: {word}")
+            chip.setAccessibleName(f"Last run {word}")
         chip.setStyleSheet(f"color: {self._ink(self._palette[spec.bg_key])};"
                            f" font-size: {8 if self._chip else 9}pt; font-weight: 600;")
         return chip
