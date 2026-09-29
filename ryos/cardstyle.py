@@ -45,6 +45,9 @@ ROW_METRICS: dict[tuple[bool, str], tuple[int, int, int, int]] = {
 
 #: The round Run button's diameter: a full row's, and a compact row's.
 RUN_DIAMETER = {False: 32, True: 26}
+#: A favourite chip's Run, and the chip's (padx, pady).
+CHIP_RUN_DIAMETER = 22
+CHIP_PADDING = (12, 3)
 
 
 def card_padding(compact: bool, size: str) -> tuple[int, int]:

@@ -268,6 +268,17 @@ def check_cards(app):
             app.processEvents()
             tag = f"compact={compact} size={size}"
 
+            # A row's buttons wait for the pointer, in space kept for them:
+            # Run must not move when they appear.
+            run_x = sc.run_button.mapTo(sc, QPoint(0, 0)).x()
+            if not compact and (sc.edit_button.isVisible() or sc.fav_button.isVisible()):
+                PROBLEMS.append(f"{tag}: a row showed Edit or ☆ before the pointer came")
+            for c in (sc, pc):
+                c.set_hovered(True)
+            app.processEvents()
+            if sc.run_button.mapTo(sc, QPoint(0, 0)).x() != run_x:
+                PROBLEMS.append(f"{tag}: Run moved when the row's buttons appeared")
+
             # #3: the same cells, the same widths, at the same x. A compact
             # row shows the star and Run only; the others are hidden.
             s_cells = [sc.fav_button, sc.edit_button, sc.param_button, sc.run_button]
@@ -327,6 +338,27 @@ def check_cards(app):
             for c in (sc, pc):
                 c.hide()
                 c.deleteLater()
+
+    # A favourite's gold star always shows; a favourite chip is a pill
+    # whose Run is round (a stylesheet min-height once squashed it flat).
+    fav = ScriptCard(script_id=2, name="fav", path="f.py", palette=pal,
+                     is_favorite=True)
+    chip = PipelineCard(pipeline_id=2, name="a long favourite pipeline name",
+                        step_count=1, palette=pal, is_favorite=True, chip=True)
+    for c in (fav, chip):
+        c.setStyleSheet(app_sheet)
+        c.show()
+    app.processEvents()
+    if not fav.fav_button.isVisible():
+        PROBLEMS.append("a favourite row hid its gold star until hovered")
+    run = chip.run_button
+    if run.width() != run.height() or run.width() != cardstyle.CHIP_RUN_DIAMETER \
+            or chip.height() < run.height() + 2 or not chip.property("chip"):
+        PROBLEMS.append(f"the favourite chip is {chip.width()}x{chip.height()}, "
+                        f"its Run {run.width()}x{run.height()}")
+    for c in (fav, chip):
+        c.hide()
+        c.deleteLater()
 
     # #4: Run becomes Retry after a failure, on both card types.
     seen = {}
@@ -2683,7 +2715,8 @@ def check_sections_and_favorites(app):
     settle()
     page = win.card_lists["G"]
     if not page.section(sections.SCRIPTS).isHidden() \
-            or not page.sections[sections.SCRIPTS].header.text().startswith("▶"):
+            or not page.sections[sections.SCRIPTS].header.text().startswith(
+                sections.COLLAPSED_MARK):
         PROBLEMS.append("a collapsed section opened again on reload")
     if win.card_lists["H"].sections[sections.SCRIPTS].empty.isHidden():
         PROBLEMS.append("collapsing in one group collapsed another")
@@ -3819,6 +3852,78 @@ def check_ticks_are_drawn(app):
           "dot, light and dark")
 
 
+def check_strip_and_preset(app):
+    """The Favorites strip wraps its chips and drops by reading order; a row's
+    preset chip chooses, through its menu, what Run passes."""
+    from PySide6.QtCore import QPoint
+
+    from ryos import scriptform
+    from ryos.qtui.cards import ScriptCard
+    from ryos.qtui.dragdrop import CardList, CardPayload
+    from ryos.qtui.stylesheet import stylesheet as _sheet
+    from ryos.themes import REFERENCE
+
+    pal = REFERENCE["light"]
+    strip = CardList("G", flow=True)
+    strip.setStyleSheet(_sheet(pal))
+    chips = []
+    for i in range(5):
+        chip = ScriptCard(script_id=i + 1, name=f"favourite number {i + 1}",
+                          path="x.py", palette=pal, is_favorite=True, chip=True)
+        strip.add_card(chip, "script", i + 1)
+        chips.append(chip)
+    strip.resize(420, 200)
+    strip.show()
+    app.processEvents()
+    tops = sorted({c.geometry().top() for c in chips})
+    if len(tops) < 2:
+        PROBLEMS.append(f"the strip did not wrap at 420 px: rows at {tops}")
+    if strip.heightForWidth(420) < chips[-1].geometry().bottom():
+        PROBLEMS.append("the strip asks for less height than its chips take")
+    moving = CardPayload("script", 5, "G")
+    second = chips[1].geometry()
+    before, rect = strip.flow_insertion_for(moving, QPoint(second.left() + 2,
+                                                           second.center().y()))
+    if before != 2 or rect is None:
+        PROBLEMS.append(f"a drop on chip 2's left half lands before {before}")
+    first_on_row_two = next(c for c in chips if c.geometry().top() == tops[1])
+    before, _rect = strip.flow_insertion_for(
+        moving, QPoint(chips[0].geometry().right() + 1, tops[1] - 1))
+    if before != first_on_row_two.drag_payload.item_id:
+        PROBLEMS.append(f"a drop past row one's end lands before {before}")
+    before, _rect = strip.flow_insertion_for(moving, QPoint(410, 190))
+    if before is not None:
+        PROBLEMS.append(f"a drop after the last chip lands before {before}")
+    strip.hide()
+    strip.deleteLater()
+
+    card = ScriptCard(script_id=9, name="presets", path="p.py", palette=pal,
+                      param_choices=scriptform.card_param_choices(
+                          "--a", [(1, "fast", "--fast")]))
+    card.setStyleSheet(_sheet(pal))
+    card.show()
+    app.processEvents()
+    shown: list = []
+
+    def choose_fast(menu, _pos):
+        shown.append([a.text() for a in menu.actions()])
+        next(a for a in menu.actions() if a.text() == "--fast").trigger()
+    card.menu_runner = choose_fast
+    if card.params_combo is None or card.params_combo.isVisible() \
+            or card.params_pick is None or not card.params_pick.isVisible():
+        PROBLEMS.append("a row showed its drop-down, or no preset chip")
+    else:
+        card.params_pick.click()
+        if card.selected_params("") != "--fast" or "--fast" not in card.params_pick.text():
+            PROBLEMS.append(f"the preset menu {shown} chose "
+                            f"{card.selected_params('')!r}, chip "
+                            f"{card.params_pick.text()!r}")
+    card.hide()
+    card.deleteLater()
+    print("  [ok] favourites strip wraps and drops by reading order; "
+          "the preset chip's menu chooses what Run passes")
+
+
 def check_maximised_layout(app):
     """Maximised: the list beside the chosen item, acting through its row.
 
@@ -4037,6 +4142,7 @@ def main() -> int:
     check_badges_banner_previews(app)
     check_long_text_fits(app)
     check_ticks_are_drawn(app)
+    check_strip_and_preset(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

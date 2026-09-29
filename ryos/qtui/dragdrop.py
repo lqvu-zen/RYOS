@@ -105,26 +105,38 @@ class CardList(QWidget):
 
     dropped = Signal(object, object)     # (CardPayload, before_id or None)
 
-    def __init__(self, group: str, parent: QWidget | None = None):
+    def __init__(self, group: str, parent: QWidget | None = None, *,
+                 flow: bool = False):
         super().__init__(parent)
         self.group = group
+        self.flow = flow
         self.setAcceptDrops(True)
-        # One panel per section, its cards rows of it (the stylesheet).
+        # One panel per section, its cards rows of it (the stylesheet); or,
+        # for the Favorites strip, chips that wrap.
         self.setObjectName("sectionPanel")
+        self.setProperty("flow", flow)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.layout_ = QVBoxLayout(self)
-        self.layout_.setContentsMargins(0, 0, 0, 0)
-        self.layout_.setSpacing(0)
-        self.layout_.addStretch(1)
+        if flow:
+            from .widgets import FlowLayout
+            self.layout_ = FlowLayout(self, spacing=6)
+        else:
+            self.layout_ = QVBoxLayout(self)
+            self.layout_.setContentsMargins(0, 0, 0, 0)
+            self.layout_.setSpacing(0)
+            self.layout_.addStretch(1)
         self._cards: list = []
         self.indicator = QFrame(self)
         self.indicator.setObjectName("dropIndicator")
-        self.indicator.setFixedHeight(INDICATOR_HEIGHT)
+        if not flow:
+            self.indicator.setFixedHeight(INDICATOR_HEIGHT)
         self.indicator.hide()
 
     def add_card(self, card, kind: str, item_id: int) -> None:
         card.drag_payload = CardPayload(kind, item_id, self.group)
-        self.layout_.insertWidget(self.layout_.count() - 1, card)
+        if self.flow:
+            self.layout_.addWidget(card)
+        else:
+            self.layout_.insertWidget(self.layout_.count() - 1, card)
         # Rows are split by a hairline under each; the last row's would sit
         # on the panel's own edge and draw it twice.
         if self._cards:
@@ -140,11 +152,40 @@ class CardList(QWidget):
     def insertion_for(self, payload: CardPayload, y: int) -> tuple:
         """(before_id, indicator_y) for a drop at ``y``, by the shared rule."""
         rows = [(c.drag_payload.item_id, c.geometry().y(), c.geometry().height())
-                for c in self._cards
+                for c in self._others(payload)]
+        return dragdrop.compute_insertion(y, rows)
+
+    def _others(self, payload: CardPayload) -> list:
+        return [c for c in self._cards
                 if c.drag_payload.kind == payload.kind
                 and c.drag_payload.item_id != payload.item_id
                 and c.isVisible()]
-        return dragdrop.compute_insertion(y, rows)
+
+    def flow_insertion_for(self, payload: CardPayload, pos: QPoint) -> tuple:
+        """(before_id, indicator rect or None) for a drop at ``pos`` among
+        chips that wrap: before the first chip that comes after the point in
+        reading order -- a line further down, or on its line and to its right.
+        """
+        from PySide6.QtCore import QRect
+        chips = self._others(payload)
+        for c in chips:
+            g = c.geometry()
+            if pos.y() < g.top() or (pos.y() <= g.bottom() and pos.x() < g.center().x()):
+                return c.drag_payload.item_id, QRect(g.left() - 4, g.top(),
+                                                     INDICATOR_HEIGHT, g.height())
+        if not chips:
+            return None, None
+        g = chips[-1].geometry()
+        return None, QRect(g.right() + 2, g.top(), INDICATOR_HEIGHT, g.height())
+
+    def _target(self, payload: CardPayload, pos: QPoint) -> tuple:
+        """(before_id, where the indicator goes or None), for either layout."""
+        if self.flow:
+            return self.flow_insertion_for(payload, pos)
+        from PySide6.QtCore import QRect
+        before, y = self.insertion_for(payload, pos.y())
+        return before, (None if y is None
+                        else QRect(0, max(0, y - 2), self.width(), INDICATOR_HEIGHT))
 
     def _accepts(self, payload: "CardPayload | None") -> bool:
         return payload is not None and payload.group == self.group
@@ -162,12 +203,11 @@ class CardList(QWidget):
             event.ignore()
             self.indicator.hide()
             return
-        _before, y = self.insertion_for(payload, int(event.position().y()))
-        if y is None:
+        _before, rect = self._target(payload, event.position().toPoint())
+        if rect is None:
             self.indicator.hide()
         else:
-            self.indicator.setGeometry(0, max(0, y - 2), self.width(),
-                                       INDICATOR_HEIGHT)
+            self.indicator.setGeometry(rect)
             self.indicator.raise_()
             self.indicator.show()
         event.acceptProposedAction()
@@ -181,7 +221,7 @@ class CardList(QWidget):
         if not self._accepts(payload):
             event.ignore()
             return
-        before, _y = self.insertion_for(payload, int(event.position().y()))
+        before, _rect = self._target(payload, event.position().toPoint())
         event.acceptProposedAction()
         self.dropped.emit(payload, before)
 
@@ -202,6 +242,51 @@ class GroupTabBar(QTabBar):
         # reported once, on release, so nothing rebuilds mid-drag.
         self._moved = False
         self.tabMoved.connect(lambda _f, _t: setattr(self, "_moved", True))
+        self._trailing: QWidget | None = None
+
+    # -- a widget just after the last tab (the "+" for a new group) ---------------
+    TRAILING_GAP = 4
+    #: Space the stylesheet leaves under each pill, which the widget ignores.
+    TAB_BOTTOM_MARGIN = 8
+
+    def set_trailing(self, widget: QWidget) -> None:
+        """Keep ``widget`` just after the last tab, wherever that is."""
+        self._trailing = widget
+        widget.setParent(self)
+        widget.show()
+        self._place_trailing()
+
+    def sizeHint(self):                                # noqa: N802
+        hint = super().sizeHint()
+        if self._trailing is not None:
+            hint.setWidth(hint.width() + self._trailing.sizeHint().width()
+                          + 2 * self.TRAILING_GAP)
+        return hint
+
+    def tabLayoutChange(self) -> None:                 # noqa: N802
+        super().tabLayoutChange()
+        self._place_trailing()
+
+    def resizeEvent(self, event) -> None:              # noqa: N802
+        super().resizeEvent(event)
+        self._place_trailing()
+
+    def _place_trailing(self) -> None:
+        w = self._trailing
+        if w is None:
+            return
+        w.adjustSize()
+        # After the last group, in the gap the stylesheet leaves before All
+        # (the last tab); with All alone, after it.
+        n = self.count()
+        last = self.tabRect(n - 2 if n >= 2 else n - 1) if n else None
+        x = last.right() + self.TRAILING_GAP if last is not None else 0
+        x = max(0, min(x, self.width() - w.width()))
+        band = (last.height() - self.TAB_BOTTOM_MARGIN) if last is not None \
+            else self.height()
+        top = last.top() if last is not None else 0
+        w.move(x, top + max(0, (band - w.height()) // 2))
+        w.raise_()
 
     def tab_keys(self) -> list:
         return [self.tabData(i) for i in range(self.count())]

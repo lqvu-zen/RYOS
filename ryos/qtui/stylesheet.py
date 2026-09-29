@@ -181,6 +181,15 @@ QFrame#card:hover {{ background: {c['card_hover']}; }}
    accent for a pipeline, so the two kinds tell apart at a glance. */
 QFrame#card {{ border-left: 3px solid {c['accent']}; }}
 QFrame#card[kind="pipeline"] {{ border-left: 3px solid {c.get('pipe_accent', c['accent'])}; }}
+/* A favourite is a chip in the strip above the lists: a pill of its own,
+   not a row of a panel. After the edge rules above, which it replaces. */
+QWidget#sectionPanel[flow="true"] {{ background: transparent; border: none; }}
+QFrame#card[chip="true"] {{
+    background: {c['card_bg']};
+    border: 1px solid {c['border']};
+    border-radius: 15px;
+}}
+QFrame#card[chip="true"]:hover {{ background: {c['card_hover']}; }}
 QLabel#cardName {{ color: {c['name_fg']}; font-weight: 600; }}
 /* The name is a ScrollingLabel, not a QLabel: without this it was not bold. */
 QWidget#cardName {{ font-weight: 700; font-size: 10.5pt; }}
@@ -240,11 +249,24 @@ QFrame#card QPushButton {{
     min-height: 28px;
 }}
 QFrame#card QPushButton:hover {{ background: {c['accent_wash']}; color: {c['name_fg']}; }}
-QFrame#card QPushButton#run {{ font-size: 11pt; padding: 0; min-height: 0; }}
+QFrame#card QPushButton#run {{ font-size: 11pt; padding: 0; }}
 QFrame#card[compact="true"] QPushButton#run {{ font-size: 9pt; }}
 QFrame#card[compact="true"] QPushButton {{ min-height: 24px; }}
 /* A favourite's star is gold. */
 QFrame#card QPushButton#favOn {{ color: {d['star']}; }}
+/* The preset Run will pass, on a row's second line: a word to click, not
+   a drop-down box. */
+QFrame#card QPushButton#paramPick {{
+    background: transparent;
+    color: {d['tab_selected_fg']};
+    border: none;
+    border-radius: 3px;
+    min-height: 0;
+    padding: 0 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 9pt;
+}}
+QFrame#card QPushButton#paramPick:hover {{ background: {c['accent_wash']}; }}
 
 /* --- group tabs ----------------------------------------------------- */
 QTabWidget::pane {{ border: 1px solid {c['border']}; background: {c['card_bg']}; }}
@@ -275,6 +297,9 @@ QTabBar#groupTabBar::tab {{
     font-weight: 600;
 }}
 QTabBar#groupTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
+/* All comes last: the gap before it holds the + for a new group, which
+   belongs with the groups. */
+QTabBar#groupTabBar::tab:last {{ margin-left: 34px; }}
 QTabBar#groupTabBar::tab:selected {{
     background: {c['name_fg']};
     color: {d['pill_fg']};
@@ -381,9 +406,10 @@ QToolTip {{
     border: 1px solid {c['tooltip_border']};
     padding: 4px;
 }}
-QScrollBar:vertical {{ background: {c['bg']}; width: 12px; margin: 0; }}
-QScrollBar::handle:vertical {{ background: {c['border']}; border-radius: 6px; min-height: 24px; }}
-QScrollBar::handle:vertical:hover {{ background: {c['accent_wash']}; }}
+/* Thin, and only the handle drawn: a place to grab, not a grey column. */
+QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px 0; }}
+QScrollBar::handle:vertical {{ background: {d['control_edge']}; border-radius: 4px; min-height: 24px; }}
+QScrollBar::handle:vertical:hover {{ background: {c['path_fg']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 /* The track either side of the handle: left unstyled, Qt fills it with a
    dotted hatch. */

@@ -7639,8 +7639,8 @@ class TestSections(unittest.TestCase):
         for key in (sections.RUNNING, *sections.ORDER):
             self.assertIn(key, sections.LABELS)
             self.assertIn(key, sections.EMPTY)
-        self.assertEqual(sections.header_text(sections.SCRIPTS, True), "▶  SCRIPTS")
-        self.assertEqual(sections.header_text(sections.SCRIPTS, False), "▼  SCRIPTS")
+        self.assertEqual(sections.header_text(sections.SCRIPTS, True), "▸  SCRIPTS")
+        self.assertEqual(sections.header_text(sections.SCRIPTS, False), "▾  SCRIPTS")
 
     def test_collapse_state(self):
         from ryos import sections

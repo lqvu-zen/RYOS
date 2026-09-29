@@ -412,13 +412,8 @@ class MainWindow(QMainWindow):
         self.new_group_button.setObjectName("newGroupPill")
         self.new_group_button.setToolTip("New group")
         self.new_group_button.clicked.connect(self.new_group)
-        # Lifted by the gap the pills leave under themselves, so it sits on
-        # their line rather than below it.
-        corner = QWidget()
-        corner_row = QHBoxLayout(corner)
-        corner_row.setContentsMargins(0, 0, 0, 8)
-        corner_row.addWidget(self.new_group_button)
-        self.group_tabs.setCornerWidget(corner)
+        # Just after the last pill, where the next group will appear.
+        self.group_tab_bar.set_trailing(self.new_group_button)
         col.addWidget(self.group_tabs, 1)
         col.addWidget(self.running)
         return top
@@ -807,9 +802,10 @@ class MainWindow(QMainWindow):
         shade = readable_highlight(rec.get("color"), self._palette["card_bg"],
                                    self._palette["card_hover"])
         kind = rec["kind"]
+        chip = section == sections.FAVORITES
         if kind == cardmenu.PIPELINE:
             card = PipelineCard(pipeline_id=rec["id"], name=rec["name"],
-                                step_count=rec.get("steps", 0),
+                                step_count=rec.get("steps", 0), chip=chip,
                                 palette=self._palette, compact=compact, size=size,
                                 is_favorite=bool(rec.get("favorite")),
                                 label_color=shade, last_status=rec.get("status"),
@@ -819,7 +815,7 @@ class MainWindow(QMainWindow):
         else:
             card = ScriptCard(script_id=rec["id"], name=rec["name"],
                               path=rec.get("path", ""), palette=self._palette,
-                              compact=compact, size=size,
+                              compact=compact, size=size, chip=chip,
                               is_favorite=bool(rec.get("favorite")),
                               label_color=shade, last_status=rec.get("status"),
                               param_choices=scriptform.card_param_choices(

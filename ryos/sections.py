@@ -18,7 +18,7 @@ SCRIPTS = "scripts"
 #: Card sections, top to bottom (Running sits above them and holds no cards).
 ORDER = (FAVORITES, PIPELINES, SCRIPTS)
 
-LABELS = {RUNNING: "Running", FAVORITES: "★  Favorites",
+LABELS = {RUNNING: "Running", FAVORITES: "Favorites",
           PIPELINES: "Pipelines", SCRIPTS: "Scripts"}
 
 EMPTY = {RUNNING: "No script is currently running.",
@@ -28,8 +28,13 @@ EMPTY = {RUNNING: "No script is currently running.",
 
 
 def header_text(section: str, collapsed: bool) -> str:
-    """The header as drawn: an arrow for the state, then the label in capitals."""
-    return f"{'▶' if collapsed else '▼'}  {LABELS[section].upper()}"
+    """The header as drawn: a small arrow for the state, then the label in
+    capitals. Small: it is a fold, not the thing the eye should land on."""
+    return f"{COLLAPSED_MARK if collapsed else '▾'}  {LABELS[section].upper()}"
+
+
+#: What starts a folded section's header.
+COLLAPSED_MARK = "▸"
 
 
 def split(records) -> dict:

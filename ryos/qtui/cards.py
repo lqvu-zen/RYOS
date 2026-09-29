@@ -10,20 +10,31 @@ the Tk cards — this module binds palette *keys* to real colours and nothing
 else. Per the migration plan these are plain widgets in a scroll area rather
 than a QListView with a delegate: it mirrors what exists and ports fast, and
 card counts here are in the dozens, not the thousands.
+
+A card comes in three shapes:
+
+* a **row** (the default): two lines -- kind, name and outcome; then the path
+  or the steps, and the preset Run will pass -- beside a round Run. Its other
+  buttons (star, edit, run with parameters) show only under the pointer, in
+  space kept for them, so the row reads as one action and nothing shifts.
+* a **compact** row: one line -- star, name, kind, outcome, Run.
+* a **chip**, for the Favorites strip: a pill of name and Run.
 """
 
 from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygonF
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
-                               QPushButton, QVBoxLayout, QWidget)
+                               QMenu, QPushButton, QSizePolicy, QVBoxLayout,
+                               QWidget)
 
 from .. import cardstyle, scriptform
 from ..interpreter import _script_tag
 from ..themes import _readable_on, ink_on
-from .widgets import ElidedLabel, ScrollingLabel, set_tooltip
+from .widgets import ElidedLabel, ScrollingLabel, literal, set_tooltip
 
 # The button columns every card carries, so a mixed list lines up. The
 # pipeline card has no "run with parameter", and issue #3 was that omitting the
@@ -31,6 +42,32 @@ from .widgets import ElidedLabel, ScrollingLabel, set_tooltip
 # button-coloured slab made the gap read as a broken control. Here it is an
 # empty transparent placeholder of the same fixed width.
 BUTTON_WIDTH = 32
+#: The longest a chip's name gets before it is shortened with an ellipsis.
+CHIP_NAME_WIDTH = 170
+
+
+def run_with_icon(color: str, size: int = 18) -> QIcon:
+    """Run with parameters: a play triangle with a plus, drawn, not a glyph.
+
+    "▶+" was two characters from two fonts, at two sizes, and read as such.
+    Drawn at twice the size so it stays sharp on a scaled screen.
+    """
+    scale = 2
+    pix = QPixmap(size * scale, size * scale)
+    pix.setDevicePixelRatio(scale)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    ink = QColor(color)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(ink)
+    s = size / 18
+    p.drawPolygon(QPolygonF([QPointF(2 * s, 3 * s), QPointF(2 * s, 15 * s),
+                             QPointF(11 * s, 9 * s)]))
+    p.drawRoundedRect(QRectF(11.5 * s, 3 * s, 5.5 * s, 1.8 * s), 0.9 * s, 0.9 * s)
+    p.drawRoundedRect(QRectF(13.35 * s, 1.15 * s, 1.8 * s, 5.5 * s), 0.9 * s, 0.9 * s)
+    p.end()
+    return QIcon(pix)
 
 
 class _CardBase(QFrame):
@@ -46,18 +83,25 @@ class _CardBase(QFrame):
     activated = Signal()
 
     def __init__(self, palette: dict, compact: bool, size: str,
-                 parent: QWidget | None = None):
+                 parent: QWidget | None = None, *, chip: bool = False):
         super().__init__(parent)
         self._palette = palette
-        self._compact = compact
+        # A chip is a smaller compact row: everything compact holds for it.
+        self._chip = chip
+        self._compact = compact or chip
         self._size = size
+        self._hover_only: list[QWidget] = []
         self.setObjectName("card")
-        self.setProperty("compact", compact)
+        self.setProperty("compact", self._compact)
+        self.setProperty("chip", chip)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        padx, pady = cardstyle.card_padding(compact, size)
+        padx, pady = (cardstyle.CHIP_PADDING if chip
+                      else cardstyle.card_padding(self._compact, size))
         self._row = QHBoxLayout(self)
-        self._row.setContentsMargins(padx, pady, padx, pady)
+        self._row.setContentsMargins(padx, pady, padx if not chip else 3, pady)
         self._row.setSpacing(6)
+        if chip:
+            self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
     def _ink(self, color: str) -> str:
         """``color``, shaded until it reads as text on the row, hovered or not."""
@@ -70,6 +114,23 @@ class _CardBase(QFrame):
         label.setObjectName(object_name)
         label.setStyleSheet(f"color: {self._ink(color)}; font-size: 7.5pt;"
                             f" font-weight: 700; letter-spacing: 0.4px;")
+        return label
+
+    def _name_label(self, name: str, label_color: str | None) -> QWidget:
+        """The name: scrolling when a row cuts it short; on a chip, shortened
+        with an ellipsis instead, since a chip is sized to its text."""
+        if self._chip:
+            label: QWidget = QLabel()
+            fm = label.fontMetrics()
+            label.setText(fm.elidedText(name, Qt.TextElideMode.ElideRight,
+                                        CHIP_NAME_WIDTH))
+            if label.text() != name:
+                label.setToolTip(name)
+        else:
+            label = ScrollingLabel(name)
+        label.setObjectName("cardName")
+        if label_color:
+            label.setStyleSheet(f"color: {label_color};")
         return label
 
     # -- dragging -----------------------------------------------------------
@@ -105,6 +166,29 @@ class _CardBase(QFrame):
         if clicked:
             self.activated.emit()
 
+    # -- the buttons that wait for the pointer --------------------------------
+    def enterEvent(self, event) -> None:               # noqa: N802
+        self.set_hovered(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:               # noqa: N802
+        self.set_hovered(False)
+        super().leaveEvent(event)
+
+    def set_hovered(self, on: bool) -> None:
+        """Show or hide the buttons a row keeps for the pointer. Their space
+        stays either way, so the name and Run never move."""
+        for w in self._hover_only:
+            w.setVisible(on)
+
+    def _wait_for_hover(self, *widgets: QWidget) -> None:
+        for w in widgets:
+            policy = w.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            w.setSizePolicy(policy)
+            w.hide()
+            self._hover_only.append(w)
+
     # -- button strip ------------------------------------------------------
     def _button(self, glyph: str, tooltip: str = "",
                 object_name: str = "") -> QPushButton:
@@ -129,9 +213,10 @@ class _CardBase(QFrame):
 
     def _run_button(self, last_status: str | None) -> QPushButton:
         """The Run button, which becomes Retry after a failure: a circle,
-        smaller on a compact row."""
+        smaller on a compact row, smaller still on a chip."""
         b = self._button("", "", object_name="run")
-        side = cardstyle.RUN_DIAMETER[self._compact]
+        side = (cardstyle.CHIP_RUN_DIAMETER if self._chip
+                else cardstyle.RUN_DIAMETER[self._compact])
         b.setFixedSize(side, side)
         self._style_run_button(b, last_status)
         return b
@@ -142,18 +227,36 @@ class _CardBase(QFrame):
                             else "Add to favorites",
                             object_name="favOn" if is_favorite else "")
 
-    def _lay_out_buttons(self, fav, middle, run) -> None:
-        """The strip: star, the middle cells, Run. A compact row is a list to
-        run from, so it keeps the star -- first, as a list's mark -- and Run;
-        Edit and the rest stay on the right-click menu."""
-        if self._compact:
+    def _lay_out_buttons(self, fav, middle, run, is_favorite: bool) -> None:
+        """The strip: star, the middle cells, Run.
+
+        A row shows Run, and the star when it is a favourite; the rest wait
+        for the pointer. A compact row is a list to run from: the star first,
+        as a list's mark, and Run -- Edit and the rest stay on the right-click
+        menu. A chip is its name and Run.
+        """
+        if self._chip:
+            self._row.addWidget(fav)
+            fav.hide()
+            for w in middle:
+                w.hide()
+        elif self._compact:
             # Just before the name, which is the last thing laid out so far
             # (after the select-mode tick, on a card that has one).
             self._row.insertWidget(self._row.count() - 1, fav)
             for w in middle:
                 w.hide()
         else:
+            # The star next to Run, so a favourite's gold star sits with the
+            # one button that always shows, not out in the row.
+            self._wait_for_hover(*middle)
+            if not is_favorite:
+                self._wait_for_hover(fav)
+            for w in middle:
+                self._row.addWidget(w)
             self._row.addWidget(fav)
+            self._row.addWidget(run)
+            return
         for w in middle:
             self._row.addWidget(w)
         self._row.addWidget(run)
@@ -181,10 +284,14 @@ class _CardBase(QFrame):
         # Per-button colours, because the state is per-card rather than
         # per-class; everything else is left to the stylesheet. The radius
         # is here too: it is half the diameter, which only the card knows.
-        radius = b.width() // 2
+        # So is the size: a stylesheet's min-height replaces setFixedSize's,
+        # and the layout then squeezed the circle flat.
+        side = b.width()
         b.setStyleSheet(
             f"QPushButton#run {{ background: {c[spec.bg_key]};"
-            f" color: {c[spec.fg_key]}; border-radius: {radius}px; }}"
+            f" color: {c[spec.fg_key]}; border-radius: {side // 2}px;"
+            f" min-width: {side}px; max-width: {side}px;"
+            f" min-height: {side}px; max-height: {side}px; }}"
             f"QPushButton#run:hover {{ background: {c[spec.hover_key]};"
             f" color: {ink_on(c[spec.hover_fg_key])}; }}")
         b.setProperty("runState", spec.state)
@@ -203,29 +310,36 @@ class _CardBase(QFrame):
             self.badges.append(badge)
 
     def _status_chip(self, status: str | None) -> QLabel | None:
-        """The last run's outcome as a coloured dot and word: ● OK, ● Failed."""
+        """The last run's outcome as a coloured dot and word: ● OK, ● Failed.
+        On a chip, the dot alone: the name and Run are all it has room for."""
         spec = cardstyle.status_badge(status)
         if spec is None:
             return None
-        chip = QLabel(spec.text)
+        chip = QLabel("●" if self._chip else spec.text)
         chip.setObjectName("statusChip")
+        if self._chip:
+            chip.setToolTip(spec.text.lstrip("● "))
         chip.setStyleSheet(f"color: {self._ink(self._palette[spec.bg_key])};"
-                           f" font-size: 9pt; font-weight: 600;")
+                           f" font-size: {8 if self._chip else 9}pt; font-weight: 600;")
         return chip
 
 
 class ScriptCard(_CardBase):
-    """One script: name, path, and the four-button strip."""
+    """One script: name, path, the preset Run passes, and the button strip."""
 
     run_requested = Signal(int)
     run_with_param_requested = Signal(int)
     edit_requested = Signal(int)
     favorite_toggled = Signal(int, bool)
 
+    #: Shows the preset menu. None means QMenu.exec, which waits for a
+    #: person; tests put their own here.
+    menu_runner: Callable[[QMenu, QPoint], object] | None = None
+
     def set_last_run(self, iso: str | None) -> None:
         """Update when it last ran, in place (see `set_last_status`)."""
-        if self.last_run_label is not None:
-            self.last_run_label.setText(cardstyle.last_run_text(iso))
+        self._last_run = iso
+        self._update_path_tip()
 
     def selected_params(self, fallback: str) -> str:
         """What Run should pass: the drop-down's choice, else ``fallback``."""
@@ -240,18 +354,23 @@ class ScriptCard(_CardBase):
                  param_choices: tuple | None = None,
                  badges=(),
                  base_dir: str = "", last_run: str | None = None,
+                 chip: bool = False,
                  parent: QWidget | None = None):
-        super().__init__(palette, compact, size, parent)
+        super().__init__(palette, compact, size, parent, chip=chip)
+        compact = self._compact
         self.script_id = script_id
         self._name = name
+        self._path = path
+        self._last_run = last_run
         self.params_combo: QComboBox | None = None
+        self.params_pick: QPushButton | None = None
 
         self.checkbox = QCheckBox()
         self.checkbox.setVisible(False)
         self._row.addWidget(self.checkbox)
 
         text = QVBoxLayout()
-        text.setSpacing(2)
+        text.setSpacing(1)
         tag_text, tag_bg = _script_tag(path)
         header = QHBoxLayout()
         header.setSpacing(8)
@@ -261,13 +380,12 @@ class ScriptCard(_CardBase):
         if not compact:
             header.addWidget(tag)
         self._tag_badges(header, () if compact else badges)
-        self.name_label = ScrollingLabel(name)
-        self.name_label.setObjectName("cardName")
-        if label_color:
-            self.name_label.setStyleSheet(f"color: {label_color};")
-        header.addWidget(self.name_label, 1)
-        if compact:
+        self.name_label = self._name_label(name, label_color)
+        header.addWidget(self.name_label, 0 if chip else 1)
+        if compact and not chip:
             header.addWidget(tag)
+        elif chip:
+            tag.hide()
         self._header = header
         self._last_status = last_status
         self.status_chip = self._status_chip(last_status)
@@ -275,53 +393,62 @@ class ScriptCard(_CardBase):
             header.addWidget(self.status_chip)
         text.addLayout(header)
 
+        # The preset drop-down: which parameters Run passes. Offered, as in
+        # Tk, only when the script has presets (`scriptform.card_param_choices`).
+        # It is never shown: a row offers it as a small chip on its second
+        # line, and the detail pane as chips, both choosing through it.
+        if param_choices:
+            entries, selected = param_choices
+            self.params_combo = QComboBox(self)
+            self.params_combo.setObjectName("paramCombo")
+            self.params_combo.addItems(entries)
+            self.params_combo.setCurrentText(selected)
+            self.params_combo.hide()
+
         self.last_run_label: QLabel | None = None
         if not compact:
             # Relative to the group's base folder, as in Tk; the tooltip
-            # keeps the whole path.
+            # keeps the whole path, and when it last ran.
             self.path_label = ElidedLabel(cardstyle.display_path(path, base_dir))
             self.path_label.setObjectName("cardPath")
-            self.path_label.setToolTip(path)
+            # Its own width when there is room -- the stretch after the
+            # preset would otherwise take it all -- and shortened when not.
+            self.path_label.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                          QSizePolicy.Policy.Preferred)
             # Not text-selectable, matching the Tk card: a selectable label
             # takes the mouse for itself, so dragging the card by its path
             # would select text instead of moving the card.
             sub = QHBoxLayout()
-            sub.setSpacing(6)
-            sub.addWidget(self.path_label, 1)
-            self.last_run_label = QLabel(cardstyle.last_run_text(last_run))
-            self.last_run_label.setObjectName("cardPath")
-            self.last_run_label.setToolTip("Last run")
-            sub.addWidget(self.last_run_label)
+            sub.setSpacing(4)
+            sub.addWidget(self.path_label)
+            if self.params_combo is not None:
+                self.params_pick = QPushButton()
+                self.params_pick.setObjectName("paramPick")
+                self.params_pick.setCursor(Qt.CursorShape.PointingHandCursor)
+                set_tooltip(self.params_pick, "Parameters Run passes -- click to choose")
+                self.params_pick.clicked.connect(self._pick_preset)
+                self.params_combo.currentTextChanged.connect(
+                    lambda _t: self._show_preset())
+                self._show_preset()
+                sub.addWidget(self.params_pick)
+            # The preset follows the path; the space is after both.
+            sub.addStretch(1)
             text.addLayout(sub)
-        # The preset drop-down: which parameters Run passes. Offered, as in
-        # Tk, only when the script has presets (`scriptform.card_param_choices`).
-        # A compact row keeps it hidden: it still decides what Run passes,
-        # and the detail pane's chips choose through it.
-        if param_choices:
-            entries, selected = param_choices
-            self.params_combo = QComboBox()
-            self.params_combo.setObjectName("paramCombo")
-            # Its entries are parameters of any length; the card must not
-            # grow to fit the longest.
-            self.params_combo.setSizeAdjustPolicy(
-                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-            self.params_combo.setMinimumContentsLength(6)
-            self.params_combo.addItems(entries)
-            self.params_combo.setCurrentText(selected)
-            text.addWidget(self.params_combo)
-            self.params_combo.setVisible(not compact)
-        self._row.addLayout(text, 1)
+            self._update_path_tip()
+        self._row.addLayout(text, 0 if chip else 1)
 
         self.fav_button = self._fav_button(is_favorite)
         # A pencil, the usual sign for Edit. It was ⚙, which Windows draws
         # from its colour-emoji font in pale lavender -- all but invisible on
         # Light -- and as a thin ring in Segoe UI Symbol.
         self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
-        self.param_button = self._button("▶+", "Run with parameter")
+        self.param_button = self._button("", "Run with parameters…")
+        self.param_button.setIcon(run_with_icon(palette["path_fg"]))
+        self.param_button.setIconSize(QSize(18, 18))
         self.run_button = self._run_button(last_status)
         self._lay_out_buttons(self.fav_button,
                               (self.edit_button, self.param_button),
-                              self.run_button)
+                              self.run_button, is_favorite)
 
         self.run_button.clicked.connect(
             lambda: self.run_requested.emit(self.script_id))
@@ -332,9 +459,42 @@ class ScriptCard(_CardBase):
         self.fav_button.clicked.connect(
             lambda: self.favorite_toggled.emit(self.script_id, not is_favorite))
 
+    # -- the second line --------------------------------------------------------------
+    def _update_path_tip(self) -> None:
+        label = getattr(self, "path_label", None)
+        if label is None:
+            return
+        when = cardstyle.last_run_text(self._last_run)
+        label.setToolTip(self._path + (f"\nLast run: {when}" if when else ""))
+
+    def _show_preset(self) -> None:
+        """The chip reads what Run will pass, shortened to fit."""
+        if self.params_pick is None or self.params_combo is None:
+            return
+        text = self.params_combo.currentText()
+        fm = self.params_pick.fontMetrics()
+        self.params_pick.setText(literal(
+            fm.elidedText(text, Qt.TextElideMode.ElideRight, 160) + "  ▾"))
+
+    def _pick_preset(self) -> None:
+        """Choose another preset from a menu under the chip."""
+        if self.params_combo is None or self.params_pick is None:
+            return
+        menu = QMenu(self)
+        current = self.params_combo.currentText()
+        for i in range(self.params_combo.count()):
+            entry = self.params_combo.itemText(i)
+            action = menu.addAction(literal(entry))
+            action.setCheckable(True)
+            action.setChecked(entry == current)
+            action.triggered.connect(
+                lambda _c=False, t=entry: self.params_combo.setCurrentText(t))
+        pos = self.params_pick.mapToGlobal(QPoint(0, self.params_pick.height()))
+        (self.menu_runner or (lambda m, p: m.exec(p)))(menu, pos)
+
 
 class PipelineCard(_CardBase):
-    """One pipeline: name, step count, and the same four columns."""
+    """One pipeline: name, its steps, and the same button columns."""
 
     run_requested = Signal(int)
     edit_requested = Signal(int)
@@ -345,29 +505,28 @@ class PipelineCard(_CardBase):
                  palette: dict, compact: bool = False, size: str = "medium",
                  is_favorite: bool = False, last_status: str | None = None,
                  label_color: str | None = None,
-                 badges=(), step_names=None,
+                 badges=(), step_names=None, chip: bool = False,
                  parent: QWidget | None = None):
-        super().__init__(palette, compact, size, parent)
+        super().__init__(palette, compact, size, parent, chip=chip)
+        compact = self._compact
         self.pipeline_id = pipeline_id
         # Drawn with the pipeline accent down its left edge (stylesheet).
         self.setProperty("kind", "pipeline")
         self._name = name
 
         text = QVBoxLayout()
-        text.setSpacing(2)
+        text.setSpacing(1)
         header = QHBoxLayout()
         header.setSpacing(8)
         accent = palette.get("pipe_accent", palette["accent"])
-        tag = self._tag("⚡ PIPE" if compact else "⚡ PIPELINE", accent, "pipeTag")
-        if not compact:
+        tag = self._tag("⚡" if chip else "⚡ PIPE" if compact else "⚡ PIPELINE",
+                        accent, "pipeTag")
+        if not compact or chip:
             header.addWidget(tag)
         self._tag_badges(header, () if compact else badges)
-        self.name_label = ScrollingLabel(name)
-        self.name_label.setObjectName("cardName")
-        if label_color:
-            self.name_label.setStyleSheet(f"color: {label_color};")
-        header.addWidget(self.name_label, 1)
-        if compact:
+        self.name_label = self._name_label(name, label_color)
+        header.addWidget(self.name_label, 0 if chip else 1)
+        if compact and not chip:
             header.addWidget(tag)
         self._header = header
         self._last_status = last_status
@@ -392,14 +551,14 @@ class PipelineCard(_CardBase):
             self.steps_label.mouseReleaseEvent = (
                 lambda _e: self.steps_clicked.emit(self.pipeline_id))
             text.addWidget(self.steps_label)
-        self._row.addLayout(text, 1)
+        self._row.addLayout(text, 0 if chip else 1)
 
         self.fav_button = self._fav_button(is_favorite)
         self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
         self.spacer = self._spacer()          # where ▶+ sits on a script card
         self.run_button = self._run_button(last_status)
         self._lay_out_buttons(self.fav_button, (self.edit_button, self.spacer),
-                              self.run_button)
+                              self.run_button, is_favorite)
 
         self.run_button.clicked.connect(
             lambda: self.run_requested.emit(self.pipeline_id))

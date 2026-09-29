@@ -32,7 +32,9 @@ class Section(QWidget):
         self.header.setFlat(True)
         self.header.clicked.connect(self.toggle)
         col.addWidget(self.header)
-        self.cards = CardList(group)
+        # Favorites are a strip of chips above the lists, not a second copy
+        # of each row.
+        self.cards = CardList(group, flow=key == sections.FAVORITES)
         self.empty = QLabel(sections.EMPTY[key])
         self.empty.setObjectName("cardPath")
         # Wraps, so the hint never sets the page's minimum width.
@@ -56,7 +58,7 @@ class Section(QWidget):
 
     def refresh(self) -> None:
         """Re-show after cards were added, keeping the collapsed state."""
-        self._set_collapsed(self.header.text().startswith("▶"))
+        self._set_collapsed(self.header.text().startswith(sections.COLLAPSED_MARK))
 
 
 class GroupPage(QWidget):
