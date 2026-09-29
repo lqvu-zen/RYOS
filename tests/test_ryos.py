@@ -4675,8 +4675,8 @@ class TestPolicyMarks(unittest.TestCase):
         self.assertIn("1 retry", _policy_marks(_policy_step(retries=1)))
 
     def test_conditions(self):
-        self.assertIn("only after success", _policy_marks(_policy_step(run_when=WHEN_ON_SUCCESS)))
-        self.assertIn("only after a failure", _policy_marks(_policy_step(run_when=WHEN_ON_FAILURE)))
+        self.assertIn("only if nothing has failed", _policy_marks(_policy_step(run_when=WHEN_ON_SUCCESS)))
+        self.assertIn("only if something has failed", _policy_marks(_policy_step(run_when=WHEN_ON_FAILURE)))
 
 
 class TestStepPolicyStorage(unittest.TestCase):

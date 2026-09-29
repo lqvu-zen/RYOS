@@ -27,7 +27,7 @@ _DETACHED = 13
 
 def policy_marks(step) -> str:
     """A suffix naming a step's non-default policy in words, or "" if all
-    default: "  ·  keeps going  ·  3 retries  ·  only after a failure".
+    default: "  ·  keeps going  ·  3 retries  ·  only if something has failed".
 
     Only deviations are marked, so an ordinary pipeline's rows look exactly as
     they did before step policies existed. Words, not codes: "! ↻3 ?fail" had
@@ -52,8 +52,8 @@ def policy_marks(step) -> str:
 
 
 MARK_CONTINUE = "keeps going"
-MARK_ON_SUCCESS = "only after success"
-MARK_ON_FAILURE = "only after a failure"
+MARK_ON_SUCCESS = "only if nothing has failed"
+MARK_ON_FAILURE = "only if something has failed"
 MARK_LAUNCHER = "launcher"
 
 
