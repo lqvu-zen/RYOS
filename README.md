@@ -1,6 +1,6 @@
 # RYOS — Run Your Own Scripts
 
-A lightweight Windows desktop app for organizing and running your scripts from a clean, card-based UI. Save your Python, Node, Bash, PowerShell, Batch — or any executable — once, then run it with a single click. No terminal juggling, no remembering paths and arguments.
+A lightweight Windows desktop app for keeping the scripts you run often in one window and running any of them with one click. Save your Python, Node, Bash, PowerShell, Batch — or any executable — once, then press its green **▶**. No terminal juggling, no remembering paths and arguments.
 
 Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python required on the target machine) or runs straight from source.
 
@@ -11,33 +11,26 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 - [Features](#features)
 - [Getting Started](#getting-started)
 - [How to Use](#how-to-use)
-  - [Scripts](#scripts)
-  - [Groups](#groups)
-  - [Pipelines](#pipelines)
-  - [Parameter presets](#parameter-presets)
-  - [Quick Run bar](#quick-run-bar)
-  - [Output panel](#output-panel)
-  - [Export / Import](#export--import)
-- [Settings](#settings)
 - [Supported Script Types](#supported-script-types)
 - [Building the Executable](#building-the-executable)
 - [Architecture](#architecture)
+- [Documentation](#documentation)
 
 ## Features
 
-- **Card-based launcher** — every script is a card with a one-click **Run**, a language badge, and its last-run time.
-- **Groups** — organize scripts into tabs, give each group a base directory, and rename, clone, or export a group on its own.
-- **Pipelines** — chain several scripts into an ordered sequence and run them as one, with optional per-step parameter overrides.
-- **Parameter presets** — save frequently-used argument sets per script and pick one at run time.
-- **Quick Run bar** — type a filename (with autocomplete) to run a script in a group's base directory without adding a card first.
-- **Drag & drop** — drop one or more script files onto the window to add them instantly.
-- **Tabbed output** — live stdout/stderr per run, with **stderr in red**; copy or save any tab's log.
-- **Desktop notifications** — optional Windows toast when a script or pipeline finishes.
-- **Auto-update check** — checks GitHub for new releases on startup (or on demand).
-- **Runs at login** — optionally start with Windows, minimized, always-on-top, snapped to a screen corner.
-- **Multi-monitor aware** — opens on the monitor where your cursor is when you launch it; when started with Windows, it reopens on the last screen you used.
-- **Themes** — Light and Dark built in, plus a theme creator (7 curated colours + live preview) and import/export. Browse and download more from the [theme gallery](theme-gallery/GALLERY.md).
-- **Logging** — built-in log viewer and a one-click "open log folder" for troubleshooting.
+- **One-click list** — every script is a row with a round **▶**, its kind, and how its last run went (**● OK** / **● Failed**). After a failure **▶** becomes **↻ Retry**. Edit and run-with-parameters wait under the pointer and in the right-click menu.
+- **Favorites** — star what you run most; it gets a pill in a strip at the top.
+- **Groups** — pills across the top, each with its own base folder; rename, clone, export or reorder them.
+- **Pipelines** — chain scripts in order, run steps side by side, and decide per step whether a failure stops the pipeline, how many retries it gets, and whether it runs only after a failure (clean-up) or only if nothing failed.
+- **Parameter presets** — save argument sets per script and pick one from the row before running; or have RYOS ask each run.
+- **Schedules and run history** — run anything every N minutes, daily or on chosen days, with catch-up rules; look back at every run.
+- **Quick Run** — type a filename (with suggestions) to run any script in a group's folder without adding it first.
+- **Maximised layout** — maximise the window and the list moves left while the chosen script or pipeline, its presets, steps and output fill the right.
+- **Tabbed output** — live output per run, **errors in red**, find, errors-only, copy or save any tab.
+- **Drag & drop** — drop script files on the window to add them; drag rows to reorder or onto a group to move them.
+- **Tray, notifications, updates** — keep running in the tray, a Windows toast when a run finishes, and a check for new releases.
+- **Themes** — Light and Dark built in, a theme creator (7 colours + live preview), import/export, and more in the [theme gallery](theme-gallery/GALLERY.md). Every colour follows the theme and is checked for contrast.
+- **Multi-monitor aware** — opens on the monitor under the cursor; at login, on the last screen you used.
 
 ## Getting Started
 
@@ -49,7 +42,7 @@ Download the latest release, unzip, and run:
 RYOS.exe
 ```
 
-The script database (`scripts.db`) is created next to the exe on first run.
+Your scripts and settings live in `%APPDATA%\RYOS` (`scripts.db`, `settings.json`, logs), so replacing the exe with a newer one keeps them.
 
 **Option B — Run from source** (requires [uv](https://docs.astral.sh/uv/getting-started/installation/))
 
@@ -61,77 +54,20 @@ or double-click `run.bat`. `uv` provisions Python ≥3.10 in an isolated environ
 
 ## How to Use
 
-### Scripts
+The **[illustrated user guide](docs/tutorial/README.md)** walks through every screen with real screenshots. In short:
 
-Click **+ Add Script** (top-right) or **drag a script file onto the window**. Fill in:
-
-| Field | Description |
-|-------|-------------|
-| **Name** | Display name shown on the card |
-| **Path** | Full path to the script file (e.g. `C:\scripts\backup.py`) |
-| **Interpreter** | Leave blank to auto-detect from the extension, or enter a custom command (e.g. `python -u`, `node`) |
-| **Parameters** | Arguments passed to the script on each run (e.g. `--verbose output.txt`) |
-| **Group** | Which group the card belongs to |
-
-Click **Save** to add it. Then:
-
-- **Run** — executes the script in the background; the card's last-run time updates afterward.
-- **Modify** — edit the name, path, interpreter, or parameters (the edit dialog also has a **Delete** button).
-- **↑ / ↓** — reorder a card within its group.
-
-### Groups
-
-Groups are tabs across the top that keep related scripts together. Right-click a group tab to:
-
-- **Rename** or **Clone Group**
-- Set a **Base directory** — the working directory for that group's scripts and the root for its Quick Run bar
-- **Export group** to JSON
-- **Delete Group**
-
-### Pipelines
-
-A pipeline runs several scripts in order, as a single unit. Create one from a group, add steps, drag to reorder, and optionally override the parameters for any individual step. Running the pipeline executes each step in sequence and (optionally) notifies you when the whole run completes.
-
-### Parameter presets
-
-For scripts you run with different arguments, save named presets so you can pick the right argument set at run time instead of editing the card each time.
-
-### Quick Run bar
-
-Enable **Show Quick Run bar** in settings (requires a group **base directory**). Type a filename — with optional autocomplete suggestions — to run a script located in that directory without first creating a card. Handy for one-off or ad-hoc scripts.
-
-### Output panel
-
-The output panel sits at the bottom of the window and is hidden by default.
-
-- Click **Show Output / Hide Output** to toggle it; drag the **divider** to resize.
-- Each run gets its own **tab**. **stdout** is shown in the default color, **stderr in red**.
-- Right-click a tab to **Copy**, **Save**, or **Close** its log.
-- **Stop** terminates the running process.
-
-### Export / Import
-
-- **Options → Export all groups** (or per-group export via right-click) saves your scripts, groups, and pipelines to a JSON file.
-- **Options → Import config** restores from a JSON file, with **Merge** (keep existing, skip duplicates) or **Replace** (clear and load).
-
-## Settings
-
-Open **Options → Advanced options…**:
-
-| Setting | What it does |
-|---------|--------------|
-| **Start with Windows** | Launch RYOS at login (Windows registry entry) |
-| **Always on top** | Keep the window above others |
-| **Start minimized** | Launch hidden / minimized |
-| **Remember window size and position** | Restore geometry on next launch |
-| **Open on the screen where the cursor is** | On a manual launch, open on the monitor under the mouse (login launches restore the last screen) |
-| **Snap to screen corner** | Dock the window to a chosen corner (of the same monitor) |
-| **Auto-clear output before each run** | Wipe the log when a new run starts |
-| **Auto-scroll to bottom** | Follow output as it streams |
-| **Notify when script / pipeline completes** | Windows toast on completion |
-| **Check for updates on startup** | Compare against the latest GitHub release |
-
-Troubleshooting: **Options → View logs** opens the in-app log viewer, and **Open log folder** reveals the log files on disk.
+| To… | Do this | Guide |
+|-----|---------|-------|
+| Add a script | **+ Script**, or drop the file on the window | [Adding a script](docs/tutorial/02-adding-a-script.md) |
+| Run it | Click its green **▶**; **Show Output** to read what it printed | [Running](docs/tutorial/03-running-and-output.md) |
+| Edit it | Point at the row and click **✎**, or right-click → **Edit…** | [The main window](docs/tutorial/01-main-window.md) |
+| Organise | **+ Group**; drag rows onto a group's pill; right-click a pill for rename, base folder, export | [Groups](docs/tutorial/04-groups.md) |
+| Pass arguments | Parameters and **+ Preset** in the script dialog; pick a preset on the row | [Parameters and presets](docs/tutorial/05-parameters-and-presets.md) |
+| Chain scripts | **+ Pipeline**, add steps, set what happens on failure | [Pipelines](docs/tutorial/06-pipelines.md) |
+| Run on a timer | Right-click → **Schedule…** | [Schedules and history](docs/tutorial/07-schedules-and-history.md) |
+| Run a file by name | **⚡ Quick Run** (groups with a base folder) | [Quick Run](docs/tutorial/08-quick-run.md) |
+| Back up / move | **File → Export all groups…** / **Import config…** | [Import and export](docs/tutorial/10-import-export.md) |
+| Change settings and look | **Options → Options…** and **Appearance…** | [Settings](docs/tutorial/11-settings.md) |
 
 ## Supported Script Types
 
@@ -178,8 +114,7 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 
 ## Documentation
 
-- [Illustrated user guide](docs/tutorial/README.md) — a 10-page walkthrough with real screenshots of every screen.
-- [Tutorial](TUTORIAL.md) — single-page step-by-step reference.
+- [Illustrated user guide](docs/tutorial/README.md) — a 12-page walkthrough with real screenshots of every screen.
 - [Theme gallery](theme-gallery/GALLERY.md) — preview and download extra themes.
 - [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
 - [Module reference](docs/API_REFERENCE.md) — public API of the core modules.

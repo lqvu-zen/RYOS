@@ -1,32 +1,27 @@
-# Parameters, prompts & presets
+# Parameters and presets
 
-Many scripts take *arguments* — extra values passed on the command line that change what they do. RYOS gives you three ways to handle them: fixed parameters, named presets, and run-time prompts.
+Many scripts take *parameters* — extra words on the command line that change what they do, like `--name RYOS` or `--loud`. RYOS gives you three ways to pass them.
 
-## Fixed parameters
+## Saved parameters
 
-In the **Add/Edit Script** dialog, type your arguments into the **Parameters** field. They're passed to the script every time it runs. Quoting works the way you'd expect, so `--name "My File"` is treated as a single value.
+Type them into **Parameters** in the script dialog. They're passed on every run. Quoting works as you'd expect: `--title "My report"` is one value.
 
-![The Edit Script dialog with the Parameters field filled in](images/05-parameters-field.png)
-*Screenshot pending — capture the Edit Script dialog with an example in the **Parameters** field, e.g. `hello world`.*
+## Presets: several sets to choose from
 
-## Presets — saved argument sets
+If you run a script with a few different sets of parameters, save each as a **preset**: type it into **Parameters** and click **+ Preset**. The **Presets** list below holds them; **Use** puts one back into Parameters, **Edit** changes it, **Remove** deletes it.
 
-If you run the same script with different arguments, save each set as a named **preset** instead of editing the card every time:
+![The script dialog for Say hello with three presets: "--name RYOS", "--loud" and "--loud --name Team", and Use, Edit and Remove under the list](images/05-script-presets.png)
 
-1. In the Add/Edit Script dialog, type the arguments into **Parameters**.
-2. Click **+ Preset** and give the set a name.
-3. The set is added to the **Presets** list.
+A script with presets shows the one Run will use on its row, next to the file name. Click it to pick another:
 
-Back on the card, scripts with presets show a small **dropdown** where you pick which preset to use before running. One card stays flexible across several common argument sets.
+![The preset menu under a row: (no parameters), --name RYOS (ticked), --loud and --loud --name Team](images/05-preset-menu.png)
 
-## Run-time prompts (temporary parameters)
+## Just this once
 
-Sometimes you want to type an argument fresh each time. Tick **"Ask for a temporary parameter on each run (not saved)"** in the script dialog. The card then carries a **TEMP PARAM** badge, and every time you run it RYOS pops up a small box first.
+- **Run with parameters…** — point at a row and click the **▶ with a +**, or right-click → **Run with parameters…**. Type the parameters and run. They're remembered as the script's parameters and added as a preset.
+- **Ask for a temporary parameter on each run** — tick this in the script dialog and RYOS asks every time you press **▶**. What you type is used for that run only and added after the saved parameters; nothing is kept.
 
-![The "Run with temp param" prompt asking for a one-off argument before running](images/05-temp-param-prompt.png)
-*Screenshot pending — capture the **Run with temp param** dialog that appears when running a TEMP PARAM script.*
-
-Whatever you type is **used for that run only — not saved**, and is appended to any saved parameters. Click **Run** to go, or **Cancel** to back out.
+![The prompt that appears before a run: a Temp param field holding "--name Friday", a note that it is used for this run only, and OK and Cancel](images/05-ask-each-run.png)
 
 ---
 [← Groups](04-groups.md) · [Contents](README.md) · [Next: Pipelines →](06-pipelines.md)

@@ -1,46 +1,60 @@
 # The main window
 
-When RYOS opens you see a single window. Everything you do lives here, so it's worth a quick tour from top to bottom before you start.
+Everything in RYOS happens in one window. Here it is with the **Samples** group open, from top to bottom.
 
-![The RYOS main window, top to bottom: header, group tabs, Quick Run bar, the Running / Pipelines / Scripts sections, and the Output bar](images/01-main-window.png)
-*Screenshot pending — capture the whole window showing the **TestScripts** tab, the Quick Run bar, a pipeline card under **PIPELINES**, two script cards under **SCRIPTS**, and the collapsed **Output** bar at the bottom.*
+![The RYOS window: a dark header with File, Options and Help and the + Pipeline, + Group and + Script buttons; a search box; the Samples and Tools group pills; the group's folder and Quick Run; a Favorites strip; a Pipelines panel and a Scripts panel, each row with a green round Run button; and the Output bar at the bottom](images/01-main-window.png)
 
 ## The header
 
-Across the very top, on the left, is the ⚡ **RYOS** logo. On the right are the four controls you'll use most:
+The dark bar at the top holds the menus and the buttons that make new things:
 
 | Control | What it does |
-|---|---|
-| **⚙** | Opens the **Options** menu (Select scripts, Export all groups, Import config, Advanced options…, Check for updates, Delete All). |
-| **+ Pipeline** | Creates a new pipeline — a sequence of scripts that run in order. |
-| **+ Group** | Creates a new group (a tab) to organise your scripts. |
-| **+ Script** | Adds a new script card. This is the button you'll use first. |
+| --- | --- |
+| **File** | New script, pipeline or group; import and export; exit. |
+| **Options** | Settings, appearance, start with Windows, select mode, Delete All. |
+| **Help** | Check for updates. |
+| **+ Pipeline** | Create a pipeline: several scripts run in order. |
+| **+ Group** | Create a group to keep related scripts together. |
+| **+ Script** | Add a script. The blue button, and the one you'll use first. |
 
-> Note: these "add" buttons live in the header. (Older documentation described them under an "Options ▾" menu — the live app puts them in the header instead.)
+## Search and groups
 
-## Group tabs
+Type in **Search scripts and pipelines…** to show only what matches; the count of matches appears beside the box.
 
-Just below the header is a row of **group tabs** — here, **TestScripts**. Each tab is a group that holds its own scripts and pipelines. A **+** next to the tabs adds a new group, and **All** on the right shows every group's scripts together.
+Below it are your **groups**, drawn as pills. The dark pill is the group on screen; click another to switch. The dashed **+** makes a new group, and **All** shows every group at once. See [Groups](04-groups.md).
 
-## The Quick Run bar
+Under the pills is the group's **folder** (click it to change it) and **⚡ Quick Run** (see [Quick Run](08-quick-run.md)).
 
-Under the tabs is the **Quick Run bar**, showing a folder path (for example `D:/Projects/RYOS/tests`) with a yellow ⚡ button on the right. It lets you type a file name and run it on the spot. The bar only appears when the group has a *base directory* set and Quick Run is enabled — see [The Quick Run bar](07-quick-run.md).
+## Favorites, pipelines and scripts
 
-## The three sections
+The rest of the window is the group's things to run, in three sections. Click a section's **▾** heading to fold it away.
 
-The middle of the window is split into collapsible sections. Click a section's ▼ header to fold or unfold it:
+- **FAVORITES** — a strip of small pills for the things you run most, each with its own **▶**.
+- **PIPELINES** — scripts chained together, marked **⚡ PIPELINE** with a purple edge.
+- **SCRIPTS** — your scripts, marked with their kind (**PYTHON**, **BATCH**, **POWERSHELL**…) and a blue edge.
 
-- **RUNNING** — shows whatever script is running right now (or *"No script is currently running."*).
-- **PIPELINES** — your pipelines for this group, each as a card.
-- **SCRIPTS** — your scripts for this group, each as a card.
+Each row shows the name, the file (or a pipeline's steps) and, once it has run, how the last run went: **● OK** or **● Failed**. On the right is the round green **▶** that runs it.
 
-## Cards
+## A row's other buttons
 
-Every script and pipeline is shown as a **card**. A card displays a type badge (e.g. **Python**), its name, its file name, the last-run time and result (a green **✓ OK** or red **✗ Failed** badge), and a set of action buttons on the right — **⚙ edit**, **▶ run**, and a tall green **▶** to run it.
+A row shows only **▶** (and a gold **★** if it's a favorite) until you point at it. Then its other buttons appear beside Run:
 
-## The Output panel
+![Three script rows; the pointer is over Flaky, which shows a pencil, a run-with-parameters icon and an empty star beside its Run button. Say hello, a favorite, shows its gold star](images/01-rows-hover.png)
 
-At the very bottom is the **Output** bar. It's collapsed by default; click it (or **Show Output**) to expand it and read what your scripts printed. Full details are in [Running a script & the output panel](03-running-and-output.md).
+| Button | What it does |
+| --- | --- |
+| **✎** | Edit the script. |
+| **▶ with a +** | Run with different parameters, just this once or saved. |
+| **☆ / ★** | Add to or remove from Favorites. |
+| **▶** | Run it. After a failed run it turns red and shows **↻**: press it to try again. |
+
+**Right-click** a row for everything else: edit, run with parameters, favorites, a highlight colour for the name, moving it up or down, schedule, run history, clone and delete.
+
+![The right-click menu of a script: Edit…, Run with parameters…, Remove from favorites, Highlight, Move to top, Move up, Move down, Schedule…, Run history…, Clone and Delete](images/01-row-menu.png)
+
+## The Output bar
+
+At the very bottom is the **Output** bar. It stays folded until you want it; see [Running a script and reading its output](03-running-and-output.md).
 
 ---
 [Contents](README.md) · [Next: Adding a script →](02-adding-a-script.md)

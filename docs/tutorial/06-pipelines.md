@@ -1,34 +1,35 @@
 # Pipelines
 
-A **pipeline** runs several scripts one after another, in order. If any step fails, the pipeline stops there — so it's perfect for multi-step routines like *build → test → publish* where each step depends on the one before.
+A **pipeline** runs several scripts one after another: *build, then test, then publish*. By default a failed step stops the pipeline, so later steps never run on a broken result; each step can be told otherwise.
 
-## Create a pipeline
+## Make one
 
-Click **+ Pipeline** in the header, give it a name, and confirm. The pipeline appears as a card in the **PIPELINES** section, and the editor opens so you can add steps.
+Click **+ Pipeline** in the header (or **File → New Pipeline…**), name it, and the editor opens. To change it later, point at its row and click **✎**, or right-click → **Edit…**.
 
-## Edit a pipeline
+![The pipeline editor for "Resilient": Name; four steps reading "Flaky · keeps going · 3 retries", "Always fails · keeps going", "Cleanup · only if something has failed" and "Say hello"; Up, Down, Remove and With Prev; the step settings; Add step; and Save and Cancel](images/06-pipeline-editor.png)
 
-Click the **⚙** button on a pipeline card (or right-click it → **Edit**) to open the **Edit Pipeline** dialog.
+- **Add a step**: pick a script under **Add step** and click **Add**.
+- **Order**: select a step and use **▲ Up** / **▼ Down**. **✕ Remove** takes it out.
+- **With Prev**: the selected step starts together with the one above it instead of after it. Such steps are marked **∥** in the list.
 
-![The Edit Pipeline dialog: a name field, the numbered list of steps, Up/Down/Remove buttons, a Step preset dropdown, and the Add Step row](images/06-pipeline-editor.png)
-*Screenshot pending — capture the **Edit Pipeline** dialog with a few steps listed.*
+Select a step to set how it behaves; the list says in words what you've changed:
 
-In the editor you can:
-
-- **Add a step** — pick a script from the **Add Step** dropdown and click **Add**. The step joins the bottom of the list.
-- **Reorder** — select a step and use **▲ Up** / **▼ Down**.
-- **Remove** — select a step and click **✕ Remove**.
-- **Step preset** — choose which saved preset a step should run with (for scripts that have presets).
+| Setting | Choices |
+| --- | --- |
+| **If it fails** | *Stop the pipeline*, or *Keep going*. |
+| **Retries** | Run it again up to this many times before calling it failed. |
+| **Run this step** | *Always*, *Only if nothing has failed*, or *Only if something has failed* — the last is handy for a clean-up step. |
+| **Step preset** | Which of the script's presets this step uses. |
 
 Click **Save** when you're done.
 
-## Run a pipeline
+## Run it
 
-Click the green **▶** on the pipeline card. The Output panel shows each step's progress in turn — you'll see *Step 1/N*, *Step 2/N*, and so on. If a step fails, the pipeline stops and the remaining steps don't run. Click **⏹** to abort a pipeline mid-run.
+Click the pipeline's **▶**. The output shows each step as it starts and how it ended, then the pipeline's result:
 
-## Clone a pipeline
+![The output of the Morning report pipeline: Step 2/2 "Write a report", the line it printed, exit code 0, and a green "Pipeline complete" line](images/06-pipeline-output.png)
 
-Right-click a pipeline card → **Clone** to make an exact copy, including all its steps — handy as a starting point for a similar routine.
+**Stop** in the Running list ends the whole pipeline. Right-click a pipeline → **Clone** to start a similar one from a copy.
 
 ---
-[← Parameters, prompts & presets](05-parameters-and-presets.md) · [Contents](README.md) · [Next: The Quick Run bar →](07-quick-run.md)
+[← Parameters and presets](05-parameters-and-presets.md) · [Contents](README.md) · [Next: Schedules and run history →](07-schedules-and-history.md)

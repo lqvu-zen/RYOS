@@ -1,30 +1,36 @@
-# Groups (tabs)
+# Groups
 
-Groups are the tabs across the top of the window. Each group is a separate collection of scripts and pipelines — a tidy way to keep, say, *Work* scripts apart from *Personal* ones. Each group can also have its own **base directory**, which powers the Quick Run bar.
+A group is a set of scripts and pipelines that belong together — *Work* and *Home*, or one per project. Each group can also have a **base folder**: the folder its scripts live in, which paths are relative to and which [Quick Run](08-quick-run.md) searches.
 
-## Working with groups
+![The group pills under the search box: Samples (chosen, filled dark), Tools, a dashed + for a new group, and All](images/04-group-pills.png)
 
-| Action | How |
-|---|---|
-| **Create a group** | Click **+ Group** in the header, or the **+** next to the tabs. |
-| **Switch group** | Click its tab. |
-| **See everything at once** | Click **All** on the right of the tab row. |
-| **Rename a group** | Right-click the tab → **Rename**. |
-| **Clone a group** | Right-click the tab → **Clone Group** (copies the group and its contents). |
-| **Set a base directory** | Right-click the tab → **Base directory…** (enables Quick Run for that group). |
-| **Export a group** | Right-click the tab → **Export group** (saves just that group to a file). |
-| **Delete a group** | Right-click the tab → **Delete Group**. |
+## Making and switching groups
 
-## The tab menu
+- **Switch** by clicking a group's pill.
+- **Make one** with the dashed **+** after your groups, **+ Group** in the header, or **File → New Group…**. Give it a name and, if you like, a base folder, then click **Create group**.
+- **All** shows every group on one page, each under its own heading.
 
-Right-click any group tab to open its menu.
+![The new group dialog: Name, Base folder (optional) with Browse…, and Create group and Cancel](images/04-new-group-dialog.png)
 
-![The right-click menu on a group tab showing Rename, Clone Group, Base directory…, Export group, and Delete Group](images/04-group-menu.png)
-*Screenshot pending — capture the group tab right-click menu open over the **TestScripts** tab.*
+## The group menu
 
-## Moving scripts between groups
+Right-click a group's pill:
 
-To move a script (or pipeline) into another group, **drag its card onto the target group's tab**. The card hops to that group. You can also reorder cards within a group by dragging them up or down.
+![The menu on a group pill: Rename, Clone Group, Base folder…, Export group and Delete Group](images/04-group-menu.png)
+
+| Entry | What it does |
+| --- | --- |
+| **Rename** | Give the group a new name. |
+| **Clone Group** | Copy the group with all its scripts and pipelines. |
+| **Base folder…** | Set or change the group's folder (clicking the folder line under the pills does the same). |
+| **Export group** | Save just this group to a file. See [Import and export](10-import-export.md). |
+| **Delete Group** | Remove the group and what's in it, after asking. |
+
+Drag a pill left or right to change the order of your groups.
+
+## Moving things between groups
+
+Drag a row onto another group's pill to move it there. Drag it up or down within its panel to change its place; a line shows where it will land.
 
 ---
-[← Running a script & the output panel](03-running-and-output.md) · [Contents](README.md) · [Next: Parameters, prompts & presets →](05-parameters-and-presets.md)
+[← Running a script](03-running-and-output.md) · [Contents](README.md) · [Next: Parameters and presets →](05-parameters-and-presets.md)
