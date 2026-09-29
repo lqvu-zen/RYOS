@@ -3819,6 +3819,132 @@ def check_ticks_are_drawn(app):
           "dot, light and dark")
 
 
+def check_maximised_layout(app):
+    """Maximised: the list beside the chosen item, acting through its row.
+
+    Switched on as maximising does, then off: the output panel moves into the
+    detail pane and back, the rows turn compact and back, a click on a row
+    fills the pane, a preset chip chooses what Run passes, and the pane's Run
+    runs the row's script -- checked by what the script received.
+    """
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from PySide6.QtWidgets import QFrame
+
+    from ryos import cardmenu, detail
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    echo = tmp / "echo.py"
+    echo.write_text("import sys\nprint('ARGS=' + '|'.join(sys.argv[1:]))\n"
+                    "sys.exit(3 if '--fail' in sys.argv else 0)\n", encoding="utf-8")
+    db = ScriptDB(tmp / "max.db")
+    db.create_group("G")
+    sid = db.add("plain", str(echo), "--base", _sys.executable, "G")
+    db.replace_param_presets(sid, [("fast", "--fast"), ("fail", "--fail")])
+    pid = db.create_pipeline("P", "G")
+    db.add_pipeline_step(pid, sid)
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    lines: list = []
+    bridge.output.connect(lambda key, text, tag: lines.append(text))
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.load_from_db(db)
+    win.show_group("G")
+    win.resize(1200, 720)
+    win.show()
+    app.processEvents()
+
+    def pump_until(predicate, timeout=20.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    def row(kind):
+        page = win.card_lists["G"]
+        return page.section("pipelines" if kind == "pipeline" else "scripts").cards[0]
+
+    try:
+        if win.workspace or win.detail.isVisible() or row("script").property("compact"):
+            PROBLEMS.append("the window started in the maximised layout")
+        # What maximising does, without a window manager to maximise it.
+        win.set_workspace(True)
+        app.processEvents()
+        if win.output_panel.parentWidget() is win.splitter \
+                or not win.detail.isVisible() or not win.output_expanded:
+            PROBLEMS.append("maximised: the output panel did not move to the detail")
+        if not row("script").property("compact"):
+            PROBLEMS.append("maximised: the list's rows are not compact")
+        if win.detail.body.isVisible() or not win.detail.empty.isVisible():
+            PROBLEMS.append("maximised: the pane did not start empty")
+
+        # A click on the row chooses it; its presets are chips.
+        row("script").activated.emit()
+        app.processEvents()
+        if win.detail.name.text() != "plain" or not row("script").property("selected"):
+            PROBLEMS.append(f"clicking a row showed {win.detail.name.text()!r}")
+        chips = [w for w in win.detail.findChildren(type(win.detail.run))
+                 if w.objectName() == "paramChip"]
+        if [c.text() for c in chips][1:] != ["--base", "--fast", "--fail"]:
+            PROBLEMS.append(f"chips read {[c.text() for c in chips]}")
+        else:
+            next(c for c in chips if c.text() == "--fast").click()
+            app.processEvents()
+            win.detail.run.click()
+            if not pump_until(lambda: any("ARGS=--fast" in ln for ln in lines)):
+                PROBLEMS.append(f"the pane's Run did not pass the chosen chip: {lines}")
+            pump_until(lambda: len(bridge.registry) == 0)
+            # A failure turns the pane's Run into Retry, as it does the row's.
+            chips = [w for w in win.detail.findChildren(type(win.detail.run))
+                     if w.objectName() == "paramChip" and w.text() == "--fail"]
+            chips[0].click()
+            app.processEvents()
+            win.detail.run.click()
+            pump_until(lambda: len(bridge.registry) == 0)
+            pump_until(lambda: win.detail.run.text() == detail.run_label("error"), 5)
+            if win.detail.run.text() != detail.run_label("error"):
+                PROBLEMS.append(f"after a failure the pane's Run read "
+                                f"{win.detail.run.text()!r}")
+
+        # A pipeline lists its steps.
+        row("pipeline").activated.emit()
+        app.processEvents()
+        steps = [w for w in win.detail.steps_panel.findChildren(QFrame)
+                 if w.objectName() == "stepRow"]
+        if win.detail.kind != cardmenu.PIPELINE or len(steps) != 1 \
+                or win.detail.run_with.isVisible():
+            PROBLEMS.append(f"the pipeline's pane: kind {win.detail.kind!r}, "
+                            f"{len(steps)} step rows")
+
+        # Restored: the panel goes back under the list, the rows full size.
+        win.set_workspace(False)
+        app.processEvents()
+        if win.output_panel.parentWidget() is not win.splitter or win.detail.isVisible():
+            PROBLEMS.append("restored: the output panel did not come back")
+        if row("script").property("compact") or row("script").property("selected"):
+            PROBLEMS.append("restored: the rows are still compact, or marked")
+        # And the option turns it off.
+        win._settings["workspace_when_maximized"] = False
+        win.sync_layout()
+        if win.workspace:
+            PROBLEMS.append("the maximised layout ignored its option")
+    finally:
+        bridge.stop()
+        win.close()
+        win.deleteLater()
+    print("  [ok] maximised: list beside the detail, output moves, rows compact, "
+          "chips choose what the pane's Run passes, Retry, steps; restored")
+
+
 def check_ampersands_show(app):
     """A "&" in a group name shows in its tab and its menus.
 
@@ -3911,6 +4037,7 @@ def main() -> int:
     check_badges_banner_previews(app)
     check_long_text_fits(app)
     check_ticks_are_drawn(app)
+    check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:
         PROBLEMS.append("the user's own RYOS log was written during the smoke")

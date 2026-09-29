@@ -459,6 +459,49 @@ QPushButton#sectionHeader {{
 QPushButton#sectionHeader:hover {{ color: {c['name_fg']}; }}
 QLabel#groupHeader {{ color: {c['path_fg']}; font-size: 8pt; font-weight: 700; padding: 14px 0 2px 0; }}
 
+/* --- the maximised layout: the chosen row and the detail pane ------- */
+QFrame#card[selected="true"] {{ background: {c['accent_wash']}; }}
+QLabel#detailName, QWidget#detailName {{ font-size: 16pt; font-weight: 700; }}
+QLabel#detailHeading {{
+    color: {c['path_fg']}; font-size: 8pt; font-weight: 700; letter-spacing: 0.8px;
+}}
+QPushButton#detailLink, QPushButton#detailStar {{
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: {d['tab_selected_fg']};
+    font-weight: 600;
+    padding: 7px 12px;
+}}
+QPushButton#detailLink:hover, QPushButton#detailStar:hover {{
+    background: {c['accent_wash']};
+}}
+QPushButton#detailStar {{ color: {c['path_fg']}; font-size: 14pt; padding: 2px 8px; }}
+QPushButton#detailStar[on="true"] {{ color: {d['star']}; }}
+QPushButton#paramChip {{
+    background: transparent;
+    color: {c['name_fg']};
+    border: 1px solid {d['control_edge']};
+    /* Qt draws no rounding at all past half the height: keep under it. */
+    border-radius: 11px;
+    min-height: 16px;
+    padding: 3px 12px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 9pt;
+}}
+QPushButton#paramChip:hover {{ background: {c['card_hover']}; }}
+QPushButton#paramChip:checked {{
+    background: {c['accent_wash']};
+    color: {d['tab_selected_fg']};
+    border: 1px solid {c['accent']};
+}}
+QFrame#stepRow {{ background: transparent; border: none; border-bottom: 1px solid {c['border']}; }}
+QFrame#stepRow[last="true"] {{ border-bottom: none; }}
+QFrame#stepRow QLabel, QFrame#stepRow QWidget {{ background: transparent; }}
+QLabel#factKey, QWidget#factKey {{ color: {c['path_fg']}; font-size: 9pt; }}
+QWidget#factValue {{ font-size: 9.5pt; }}
+QSplitter#outerSplit::handle {{ background: {c['border']}; width: 1px; }}
+
 /* --- select mode --------------------------------------------------- */
 QFrame#selectBar {{
     background: {c['warn_bg']};

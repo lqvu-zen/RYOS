@@ -101,6 +101,7 @@ _SETTINGS_DEFAULTS: dict = {
     "compact_mode":           False,
     "card_size":              "medium",
     "hover_preview":          True,
+    "workspace_when_maximized": True,
 }
 
 

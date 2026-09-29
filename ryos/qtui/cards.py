@@ -42,6 +42,9 @@ class _CardBase(QFrame):
     beside a round Run -- the one filled thing on the row.
     """
 
+    #: A click on the card itself, not on one of its buttons.
+    activated = Signal()
+
     def __init__(self, palette: dict, compact: bool, size: str,
                  parent: QWidget | None = None):
         super().__init__(parent)
@@ -93,8 +96,14 @@ class _CardBase(QFrame):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:        # noqa: N802
+        # A press that did not become a drag is a click: it chooses the card
+        # (the maximised layout shows the chosen one beside the list).
+        clicked = (self._press_pos is not None
+                   and event.button() == Qt.MouseButton.LeftButton)
         self._press_pos = None
         super().mouseReleaseEvent(event)
+        if clicked:
+            self.activated.emit()
 
     # -- button strip ------------------------------------------------------
     def _button(self, glyph: str, tooltip: str = "",
@@ -286,7 +295,9 @@ class ScriptCard(_CardBase):
             text.addLayout(sub)
         # The preset drop-down: which parameters Run passes. Offered, as in
         # Tk, only when the script has presets (`scriptform.card_param_choices`).
-        if param_choices and not compact:
+        # A compact row keeps it hidden: it still decides what Run passes,
+        # and the detail pane's chips choose through it.
+        if param_choices:
             entries, selected = param_choices
             self.params_combo = QComboBox()
             self.params_combo.setObjectName("paramCombo")
@@ -298,6 +309,7 @@ class ScriptCard(_CardBase):
             self.params_combo.addItems(entries)
             self.params_combo.setCurrentText(selected)
             text.addWidget(self.params_combo)
+            self.params_combo.setVisible(not compact)
         self._row.addLayout(text, 1)
 
         self.fav_button = self._fav_button(is_favorite)

@@ -34,12 +34,13 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import (__version__, cardmenu, cardstyle, configio, grouping, notifications,
-               outputpanel, pipelinesteps, screens, scriptform, search,
-               sections, selection, traypolicy)
+from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
+               notifications, outputpanel, pipelinesteps, screens, scriptform,
+               search, sections, selection, traypolicy)
 from . import placement
 from ..themes import REFERENCE, readable_highlight
 from .cards import PipelineCard, ScriptCard
+from .detail import DetailPane
 from .dragdrop import GroupTabBar
 from .sections import GroupPage
 from .menus import build_menu
@@ -280,12 +281,29 @@ class MainWindow(QMainWindow):
         self.running = RunningSection(self._palette, on_stop=self._stop_job)
 
         self.setMenuWidget(self._build_header())
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(self._build_top())
-        splitter.addWidget(self._build_output())
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 2)
-        self.setCentralWidget(splitter)
+        # The list over the output; and, maximised, the detail pane beside
+        # them, which the output panel moves into (`set_workspace`).
+        self.workspace = False
+        self._selected: tuple | None = None
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.addWidget(self._build_top())
+        self.splitter.addWidget(self._build_output())
+        self.splitter.setStretchFactor(0, 3)
+        self.splitter.setStretchFactor(1, 2)
+        self.detail = DetailPane(
+            self._palette,
+            on_menu=lambda kind, item_id, key: self.on_card_menu(kind, item_id, key),
+            on_more=lambda kind, item_id, pos: self._show_card_menu(
+                kind, item_id, pos, self._selected_section()))
+        self.outer = QSplitter(Qt.Orientation.Horizontal)
+        self.outer.setObjectName("outerSplit")
+        self.outer.addWidget(self.splitter)
+        self.outer.addWidget(self.detail)
+        self.outer.setStretchFactor(1, 1)
+        self.outer.setCollapsible(0, False)
+        self.outer.setCollapsible(1, False)
+        self.detail.hide()
+        self.setCentralWidget(self.outer)
 
         self.statusBar().showMessage("Ready")
         self._build_menu()
@@ -478,8 +496,8 @@ class MainWindow(QMainWindow):
         return panel
 
     # -- the output header -----------------------------------------------------------
-    def set_output_expanded(self, on: bool) -> None:
-        if on == self.output_expanded:
+    def set_output_expanded(self, on: bool, *, force: bool = False) -> None:
+        if on == self.output_expanded and not force:
             return
         self.output_expanded = on
         self.output_tabs.setVisible(on)
@@ -492,8 +510,10 @@ class MainWindow(QMainWindow):
         self.output_panel.setMaximumHeight(
             16777215 if on else self.output_panel.layout().itemAt(0).widget()
             .sizeHint().height())
-        splitter = self.centralWidget()
-        if isinstance(splitter, QSplitter):
+        # Only while the panel is under the list: maximised, it is in the
+        # detail pane, and the list has the whole height.
+        splitter = getattr(self, "splitter", None)
+        if splitter is not None and self.output_panel.parentWidget() is splitter:
             total = sum(splitter.sizes()) or self.height()
             header = self.output_panel.sizeHint().height() if not on else 0
             splitter.setSizes([total - header, header] if not on
@@ -781,7 +801,8 @@ class MainWindow(QMainWindow):
         section; ``card.section`` says which, so a move from the menu moves it
         among the neighbours it is shown with.
         """
-        compact = bool(self._settings.get("compact_mode", False))
+        # Maximised, the list is a list: compact rows, the detail beside it.
+        compact = bool(self._settings.get("compact_mode", False)) or self.workspace
         size = self._settings.get("card_size", "medium")
         shade = readable_highlight(rec.get("color"), self._palette["card_bg"],
                                    self._palette["card_hover"])
@@ -809,7 +830,11 @@ class MainWindow(QMainWindow):
                               base_dir=rec.get("base_dir", ""),
                               last_run=rec.get("last_run"))
         card.section = section
-        if compact and self._settings.get("hover_preview", True):
+        card.activated.connect(
+            lambda k=kind, i=rec["id"], s=section: self.select_item(k, i, s))
+        # No hover preview beside the detail pane, which says it all.
+        if (compact and not self.workspace
+                and self._settings.get("hover_preview", True)):
             from .widgets import HoverPreview
             card.preview = HoverPreview(
                 card, lambda popup, r=rec: self._fill_preview(popup, r),
@@ -1051,6 +1076,8 @@ class MainWindow(QMainWindow):
         if first_load:
             current = grouping.initial_group(self._settings, named)
         self.show_group(current)
+        # The cards were all replaced: point the detail pane at the new one.
+        self._show_selected()
 
     def reload(self) -> None:
         if self._db is not None:
@@ -1306,6 +1333,7 @@ class MainWindow(QMainWindow):
         self.snap_to_corner()
         # Compact mode and card size are read when cards are built.
         self._defer_reload()
+        self.sync_layout()
 
     # -- appearance ------------------------------------------------------------------
     def themes_dir(self):
@@ -1502,6 +1530,9 @@ class MainWindow(QMainWindow):
     def changeEvent(self, event) -> None:                 # noqa: N802
         super().changeEvent(event)
         from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowStateChange and not self.isMinimized():
+            # Maximised or back: after the state settles, like the tray hide.
+            QTimer.singleShot(0, self.sync_layout)
         if (event.type() == QEvent.Type.WindowStateChange and self.isMinimized()
                 and traypolicy.on_minimize(self.tray_available(),
                                            self._hidden_to_tray) == traypolicy.HIDE):
@@ -2129,6 +2160,8 @@ class MainWindow(QMainWindow):
         for (kind, item_id), (rec, _group) in self._records.items():
             rec["status"] = (pipelines if kind == cardmenu.PIPELINE
                              else scripts).get(item_id)
+            if kind != cardmenu.PIPELINE:
+                rec["last_run"] = last_runs.get(item_id)
         for page in [*self.card_lists.values(), *self.all_pages.values()]:
             # The favourite copies too: `cards` leaves them out, and a
             # favourite's top card kept showing its old outcome.
@@ -2138,6 +2171,8 @@ class MainWindow(QMainWindow):
                 else:
                     card.set_last_status(scripts.get(card.script_id))
                     card.set_last_run(last_runs.get(card.script_id))
+        if self.workspace:
+            self.detail.refresh()
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""
@@ -2151,6 +2186,88 @@ class MainWindow(QMainWindow):
                 pass   # already gone
         self.statusBar().showMessage("Stopped.")
 
+    # -- the maximised layout: list and detail ----------------------------------
+    def sync_layout(self) -> None:
+        """Put the detail pane beside the list when the window has the room."""
+        self.set_workspace(detail.use_workspace(
+            self.isMaximized(), self.isFullScreen(),
+            bool(self._settings.get("workspace_when_maximized", True))))
+
+    def set_workspace(self, on: bool) -> None:
+        """Switch between the single list and the list beside the detail pane.
+
+        The output panel moves with it: under the list, or under the detail.
+        """
+        if on == self.workspace:
+            return
+        self.workspace = on
+        if on:
+            self._output_was_expanded = self.output_expanded
+            self.detail.attach_output(self.output_panel)
+            self.detail.show()
+            self.set_output_expanded(True, force=True)
+            total = self.outer.width() or self.width()
+            self.outer.setSizes([detail.LIST_WIDTH,
+                                 max(total - detail.LIST_WIDTH, 1)])
+        else:
+            self.splitter.insertWidget(1, self.output_panel)
+            self.splitter.setStretchFactor(1, 2)
+            self.detail.hide()
+            self.set_output_expanded(getattr(self, "_output_was_expanded", False),
+                                     force=True)
+        # The list's rows are compact beside the detail: rebuild them to suit.
+        if not self._settings.get("compact_mode", False) and self._db is not None:
+            self.reload()
+        else:
+            self._show_selected()
+
+    def select_item(self, kind: str, item_id: int,
+                    section: str = sections.SCRIPTS) -> None:
+        """Choose one item; maximised, the detail pane shows it."""
+        self._selected = (kind, item_id, section)
+        self._show_selected()
+
+    def _selected_section(self) -> str:
+        return self._selected[2] if self._selected else sections.SCRIPTS
+
+    def _selected_card(self):
+        """The chosen item's row: the one clicked, in the tab now showing if
+        it is there -- a favourite has a second row, and All a copy of each."""
+        if not self._selected:
+            return None
+        kind, item_id, section = self._selected
+        rows = [c for c in self._cards if c.drag_payload is not None
+                and (c.drag_payload.kind, c.drag_payload.item_id) == (kind, item_id)]
+        page = self.group_tabs.currentWidget()
+        in_view = [c for c in rows if page is not None and page.isAncestorOf(c)]
+        for pool in (in_view, rows):
+            for c in pool:
+                if c.section == section:
+                    return c
+        return (in_view or rows or [None])[0]
+
+    def _show_selected(self) -> None:
+        """Mark the chosen row and fill the detail pane from it."""
+        card = self._selected_card() if self.workspace else None
+        for c in self._cards:
+            on = c is card
+            if bool(c.property("selected")) != on:
+                c.setProperty("selected", on)
+                c.style().unpolish(c)
+                c.style().polish(c)
+        if not self.workspace:
+            return
+        if card is None or self._selected is None:
+            self.detail.show_empty()
+            return
+        kind, item_id, _section = self._selected
+        rec, _group = self._records[(kind, item_id)]
+        steps = (self._db.list_pipeline_steps(item_id)
+                 if kind == cardmenu.PIPELINE and self._db is not None else [])
+        self.detail.show_item(card, kind, rec, steps=steps,
+                              name_color=readable_highlight(rec.get("color"),
+                                                            self._palette["bg"]))
+
     # -- theming -----------------------------------------------------------
     def apply_palette(self, palette: dict) -> None:
         """Re-theme the whole window.
@@ -2162,3 +2279,4 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(stylesheet(palette))
         for pane in self._output_tabs.values():
             pane.set_palette(palette)
+        self.detail.set_palette(palette)

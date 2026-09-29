@@ -18,6 +18,7 @@ uv run python .claude/skills/run-ryos/driver.py [scenario ...] [--theme ID]
 | `main` (default) | The window on the Samples group |
 | `compact` | The same in compact card mode |
 | `output` | After a successful and a failing run: output panel open, Retry state |
+| `workspace` | The maximised layout (list + detail pane), on a pipeline and on a script |
 | `quick-run` | The Quick Run bar open, with suggestions |
 | `dialogs` | Script dialog, pipeline editor, schedule, run history, Options, Appearance, New Group |
 | `themes` | Every theme's main window on one contact sheet (`themes.png`) |

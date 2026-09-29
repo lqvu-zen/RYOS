@@ -51,6 +51,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Card and tab right-click menus (as data)       | `ryos/cardmenu.py`      |
 | Select mode: bar text, run-selected plan       | `ryos/selection.py`     |
 | Card sections, favourites, collapse state      | `ryos/sections.py`      |
+| Maximised list + detail layout: rules, wording | `ryos/detail.py`        |
 | Export / import / Delete All wording           | `ryos/configio.py`      |
 | Drag-and-drop reordering rules                 | `ryos/dragdrop.py`      |
 | Monitor work areas (pure geometry)             | `ryos/screens.py`       |

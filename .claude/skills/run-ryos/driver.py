@@ -121,6 +121,25 @@ def scenario_output(theme: str) -> None:
     win.bridge.stop()
 
 
+def scenario_workspace(theme: str) -> None:
+    """The maximised layout: the list, and a chosen pipeline and script.
+
+    Off screen there is no window manager to maximise it, so it is sized as a
+    maximised window would be and the layout switched on directly.
+    """
+    win = window(theme)
+    win.resize(1280, 760)
+    win.set_workspace(True)
+    pump(0.3)
+    card(win, "Resilient").run_button.click()
+    idle(win)
+    card(win, "Resilient").activated.emit()
+    shot(win, f"workspace_pipeline_{theme}")
+    card(win, "Say hello").activated.emit()
+    shot(win, f"workspace_script_{theme}")
+    win.bridge.stop()
+
+
 def scenario_quick_run(theme: str) -> None:
     win = window(theme)
     bar = win.quick_run_bars.get("Samples")
@@ -193,7 +212,8 @@ def scenario_themes(_theme: str) -> None:
 
 
 SCENARIOS = {"main": scenario_main, "compact": scenario_compact,
-             "output": scenario_output, "quick-run": scenario_quick_run,
+             "output": scenario_output, "workspace": scenario_workspace,
+             "quick-run": scenario_quick_run,
              "dialogs": scenario_dialogs, "themes": scenario_themes}
 
 

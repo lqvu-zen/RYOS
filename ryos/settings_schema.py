@@ -88,6 +88,8 @@ FIELDS: tuple[Field, ...] = (
           choices=("small", "medium", "large")),
     Field("hover_preview", BOOL, "Show details on hover (compact mode)",
           CARDS),
+    Field("workspace_when_maximized", BOOL,
+          "Maximised: list on the left, details on the right", CARDS),
     # -- Startup & window --------------------------------------------------
     Field("always_on_top", BOOL, "Keep window on top", STARTUP),
     Field("snap_corner", CHOICE, "Snap to corner", STARTUP,

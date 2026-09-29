@@ -97,5 +97,6 @@ files = [
     "ryos/scheduleform.py",
     "ryos/themes.py",
     "ryos/single_instance.py",
+    "ryos/detail.py",
     "design-system/build.py",
 ]

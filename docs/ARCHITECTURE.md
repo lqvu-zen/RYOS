@@ -85,6 +85,7 @@ without a display, and that is still where new logic belongs.
 | `ryos/traypolicy.py` | The tray and the window's life: the tooltip (`tray_title`) and menu (`tray_menu`) for a running-job snapshot, and what closing, minimising, starting minimised, quitting and a second launch each do. | yes |
 | `ryos/sections.py` | A group's sections (Favorites, Pipelines, Scripts): which records go where, the header and empty-section texts, the All tab's blocks, and a per-group `CollapseState` for the session. | yes |
 | `ryos/selection.py` | Select mode's wording and decisions: the bar text, Select / Deselect All, `plan_run` (resolve the job cap once), and the delete prompt. | yes |
+| `ryos/detail.py` | The maximised layout: when the list and the detail pane go side by side (`use_workspace`), and what the pane says -- the Run/Retry label, the line under the name, and the facts it lists. | yes |
 | `ryos/scheduleform.py` | The schedule dialog's form rules: which fields make up a spec per mode, how a stored schedule loads back, the catch-up labels, preview formatting, and when to offer starting RYOS at login. | yes |
 | `ryos/themes.py` | The theme gallery, palette building, custom themes, highlight colours and WCAG `contrast_ratio()` / `ink_on()`, used to keep every colour legible. | yes |
 | `ryos/single_instance.py` | Single-instance guard; a second launch asks the running window to restore and exits. `RYOS_ALLOW_MULTIPLE=1` bypasses it. | yes |
@@ -101,7 +102,8 @@ real ones.
 | --- | --- |
 | `main.py` | Start-up: `build()` does everything short of the event loop (themes, database, window, job bridge, tray, placement, update check) and returns `(app, window)`; `run()` adds the loop. |
 | `shell.py` | `MainWindow`: tabs, sections, search, select mode, menus, the output panel, placement, the tray and close rules. |
-| `cards.py`, `sections.py`, `dragdrop.py` | Script and pipeline cards, a group's collapsible sections, and drag-and-drop between them and onto tabs. |
+| `cards.py`, `sections.py`, `dragdrop.py` | Script and pipeline cards (rows of one panel per section; compact rows are a launcher list), a group's collapsible sections, and drag-and-drop between them and onto tabs. |
+| `detail.py` | The maximised layout's detail pane: the chosen item's name, actions, presets, steps and facts, with the output under them. Its buttons press the chosen row's own, so the two cannot drift. |
 | `scriptdialog.py`, `pipeline.py`, `dialogs.py`, `smalldialogs.py` | The script dialog, the pipeline editor, the Options dialog (generated from `settings_schema`), and the small ones: new group, base folder, parameters, schedule, run history, close-to-tray. |
 | `jobs.py`, `running.py` | `JobBridge` runs jobs through `JobController` and drains the output queue on a `QTimer`; `RunningSection` lists what is running, with Stop. |
 | `stylesheet.py` | Turns a palette into one Qt stylesheet. Pure — no Qt import — so it is unit-tested in the main suite, including that every text colour it draws is legible in every shipped theme. |

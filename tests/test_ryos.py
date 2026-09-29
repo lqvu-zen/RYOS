@@ -5630,6 +5630,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/shell.py": "imports PySide6; same reason",
         "ryos/qtui/jobs.py": "imports PySide6; same reason",
         "ryos/qtui/running.py": "imports PySide6; same reason",
+        "ryos/qtui/detail.py": "imports PySide6; same reason",
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
         "ryos/qtui/dragdrop.py": "imports PySide6; same reason",
@@ -8191,3 +8192,43 @@ class TestQuickRunSubmit(unittest.TestCase):
                           detached=1)
         qra.ensure_script(self.db, self._path("deploy.py"), "G", "--x", True)
         self.assertTrue(self.db.is_detached(sid))
+
+
+# --- the maximised layout ------------------------------------------------------------
+from ryos import detail  # noqa: E402
+
+
+class TestMaximisedLayout(unittest.TestCase):
+    """When the list and detail go side by side, and what the pane says."""
+
+    def test_only_with_the_room_and_when_wanted(self):
+        self.assertTrue(detail.use_workspace(True, False))
+        self.assertTrue(detail.use_workspace(False, True))
+        self.assertFalse(detail.use_workspace(False, False))
+        self.assertFalse(detail.use_workspace(True, True, enabled=False))
+
+    def test_run_label_follows_the_row(self):
+        self.assertEqual(detail.run_label(None), "▶  Run")
+        self.assertEqual(detail.run_label("ok"), "▶  Run")
+        self.assertEqual(detail.run_label("error"), "↻  Retry")
+
+    def test_subtitle_says_what_it_is_and_how_it_went(self):
+        rec = {"path": "C:/p/tools/a.py", "base_dir": "C:/p",
+               "status": "error", "last_run": "2026-09-29T20:43:10"}
+        self.assertEqual(detail.subtitle("script", rec),
+                         f"{os.path.join('tools', 'a.py')}  ·  "
+                         "last run 2026-09-29 20:43, failed")
+        self.assertEqual(detail.subtitle("pipeline", {"status": "ok"}, 1),
+                         "1 step  ·  last run OK")
+        self.assertEqual(detail.subtitle("pipeline", {}, 3), "3 steps")
+
+    def test_facts_fill_every_row_with_something(self):
+        facts = dict(detail.script_facts({"path": "C:/a.py", "scheduled": True,
+                                          "temp_param": True}))
+        self.assertEqual(facts["Path"], "C:/a.py")
+        self.assertEqual(facts["Parameters"], "—")
+        self.assertEqual(facts["Asks each run"], "Yes")
+        self.assertEqual(facts["Schedule"], "Runs on a schedule")
+        self.assertEqual(facts["Last run"], "—")
+        self.assertTrue(all(v for _k, v in detail.script_facts({})))
+        self.assertEqual(dict(detail.pipeline_facts({}))["Schedule"], "None")
