@@ -18,7 +18,12 @@
       "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python tests/session_smoke.py)",
       "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python tests/session_smoke.py --visible)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python tests/launch_smoke.py)",
-      "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python .claude/skills/run-ryos/driver.py output dialogs --theme dark)"
+      "Bash(PYTHONIOENCODING=utf-8 timeout 300 uv run python .claude/skills/run-ryos/driver.py output dialogs --theme dark)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main compact output --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main output --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main compact --theme dark)",
+      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8 uv run --no-project --with PySide6 python tests/qt_smoke.py)",
+      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8 uv run python tests/session_smoke.py)"
     ]
   }
 }
