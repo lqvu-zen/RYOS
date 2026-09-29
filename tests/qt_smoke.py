@@ -268,25 +268,40 @@ def check_cards(app):
             app.processEvents()
             tag = f"compact={compact} size={size}"
 
-            # #3: four cells each, same widths.
+            # #3: the same cells, the same widths, at the same x. A compact
+            # row shows the star and Run only; the others are hidden.
             s_cells = [sc.fav_button, sc.edit_button, sc.param_button, sc.run_button]
             p_cells = [pc.fav_button, pc.edit_button, pc.spacer, pc.run_button]
             if len(s_cells) != len(p_cells):
                 PROBLEMS.append(f"{tag}: card types have different column counts")
+            run_side = cardstyle.RUN_DIAMETER[compact]
             for i, (a, b) in enumerate(zip(s_cells, p_cells)):
+                want_w = run_side if i == 3 else BUTTON_WIDTH
                 if a.width() != b.width():
                     PROBLEMS.append(
                         f"{tag}: column {i} widths differ — "
                         f"script {a.width()} vs pipeline {b.width()} (#3)")
-                if a.width() != BUTTON_WIDTH:
+                if a.width() != want_w:
                     PROBLEMS.append(
-                        f"{tag}: column {i} is {a.width()}px, not {BUTTON_WIDTH}")
+                        f"{tag}: column {i} is {a.width()}px, not {want_w}")
+                if a.isVisible() != b.isVisible():
+                    PROBLEMS.append(f"{tag}: column {i} shows on one card type only")
+                elif a.isVisible() and a.mapTo(sc, QPoint(0, 0)).x() != \
+                        b.mapTo(pc, QPoint(0, 0)).x():
+                    PROBLEMS.append(f"{tag}: column {i} is not at the same x (#3)")
+            middle_shown = [w.isVisible() for w in s_cells[1:3] + p_cells[1:3]]
+            if any(middle_shown) == compact:
+                PROBLEMS.append(f"{tag}: Edit and the middle column shown={middle_shown}")
+            if sc.run_button.height() != run_side:
+                PROBLEMS.append(f"{tag}: Run is {sc.run_button.width()}x"
+                                f"{sc.run_button.height()}, not round ({run_side})")
 
             # #7: the spacer must read as a gap in the card -- drawn in the
-            # card's own colour, neither like a button nor as a hole of the
-            # window colour (the catch-all QWidget rule painted it so).
-            # Compared with the card just beside it, not a fixed colour: the
-            # card may be drawn in its hover colour, depending on the pointer.
+            # card's own colour, not as a hole of the window colour (the
+            # catch-all QWidget rule painted it so). Compared with the card
+            # just beside it, not a fixed colour: the card may be drawn in its
+            # hover colour, depending on the pointer. (Every button is quiet
+            # now, so a button-coloured slab is no longer the risk it was.)
             shot = pc.grab().toImage()
             scale = shot.devicePixelRatio()         # 1.25 on a 125% screen
 
@@ -294,14 +309,14 @@ def check_cards(app):
                 # The image is in device pixels; widget points are logical.
                 return shot.pixelColor(int(point.x() * scale),
                                        int(point.y() * scale)).name().lower()
-            centre = pc.spacer.mapTo(pc, pc.spacer.rect().center())
-            drawn = px(centre)
-            card_there = px(QPoint(pc.spacer.mapTo(pc, QPoint(0, 0)).x() - 2, centre.y()))
-            button = px(pc.edit_button.mapTo(pc, pc.edit_button.rect().center()
-                                             + QPoint(8, 0)))
-            if drawn != card_there or drawn == button:
-                PROBLEMS.append(f"{tag}: the spacer is drawn {drawn}; the card beside "
-                                f"it is {card_there}, a button {button} (#7)")
+            if not compact:
+                centre = pc.spacer.mapTo(pc, pc.spacer.rect().center())
+                drawn = px(centre)
+                card_there = px(QPoint(pc.spacer.mapTo(pc, QPoint(0, 0)).x() - 2,
+                                       centre.y()))
+                if drawn != card_there:
+                    PROBLEMS.append(f"{tag}: the spacer is drawn {drawn}; the card "
+                                    f"beside it is {card_there} (#7)")
 
             # padding follows the shared table
             want = cardstyle.card_padding(compact, size)
@@ -329,7 +344,7 @@ def check_cards(app):
                     f"{kind} with last_status={status!r}: run button is "
                     f"{got!r}, expected {want_state!r} (#4)")
             card.deleteLater()
-    print(f"  [ok] cards: 4 columns aligned, spacer reads as a gap, "
+    print(f"  [ok] cards: columns aligned, Run round, spacer reads as a gap, "
           f"run/retry {seen['script-error']}/{seen['script-ok']}")
 
 

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..themes import (INK_LIGHT_POLE, REFERENCE, _readable_on, _rel_luminance,
-                      _shade, contrast_ratio, ink_on)
+from ..themes import (INK_LIGHT_POLE, REFERENCE, _mix, _readable_on,
+                      _rel_luminance, _shade, contrast_ratio, ink_on)
 
 
 #: Text needs 4.5:1 against its fill (WCAG AA); a glyph or a large
@@ -61,8 +61,16 @@ def drawn_colors(c: dict) -> dict:
         "tooltip_fg": _legible(c["name_fg"], c["tooltip_bg"]),
         "status_fg": _legible(c["path_fg"], c["status_bg"]),
         "tab_selected_fg": _legible(c["accent"], c["card_bg"], floor=GLYPH_MIN),
-        # Gold stays gold, shaded until it reads on the wash.
-        "star": _readable_on(c.get("bolt", "#FFD23F"), (c["accent_wash"],)),
+        # Gold stays gold, shaded until it reads on a row, hovered or not.
+        "star": _readable_on(c.get("bolt", "#FFD23F"),
+                             (c["card_bg"], c["card_hover"], c["accent_wash"])),
+        # The header bar is the theme's header colour, which is dark in most
+        # themes and pale in a few; its words and menus follow it.
+        "header_fg": _legible(c["fg_on_dark"], c["header_bg"]),
+        # A group pill: the chosen one is the body text colour, filled, with
+        # the window colour for ink; the others are muted words on the window.
+        "pill_fg": _legible(c["bg"], c["name_fg"]),
+        "pill_idle_fg": _legible(c["path_fg"], c["bg"], c["tab_inactive_hover"]),
         # A neutral button's outline. In Light its fill is 1.01:1 against the
         # window, so without an edge Save and Cancel read as plain text.
         "control_edge": _edge(c["border"], c["bg"], c["card_bg"]),
@@ -78,7 +86,10 @@ DRAWN_PAIRS = (
     ("tooltip_fg", ("tooltip_bg",), TEXT_MIN),
     ("status_fg", ("status_bg",), TEXT_MIN),
     ("tab_selected_fg", ("card_bg",), GLYPH_MIN),
-    ("star", ("accent_wash",), GLYPH_MIN),
+    ("star", ("card_bg", "card_hover", "accent_wash"), GLYPH_MIN),
+    ("header_fg", ("header_bg",), TEXT_MIN),
+    ("pill_fg", ("name_fg",), TEXT_MIN),
+    ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
     ("control_edge", ("bg", "card_bg"), EDGE_MIN),
 )
 
@@ -138,6 +149,8 @@ def stylesheet(palette: dict) -> str:
     d = drawn_colors(c)
     tick = icon_path("check-light.svg" if ink_on(c["accent"]) == INK_LIGHT_POLE
                      else "check-dark.svg")
+    # A header button under the pointer: the header lifted toward its ink.
+    header_hover = _mix(c["header_bg"], d["header_fg"], 0.14)
     return f"""
 /* --- surfaces ------------------------------------------------------- */
 QWidget {{
@@ -149,19 +162,29 @@ QWidget {{
 QMainWindow, QDialog {{ background: {c['bg']}; }}
 
 /* --- cards ---------------------------------------------------------- */
-QFrame#card {{
+/* A section is one panel, and each card a row of it: no box of its own,
+   split from the next by a hairline. */
+QWidget#sectionPanel {{
     background: {c['card_bg']};
     border: 1px solid {c['border']};
     border-radius: 4px;
 }}
+QFrame#card {{
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid {c['border']};
+    border-radius: 0;
+}}
+QFrame#card[last="true"] {{ border-bottom: none; }}
 QFrame#card:hover {{ background: {c['card_hover']}; }}
 /* The coloured edge Tk cards have: the accent for a script, the pipeline
    accent for a pipeline, so the two kinds tell apart at a glance. */
-QFrame#card {{ border-left: 4px solid {c['accent']}; }}
-QFrame#card[kind="pipeline"] {{ border-left: 4px solid {c.get('pipe_accent', c['accent'])}; }}
+QFrame#card {{ border-left: 3px solid {c['accent']}; }}
+QFrame#card[kind="pipeline"] {{ border-left: 3px solid {c.get('pipe_accent', c['accent'])}; }}
 QLabel#cardName {{ color: {c['name_fg']}; font-weight: 600; }}
 /* The name is a ScrollingLabel, not a QLabel: without this it was not bold. */
-QWidget#cardName {{ font-weight: 600; }}
+QWidget#cardName {{ font-weight: 700; font-size: 10.5pt; }}
+QFrame#card[compact="true"] QWidget#cardName {{ font-weight: 600; font-size: 10pt; }}
 /* Text on a card sits on the card, not in a box of the window colour. */
 QFrame#card QLabel, QFrame#card #cardName {{ background: transparent; }}
 /* The empty column on a pipeline card is a gap in the card (#7). */
@@ -199,7 +222,7 @@ QPushButton:default:disabled {{
 /* Filled buttons say what they are with the fill; the edge is for neutral ones. */
 QPushButton#run, QPushButton#stop, QPushButton#primary, QPushButton#dark,
 QPushButton:default {{ border: none; }}
-/* A card's button strip holds glyphs, not words (▶ ↻ ★ ⚙ ▸+): at the body
+/* A card's button strip holds glyphs, not words (▶ ↻ ★ ✎ ▶+): at the body
    size they drew a few pixels tall, and ↻ -- the retry -- was hard to make
    out. Tk draws them larger too. */
 QFrame#card QPushButton {{ font-size: 13pt; padding: 2px 0; }}
@@ -207,10 +230,21 @@ QFrame#card QPushButton {{ font-size: 13pt; padding: 2px 0; }}
    colour-emoji font in its own pale lavender, ignoring the button's ink --
    all but invisible on Light. */
 QFrame#card QPushButton {{ font-family: "Segoe UI Symbol", "Segoe UI"; }}
-/* A favourite's star is gold on the accent wash, as in Tk. */
-QFrame#card QPushButton#favOn {{
-    color: {d['star']}; background: {c['accent_wash']};
+/* Quiet: a glyph in the muted ink, boxed only under the pointer, so Run --
+   round and filled -- is the one thing on the row that looks pressable. */
+QFrame#card QPushButton {{
+    background: transparent;
+    color: {c['path_fg']};
+    border: none;
+    border-radius: 4px;
+    min-height: 28px;
 }}
+QFrame#card QPushButton:hover {{ background: {c['accent_wash']}; color: {c['name_fg']}; }}
+QFrame#card QPushButton#run {{ font-size: 11pt; padding: 0; min-height: 0; }}
+QFrame#card[compact="true"] QPushButton#run {{ font-size: 9pt; }}
+QFrame#card[compact="true"] QPushButton {{ min-height: 24px; }}
+/* A favourite's star is gold. */
+QFrame#card QPushButton#favOn {{ color: {d['star']}; }}
 
 /* --- group tabs ----------------------------------------------------- */
 QTabWidget::pane {{ border: 1px solid {c['border']}; background: {c['card_bg']}; }}
@@ -227,6 +261,36 @@ QTabBar::tab:selected {{
     font-weight: 600;
     border-bottom: 2px solid {c['accent']};
 }}
+/* The group tabs are pills on the window, with no frame round the page:
+   the section panels are the page. */
+QTabWidget#groupTabs::pane {{ border: none; background: transparent; }}
+QTabWidget#groupTabs::tab-bar {{ left: 0; }}
+QTabBar#groupTabBar::tab {{
+    background: transparent;
+    color: {d['pill_idle_fg']};
+    border: none;
+    border-radius: 14px;
+    padding: 5px 14px;
+    margin: 0 4px 8px 0;
+    font-weight: 600;
+}}
+QTabBar#groupTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
+QTabBar#groupTabBar::tab:selected {{
+    background: {c['name_fg']};
+    color: {d['pill_fg']};
+    font-weight: 700;
+    border: none;
+}}
+QPushButton#newGroupPill {{
+    background: transparent;
+    color: {d['pill_idle_fg']};
+    border: 1px dashed {d['control_edge']};
+    border-radius: 13px;
+    padding: 0;
+    font-size: 12pt;
+    min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
+}}
+QPushButton#newGroupPill:hover {{ background: {c['tab_inactive_hover']}; }}
 
 /* --- output panel --------------------------------------------------- */
 QPlainTextEdit#output, QTextEdit#output {{
@@ -235,7 +299,32 @@ QPlainTextEdit#output, QTextEdit#output {{
     border: none;
     font-family: Consolas, "Courier New", monospace;
 }}
-QTabBar#outputTabs::tab {{ background: {c['out_tabbar']}; }}
+/* The output header's buttons are words, like the header bar's. */
+QFrame#outputHeader QPushButton {{
+    background: transparent;
+    border: none;
+    color: {d['tab_selected_fg']};
+    font-weight: 600;
+    padding: 3px 8px;
+}}
+QFrame#outputHeader QPushButton:hover {{ background: {c['accent_wash']}; }}
+/* A tab per run, as small pills over the terminal. */
+QTabWidget#outputTabs::pane {{ border: none; }}
+QTabWidget#outputTabs QTabBar::tab {{
+    background: transparent;
+    color: {d['pill_idle_fg']};
+    border: none;
+    border-radius: 11px;
+    padding: 3px 10px;
+    margin: 4px 2px 6px 0;
+    font-weight: 600;
+}}
+QTabWidget#outputTabs QTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
+QTabWidget#outputTabs QTabBar::tab:selected {{
+    background: {c['name_fg']};
+    color: {d['pill_fg']};
+    border: none;
+}}
 /* Typed into, so it looks like the other fields -- not like the terminal. */
 QPlainTextEdit#envEdit {{
     background: {c['card_bg']};
@@ -310,18 +399,51 @@ QFrame#updateBanner QLabel {{ background: transparent; color: {c['name_fg']}; }}
 /* --- hover preview and steps popup ------------------------------- */
 QFrame#hoverPreview {{ background: {c['card_bg']}; border: 1px solid {c['border']}; }}
 
+/* --- header bar ----------------------------------------------------- */
+/* The theme's header colour, holding the menus and what makes things.
+   Its buttons are words; + Script, the one filled, is the main action. */
+QFrame#appHeader {{ background: {c['header_bg']}; border: none; }}
+QFrame#appHeader QLabel {{ background: transparent; color: {d['header_fg']}; }}
+QLabel#appTitle {{ font-size: 13pt; font-weight: 700; }}
+QLabel#appBolt {{ color: {c.get('bolt', '#FFD23F')}; font-size: 13pt; }}
+QFrame#appHeader QPushButton {{
+    background: transparent;
+    color: {d['header_fg']};
+    border: none;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-weight: 600;
+}}
+QFrame#appHeader QPushButton:hover {{ background: {header_hover}; }}
+QFrame#appHeader QPushButton#primary {{ background: {c['accent']}; color: {d['primary_fg']}; }}
+QFrame#appHeader QPushButton#primary:hover {{
+    background: {c['accent2']}; color: {d['primary_hover_fg']};
+}}
+QMenuBar#appMenu {{ background: transparent; color: {d['header_fg']}; }}
+QMenuBar#appMenu::item {{ background: transparent; padding: 4px 8px; border-radius: 4px; }}
+QMenuBar#appMenu::item:selected, QMenuBar#appMenu::item:pressed {{
+    background: {header_hover};
+}}
+
 /* --- group banner -------------------------------------------------- */
+/* The group's folder: a line of muted text over the sections, which
+   opens the folder dialog when clicked -- not a box of its own. */
 QLabel#groupBanner, QLabel#groupBannerEmpty {{
-    background: {c['card_bg']};
-    border: 1px solid {c['border']};
-    text-align: left;
-    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    color: {c['path_fg']};
+    font-size: 9pt;
+    padding: 2px 2px;
 }}
-QLabel#groupBanner {{ color: {c['name_fg']}; }}
-QLabel#groupBannerEmpty {{ color: {c['path_fg']}; }}
-QLabel#groupBanner:hover, QLabel#groupBannerEmpty:hover {{
-    background: {c['card_hover']};
+QLabel#groupBanner:hover, QLabel#groupBannerEmpty:hover {{ color: {c['name_fg']}; }}
+QPushButton#quickRunToggle {{
+    background: transparent;
+    border: none;
+    color: {d['tab_selected_fg']};
+    font-weight: 600;
+    padding: 2px 6px;
 }}
+QPushButton#quickRunToggle:hover {{ background: {c['accent_wash']}; }}
 
 /* --- sections ------------------------------------------------------ */
 QPushButton#sectionHeader {{
@@ -330,9 +452,8 @@ QPushButton#sectionHeader {{
     font-size: 8pt;
     font-weight: 700;
     text-align: left;
-    padding: 6px 2px 2px 2px;
+    padding: 10px 2px 4px 2px;
     border: none;
-    border-bottom: 1px solid {c['border']};
     border-radius: 0;
 }}
 QPushButton#sectionHeader:hover {{ color: {c['name_fg']}; }}

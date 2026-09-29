@@ -22,19 +22,25 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel
 
 from .. import cardstyle, scriptform
 from ..interpreter import _script_tag
-from ..themes import ink_on
+from ..themes import _readable_on, ink_on
 from .widgets import ElidedLabel, ScrollingLabel, set_tooltip
 
-# The four button columns every card carries, so a mixed list lines up. The
+# The button columns every card carries, so a mixed list lines up. The
 # pipeline card has no "run with parameter", and issue #3 was that omitting the
 # cell misaligned every column after it; issue #7 was that filling it with a
 # button-coloured slab made the gap read as a broken control. Here it is an
 # empty transparent placeholder of the same fixed width.
-BUTTON_WIDTH = 34
+BUTTON_WIDTH = 32
 
 
 class _CardBase(QFrame):
-    """Shared chrome: object names, the button strip, and the size policy."""
+    """Shared chrome: object names, the button strip, and the size policy.
+
+    A card is one row of its section's panel: no box of its own, a hairline
+    under it, and a strip of the accent down its left edge. Its words are
+    coloured text rather than filled chips, and its buttons are quiet glyphs
+    beside a round Run -- the one filled thing on the row.
+    """
 
     def __init__(self, palette: dict, compact: bool, size: str,
                  parent: QWidget | None = None):
@@ -43,11 +49,25 @@ class _CardBase(QFrame):
         self._compact = compact
         self._size = size
         self.setObjectName("card")
+        self.setProperty("compact", compact)
         self.setFrameShape(QFrame.Shape.NoFrame)
         padx, pady = cardstyle.card_padding(compact, size)
         self._row = QHBoxLayout(self)
         self._row.setContentsMargins(padx, pady, padx, pady)
         self._row.setSpacing(6)
+
+    def _ink(self, color: str) -> str:
+        """``color``, shaded until it reads as text on the row, hovered or not."""
+        c = self._palette
+        return _readable_on(color, (c["card_bg"], c["card_hover"]))
+
+    def _tag(self, text: str, color: str, object_name: str) -> QLabel:
+        """A kind label -- BATCH, ⚡ PIPELINE -- as small coloured capitals."""
+        label = QLabel(text.upper())
+        label.setObjectName(object_name)
+        label.setStyleSheet(f"color: {self._ink(color)}; font-size: 7.5pt;"
+                            f" font-weight: 700; letter-spacing: 0.4px;")
+        return label
 
     # -- dragging -----------------------------------------------------------
     #: Runs the drag once it starts. None means QDrag.exec, which blocks until
@@ -99,10 +119,35 @@ class _CardBase(QFrame):
         return w
 
     def _run_button(self, last_status: str | None) -> QPushButton:
-        """The Run button, which becomes Retry after a failure."""
+        """The Run button, which becomes Retry after a failure: a circle,
+        smaller on a compact row."""
         b = self._button("", "", object_name="run")
+        side = cardstyle.RUN_DIAMETER[self._compact]
+        b.setFixedSize(side, side)
         self._style_run_button(b, last_status)
         return b
+
+    def _fav_button(self, is_favorite: bool) -> QPushButton:
+        return self._button("★" if is_favorite else "☆",
+                            "Remove from favorites" if is_favorite
+                            else "Add to favorites",
+                            object_name="favOn" if is_favorite else "")
+
+    def _lay_out_buttons(self, fav, middle, run) -> None:
+        """The strip: star, the middle cells, Run. A compact row is a list to
+        run from, so it keeps the star -- first, as a list's mark -- and Run;
+        Edit and the rest stay on the right-click menu."""
+        if self._compact:
+            # Just before the name, which is the last thing laid out so far
+            # (after the select-mode tick, on a card that has one).
+            self._row.insertWidget(self._row.count() - 1, fav)
+            for w in middle:
+                w.hide()
+        else:
+            self._row.addWidget(fav)
+        for w in middle:
+            self._row.addWidget(w)
+        self._row.addWidget(run)
 
     def set_last_status(self, status: str | None) -> None:
         """Show a run's outcome as it lands: Retry after a failure, and the
@@ -125,38 +170,38 @@ class _CardBase(QFrame):
         set_tooltip(b, spec.tooltip)
         c = self._palette
         # Per-button colours, because the state is per-card rather than
-        # per-class; everything else is left to the stylesheet.
+        # per-class; everything else is left to the stylesheet. The radius
+        # is here too: it is half the diameter, which only the card knows.
+        radius = b.width() // 2
         b.setStyleSheet(
             f"QPushButton#run {{ background: {c[spec.bg_key]};"
-            f" color: {c[spec.fg_key]}; }}"
+            f" color: {c[spec.fg_key]}; border-radius: {radius}px; }}"
             f"QPushButton#run:hover {{ background: {c[spec.hover_key]};"
             f" color: {ink_on(c[spec.hover_fg_key])}; }}")
         b.setProperty("runState", spec.state)
 
     def _tag_badges(self, header: QHBoxLayout, badges) -> None:
-        """`cardstyle.TagBadge`s beside the name, drawn as the Tk cards draw them."""
+        """`cardstyle.TagBadge`s beside the name, as coloured words."""
         self.badges: list[QLabel] = []
         for spec in badges or ():
             badge = QLabel(spec.text)
             badge.setObjectName("tagBadge")
             badge.setStyleSheet(
-                f"background: {self._palette[spec.bg_key]};"
-                f" color: {self._palette['fg_on_dark']}; padding: 1px 5px;"
-                f" border-radius: 2px; font-size: 8pt; font-weight: 700;")
+                f"color: {self._ink(self._palette[spec.bg_key])};"
+                f" font-size: 7.5pt; font-weight: 700;")
             set_tooltip(badge, spec.tooltip)
             header.addWidget(badge)
             self.badges.append(badge)
 
     def _status_chip(self, status: str | None) -> QLabel | None:
+        """The last run's outcome as a coloured dot and word: ● OK, ● Failed."""
         spec = cardstyle.status_badge(status)
         if spec is None:
             return None
         chip = QLabel(spec.text)
         chip.setObjectName("statusChip")
-        c = self._palette
-        chip.setStyleSheet(
-            f"background: {c[spec.bg_key]}; color: {c[spec.fg_key]};"
-            f" padding: 1px 5px; border-radius: 2px; font-weight: 600;")
+        chip.setStyleSheet(f"color: {self._ink(self._palette[spec.bg_key])};"
+                           f" font-size: 9pt; font-weight: 600;")
         return chip
 
 
@@ -200,21 +245,20 @@ class ScriptCard(_CardBase):
         text.setSpacing(2)
         tag_text, tag_bg = _script_tag(path)
         header = QHBoxLayout()
-        header.setSpacing(6)
+        header.setSpacing(8)
+        # The kind leads a full row, as a heading; on a compact row it
+        # trails the name, which is what the eye looks for in a list.
+        tag = self._tag(tag_text, tag_bg, "scriptTag")
         if not compact:
-            badge = QLabel(tag_text)
-            badge.setObjectName("scriptTag")
-            badge.setStyleSheet(
-                f"background: {tag_bg}; color: {ink_on(tag_bg)};"
-                f" padding: 1px 5px; border-radius: 2px; font-size: 8pt;"
-                f" font-weight: 700;")
-            header.addWidget(badge)
+            header.addWidget(tag)
         self._tag_badges(header, () if compact else badges)
         self.name_label = ScrollingLabel(name)
         self.name_label.setObjectName("cardName")
         if label_color:
             self.name_label.setStyleSheet(f"color: {label_color};")
         header.addWidget(self.name_label, 1)
+        if compact:
+            header.addWidget(tag)
         self._header = header
         self._last_status = last_status
         self.status_chip = self._status_chip(last_status)
@@ -256,20 +300,16 @@ class ScriptCard(_CardBase):
             text.addWidget(self.params_combo)
         self._row.addLayout(text, 1)
 
-        # Four columns, in the same order as the Tk card.
-        self.fav_button = self._button("★" if is_favorite else "☆",
-                                       "Remove from favorites" if is_favorite
-                                       else "Add to favorites",
-                                       object_name="favOn" if is_favorite else "")
+        self.fav_button = self._fav_button(is_favorite)
         # A pencil, the usual sign for Edit. It was ⚙, which Windows draws
         # from its colour-emoji font in pale lavender -- all but invisible on
         # Light -- and as a thin ring in Segoe UI Symbol.
         self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
         self.param_button = self._button("▶+", "Run with parameter")
         self.run_button = self._run_button(last_status)
-        for b in (self.fav_button, self.edit_button, self.param_button,
-                  self.run_button):
-            self._row.addWidget(b)
+        self._lay_out_buttons(self.fav_button,
+                              (self.edit_button, self.param_button),
+                              self.run_button)
 
         self.run_button.clicked.connect(
             lambda: self.run_requested.emit(self.script_id))
@@ -304,22 +344,19 @@ class PipelineCard(_CardBase):
         text = QVBoxLayout()
         text.setSpacing(2)
         header = QHBoxLayout()
-        header.setSpacing(6)
+        header.setSpacing(8)
+        accent = palette.get("pipe_accent", palette["accent"])
+        tag = self._tag("⚡ PIPE" if compact else "⚡ PIPELINE", accent, "pipeTag")
         if not compact:
-            badge = QLabel("⚡ PIPELINE")
-            badge.setObjectName("pipeTag")
-            accent = palette.get("pipe_accent", palette["accent"])
-            badge.setStyleSheet(
-                f"background: {accent}; color: {ink_on(accent)};"
-                f" padding: 1px 5px; border-radius: 2px; font-size: 8pt;"
-                f" font-weight: 700;")
-            header.addWidget(badge)
+            header.addWidget(tag)
         self._tag_badges(header, () if compact else badges)
         self.name_label = ScrollingLabel(name)
         self.name_label.setObjectName("cardName")
         if label_color:
             self.name_label.setStyleSheet(f"color: {label_color};")
         header.addWidget(self.name_label, 1)
+        if compact:
+            header.addWidget(tag)
         self._header = header
         self._last_status = last_status
         self.status_chip = self._status_chip(last_status)
@@ -345,19 +382,12 @@ class PipelineCard(_CardBase):
             text.addWidget(self.steps_label)
         self._row.addLayout(text, 1)
 
-        self.fav_button = self._button("★" if is_favorite else "☆",
-                                       "Remove from favorites" if is_favorite
-                                       else "Add to favorites",
-                                       object_name="favOn" if is_favorite else "")
-        # A pencil, the usual sign for Edit. It was ⚙, which Windows draws
-        # from its colour-emoji font in pale lavender -- all but invisible on
-        # Light -- and as a thin ring in Segoe UI Symbol.
+        self.fav_button = self._fav_button(is_favorite)
         self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
         self.spacer = self._spacer()          # where ▶+ sits on a script card
         self.run_button = self._run_button(last_status)
-        for w in (self.fav_button, self.edit_button, self.spacer,
-                  self.run_button):
-            self._row.addWidget(w)
+        self._lay_out_buttons(self.fav_button, (self.edit_button, self.spacer),
+                              self.run_button)
 
         self.run_button.clicked.connect(
             lambda: self.run_requested.emit(self.pipeline_id))

@@ -279,6 +279,7 @@ class MainWindow(QMainWindow):
 
         self.running = RunningSection(self._palette, on_stop=self._stop_job)
 
+        self.setMenuWidget(self._build_header())
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.addWidget(self._build_top())
         splitter.addWidget(self._build_output())
@@ -305,9 +306,9 @@ class MainWindow(QMainWindow):
         size was silently widened. Here the text clips instead.
         """
         from PySide6.QtWidgets import QAbstractButton
-        rows = [self.select_bar, self.output_findbar,
+        rows = [self.select_bar, self.output_findbar, self.header,
                 *self.findChildren(QFrame, "outputHeader")]
-        loose = [self.search_hint, self.add_script_button, self.add_pipeline_button]
+        loose = [self.search_hint]
         for widget in loose + [w for row in rows for kind in (QAbstractButton, QLabel)
                                for w in row.findChildren(kind)]:
             widget.setMinimumWidth(min(widget.minimumSizeHint().width(), 24))
@@ -317,10 +318,51 @@ class MainWindow(QMainWindow):
             row.updateGeometry()
 
     # -- construction ------------------------------------------------------
+    def menuBar(self):                                    # noqa: N802
+        """The menus, which live in the header bar.
+
+        QMainWindow's own would make a new bar in the header's place.
+        """
+        return self.menu_bar
+
+    def _build_header(self) -> QWidget:
+        """The header bar: the bolt and the name, the menus, and the buttons
+        that make things -- + Script filled, as the window's main action."""
+        from PySide6.QtWidgets import QMenuBar
+        header = QFrame()
+        header.setObjectName("appHeader")
+        row = QHBoxLayout(header)
+        row.setContentsMargins(14, 6, 10, 6)
+        row.setSpacing(4)
+        bolt = QLabel("⚡")
+        bolt.setObjectName("appBolt")
+        row.addWidget(bolt)
+        title = QLabel("RYOS")
+        title.setObjectName("appTitle")
+        row.addWidget(title)
+        row.addSpacing(10)
+        self.menu_bar = QMenuBar()
+        self.menu_bar.setObjectName("appMenu")
+        row.addWidget(self.menu_bar)
+        row.addStretch(1)
+        self.add_pipeline_button = QPushButton(pipelinesteps.ADD_PIPELINE_LABEL)
+        self.add_pipeline_button.clicked.connect(self.new_pipeline)
+        row.addWidget(self.add_pipeline_button)
+        self.add_group_button = QPushButton("+ Group")
+        self.add_group_button.clicked.connect(self.new_group)
+        row.addWidget(self.add_group_button)
+        self.add_script_button = QPushButton(sections.ADD_SCRIPT_LABEL)
+        self.add_script_button.setObjectName("primary")
+        self.add_script_button.clicked.connect(self.add_script)
+        row.addWidget(self.add_script_button)
+        self.header = header
+        return header
+
     def _build_top(self) -> QWidget:
         top = QWidget()
         col = QVBoxLayout(top)
-        col.setContentsMargins(8, 8, 8, 4)
+        col.setContentsMargins(14, 10, 14, 4)
+        col.setSpacing(8)
 
         row = QHBoxLayout()
         self.search_box = QLineEdit()
@@ -331,14 +373,6 @@ class MainWindow(QMainWindow):
         self.search_hint = QLabel("")
         self.search_hint.setObjectName("cardPath")
         row.addWidget(self.search_hint)
-        self.add_script_button = QPushButton(sections.ADD_SCRIPT_LABEL)
-        self.add_script_button.setObjectName("primary")
-        self.add_script_button.clicked.connect(self.add_script)
-        row.addWidget(self.add_script_button)
-        self.add_pipeline_button = QPushButton(pipelinesteps.ADD_PIPELINE_LABEL)
-        self.add_pipeline_button.setObjectName("primary")
-        self.add_pipeline_button.clicked.connect(self.new_pipeline)
-        row.addWidget(self.add_pipeline_button)
         col.addLayout(row)
 
         self._top_col = col
@@ -350,14 +384,23 @@ class MainWindow(QMainWindow):
             lambda _i: self._update_select_bar())
         # Must be set before any tab is added.
         self.group_tab_bar = GroupTabBar()
+        self.group_tab_bar.setObjectName("groupTabBar")
+        self.group_tab_bar.setDrawBase(False)
         self.group_tabs.setTabBar(self.group_tab_bar)
         self.group_tab_bar.dropped_on_group.connect(self._on_drop_on_group)
         self.group_tab_bar.menu_requested.connect(self._show_group_menu)
         self.group_tab_bar.reordered.connect(self._on_tabs_reordered)
         self.new_group_button = QPushButton("+")
+        self.new_group_button.setObjectName("newGroupPill")
         self.new_group_button.setToolTip("New group")
         self.new_group_button.clicked.connect(self.new_group)
-        self.group_tabs.setCornerWidget(self.new_group_button)
+        # Lifted by the gap the pills leave under themselves, so it sits on
+        # their line rather than below it.
+        corner = QWidget()
+        corner_row = QHBoxLayout(corner)
+        corner_row.setContentsMargins(0, 0, 0, 8)
+        corner_row.addWidget(self.new_group_button)
+        self.group_tabs.setCornerWidget(corner)
         col.addWidget(self.group_tabs, 1)
         col.addWidget(self.running)
         return top

@@ -43,6 +43,10 @@ ROW_METRICS: dict[tuple[bool, str], tuple[int, int, int, int]] = {
 }
 
 
+#: The round Run button's diameter: a full row's, and a compact row's.
+RUN_DIAMETER = {False: 32, True: 26}
+
+
 def card_padding(compact: bool, size: str) -> tuple[int, int]:
     """(padx, pady) for the card body. An unknown size falls back to medium."""
     return CARD_PADDING.get((compact, size), CARD_PADDING[(compact, DEFAULT_SIZE)])
@@ -114,9 +118,9 @@ def status_badge(status: str | None) -> StatusBadge | None:
     clickable.
     """
     if status == "error":
-        return StatusBadge("✕ Failed", "error_fg", "error")
+        return StatusBadge("● Failed", "error_fg", "error")
     if status == "ok":
-        return StatusBadge("✓ OK", "ok_fg", "ok")
+        return StatusBadge("● OK", "ok_fg", "ok")
     return None
 
 

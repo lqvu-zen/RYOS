@@ -87,6 +87,13 @@ def start_drag(source: QWidget, payload: CardPayload, press: QPoint,
     return True
 
 
+def _set_last(card: QWidget, last: bool) -> None:
+    """Mark ``card`` as its panel's last row, for the stylesheet."""
+    card.setProperty("last", last)
+    card.style().unpolish(card)
+    card.style().polish(card)
+
+
 class CardList(QWidget):
     """A group's cards, accepting drops that reorder them.
 
@@ -102,9 +109,12 @@ class CardList(QWidget):
         super().__init__(parent)
         self.group = group
         self.setAcceptDrops(True)
+        # One panel per section, its cards rows of it (the stylesheet).
+        self.setObjectName("sectionPanel")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.layout_ = QVBoxLayout(self)
         self.layout_.setContentsMargins(0, 0, 0, 0)
-        self.layout_.setSpacing(4)
+        self.layout_.setSpacing(0)
         self.layout_.addStretch(1)
         self._cards: list = []
         self.indicator = QFrame(self)
@@ -115,6 +125,11 @@ class CardList(QWidget):
     def add_card(self, card, kind: str, item_id: int) -> None:
         card.drag_payload = CardPayload(kind, item_id, self.group)
         self.layout_.insertWidget(self.layout_.count() - 1, card)
+        # Rows are split by a hairline under each; the last row's would sit
+        # on the panel's own edge and draw it twice.
+        if self._cards:
+            _set_last(self._cards[-1], False)
+        _set_last(card, True)
         self._cards.append(card)
 
     @property
