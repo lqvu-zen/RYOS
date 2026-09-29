@@ -28,7 +28,13 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py workspace --theme dark)",
       "Bash(RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8 uv run python tests/launch_smoke.py)",
       "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8 uv run python tests/real_data_smoke.py)",
-      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 uv run python -c ' *)"
+      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 uv run python -c ' *)",
+      "Bash(QT_QPA_PLATFORM=offscreen uv run python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main output compact --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main compact workspace --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main --theme dark)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/hover_shot.py\")",
+      "Bash(export QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8)"
     ]
   }
 }
