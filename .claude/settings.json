@@ -34,7 +34,17 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main compact workspace --theme light)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/run-ryos/driver.py main --theme dark)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/hover_shot.py\")",
-      "Bash(export QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8)"
+      "Bash(export QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8)",
+      "Bash(find /c/Users/Admin/.claude -path \"*design*\" -name \"SKILL.md\" 2>/dev/null | grep -iE \"critique|accessib|ux-copy|design-system\" | head; find /c/Users/Admin/.claude -name \"SKILL.md\" -path \"*qt-ui-design*\" 2>/dev/null | head -2)",
+      "Read(//c/Users/Admin/.claude/**)",
+      "Edit(/.claude/skills/review-ryos-ui/**)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -12 && sed -n '/## Targets/,/## Buttons/p;/## Hover/,/## Text/p;/## Inputs/,/NewGroup/p' .claude/discarded/ui-audit-2026-09-29.md | head -60)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -12 && sed -n '/## Targets/,/## Buttons/p;/## Hover/,/## Text/p' .claude/discarded/ui-audit-2026-09-29.md | head -60; sed -n '/## Buttons/,/## Inputs/p' .claude/discarded/ui-audit-2026-09-29.md | head -20)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -11 && sed -n '/## Hover/,/## Contrast/p' .claude/discarded/ui-audit-2026-09-29.md)"
+    ],
+    "additionalDirectories": [
+      "D:\\Projects\\RYOS\\.claude\\discarded"
     ]
   }
 }
