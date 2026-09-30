@@ -17,12 +17,15 @@ Everything that is not inside the process is kept away from the real thing:
   --visible, which puts it on a second screen when there is one.
 
 It waits for the app's "Window shown" log line, closes it, and fails if any
-file in the user's real %APPDATA%/RYOS changed.
+file in the user's real %APPDATA%/RYOS changed, or if the app does not log the
+version in ryos/__init__.py -- a stale RYOS.exe left in dist/ would otherwise
+pass.
 """
 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,6 +34,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WAIT_S = 90
+
+
+def _source_version() -> str:
+    text = (ROOT / "ryos" / "__init__.py").read_text(encoding="utf-8")
+    return re.search(r'__version__\s*=\s*"([^"]+)"', text).group(1)
 
 
 def _snapshot(folder: Path) -> dict:
@@ -91,6 +99,10 @@ def main() -> int:
             if "Window shown" in log_text or proc.poll() is not None:
                 break
             time.sleep(0.5)
+        version = _source_version()
+        if f"RYOS {version} starting" not in log_text:
+            problems.append(f"the log does not say RYOS {version} started "
+                            "(a stale build?)")
         if "ui=qt" not in log_text:
             problems.append("the log does not say the Qt interface started")
         if "Window shown" not in log_text:
@@ -125,8 +137,8 @@ def main() -> int:
             print("  --- app output ---\n" + output[-2000:])
         print("\nRYOS launch smoke FAILED")
         return 1
-    print("  [ok] started on Qt, showed its window, stayed up; "
-          "the real RYOS folder is unchanged")
+    print(f"  [ok] RYOS {_source_version()} started on Qt, showed its window, "
+          "stayed up; the real RYOS folder is unchanged")
     print("\nRYOS launch smoke PASSED")
     return 0
 

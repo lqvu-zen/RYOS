@@ -55,8 +55,10 @@ Edit the line to the concrete version, e.g. `__version__ = "1.6.5"`. (Optional p
 
 ### 3. Build the exe
 
+Clear the old build first, so nothing stale can be packaged or smoke-tested by mistake:
+
 ```bash
-cd D:/Projects/RYOS && uv run --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1
+cd D:/Projects/RYOS && rm -rf dist/cxfreeze build && uv run --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1 | tail -3
 ```
 
 This writes `dist/cxfreeze/` with `RYOS.exe` and its DLLs. Confirm it exists and stop if it doesn't:
@@ -69,49 +71,30 @@ ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe
 
 ### 4. Smoke-test the exe — hard gate
 
-A release that crashes on launch is worse than no release, so prove the exe starts before going further. Launch it, wait, confirm it's still alive **and showing the version you just built**, then kill it.
+A release that crashes on launch is worse than no release, so prove the exe starts before going further. `tests/launch_smoke.py` launches it the way the maintainer needs it launched:
 
-Two details matter, and both have bitten a real release:
+- **Never on the first screen.** The maintainer works there (and may be in a game). With no flag, the app runs on Qt's offscreen platform and no window appears anywhere; `--visible` puts it on the second screen (`tests/smoke_screen.py`), and falls back to the primary only when there is one monitor — so check `smoke_screen()` before using `--visible`. Never launch `RYOS.exe` directly with `Start-Process`: its window opens wherever Windows places it.
+- **Throwaway data, no registry writes.** `APPDATA` points at a temp folder and `RYOS_NO_REGISTRY=1`, so the real database, settings and run-at-login entry are never touched; the smoke fails if anything in the real `%APPDATA%\RYOS` changed.
+- **`RYOS_ALLOW_MULTIPLE=1`**, so the maintainer's own running RYOS is neither signalled nor made to swallow the launch. (Without it, the single-instance guard makes the new exe hand off and exit 0 — which looks like a crash. Never "fix" that by killing the maintainer's instance.)
+- **It checks the version.** The app logs `RYOS <version> starting`; the smoke fails unless that is the version in `ryos/__init__.py`, which is what proves you are testing the build you just made rather than a stale `dist/`.
 
-- **`RYOS_ALLOW_MULTIPLE=1` is required.** The maintainer usually has their own RYOS open while releasing. Without this, the single-instance guard (`ryos/single_instance.py`) makes the new exe hand off to the running one and **exit cleanly with code 0** — which looks exactly like a crash to the check below, and aborts a perfectly good release. Never "fix" this by killing the maintainer's running instance; set the variable, which the guard explicitly honours.
-- **Check the window title.** A build that silently reused a stale `dist/cxfreeze` would pass a liveness-only check. The title carries `__version__`, so asserting on it proves you are testing the build you just made, and that the GUI actually came up rather than the process merely surviving.
-- **`$proc.Refresh()` before reading `MainWindowTitle`.** The property is cached on the `Process` object from when it was created, so without a refresh it reads empty however long you sleep — which looks like a stale build and aborts a good release. Poll rather than sleeping a fixed time: the window appears in well under a second.
+Run it twice — offscreen, then on the second screen, which also proves the frozen Windows platform plugin (`qwindows.dll`) loads:
 
-```powershell
-$env:RYOS_ALLOW_MULTIPLE = "1"     # don't hand off to an already-running RYOS
-$expected = "<X.Y.Z>"              # the version set in step 2
-$proc = Start-Process -FilePath "D:\Projects\RYOS\dist\cxfreeze\RYOS.exe" -PassThru
-$title = ""
-for ($i = 0; $i -lt 30; $i++) {
-    Start-Sleep -Milliseconds 500
-    if ($proc.HasExited) { break }
-    $proc.Refresh()                # MainWindowTitle is cached without this
-    if ($proc.MainWindowTitle) { $title = $proc.MainWindowTitle; break }
-}
-if ($proc.HasExited) {
-    Write-Error "RYOS.exe exited immediately (exit code $($proc.ExitCode)) — aborting release"
-    exit 1
-}
-Write-Output ("still alive; main window title: " + $title)
-if ($title -notlike "*$expected*") {
-    $proc.Kill()
-    Write-Error "window title does not show $expected — stale build? aborting"
-    exit 1
-}
-Start-Sleep -Seconds 5             # and it must still be up a few seconds later
-$proc.Refresh()
-if ($proc.HasExited) {
-    Write-Error "RYOS.exe died after opening its window — aborting release"
-    exit 1
-}
-$proc.Kill()
-Remove-Item Env:\RYOS_ALLOW_MULTIPLE
-Write-Output "RYOS.exe smoke test passed"
+```bash
+cd D:/Projects/RYOS && uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe
+cd D:/Projects/RYOS && uv run python -c "import sys; sys.path.insert(0,'tests'); from smoke_screen import _monitor_work_areas as a; print(len(a()), 'monitor(s)')"
+cd D:/Projects/RYOS && uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe --visible   # only with 2+ monitors
 ```
 
-**If the exe exits early, or the title doesn't carry the expected version, stop and report — do not release.**
+**If either fails, stop and report — do not release.**
 
-If it does exit immediately, check `%APPDATA%\RYOS\logs\ryos.log` before concluding the build is broken: `"Another RYOS instance is already running; exiting"` means the guard fired and the variable above wasn't set, not that anything is wrong with the exe.
+Then check the upgrade path on a copy of an older database, if one exists (`%APPDATA%\RYOS\scripts.db.backup-*`, or one the maintainer names). `--db` opens a *copy*; the real file is never opened:
+
+```bash
+cd D:/Projects/RYOS && uv run python tests/real_data_smoke.py --db "$APPDATA/RYOS/scripts.db.backup-<date>"
+```
+
+It prints the schema step and what changed (`schema: v7 -> v8; pipeline steps 59 -> 0`). A count that drops is a stop until you know why: open another copy with `sqlite3` and confirm the rows were ones the migration is meant to remove (v8's `_migrate_drop_orphans` removes only steps, presets and schedules whose script or pipeline is gone) — and say so in the release notes.
 
 ### 5. Package both assets — hard gate
 
@@ -121,20 +104,35 @@ The Windows build zip (the contents of the cx_Freeze folder):
 Compress-Archive -Force -Path D:\Projects\RYOS\dist\cxfreeze\* -DestinationPath D:\Projects\RYOS\dist\RYOS-windows.zip
 ```
 
-The portable source zip (everything needed to run from source):
+The portable source zip (everything needed to run from source). Built with Python rather than `Compress-Archive`, which would sweep in every local `__pycache__` (95 stale bytecode files, tripling the zip, in 2.0.0's first attempt):
 
 ```bash
-cd D:/Projects/RYOS && powershell -Command "Compress-Archive -Force -Path ryos, pyproject.toml, run.bat, install_uv.bat, icon.ico -DestinationPath dist/RYOS-portable.zip" 2>&1
+cd D:/Projects/RYOS && uv run --no-project python - <<'EOF'
+import zipfile
+from pathlib import Path
+with zipfile.ZipFile("dist/RYOS-portable.zip", "w", zipfile.ZIP_DEFLATED) as z:
+    for p in sorted(Path("ryos").rglob("*")):
+        if p.is_file() and "__pycache__" not in p.parts:
+            z.write(p, p.as_posix())
+    for f in ("pyproject.toml", "run.bat", "install_uv.bat", "icon.ico"):
+        z.write(f, f)
+    names = z.namelist()
+missing = [f for f in ("pyproject.toml", "run.bat", "install_uv.bat", "icon.ico",
+                       "ryos/__init__.py") if f not in names]
+caches = sum("__pycache__" in n for n in names)
+print(f"{len(names)} entries; missing {missing or 'nothing'}; {caches} cache files")
+raise SystemExit(1 if missing or caches else 0)
+EOF
 ```
 
-Verify the portable zip actually contains the required files, and stop if any are missing:
+Verify the Windows zip carries the exe, and stop if either check fails:
 
 ```powershell
-$zip = [System.IO.Compression.ZipFile]::OpenRead("D:\Projects\RYOS\dist\RYOS-portable.zip")
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead("D:\Projects\RYOS\dist\RYOS-windows.zip")
 $entries = $zip.Entries.Name; $zip.Dispose()
-$missing = @("pyproject.toml","run.bat","install_uv.bat","icon.ico") | Where-Object { $entries -notcontains $_ }
-if ($missing) { Write-Error "RYOS-portable.zip missing: $($missing -join ', ') — aborting"; exit 1 }
-Write-Output "RYOS-portable.zip verified"
+if ($entries -notcontains "RYOS.exe") { Write-Error "RYOS-windows.zip has no RYOS.exe — aborting"; exit 1 }
+Write-Output "RYOS-windows.zip verified ($($entries.Count) entries)"
 ```
 
 ### 6. Commit and push the version bump
@@ -148,10 +146,11 @@ cd D:/Projects/RYOS && git add ryos/__init__.py <other intended files> && git co
 
 ### 7. Create the GitHub release
 
+Only once CI is green on the version-bump commit (`gh run watch <id> --exit-status`). Write the notes to a file in the scratchpad rather than quoting them on the command line, where backticks and `$` get mangled:
+
 ```bash
 cd D:/Projects/RYOS && gh release create v<X.Y.Z> dist/RYOS-windows.zip dist/RYOS-portable.zip \
-  --title "v<X.Y.Z>" \
-  --notes "<release notes>" 2>&1
+  -R lqvu-zen/RYOS --target main --title "v<X.Y.Z>" --notes-file <notes.md> 2>&1
 ```
 
 Include the download guidance in the notes so users know which asset to grab:
@@ -164,6 +163,14 @@ Include the download guidance in the notes so users know which asset to grab:
 - **RYOS-portable.zip** — run from source; extract and double-click `run.bat` (needs uv; run `install_uv.bat` first if needed).
 ```
 
-### 8. Report
+### 8. Clear `dist/`
+
+The zips are on GitHub now; stale builds left in `dist/` are how an old exe gets smoke-tested or attached next time:
+
+```bash
+cd D:/Projects/RYOS && rm -rf dist/* build
+```
+
+### 9. Report
 
 Give the user the release URL (`gh` prints it), the version shipped, the two assets attached, and a one-line confirmation that the smoke test and zip checks passed. Note anything you skipped or that needs follow-up.
