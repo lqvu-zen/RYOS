@@ -110,3 +110,28 @@ NO_BASE_DIR = "No base folder — click to set"
 def banner_text(base_dir: str) -> str:
     """The banner at the top of a group: its base folder, or how to set one."""
     return base_dir or NO_BASE_DIR
+
+
+# --- moving through the rows by keyboard ---------------------------------------------
+
+#: What a row's keys do, for a screen reader and the tutorial.
+ROW_KEYS_HINT = ("Enter runs it, F2 edits it, the Menu key shows everything "
+                 "else; the arrow keys move between rows.")
+#: How far Page Up / Page Down move.
+PAGE_STEP = 5
+#: The moves a key can make; the Qt code maps keys to these names.
+STEPS = ("up", "down", "home", "end", "pageup", "pagedown")
+
+
+def step_row(count: int, current: int | None, step: str) -> int | None:
+    """Which row the focus goes to: the index in a list of ``count`` rows,
+    or None when there are none. Moves stop at the ends rather than wrap,
+    so holding a key can't send focus round and round the list."""
+    if count <= 0:
+        return None
+    if current is None:
+        return count - 1 if step in ("up", "end", "pageup") else 0
+    target = {"up": current - 1, "down": current + 1, "home": 0,
+              "end": count - 1, "pageup": current - PAGE_STEP,
+              "pagedown": current + PAGE_STEP}[step]
+    return max(0, min(count - 1, target))

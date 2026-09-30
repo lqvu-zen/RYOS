@@ -22,7 +22,7 @@
 
 - **Highlight a name.** Right-click → **Highlight** colours a row's name, to make one stand out in a long list.
 - **Let RYOS pick the interpreter.** Leave **Interpreter** blank: `.py` runs with Python, `.ps1` with PowerShell, and so on. Fill it in only to override.
-- **Keyboard.** Tab moves between controls, **Enter** presses the highlighted button, **Esc** closes a dialog. Right-click menus hold every action a row's hover buttons do.
+- **Keyboard.** RYOS starts in the search box: type to filter, **Esc** to clear, **↓** to go into the list. There the arrow keys (and **Home**, **End**, **Page Up/Down**) move between rows, **Enter** runs the row, **F2** edits it and the **Menu** key (or **Shift+F10**) opens its right-click menu, which holds everything its hover buttons do. In select mode, **Space** ticks a row. **Tab** moves between the header, the list and the output; in a dialog **Enter** presses the highlighted button and **Esc** closes it.
 - **Keep it running in the tray.** **Options… → Startup & Window → Close to tray instead of exiting** keeps RYOS (and your schedules) running when you close the window.
 - **Back up.** **File → Export all groups…** now and then, and your setup is one import away.
 

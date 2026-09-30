@@ -68,6 +68,9 @@ class _CardBase(QFrame):
         self._size = size
         self._hover_only: list[QWidget] = []
         self.setObjectName("card")
+        # The row is the list's keyboard stop (its buttons are not): arrows
+        # move between rows, Enter runs, F2 edits, the Menu key does the rest.
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setProperty("compact", self._compact)
         self.setProperty("chip", chip)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -142,6 +145,43 @@ class _CardBase(QFrame):
         if clicked:
             self.activated.emit()
 
+    # -- the keyboard --------------------------------------------------------------
+    #: Arrow and paging keys, by the move they make (`sections.step_row`).
+    _STEPS = {Qt.Key.Key_Up: "up", Qt.Key.Key_Down: "down",
+              Qt.Key.Key_Home: "home", Qt.Key.Key_End: "end",
+              Qt.Key.Key_PageUp: "pageup", Qt.Key.Key_PageDown: "pagedown"}
+
+    def keyPressEvent(self, event) -> None:            # noqa: N802
+        key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.run_button.click()
+            return
+        if key == Qt.Key.Key_F2:
+            self.edit_button.click()
+            return
+        tick = getattr(self, "checkbox", None)
+        if key == Qt.Key.Key_Space and tick is not None and tick.isVisible():
+            tick.toggle()
+            return
+        step = self._STEPS.get(key)
+        page = self._page()
+        if step is not None and page is not None:
+            page.step_focus(self, step)
+            return
+        super().keyPressEvent(event)
+
+    def focusInEvent(self, event) -> None:             # noqa: N802
+        super().focusInEvent(event)
+        # Maximised, the detail pane follows the focused row, as it follows
+        # a clicked one.
+        self.activated.emit()
+
+    def _page(self):
+        w = self.parentWidget()
+        while w is not None and not hasattr(w, "step_focus"):
+            w = w.parentWidget()
+        return w
+
     # -- the buttons that wait for the pointer --------------------------------
     def enterEvent(self, event) -> None:               # noqa: N802
         self.set_hovered(True)
@@ -172,6 +212,9 @@ class _CardBase(QFrame):
         """A quiet button showing one of the app's icons (`icons.py`)."""
         b = IconButton(shape, role=role, hover_role=hover_role, size=size,
                        palette=self._palette)
+        # Reached through the row's keys and menu, not by Tab: four stops a
+        # row made the list a slog to cross.
+        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setFixedWidth(BUTTON_WIDTH)
         if object_name:
             b.setObjectName(object_name)
@@ -416,7 +459,7 @@ class ScriptCard(_CardBase):
             if self.params_combo is not None:
                 self.params_pick = QPushButton()
                 self.params_pick.setObjectName("paramPick")
-                self.params_pick.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+                self.params_pick.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 self.params_pick.setCursor(Qt.CursorShape.PointingHandCursor)
                 set_tooltip(self.params_pick, "Parameters Run passes -- click to choose")
                 self.params_pick.clicked.connect(self._pick_preset)

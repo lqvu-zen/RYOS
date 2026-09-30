@@ -109,6 +109,31 @@ class GroupPage(QWidget):
         self.no_match.setVisible(empty and say_when_empty)
         return found
 
+    def rows(self) -> list:
+        """Every row showing, top to bottom: the favourite chips, then the
+        pipelines, then the scripts -- the order the keyboard walks."""
+        return [c for key in sections.ORDER for c in self.section(key).cards
+                if c.isVisibleTo(self)]
+
+    def step_focus(self, row, step: str) -> None:
+        """Move the keyboard focus from ``row`` by ``step``, into view."""
+        rows = self.rows()
+        current = rows.index(row) if row in rows else None
+        target = sections.step_row(len(rows), current, step)
+        if target is None:
+            return
+        rows[target].setFocus(Qt.FocusReason.TabFocusReason)
+        self.show_row(rows[target])
+
+    def show_row(self, row) -> None:
+        """Scroll ``row`` into view."""
+        from PySide6.QtWidgets import QScrollArea
+        w = self.parentWidget()
+        while w is not None and not isinstance(w, QScrollArea):
+            w = w.parentWidget()
+        if w is not None:
+            w.ensureWidgetVisible(row, 0, 24)
+
     def section(self, key: str) -> CardList:
         return self.sections[key].cards
 

@@ -83,6 +83,14 @@ def _name(w: QWidget) -> str:
     return f"{label} {text!r}" if text else label
 
 
+def _ancestors(w: QWidget, top: QWidget) -> list:
+    out, p = [], w.parentWidget()
+    while p is not None and p is not top:
+        out.append(p)
+        p = p.parentWidget()
+    return out
+
+
 def _has_letters(text: str) -> bool:
     return any(ch.isalpha() for ch in text)
 
@@ -186,8 +194,12 @@ def audit_screen(name: str, top: QWidget, findings: dict) -> None:
                                           and w.isReadOnly()):
             if not _labelled(w, top):
                 add["unlabelled"].append(_name(w))
+        # A row's buttons are reached through the row -- Enter, F2, the Menu
+        # key -- which is the Tab stop (one per row, not four).
+        in_row = any(a.objectName() == "card" and a.focusPolicy() != Qt.FocusPolicy.NoFocus
+                     for a in _ancestors(w, top))
         if isinstance(w, INTERACTIVE) and w.focusPolicy() == Qt.FocusPolicy.NoFocus \
-                and w.isEnabled():
+                and w.isEnabled() and not in_row:
             add["keyboard"].append(_name(w))
         if _clipped(w):
             add["clipped"].append(f"{_name(w)} ({w.width()}px)")

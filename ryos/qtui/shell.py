@@ -403,6 +403,7 @@ class MainWindow(QMainWindow):
         self.search_box.setPlaceholderText(SEARCH_PLACEHOLDER)
         self.search_box.setClearButtonEnabled(True)
         self.search_box.textChanged.connect(self._apply_search)
+        self.search_box.installEventFilter(self)
         row.addWidget(self.search_box, 1)
         self.search_hint = QLabel("")
         self.search_hint.setObjectName("cardPath")
@@ -582,8 +583,17 @@ class MainWindow(QMainWindow):
             self.output_matches.setText(pane.match_label())
 
     def eventFilter(self, obj, event) -> bool:            # noqa: N802
-        """Enter / Shift+Enter step through matches; Esc clears the find box."""
+        """Enter / Shift+Enter step through matches; Esc clears the find box.
+        In the search box, Down goes to the first row and Esc clears it."""
         from PySide6.QtCore import QEvent
+        if obj is getattr(self, "search_box", None) and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Down:
+                self.focus_first_row()
+                return True
+            if key == Qt.Key.Key_Escape and self.search_box.text():
+                self.search_box.clear()
+                return True
         if obj is getattr(self, "output_find", None) and event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
@@ -876,6 +886,10 @@ class MainWindow(QMainWindow):
                               base_dir=rec.get("base_dir", ""),
                               last_run=rec.get("last_run"))
         card.section = section
+        status = {"ok": ", last run OK", "error": ", last run failed"}.get(
+            rec.get("status") or "", "")
+        card.setAccessibleName(f"{rec['name']}{status}")
+        card.setAccessibleDescription(sections.ROW_KEYS_HINT)
         card.activated.connect(
             lambda k=kind, i=rec["id"], s=section: self.select_item(k, i, s))
         # No hover preview beside the detail pane, which says it all.
@@ -1999,6 +2013,21 @@ class MainWindow(QMainWindow):
         else:
             return
         self._defer_reload()
+
+    def page_on_screen(self):
+        """The group page in front: a group's own, or the first on All."""
+        group = self.current_group()
+        if group is not None:
+            return self.card_lists.get(group)
+        return next((p for p in self.all_pages.values() if p.rows()), None)
+
+    def focus_first_row(self) -> None:
+        """From the search box: into the list, on the first row showing."""
+        page = self.page_on_screen()
+        rows = page.rows() if page is not None else []
+        if rows:
+            rows[0].setFocus(Qt.FocusReason.TabFocusReason)
+            page.show_row(rows[0])
 
     def _card_for(self, kind: str, item_id: int, section: str = sections.SCRIPTS):
         """The row showing an item: in ``section`` if it is there, else any."""

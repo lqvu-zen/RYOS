@@ -538,6 +538,10 @@ QLabel#groupHeader {{ color: {d['muted_fg']}; font-size: 8pt; font-weight: 700; 
 
 /* --- the maximised layout: the chosen row and the detail pane ------- */
 QFrame#card[selected="true"] {{ background: {c['accent_wash']}; }}
+/* The row the keyboard is on: the chosen row's wash. Maximised, the two
+   are the same row -- the detail pane follows the focus. */
+QFrame#card:focus {{ background: {c['accent_wash']}; }}
+QFrame#card[chip="true"]:focus {{ border: 1px solid {c['accent']}; }}
 QLabel#detailName, QWidget#detailName {{ font-size: 16pt; font-weight: 700; }}
 QLabel#detailHeading {{
     color: {d['muted_fg']}; font-size: 8pt; font-weight: 700; letter-spacing: 0.8px;

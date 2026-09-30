@@ -16,15 +16,17 @@ check by hand what it can't.
 | 2.5.8 Target size | ≥ 24×24 px, or spaced so a 24 px circle doesn't overlap | Labelled check boxes are exempt (the label is part of the target) |
 | 4.1.2 Name, role, value | Every control has a name | A glyph button (▶ ✎ ☆ + ⋯) is read as its glyph; set `setAccessibleName("Run")`. A tooltip is only the description |
 | 1.3.1 / 3.3.2 Labels | Inputs are linked to their label | `QLabel.setBuddy(field)`, a `QFormLayout` row, or `setAccessibleName` |
-| 2.1.1 Keyboard | Every control is reachable | Nothing interactive with `Qt.NoFocus` |
+| 2.1.1 Keyboard | Every control is reachable | Nothing interactive with `Qt.NoFocus` -- except a row's buttons: the row is the one Tab stop, and its keys (Enter, F2, the Menu key) and menu reach them |
 | 2.4.3 Focus order | Tab follows the reading order | `QWidget.setTabOrder` where the layout order is wrong |
 | 1.4.1 Use of colour | State not by colour alone | The `*_deutan.png` simulations: OK vs Failed, Run vs Retry, pipeline vs script must still differ |
 
 ## What to check by hand
 
 - **Keyboard only.** From the main window with no mouse: can you reach the
-  filter, the group pills, a row's Run, the output? Enter submits a dialog,
-  Esc closes it, Space toggles. Arrow keys move between pills.
+  filter, the group pills, a row's Run, the output? Down from the filter
+  lands on the first row; arrows move between rows, Enter runs, F2 edits, the
+  Menu key opens the row's menu. Enter submits a dialog, Esc closes it, Space
+  toggles. Arrow keys move between pills.
 - **Hover-only actions.** Every button a row shows only under the pointer
   (Edit, Run with…, ☆) must also be in the row's right-click menu or
   reachable by keyboard. List any that aren't.

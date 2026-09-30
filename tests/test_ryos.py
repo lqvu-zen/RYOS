@@ -8320,3 +8320,23 @@ class TestSearchEmptyState(unittest.TestCase):
         text = sections.EMPTY[sections.FAVORITES]
         self.assertIn("star", text)
         self.assertNotIn("☆", text)
+
+
+class TestRowSteps(unittest.TestCase):
+    """Which row the keyboard focus moves to."""
+
+    def test_moves_and_stops_at_the_ends(self):
+        from ryos.sections import step_row
+        self.assertEqual(step_row(4, 1, "down"), 2)
+        self.assertEqual(step_row(4, 3, "down"), 3)
+        self.assertEqual(step_row(4, 0, "up"), 0)
+        self.assertEqual(step_row(4, 2, "home"), 0)
+        self.assertEqual(step_row(4, 0, "end"), 3)
+        self.assertEqual(step_row(20, 2, "pagedown"), 7)
+        self.assertEqual(step_row(20, 2, "pageup"), 0)
+
+    def test_from_nowhere_and_with_nothing(self):
+        from ryos.sections import step_row
+        self.assertEqual(step_row(3, None, "down"), 0)
+        self.assertEqual(step_row(3, None, "up"), 2)
+        self.assertIsNone(step_row(0, None, "down"))

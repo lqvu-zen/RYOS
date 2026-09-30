@@ -4050,13 +4050,94 @@ def check_focus_starts_in_search(app):
         app.processEvents()
         if QApplication.focusWidget() is card.run_button:
             PROBLEMS.append("clicking Run left it holding focus (drawn as a ring)")
-        if not card.run_button.focusPolicy() & Qt.FocusPolicy.TabFocus \
+        if not card.focusPolicy() & Qt.FocusPolicy.TabFocus \
                 or not win.add_pipeline_button.focusPolicy() & Qt.FocusPolicy.TabFocus:
-            PROBLEMS.append("Tab no longer reaches the row and header buttons")
+            PROBLEMS.append("Tab no longer reaches the rows and header buttons")
     finally:
         win.close()
         win.deleteLater()
     print("  [ok] focus: starts in the search box; clicks leave no button focused; Tab reaches them")
+
+
+def check_keyboard_through_the_list(app):
+    """The list works from the keyboard: Down from the search box, arrows
+    between rows (favourites, pipelines, scripts), Enter runs, F2 edits, the
+    Menu key opens the row's menu, Space ticks it in select mode."""
+    import tempfile
+
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtTest import QTest
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.scriptdialog import ScriptDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "keys.db")
+    db.create_group("G")
+    for name in ("alpha", "beta", "gamma"):
+        db.add(name, str(tmp / f"{name}.py"), "", "", "G")
+    pid = db.create_pipeline("P", "G")
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    win.show()
+    win.activateWindow()
+    app.processEvents()
+    focused = QApplication.focusWidget
+    try:
+        page = win.card_lists["G"]
+        rows = page.rows()
+        names = [r._name for r in rows]
+        if names != ["P", "alpha", "beta", "gamma"]:
+            PROBLEMS.append(f"the keyboard walks the rows as {names}")
+        QTest.keyClick(win.search_box, Qt.Key.Key_Down)
+        app.processEvents()
+        if focused() is not rows[0]:
+            PROBLEMS.append("Down in the search box did not reach the first row")
+        QTest.keyClick(focused(), Qt.Key.Key_Down)
+        QTest.keyClick(focused(), Qt.Key.Key_Down)
+        if focused() is not rows[2]:
+            PROBLEMS.append("Down twice did not reach the third row")
+        QTest.keyClick(focused(), Qt.Key.Key_End)
+        QTest.keyClick(focused(), Qt.Key.Key_Down)          # stops at the end
+        if focused() is not rows[-1]:
+            PROBLEMS.append("End / Down past the end moved off the last row")
+        ran: list = []
+        rows[-1].run_button.clicked.disconnect()
+        rows[-1].run_button.clicked.connect(lambda: ran.append(True))
+        QTest.keyClick(focused(), Qt.Key.Key_Return)
+        if ran != [True]:
+            PROBLEMS.append("Enter on a row did not run it")
+        opened: list = []
+        win.run_dialog = lambda dlg: (opened.append(type(dlg)), dlg.reject())
+        QTest.keyClick(focused(), Qt.Key.Key_F2)
+        if opened != [ScriptDialog]:
+            PROBLEMS.append(f"F2 on a row opened {opened}")
+        menus: list = []
+        win.popup = lambda menu, _pos: menus.append(menu)
+        app.sendEvent(focused(), QContextMenuEvent(
+            QContextMenuEvent.Reason.Keyboard, QPoint(4, 4), QPoint(4, 4)))
+        if not menus:
+            PROBLEMS.append("the Menu key on a row opened no menu")
+        if not rows[-1].accessibleName().startswith("gamma") \
+                or not rows[-1].accessibleDescription():
+            PROBLEMS.append("a row has no name or key hint for a screen reader")
+        win.set_select_mode(True)
+        app.processEvents()
+        row = win.card_lists["G"].rows()[1]
+        row.setFocus()
+        QTest.keyClick(row, Qt.Key.Key_Space)
+        if not row.checkbox.isChecked():
+            PROBLEMS.append("Space in select mode did not tick the row")
+        win.set_select_mode(False)
+        _ = pid
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] keyboard: search → rows, arrows / End stop at the end, Enter runs, "
+          "F2 edits, Menu key opens the menu, Space ticks in select mode")
 
 
 def check_search_empty_state(app):
@@ -4382,6 +4463,7 @@ def main() -> int:
     check_one_icon_set(app)
     check_search_empty_state(app)
     check_focus_starts_in_search(app)
+    check_keyboard_through_the_list(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:
