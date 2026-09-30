@@ -49,7 +49,7 @@ so the pills show more than one.
 
 - The **Running** list sits just above the Output bar, not at the top.
 - Dropping files **adds them directly**; it does not open the script dialog.
-- Import asks **Yes = Replace / No = Merge**.
+- Import asks with **Merge** (default), **Replace** and **Cancel** buttons.
 - Tab labels escape `&` as `&&` (`Startup && Window`): unescape before using one as a name.
 - The throwaway data folder's path contains the user's name; keep it out of shots
   (the Appearance dialog's themes folder is pointed at `theme-gallery/` for that reason).

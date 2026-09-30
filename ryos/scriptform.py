@@ -261,10 +261,11 @@ def with_temp_param(params: str, extra: str) -> str:
 
 
 def temp_param_title(name: str) -> str:
-    return f"Run with temp param — {name}"
+    """The ask-each-run prompt's title: the script it is about to run."""
+    return f"Run {name}"
 
 
-RUN_WITH_PARAMS_TITLE = "Run with Parameters"
+RUN_WITH_PARAMS_TITLE = "Run with parameters"
 
 
 def remember_run_params(db, script_id: int, chosen: str) -> None:
@@ -280,12 +281,16 @@ def remember_run_params(db, script_id: int, chosen: str) -> None:
                                  + [(chosen, chosen)])
     db.update(script_id, name, path, chosen, interp, group)
 
-TEMP_PARAM_HINT = "Used for this run only — not saved. Appended to saved params."
+#: The ask-each-run prompt's field and the note under it. Plain words: it
+#: said "Temp param:" and "Appended to saved params.", and its button OK.
+TEMP_PARAM_FIELD = "Parameters for this run:"
+TEMP_PARAM_HINT = ("Used for this run only, after the saved parameters. "
+                   "Nothing is kept.")
 
 
 def saved_params_line(params: str) -> str | None:
     """The temp-param prompt's reminder of what is already passed, if anything."""
-    return f"Saved params: {params}" if params else None
+    return f"Saved parameters: {params}" if params else None
 
 
 # --- files dropped onto the window ------------------------------------------------

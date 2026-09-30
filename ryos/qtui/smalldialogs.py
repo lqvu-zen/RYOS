@@ -206,14 +206,14 @@ class PresetEntryDialog(QDialog):
     """Enter the parameters for a saved preset. They may not be empty."""
 
     def __init__(self, parent: QWidget | None = None, *, params: str = "",
-                 title: str = "Preset"):
+                 title: str = "Preset", ok_text: str | None = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.result: str | None = None
         form = QFormLayout(self)
         self.e_params = QLineEdit(params)
-        form.addRow(QLabel("Parameters"), self.e_params)
-        form.addRow(_ok_cancel(self, self.accept_form))
+        form.addRow(QLabel("Parameters:"), self.e_params)
+        form.addRow(_ok_cancel(self, self.accept_form, ok_text))
 
     def accept_form(self) -> bool:
         params = self.e_params.text().strip()
@@ -247,11 +247,13 @@ class TempParamDialog(QDialog):
             self.saved_label.setObjectName("cardPath")
             form.addRow(self.saved_label)
         self.e_params = QLineEdit()
-        form.addRow(QLabel("Temp param:"), self.e_params)
+        form.addRow(QLabel(scriptform.TEMP_PARAM_FIELD), self.e_params)
         hint = QLabel(scriptform.TEMP_PARAM_HINT)
         hint.setObjectName("cardPath")
+        hint.setWordWrap(True)
         form.addRow(hint)
-        form.addRow(_ok_cancel(self, self.accept_form))
+        # The button runs the script: it says so.
+        form.addRow(_ok_cancel(self, self.accept_form, "Run"))
 
     def accept_form(self) -> bool:
         self.result = self.e_params.text().strip()

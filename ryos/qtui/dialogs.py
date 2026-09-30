@@ -43,7 +43,9 @@ class _FieldRow:
         if isinstance(w, QSpinBox):
             return w.value()
         if isinstance(w, QComboBox):
-            return w.currentText()
+            # The stored value, not the label shown for it.
+            data = w.currentData()
+            return data if data is not None else w.currentText()
         return w.text()
 
     def set_value(self, value) -> None:
@@ -53,7 +55,16 @@ class _FieldRow:
         elif isinstance(w, QSpinBox):
             w.setValue(int(value or 0))
         elif isinstance(w, QComboBox):
-            idx = w.findText(str(value))
+            # By stored value. "bottom-right" and "bottom_right" are the same
+            # corner (placement reads either); looked up by text, the hyphen
+            # form was not found, the box fell to "Off", and Save turned
+            # snapping off.
+            text = str(value)
+            idx = w.findData(text)
+            if idx < 0:
+                idx = w.findData(text.replace("-", "_"))
+            if idx < 0:
+                idx = w.findText(text)
             w.setCurrentIndex(max(0, idx))
         else:
             w.setText("" if value is None else str(value))
@@ -71,7 +82,8 @@ def build_field(spec: settings_schema.Field) -> QWidget:
         return spin
     if spec.kind == CHOICE:
         combo = QComboBox()
-        combo.addItems([str(c) for c in spec.choices])
+        for label, value in spec.choice_labels():
+            combo.addItem(label, value)
         return combo
     if spec.kind == LIST:
         # Comma-separated, which is how the Tk tab presents it too.
@@ -92,7 +104,7 @@ class OptionsDialog(QDialog):
     def __init__(self, settings: dict, parent: QWidget | None = None,
                  on_save: Callable[[dict], None] | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Advanced Options")
+        self.setWindowTitle("Options")
         # Wide enough that every tab's name shows, instead of scroll arrows.
         self.setMinimumWidth(520)
         self._settings = dict(settings)

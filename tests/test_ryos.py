@@ -7834,10 +7834,14 @@ class TestConfigIO(unittest.TestCase):
         self.assertTrue(status.endswith("out.json"))
         self.assertNotIn(os.path.join("x", "y"), status)
 
-    def test_import_mode_says_which_answer_replaces(self):
+    def test_import_asks_with_named_choices(self):
+        # Buttons that name the choice, Merge first -- not "Yes = Replace".
         title, question = configio.IMPORT_MODE
-        self.assertIn("Yes = Replace", question)
-        self.assertIn("No  = Merge", question)
+        self.assertIn("Merge", question)
+        self.assertIn("Replace", question)
+        self.assertNotIn("Yes", question)
+        self.assertEqual([m for m, _l in configio.IMPORT_CHOICES],
+                         [configio.MERGE, configio.REPLACE])
 
     def test_delete_all_counts_what_it_deletes(self):
         self.assertIsNone(configio.delete_all_prompt(0))

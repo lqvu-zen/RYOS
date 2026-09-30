@@ -9,12 +9,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-IMPORT_TITLE = "Import Config"
+IMPORT_TITLE = "Import config"
+#: The import question, asked with buttons that name the choice. It was a
+#: Yes/No box -- "Yes = Replace, No = Merge" -- where closing it meant Merge.
 IMPORT_MODE = (
-    "Import Mode",
-    "How should existing data in the imported groups be handled?\n\n"
-    "Yes = Replace (overwrite scripts/pipelines in the imported groups)\n"
-    "No  = Merge (skip duplicates by path / name)")
+    "Import config",
+    "What should happen to groups that are already here?\n\n"
+    "Merge adds what's new and skips anything already there "
+    "(the same path, or the same pipeline name).\n"
+    "Replace swaps the scripts and pipelines of those groups for the "
+    "file's. Your other groups are left alone either way.")
+MERGE = "merge"
+REPLACE = "replace"
+#: Button labels, in the order shown; Merge is the default: it never overwrites.
+IMPORT_CHOICES = ((MERGE, "Merge"), (REPLACE, "Replace"))
 
 
 def export_title(group: str | None) -> str:

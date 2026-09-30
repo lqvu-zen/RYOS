@@ -19,9 +19,9 @@ A script with presets shows the one Run will use on its row, next to the file na
 ## Just this once
 
 - **Run with parameters…** — point at a row and click the play-with-a-plus button, or right-click → **Run with parameters…**. Type the parameters and run. They're remembered as the script's parameters and added as a preset.
-- **Ask for a temporary parameter on each run** — tick this in the script dialog and RYOS asks every time you press Run. What you type is used for that run only and added after the saved parameters; nothing is kept.
+- **Ask for a temporary parameter on each run** — tick this in the script dialog and RYOS asks for **Parameters for this run** every time you press Run; **Run** goes ahead. What you type is used for that run only and added after the saved parameters; nothing is kept.
 
-![The prompt that appears before a run: a Temp param field holding "--name Friday", a note that it is used for this run only, and OK and Cancel](images/05-ask-each-run.png)
+![The prompt that appears before a run: "Parameters for this run" holding "--name Friday", a note that it is used for this run only and nothing is kept, and Run and Cancel](images/05-ask-each-run.png)
 
 ---
 [← Groups](04-groups.md) · [Contents](README.md) · [Next: Pipelines →](06-pipelines.md)

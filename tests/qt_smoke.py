@@ -2152,7 +2152,7 @@ def check_group_management(app):
     other = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
     other.load_from_db(other_db)
     other.ask_open_path = lambda title: str(out)
-    other.ask_yes_no = lambda title, q: False            # merge
+    other.ask_import_mode = lambda: "merge"
     other.import_config()
     settle()
     if set(other_db.list_groups()) != {"A", "B", "C", "New"}:
@@ -3984,6 +3984,32 @@ def check_review_fixes(app):
         if not sched.enabled.isChecked():
             PROBLEMS.append("a new schedule starts off")
         sched.deleteLater()
+
+        # Options shows labels, stores values, and reads either spelling of a
+        # corner: "bottom-right" once fell to Off and was saved as off.
+        from ryos.qtui.dialogs import OptionsDialog
+        from ryos.qtui.smalldialogs import TempParamDialog
+        opts = OptionsDialog({"snap_corner": "bottom-right"}, win)
+        combo = opts._rows["snap_corner"].widget
+        if combo.currentText() != "Bottom right" \
+                or opts.values()["snap_corner"] != "bottom_right":
+            PROBLEMS.append(f"snap corner shows {combo.currentText()!r}, "
+                            f"saves {opts.values()['snap_corner']!r}")
+        opts.deleteLater()
+        # The ask-each-run prompt's button runs the script, and says so.
+        temp = TempParamDialog(win, title="t")
+        ok = temp.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok)
+        if ok.text() != "Run":
+            PROBLEMS.append(f"the ask-each-run button reads {ok.text()!r}")
+        temp.deleteLater()
+        # Import: cancelling the Merge / Replace question imports nothing.
+        warned: list = []
+        win.warn = lambda title, text: warned.append(title)
+        win.ask_open_path = lambda _title: str(tmp / "missing.json")
+        win.ask_import_mode = lambda: None
+        win.import_config()
+        if warned:
+            PROBLEMS.append("cancelling the import question still imported")
     finally:
         win.close()
         win.deleteLater()

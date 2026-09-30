@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
         # Everything a menu action may ask. Real dialogs by default; a test
         # replaces them, since each of these blocks until a person answers.
         self.ask_yes_no: Callable[[str, str], bool] = self._ask_yes_no
+        self.ask_import_mode: Callable[[], str | None] = self._ask_import_mode
         self.ask_text: Callable[[str, str, str], str | None] = self._ask_text
         self.warn: Callable[[str, str], None] = self._warn
         self.inform: Callable[[str, str], None] = self._inform
@@ -1619,7 +1620,8 @@ class MainWindow(QMainWindow):
         """▶+: ask for parameters, keep them as the script's, and run."""
         from .smalldialogs import PresetEntryDialog
         dlg = PresetEntryDialog(self, params=card.selected_params(rec.get("params", "")),
-                                title=scriptform.RUN_WITH_PARAMS_TITLE)
+                                title=scriptform.RUN_WITH_PARAMS_TITLE,
+                                ok_text="Run")
         self.run_dialog(dlg)
         if dlg.result is None or self._db is None:
             return
@@ -1770,11 +1772,14 @@ class MainWindow(QMainWindow):
         path = self.ask_open_path(configio.IMPORT_TITLE)
         if not path:
             return
-        replace = self.ask_yes_no(*configio.IMPORT_MODE)
+        mode = self.ask_import_mode()
+        if mode is None:
+            return                              # cancelled
         try:
-            added, skipped = self._db.import_from_file(path, replace=replace)
+            added, skipped = self._db.import_from_file(
+                path, replace=mode == configio.REPLACE)
         except Exception as exc:                # noqa: BLE001 - shown to the user
-            self.warn("Import Failed", str(exc))
+            self.warn("Import failed", str(exc))
             return
         self._defer_reload()
         self.statusBar().showMessage(configio.import_status(added, skipped))
@@ -2078,6 +2083,18 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(status)
 
     # -- the real prompts ------------------------------------------------------------
+    def _ask_import_mode(self) -> str | None:
+        """Merge, Replace or cancel, on buttons that say which."""
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(QMessageBox.Icon.Question, *configio.IMPORT_MODE, parent=self)
+        buttons = {box.addButton(label, QMessageBox.ButtonRole.AcceptRole): mode
+                   for mode, label in configio.IMPORT_CHOICES}
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(next(b for b, m in buttons.items() if m == configio.MERGE))
+        box.setEscapeButton(cancel)
+        box.exec()
+        return buttons.get(box.clickedButton())
+
     def _ask_yes_no(self, title: str, question: str) -> bool:
         from PySide6.QtWidgets import QMessageBox
         return QMessageBox.question(self, title, question) == \

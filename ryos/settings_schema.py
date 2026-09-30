@@ -56,6 +56,9 @@ class Field:
     minimum: int | None = None
     maximum: int | None = None
     choices: tuple = ()
+    #: What a CHOICE shows for each of ``choices``, in order. Without it the
+    #: stored value itself was shown: "bottom_right".
+    labels: tuple = ()
     help: str = ""
     #: What an empty box means, when that is not simply the default. In the
     #: Tk dialog this was implicit in `int(entry.get() or N)` guards, where N
@@ -71,6 +74,11 @@ class Field:
     def default(self):
         return _SETTINGS_DEFAULTS[self.key]
 
+    def choice_labels(self) -> list[tuple[str, str]]:
+        """(label, stored value) for each choice of a CHOICE field."""
+        shown = self.labels or tuple(str(c) for c in self.choices)
+        return list(zip(shown, self.choices))
+
     @property
     def on_empty(self):
         """The value an empty entry produces."""
@@ -85,7 +93,8 @@ FIELDS: tuple[Field, ...] = (
     # -- Cards ------------------------------------------------------------
     Field("compact_mode", BOOL, "Compact cards (denser layout)", CARDS),
     Field("card_size", CHOICE, "Card size", CARDS,
-          choices=("small", "medium", "large")),
+          choices=("small", "medium", "large"),
+          labels=("Small", "Medium", "Large")),
     Field("hover_preview", BOOL, "Show details on hover (compact mode)",
           CARDS),
     Field("workspace_when_maximized", BOOL,
@@ -94,7 +103,8 @@ FIELDS: tuple[Field, ...] = (
     Field("always_on_top", BOOL, "Keep window on top", STARTUP),
     Field("snap_corner", CHOICE, "Snap to corner", STARTUP,
           choices=("none", "top_left", "top_right", "bottom_left",
-                   "bottom_right")),
+                   "bottom_right"),
+          labels=("Off", "Top left", "Top right", "Bottom left", "Bottom right")),
     Field("window_width", INT, "Window width", STARTUP, minimum=400,
           help="Below 400 the button strip clips."),
     Field("window_height", INT, "Window height", STARTUP, minimum=300),
@@ -137,7 +147,8 @@ FIELDS: tuple[Field, ...] = (
     # -- Logging -----------------------------------------------------------
     Field("logging_enabled", BOOL, "Write a log file", LOGGING),
     Field("log_level", CHOICE, "Log level", LOGGING,
-          choices=("DEBUG", "INFO", "WARNING", "ERROR")),
+          choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+          labels=("Debug", "Info", "Warning", "Error")),
     Field("log_runs_output", BOOL, "Log script output too", LOGGING),
     Field("auto_check_update", BOOL, "Check for updates on start", LOGGING),
 )

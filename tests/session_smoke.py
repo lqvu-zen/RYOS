@@ -535,7 +535,7 @@ def step_export_import(s: Session) -> None:
         return
     before = len(s.db.list_all())
     s.answer("open", str(path))
-    s.answer("yes_no", False)                  # merge
+    s.win.ask_import_mode = lambda: "merge"
     s.win.import_config()
     s.pump(0.3)
     if len(s.db.list_all()) != before:
