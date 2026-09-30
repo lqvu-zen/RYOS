@@ -226,7 +226,9 @@ def token_findings() -> tuple[list[str], Counter]:
             code = line.split("#", 1)[0] if not line.lstrip().startswith(("f\"", "\"", "'")) \
                 else line
             m = hex_re.search(line)
-            if m and "c.get(" not in line and "noqa" not in line and code.strip():
+            # A fallback in a .get() is a default for a missing palette key,
+            # not a colour drawn in place of one.
+            if m and ".get(" not in line and "noqa" not in line and code.strip():
                 hexes.append(f"`{path.relative_to(ROOT).as_posix()}:{n}` {m.group(1)}")
             for size, unit in size_re.findall(line):
                 sizes[f"{size}{unit}"] += 1

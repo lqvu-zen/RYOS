@@ -260,6 +260,8 @@ class MainWindow(QMainWindow):
         self._records: dict[tuple, tuple] = {}
         self._collapse = sections.CollapseState()
         self.all_pages: dict[str, GroupPage] = {}
+        self.all_headers: dict[str, QLabel] = {}
+        self.all_no_match: QLabel | None = None
         self.group_banners: dict[str, QPushButton] = {}
 
         # Everything a menu action may ask. Real dialogs by default; a test
@@ -794,10 +796,12 @@ class MainWindow(QMainWindow):
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(4)
         self.all_pages = {}
+        self.all_headers = {}
         for group, header, records in blocks:
             if header:
                 label = QLabel(header)
                 label.setObjectName("groupHeader")
+                self.all_headers[group] = label
                 col.addWidget(label)
             page, made = self._build_page(group, records)
             self.all_pages[group] = page
@@ -807,6 +811,11 @@ class MainWindow(QMainWindow):
             self.all_empty = QLabel(sections.ALL_EMPTY)
             self.all_empty.setObjectName("cardPath")
             col.addWidget(self.all_empty)
+        self.all_no_match = QLabel("")
+        self.all_no_match.setObjectName("cardPath")
+        self.all_no_match.setWordWrap(True)
+        self.all_no_match.hide()
+        col.addWidget(self.all_no_match)
         col.addStretch(1)
         scroll = QScrollArea()
         scroll.setWidget(body)
@@ -1105,8 +1114,12 @@ class MainWindow(QMainWindow):
         if first_load:
             current = grouping.initial_group(self._settings, named)
         self.show_group(current)
-        # The cards were all replaced: point the detail pane at the new one.
+        # The cards were all replaced: point the detail pane at the new one,
+        # and filter them again -- a reload (a favourite, an edit) brought
+        # every card back while the box still showed the search.
         self._show_selected()
+        if self.search_box.text():
+            self._apply_search(self.search_box.text())
 
     def reload(self) -> None:
         if self._db is not None:
@@ -1120,6 +1133,8 @@ class MainWindow(QMainWindow):
         self._cards.clear()
         self.card_lists.clear()
         self.all_pages = {}
+        self.all_headers = {}
+        self.all_no_match = None
         self.group_banners = {}
         self._records.clear()
         self.quick_run_bars.clear()
@@ -2145,6 +2160,23 @@ class MainWindow(QMainWindow):
             self.search_hint.setText(f"{len(matched)} of {len(items)}")
         else:
             self.search_hint.setText("")
+        shown = raw.strip() if query else ""
+        for page in self.card_lists.values():
+            page.apply_search(shown)
+        # On All, a group with no match goes, heading and all; if none is
+        # left, one line says so.
+        any_found = False
+        for group, page in self.all_pages.items():
+            found = page.apply_search(shown, say_when_empty=False)
+            page.setVisible(found or not shown)
+            header = self.all_headers.get(group)
+            if header is not None:
+                header.setVisible(found or not shown)
+            any_found = any_found or found
+        if self.all_no_match is not None:
+            self.all_no_match.setText(sections.no_match_text(shown) if shown else "")
+            self.all_no_match.setVisible(bool(shown) and not any_found
+                                         and bool(self.all_pages))
 
     # -- output ------------------------------------------------------------
     def add_output_tab(self, key: str, label: str) -> OutputPane:

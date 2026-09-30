@@ -314,7 +314,7 @@ QTabBar#groupTabBar::tab {{
 QTabBar#groupTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
 /* All comes last: the gap before it holds the + for a new group, which
    belongs with the groups. */
-QTabBar#groupTabBar::tab:last {{ margin-left: 34px; }}
+QTabBar#groupTabBar::tab:last, QTabBar#groupTabBar::tab:only-one {{ margin-left: 34px; }}
 QTabBar#groupTabBar::tab:selected {{
     background: {c['name_fg']};
     color: {d['pill_fg']};
@@ -545,7 +545,7 @@ QPushButton#detailLink, QPushButton#detailStar {{
 QPushButton#detailLink:hover, QPushButton#detailStar:hover {{
     background: {c['accent_wash']};
 }}
-QPushButton#detailStar {{ color: {d['muted_fg']}; font-size: 13pt; padding: 2px 8px; }}
+QPushButton#detailStar {{ color: {d['muted_fg']}; padding: 2px 8px; min-height: 24px; }}
 QPushButton#detailStar[on="true"] {{ color: {d['star']}; }}
 QPushButton#paramChip {{
     background: transparent;

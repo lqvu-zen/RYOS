@@ -7322,7 +7322,7 @@ class TestFileDropAndCardDetails(unittest.TestCase):
     def test_preview_rows(self):
         from ryos import cardstyle
         self.assertEqual(cardstyle.script_preview_rows("", "--x"),
-                         [("Path", cardstyle.NO_VALUE, True), ("Params", "--x", False)])
+                         [("Path", cardstyle.NO_VALUE, True), ("Parameters", "--x", False)])
         steps = [(1, 7, "a", "/a.py", "", "", None, "after"),
                  (2, 8, "b", "/b.py", "", "", "--x", "with")]
         self.assertEqual(cardstyle.pipeline_preview_rows(steps),
@@ -8305,3 +8305,18 @@ class TestMenusUseTheIconSet(unittest.TestCase):
         for item in self._entries():
             with self.subTest(item.key):
                 self.assertTrue(item.label[0].isalpha(), item.label)
+
+
+class TestSearchEmptyState(unittest.TestCase):
+    """What a group says when a search leaves nothing in it."""
+
+    def test_names_the_query(self):
+        from ryos import sections
+        self.assertEqual(sections.no_match_text("  zzz "), "Nothing here matches “zzz”.")
+
+    def test_the_favorites_hint_does_not_name_a_glyph(self):
+        # The star is a drawn icon that shows under the pointer.
+        from ryos import sections
+        text = sections.EMPTY[sections.FAVORITES]
+        self.assertIn("star", text)
+        self.assertNotIn("☆", text)

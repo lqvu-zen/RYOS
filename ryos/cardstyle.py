@@ -216,7 +216,7 @@ NO_STEPS = "No steps yet."
 def script_preview_rows(path: str, params: str) -> list[tuple[str, str, bool]]:
     """(label, value, dim) rows for a compact script card's preview."""
     return [("Path", path or NO_VALUE, not path),
-            ("Params", params or NO_VALUE, not params)]
+            ("Parameters", params or NO_VALUE, not params)]
 
 
 def pipeline_preview_rows(steps) -> list[tuple[str, str, str, str | None]]:

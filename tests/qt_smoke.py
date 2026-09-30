@@ -4017,6 +4017,56 @@ def check_review_fixes(app):
           "history defaults to Close, new schedules start on")
 
 
+def check_search_empty_state(app):
+    """A search with no match says so, hides empty sections, and survives a
+    reload -- which used to bring every card back under the search."""
+    import tempfile
+
+    from ryos import sections
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "search.db")
+    db.create_group("G")
+    db.add("alpha", str(tmp / "a.py"), "", "", "G")
+    db.add("beta", str(tmp / "b.py"), "", "", "G")
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    win.show()
+    app.processEvents()
+    page = win.card_lists["G"]
+    try:
+        win.search_box.setText("zzz")
+        app.processEvents()
+        if not page.no_match.isVisibleTo(win) \
+                or page.no_match.text() != sections.no_match_text("zzz") \
+                or any(s.isVisibleTo(win) for s in page.sections.values()):
+            PROBLEMS.append("a search with no match did not say so, or left empty sections")
+        win.search_box.setText("alp")
+        app.processEvents()
+        shown = [c._name for c in page.cards if c.isVisibleTo(win)]
+        if shown != ["alpha"] or page.no_match.isVisibleTo(win):
+            PROBLEMS.append(f"searching 'alp' showed {shown}")
+        win.reload()
+        app.processEvents()
+        page = win.card_lists["G"]
+        shown = [c._name for c in page.cards if c.isVisibleTo(win)]
+        if shown != ["alpha"]:
+            PROBLEMS.append(f"after a reload the search showed {shown}")
+        win.search_box.setText("")
+        app.processEvents()
+        page = win.card_lists["G"]
+        if len([c for c in page.cards if c.isVisibleTo(win)]) != 2 \
+                or not page.sections[sections.SCRIPTS].isVisibleTo(win):
+            PROBLEMS.append("clearing the search did not bring everything back")
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] search: no match says so and hides empty sections; a reload keeps the filter")
+
+
 def check_one_icon_set(app):
     """No button or menu text carries an emoji or a symbol glyph.
 
@@ -4288,6 +4338,7 @@ def main() -> int:
     check_strip_and_preset(app)
     check_review_fixes(app)
     check_one_icon_set(app)
+    check_search_empty_state(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

@@ -22,9 +22,18 @@ LABELS = {RUNNING: "Running", FAVORITES: "Favorites",
           PIPELINES: "Pipelines", SCRIPTS: "Scripts"}
 
 EMPTY = {RUNNING: "No script is currently running.",
-         FAVORITES: "No favorites yet — click ☆ on a script or pipeline.",
+         # The star is a drawn icon that shows under the pointer, not a ☆
+         # in the text: say where to find it.
+         FAVORITES: "No favorites yet — point at a script or pipeline and "
+                    "click its star.",
          PIPELINES: "No pipelines yet.",
          SCRIPTS: "No scripts yet."}
+
+
+def no_match_text(query: str) -> str:
+    """What a group says when a search leaves nothing in it. The count by the
+    box ("0 of 14") was all there was: three headings over nothing."""
+    return f"Nothing here matches “{query.strip()}”."
 
 
 def header_text(section: str, collapsed: bool) -> str:

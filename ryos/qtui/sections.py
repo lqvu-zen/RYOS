@@ -60,6 +60,18 @@ class Section(QWidget):
         """Re-show after cards were added, keeping the collapsed state."""
         self._set_collapsed(self.header.text().startswith(sections.COLLAPSED_MARK))
 
+    def has_shown_cards(self) -> bool:
+        return any(not c.isHidden() for c in self.cards.cards)
+
+    def set_searching(self, active: bool) -> None:
+        """While searching, a section with no match is hidden, heading and
+        all; after, it comes back as it was."""
+        if active:
+            self.setVisible(self.has_shown_cards())
+        else:
+            self.setVisible(True)
+            self.refresh()
+
 
 class GroupPage(QWidget):
     """Every section for one group, top to bottom."""
@@ -77,7 +89,23 @@ class GroupPage(QWidget):
                               lambda k: collapse.toggle(group, k))
             self.sections[key] = section
             col.addWidget(section)
+        self.no_match = QLabel("")
+        self.no_match.setObjectName("cardPath")
+        self.no_match.setWordWrap(True)
+        self.no_match.hide()
+        col.addWidget(self.no_match)
         col.addStretch(1)
+
+    def apply_search(self, query: str, *, say_when_empty: bool = True) -> bool:
+        """Fit the page to a search (cards are already shown or hidden).
+        True when anything on the page matches."""
+        for section in self.sections.values():
+            section.set_searching(bool(query))
+        found = any(s.has_shown_cards() for s in self.sections.values())
+        empty = bool(query) and not found
+        self.no_match.setText(sections.no_match_text(query) if empty else "")
+        self.no_match.setVisible(empty and say_when_empty)
+        return found
 
     def section(self, key: str) -> CardList:
         return self.sections[key].cards

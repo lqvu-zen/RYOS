@@ -276,11 +276,17 @@ class GroupTabBar(QTabBar):
         if w is None:
             return
         w.adjustSize()
-        # After the last group, in the gap the stylesheet leaves before All
-        # (the last tab); with All alone, after it.
+        # In the gap the stylesheet leaves before All (the last tab): after
+        # the last group, or -- with All alone, on a first launch -- before
+        # it. It used to go after a lone All and was drawn over it.
         n = self.count()
         last = self.tabRect(n - 2 if n >= 2 else n - 1) if n else None
-        x = last.right() + self.TRAILING_GAP if last is not None else 0
+        if last is None:
+            x = 0
+        elif n >= 2:
+            x = last.right() + self.TRAILING_GAP
+        else:
+            x = last.left() + self.TRAILING_GAP
         x = max(0, min(x, self.width() - w.width()))
         band = (last.height() - self.TAB_BOTTOM_MARGIN) if last is not None \
             else self.height()
