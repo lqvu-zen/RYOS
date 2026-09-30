@@ -250,10 +250,10 @@ def build_tokens() -> dict:
                      "derived values are exactly what the app paints."),
         },
         "type": {
-            "note": ("Two OS families, no webfonts: RYOS is a Tk desktop app and asks "
-                     "the platform for Segoe UI and Consolas by name. Sizes below are "
-                     "the Tk point sizes converted at 96 dpi -- the usage note gives "
-                     "the point size the code passes."),
+            "note": ("Two OS families, no webfonts: RYOS is a Qt desktop app and asks "
+                     "the platform for Segoe UI and Consolas by name. Six sizes, set "
+                     "in points in ryos/qtui/stylesheet.py (10pt is the base every "
+                     "widget inherits); px below are those points at 96 dpi."),
             "fonts": [],
             "families": {
                 "sans": '"Segoe UI", "Selawik", system-ui, sans-serif',
@@ -261,63 +261,58 @@ def build_tokens() -> dict:
             },
             "groups": [
                 {"name": "Interface", "family": "sans", "styles": [
-                    _style("brand", 14, 700, usage="The header's RYOS wordmark and bolt (Segoe UI 14 bold). The only type this large in the app."),
-                    _style("title", 11, 700, usage="Card names in ScrollingLabel, and dialog section headings (Segoe UI 11 bold)."),
-                    _style("control", 10, usage="GroupTab labels, search and quick-run entries, card gutter glyphs, menu entries (Segoe UI 10)."),
-                    _style("control-strong", 10, 700, usage="The active GroupTab's label (Segoe UI 10 bold)."),
-                    _style("body", 9, usage="Dialog body copy, form labels, the SelectBar hint (Segoe UI 9). The app's workhorse size."),
-                    _style("button", 9, 700, usage="Every FlatButton label (Segoe UI 9 bold)."),
-                    _style("meta", 8, usage="Script paths, last-run timestamps, the StatusBar, tooltips (Segoe UI 8)."),
-                    _style("badge", 8, 700, usage="StatusBadge and ScriptTypeBadge text (Segoe UI 8 bold). Always on a filled ground."),
-                    _style("meta-italic", 8, italic=True, usage="Empty-state and placeholder notes in dialogs (Segoe UI 8 italic)."),
-                    _style("micro", 7, usage="Densest annotations in the pipeline step editor (Segoe UI 7). Do not go smaller."),
+                    _style("display", 16, 700, usage="The chosen item's name in the maximised detail pane (16pt bold). The largest type in the app."),
+                    _style("brand", 13, 700, usage="The header's RYOS wordmark, beside the drawn bolt (13pt bold)."),
+                    _style("title", 11, 700, usage="A row's name (11pt bold; 10pt semibold on a compact row)."),
+                    _style("body", 10, usage="The base: menus, fields, buttons, dialog labels, pills (10pt; pills and buttons semibold)."),
+                    _style("secondary", 9, usage="A row's path and outcome word, facts in the detail pane, hints under fields, the status bar (9pt)."),
+                    _style("caption", 8, 700, usage="Section headings, a row's kind (PYTHON, PIPELINE), badges, the detail pane's headings (8pt bold, capitals)."),
                 ]},
                 {"name": "Terminal", "family": "mono", "styles": [
-                    _style("terminal", 10, usage="Output panel body -- stdout, stderr and status lines (Consolas 10)."),
-                    _style("terminal-compact", 9, usage="Output search field and the pipeline step command preview (Consolas 9)."),
-                    _style("terminal-meta", 8, usage="The output search match counter (Consolas 8)."),
+                    _style("terminal", 10, usage="The output panel and run history (Consolas 10)."),
+                    _style("terminal-small", 9, usage="Parameters shown as values: a row's preset chip, the detail pane's preset chips (Consolas 9)."),
                 ]},
             ],
         },
         "spacing": {
-            "note": ("Tk padx/pady values as the code passes them. There is no 4px or "
-                     "8px grid: these are the eleven steps actually in use, ordered by size."),
+            "note": ("Qt layout margins and stylesheet padding as the code sets them "
+                     "(ryos/qtui/*, cardstyle.CARD_PADDING). Not a strict grid: these "
+                     "are the steps in use, ordered by size."),
             "tokens": [
-                {"name": "space-1", "value": "1px", "usage": "Tab wrapper inset that draws a tab's border, and the 1px frame around a HoverPreview."},
-                {"name": "space-2", "value": "2px", "usage": "Gap under a card's name row; compact-card row padding."},
-                {"name": "space-3", "value": "3px", "usage": "Gap between GroupTabs; tooltip vertical padding; small-card row padding."},
-                {"name": "space-4", "value": "4px", "usage": "StatusBar vertical padding, card row padding at medium size, Entry border inset."},
-                {"name": "space-5", "value": "5px", "usage": "Badge horizontal padding, FlatButton vertical padding."},
-                {"name": "space-6", "value": "6px", "usage": "Gap between header buttons, tooltip horizontal padding, GroupTab vertical padding."},
-                {"name": "space-8", "value": "8px", "usage": "Gap beside the options button; quick-run entry left inset."},
-                {"name": "space-10", "value": "10px", "usage": "StatusBar horizontal padding; compact-card horizontal padding; output header inset."},
-                {"name": "space-12", "value": "12px", "usage": "Card body horizontal padding at every size, FlatButton horizontal padding, search bar inset."},
-                {"name": "space-14", "value": "14px", "usage": "GroupTab horizontal padding, SelectBar text inset, header vertical padding."},
-                {"name": "space-16", "value": "16px", "usage": "Dialog section padding -- the most common value in the dialogs module."},
-                {"name": "space-18", "value": "18px", "usage": "AppHeader horizontal padding, setting the window's outer margin."},
+                {"name": "space-1", "value": "1px", "usage": "Gap between a row's name line and its path line."},
+                {"name": "space-3", "value": "3px", "usage": "A favourite chip's vertical padding; an output tab pill's vertical padding."},
+                {"name": "space-4", "value": "4px", "usage": "Gap between header buttons and between group pills."},
+                {"name": "space-6", "value": "6px", "usage": "Gap between a row's buttons and between favourite chips; a menu item's vertical padding."},
+                {"name": "space-8", "value": "8px", "usage": "Gap between a row's kind, name and outcome; between the search box and the pills."},
+                {"name": "space-10", "value": "10px", "usage": "A row's vertical padding at medium size; the top of the list area."},
+                {"name": "space-12", "value": "12px", "usage": "A row's horizontal padding at every size; a menu icon's inset; a chip's horizontal padding."},
+                {"name": "space-14", "value": "14px", "usage": "The list's side margin -- the search box, pills and panels line up on it; a pill's horizontal padding."},
+                {"name": "space-24", "value": "24px", "usage": "A menu item's gap on the right; the menu words start 36px in (the icon column)."},
+                {"name": "space-26", "value": "26px", "usage": "The detail pane's side margin, maximised."},
             ],
         },
         "radius": {
-            "note": ("RYOS is near-square: small radii that sit with Windows 11's own "
-                     "controls, and no shadows. Separation still comes from a hairline, "
-                     "a fill or the rail, never from a corner. (The Tk interface was "
-                     "fully square; the Qt one keeps these, decided 2026-09-28.)"),
+            "note": ("RYOS is near-square, with one exception: things you choose or "
+                     "press on their own are pills. No shadows; separation comes from a "
+                     "hairline, a fill or the rail."),
             "tokens": [
-                {"name": "radius-card", "value": "4px", "usage": "Script and pipeline cards, and the update banner."},
-                {"name": "radius-control", "value": "3px", "usage": "Buttons, text fields, drop-downs, spin boxes."},
-                {"name": "radius-badge", "value": "2px", "usage": "Type badges, tag badges and status chips on a card."},
-                {"name": "radius-none", "value": "0", "usage": "Tabs, the group banner, section headers, the output panel -- the page's structure, not its objects."},
+                {"name": "radius-card", "value": "4px", "usage": "A section's panel (its rows share it), the update banner, the quiet buttons' hover box."},
+                {"name": "radius-control", "value": "3px", "usage": "Text fields, drop-downs, spin boxes, dialog buttons."},
+                {"name": "radius-pill", "value": "50%", "usage": "Half the height: group pills, output tab pills, favourite chips, preset chips -- and Run, a circle."},
+                {"name": "radius-none", "value": "0", "usage": "The header bar, section headings, rows inside a panel, the output panel."},
                 {"name": "radius-icon", "value": "24%", "usage": "The application icon's rounded rectangle only (make_icon.py). Not a UI value."},
             ],
         },
         "size": {
-            "note": "Structural line weights and fixed widths, in px.",
+            "note": "Line weights and fixed sizes, in px.",
             "tokens": [
-                {"name": "hairline", "value": "1px", "usage": "Card border, tooltip border, SelectBar border, and the separators between a card's gutter buttons."},
-                {"name": "rail", "value": "5px", "usage": "The coloured strip down a card's left edge: accent on a ScriptCard, pipe_accent on a PipelineCard."},
-                {"name": "tab-indicator", "value": "3px", "usage": "The bar under a GroupTab -- accent when active, tab_inactive_bg when not."},
-                {"name": "sash", "value": "4px", "usage": "The PanedWindow sash between the card list and the output panel, gripless."},
-                {"name": "scrollbar-arrow", "value": "12px", "usage": "ttk scrollbar and Combobox arrow size."},
+                {"name": "hairline", "value": "1px", "usage": "A panel's border and the line between its rows; field and tooltip borders; a neutral button's focus edge."},
+                {"name": "rail", "value": "3px", "usage": "The strip down a row's left edge: accent on a script, pipe_accent on a pipeline."},
+                {"name": "focus-ring", "value": "2px", "usage": "Keyboard focus on Run (in name_fg, on any fill). Quiet buttons show focus with the accent wash instead."},
+                {"name": "target-min", "value": "24px", "usage": "The smallest thing you can click (WCAG 2.5.8): chip Run, preset chip, Quick Run, tab close."},
+                {"name": "run", "value": "32px", "usage": "Run's diameter on a row; 26px on a compact row, 24px on a favourite chip."},
+                {"name": "button-cell", "value": "32px", "usage": "The width of each of a row's quiet buttons, so script and pipeline rows line up."},
+                {"name": "icon", "value": "16px", "usage": "The usual icon size; drawn on a 24-unit grid with a 2-unit stroke (ryos/qtui/icons.py)."},
             ],
         },
         "meta": _provenance(),
