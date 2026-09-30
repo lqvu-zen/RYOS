@@ -54,7 +54,9 @@
       "Bash(sed -i '250s/scriptform.TEMP_PARAM_LABEL/scriptform.TEMP_PARAM_FIELD/' ryos/qtui/smalldialogs.py)",
       "Bash(grep -v \"^$\")",
       "Bash(sed -n '/## Targets/,/## Buttons/p;/## Hard-coded/,/## Font/p' .claude/discarded/ui-audit-2026-09-30.md)",
-      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/edge_states.py\")"
+      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/edge_states.py\")",
+      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/menu_variants.py\")",
+      "Bash(unset QT_QPA_PLATFORM)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded"
