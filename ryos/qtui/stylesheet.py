@@ -158,6 +158,9 @@ def stylesheet(palette: dict) -> str:
     d = drawn_colors(c)
     tick = icon_path("check-light.svg" if ink_on(c["accent"]) == INK_LIGHT_POLE
                      else "check-dark.svg")
+    # A menu's tick in the menu's ink.
+    menu_tick = icon_path("check-light.svg" if _rel_luminance(c["menu_bg"]) < 0.45
+                          else "check-dark.svg")
     # Chevrons in the field's own ink: dark on a light field, light on dark.
     ink = "dark" if _rel_luminance(c["card_bg"]) > 0.45 else "light"
     chevron_down = icon_path(f"chevron-down-{ink}.svg")
@@ -601,9 +604,16 @@ QMenu {{
     background: {c['menu_bg']};
     color: {c['fg_on_dark']};
     border: 1px solid {c['border']};
-    padding: 4px 0;
+    padding: 6px 0;
 }}
-QMenu::item {{ padding: 5px 22px 5px 12px; background: transparent; }}
+/* Room for the icon column: without a position of its own the icon sat
+   against the menu's left edge. 12 px in, then the words after it. */
+QMenu::item {{ padding: 6px 24px 6px 36px; background: transparent; }}
+QMenu::icon {{ left: 12px; }}
+/* A checkable entry's tick (Start with Windows) goes in the same column,
+   drawn with the app's own tick rather than Qt's glyph. */
+QMenu::indicator {{ left: 12px; width: 14px; height: 14px; }}
+QMenu::indicator:checked {{ image: url("{menu_tick}"); }}
 QMenu::item:selected {{ background: {c['accent']}; color: {c['fg_on_dark']}; }}
 QMenu::item:disabled {{ color: {c['btn_disabled_fg']}; }}
 QMenu::separator {{ height: 1px; background: {c['border']}; margin: 4px 8px; }}
