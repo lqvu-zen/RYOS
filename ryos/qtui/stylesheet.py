@@ -66,8 +66,12 @@ def drawn_colors(c: dict) -> dict:
         # far as it takes to read on a row, a hovered row and the window.
         # Kept as a shade rather than _legible's black or white, so it stays
         # muted; two Solarized themes were at 4.1 and 4.2 to 1.
-        "muted_fg": _readable_on(c["path_fg"], (c["card_bg"], c["card_hover"], c["bg"])),
-        "tab_selected_fg": _legible(c["accent"], c["card_bg"], floor=GLYPH_MIN),
+        "muted_fg": _readable_on(c["path_fg"], (c["card_bg"], c["card_hover"], c["bg"],
+                                                c["accent_wash"])),
+        # Also the preset word on a row, so it has to read on the chosen /
+        # focused row's wash too.
+        "tab_selected_fg": _edge(_legible(c["accent"], c["card_bg"], floor=GLYPH_MIN),
+                                 c["card_bg"], c["accent_wash"], floor=GLYPH_MIN),
         # Gold stays gold, shaded until it reads on a row, hovered or not.
         "star": _readable_on(c.get("bolt", "#FFD23F"),
                              (c["card_bg"], c["card_hover"], c["accent_wash"])),
@@ -81,6 +85,9 @@ def drawn_colors(c: dict) -> dict:
         # A neutral button's outline. In Light its fill is 1.01:1 against the
         # window, so without an edge Save and Cancel read as plain text.
         "control_edge": _edge(c["border"], c["bg"], c["card_bg"]),
+        # The outline of the row the keyboard is on: the accent, shaded until
+        # it shows against the row's wash inside and the rows around it.
+        "focus_edge": _edge(c["accent"], c["accent_wash"], c["card_bg"], floor=GLYPH_MIN),
     }
 
 
@@ -93,13 +100,14 @@ DRAWN_PAIRS = (
     ("tooltip_fg", ("tooltip_bg",), TEXT_MIN),
     ("status_fg", ("status_bg",), TEXT_MIN),
     ("stop_fg", ("btn_stop_active", "btn_stop_active_hover"), TEXT_MIN),
-    ("muted_fg", ("card_bg", "card_hover", "bg"), TEXT_MIN),
-    ("tab_selected_fg", ("card_bg",), GLYPH_MIN),
+    ("muted_fg", ("card_bg", "card_hover", "bg", "accent_wash"), TEXT_MIN),
+    ("tab_selected_fg", ("card_bg", "accent_wash"), GLYPH_MIN),
     ("star", ("card_bg", "card_hover", "accent_wash"), GLYPH_MIN),
     ("header_fg", ("header_bg",), TEXT_MIN),
     ("pill_fg", ("name_fg",), TEXT_MIN),
     ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
     ("control_edge", ("bg", "card_bg"), EDGE_MIN),
+    ("focus_edge", ("accent_wash", "card_bg"), GLYPH_MIN),
 )
 
 
@@ -549,10 +557,12 @@ QLabel#groupHeader {{ color: {d['muted_fg']}; font-size: 8pt; font-weight: 700; 
 
 /* --- the maximised layout: the chosen row and the detail pane ------- */
 QFrame#card[selected="true"] {{ background: {c['accent_wash']}; }}
-/* The row the keyboard is on: the chosen row's wash. Maximised, the two
-   are the same row -- the detail pane follows the focus. */
-QFrame#card:focus {{ background: {c['accent_wash']}; }}
-QFrame#card[chip="true"]:focus {{ border: 1px solid {c['accent']}; }}
+/* The row the keyboard is on: the chosen row's wash and an outline
+   (painted by the card, in this colour). Maximised, the two are the same
+   row -- the detail pane follows the focus. Not on a click: see cards.py. */
+QFrame#card {{ qproperty-focusEdge: {d['focus_edge']}; }}
+QFrame#card[kbfocus="true"] {{ background: {c['accent_wash']}; }}
+QFrame#card[chip="true"][kbfocus="true"] {{ border: 1px solid {d['focus_edge']}; }}
 QLabel#detailName, QWidget#detailName {{ font-size: 16pt; font-weight: 700; }}
 QLabel#detailHeading {{
     color: {d['muted_fg']}; font-size: 8pt; font-weight: 700; letter-spacing: 0.8px;

@@ -4096,10 +4096,18 @@ def check_keyboard_through_the_list(app):
         app.processEvents()
         if focused() is not rows[0]:
             PROBLEMS.append("Down in the search box did not reach the first row")
+        if not rows[0].property("kbfocus"):
+            PROBLEMS.append("the row the keyboard reached is not marked")
         QTest.keyClick(focused(), Qt.Key.Key_Down)
         QTest.keyClick(focused(), Qt.Key.Key_Down)
         if focused() is not rows[2]:
             PROBLEMS.append("Down twice did not reach the third row")
+        if rows[0].property("kbfocus"):
+            PROBLEMS.append("a row the keyboard left is still marked")
+        rows[1].setFocus(Qt.FocusReason.MouseFocusReason)     # a click
+        if rows[1].property("kbfocus"):
+            PROBLEMS.append("a clicked row is marked as the keyboard's")
+        rows[2].setFocus(Qt.FocusReason.TabFocusReason)
         QTest.keyClick(focused(), Qt.Key.Key_End)
         QTest.keyClick(focused(), Qt.Key.Key_Down)          # stops at the end
         if focused() is not rows[-1]:
@@ -4136,7 +4144,7 @@ def check_keyboard_through_the_list(app):
     finally:
         win.close()
         win.deleteLater()
-    print("  [ok] keyboard: search → rows, arrows / End stop at the end, Enter runs, "
+    print("  [ok] keyboard: search → rows (marked; a click is not), arrows / End stop at the end, Enter runs, "
           "F2 edits, Menu key opens the menu, Space ticks in select mode")
 
 

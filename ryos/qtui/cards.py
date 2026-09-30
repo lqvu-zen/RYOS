@@ -25,7 +25,8 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import Property, QPoint, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
                                QMenu, QPushButton, QSizePolicy, QVBoxLayout,
                                QWidget)
@@ -67,6 +68,7 @@ class _CardBase(QFrame):
         self._compact = compact or chip
         self._size = size
         self._hover_only: list[QWidget] = []
+        self._focus_edge = QColor(palette.get("accent", "#3a7bd5"))
         self.setObjectName("card")
         # The row is the list's keyboard stop (its buttons are not): arrows
         # move between rows, Enter runs, F2 edits, the Menu key does the rest.
@@ -172,9 +174,52 @@ class _CardBase(QFrame):
 
     def focusInEvent(self, event) -> None:             # noqa: N802
         super().focusInEvent(event)
+        # A click on a row (or its Run) focuses the row too; only a keyboard
+        # arrival is marked, or every click would leave a highlight behind.
+        # Coming back from a menu or a dialog keeps whatever it was.
+        if event.reason() not in self._PASSING:
+            self._set_keyboard_focus(event.reason() != Qt.FocusReason.MouseFocusReason)
         # Maximised, the detail pane follows the focused row, as it follows
         # a clicked one.
         self.activated.emit()
+
+    def focusOutEvent(self, event) -> None:            # noqa: N802
+        super().focusOutEvent(event)
+        if event.reason() not in self._PASSING:
+            self._set_keyboard_focus(False)
+
+    #: Focus lost to a menu or another window, and got back from one.
+    _PASSING = (Qt.FocusReason.PopupFocusReason, Qt.FocusReason.ActiveWindowFocusReason)
+
+    def _set_keyboard_focus(self, on: bool) -> None:
+        if bool(self.property("kbfocus")) != on:
+            self.setProperty("kbfocus", on)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+
+    # The outline's colour, set by the stylesheet (``qproperty-focusEdge``) so
+    # it follows a theme change like every other colour.
+    def _get_focus_edge(self) -> QColor:
+        return self._focus_edge
+
+    def _set_focus_edge(self, color) -> None:
+        self._focus_edge = QColor(color)
+        self.update()
+
+    focusEdge = Property(QColor, _get_focus_edge, _set_focus_edge)
+
+    def paintEvent(self, event) -> None:               # noqa: N802
+        super().paintEvent(event)
+        # Painted over the row rather than a stylesheet border, which would
+        # move the row's contents as the focus arrives. A chip has a border
+        # already; the stylesheet recolours it.
+        if self._chip or not self.property("kbfocus"):
+            return
+        p = QPainter(self)
+        p.setPen(QPen(self._focus_edge, 2))
+        p.drawRect(QRectF(self.rect()).adjusted(1, 1, -1, -1))
+        p.end()
 
     def _page(self):
         w = self.parentWidget()
