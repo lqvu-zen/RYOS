@@ -41,7 +41,17 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -12 && sed -n '/## Targets/,/## Buttons/p;/## Hover/,/## Text/p;/## Inputs/,/NewGroup/p' .claude/discarded/ui-audit-2026-09-29.md | head -60)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -12 && sed -n '/## Targets/,/## Buttons/p;/## Hover/,/## Text/p' .claude/discarded/ui-audit-2026-09-29.md | head -60; sed -n '/## Buttons/,/## Inputs/p' .claude/discarded/ui-audit-2026-09-29.md | head -20)",
-      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -11 && sed -n '/## Hover/,/## Contrast/p' .claude/discarded/ui-audit-2026-09-29.md)"
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py 2>&1 | grep -v \"^saved\\\\|^Done:\" | tail -11 && sed -n '/## Hover/,/## Contrast/p' .claude/discarded/ui-audit-2026-09-29.md)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/review-ryos-ui/scripts/audit.py --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py --out \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/iconshots\")",
+      "Bash(sed -i 's/win.detail.findChildren\\(type\\(win.detail.run\\)\\)/win.detail.findChildren\\(QPushButton\\)/g' tests/qt_smoke.py)",
+      "Bash(grep -n \"from PySide6.QtWidgets import QFrame$\" tests/qt_smoke.py)",
+      "Bash(echo \"exit $?\")",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/icons_docs.py\")",
+      "Bash(RYOS_NO_REGISTRY=1 PYTHONIOENCODING=utf-8 uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py)",
+      "Bash(sed -i '286s/^TEMP_PARAM_LABEL = \"Parameters for this run:\"/TEMP_PARAM_FIELD = \"Parameters for this run:\"/' ryos/scriptform.py)",
+      "Bash(sed -i '250s/scriptform.TEMP_PARAM_LABEL/scriptform.TEMP_PARAM_FIELD/' ryos/qtui/smalldialogs.py)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded"
