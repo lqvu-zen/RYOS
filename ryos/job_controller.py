@@ -322,13 +322,13 @@ class JobController:
             name = prepared[0][1][2]
             header = f"{'─' * 40}\nStep {first}/{total}:  {name}\n{'─' * 40}\n"
             status_line = f"Pipeline step {first}/{total}: {name}"
-            job.name = f"⚡ {job.pipeline_name}  —  Step {first}/{total}: {name}"
+            job.name = f"{job.pipeline_name}  —  Step {first}/{total}: {name}"
         else:
             names = ", ".join(job.group_labels[t] for t, _ in prepared)
             header = (f"{'─' * 40}\nSteps {first}-{last}/{total} (concurrent):  "
                       f"{names}\n{'─' * 40}\n")
             status_line = f"Pipeline steps {first}-{last}/{total}: {job.group_size} running"
-            job.name = f"⚡ {job.pipeline_name}  —  Steps {first}-{last}/{total}"
+            job.name = f"{job.pipeline_name}  —  Steps {first}-{last}/{total}"
         self._on_output(job.tab_key, header, "info")
         self._on_status(status_line)
         self._on_rename(job)

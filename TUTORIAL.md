@@ -1,6 +1,6 @@
 # RYOS Tutorial
 
-**RYOS (Run Your Own Scripts)** keeps the scripts you run often in one window and runs any of them with one click. No terminal, no memorising paths — press the green ▶.
+**RYOS (Run Your Own Scripts)** keeps the scripts you run often in one window and runs any of them with one click. No terminal, no memorising paths — press the green play button.
 
 The full guide, with real screenshots of every screen, is the **[illustrated user guide](docs/tutorial/README.md)**. This page covers installing RYOS and points you to the right chapter.
 

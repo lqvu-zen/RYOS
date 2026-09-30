@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
 from .. import cardmenu, cardstyle, detail
 from ..interpreter import _script_tag
 from ..themes import _readable_on, ink_on
+from .icons import IconButton
 from .widgets import ElidedLabel, literal, set_tooltip
 
 
@@ -98,18 +99,20 @@ class DetailPane(QWidget):
         self.sub.setObjectName("cardPath")
         titles.addWidget(self.sub)
         head.addLayout(titles, 1)
-        self.star = self._link("☆", "Add to favorites")
+        self.star = IconButton("star", size=18, palette=palette)
         self.star.setObjectName("detailStar")
+        set_tooltip(self.star, "Add to favorites")
         self.edit = self._link(detail.EDIT, "Edit")
-        self.more = self._link("⋯", "More")
+        self.more = IconButton("more", size=18, palette=palette)
         self.more.setObjectName("detailStar")
+        set_tooltip(self.more, "More")
         for b in (self.star, self.edit, self.more):
             head.addWidget(b)
         body.addLayout(head)
 
         actions = QHBoxLayout()
         actions.setSpacing(6)
-        self.run = QPushButton()
+        self.run = IconButton("play", size=14, palette=palette)
         self.run.setObjectName("detailRun")
         self.run.setFixedHeight(38)
         self.run_with = self._link(detail.RUN_WITH, "Run with parameters")
@@ -192,7 +195,7 @@ class DetailPane(QWidget):
         accent = c.get("pipe_accent", c["accent"]) if pipeline else c["accent"]
         self.rail.setStyleSheet(f"background: {accent}; border: none;")
         if pipeline:
-            tag, tag_color = "⚡ PIPELINE", accent
+            tag, tag_color = "PIPELINE", accent
         else:
             tag, tag_color = _script_tag(rec.get("path", ""))
         self.kind_label.setText(tag.upper())
@@ -221,6 +224,8 @@ class DetailPane(QWidget):
         spec = cardstyle.run_button(status)
         c = self._palette
         self.run.setText(detail.run_label(status))
+        self.run.set_shape(spec.icon)
+        self.run.set_colors(c[spec.fg_key], ink_on(c[spec.hover_fg_key]))
         set_tooltip(self.run, spec.tooltip)
         self.run.setProperty("runState", spec.state)
         self.run.setStyleSheet(
@@ -230,7 +235,10 @@ class DetailPane(QWidget):
             f"QPushButton#detailRun:hover {{ background: {c[spec.hover_key]};"
             f" color: {ink_on(c[spec.hover_fg_key])}; }}")
         favorite = bool(self.rec.get("favorite"))
-        self.star.setText("★" if favorite else "☆")
+        if favorite:
+            self.star.set_shape("star-filled", role="star")
+        else:
+            self.star.set_shape("star", role="muted")
         set_tooltip(self.star, "Remove from favorites" if favorite else "Add to favorites")
         self.star.setProperty("on", favorite)
         self.star.style().unpolish(self.star)

@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from .jobs import split_by_capacity
 
 HINT = "Tick the checkboxes next to the scripts you want to run or delete."
-ENTER_LABEL = "☑  Select scripts"
-LEAVE_LABEL = "✕  Cancel select"
+ENTER_LABEL = "Select scripts"
+LEAVE_LABEL = "Cancel select"
 
 NOTHING_TO_RUN = ("Nothing Selected",
                   "Tick the checkboxes next to the scripts you want to run.")

@@ -10,7 +10,7 @@ The **Options** menu holds the settings, the look, and a few switches:
 | **Appearance…** | Themes and the accent colour. |
 | **Start with Windows** | Start RYOS when you sign in (needed for schedules to run). |
 | **Select scripts** | Tick several scripts to run or delete them together. See [Tips](12-tips.md). |
-| **Delete All** | Remove every group, script and pipeline, after asking. Export first if you might want them back. |
+| **Delete All…** | Remove every group, script and pipeline, after asking. Export first if you might want them back. |
 
 ## Options…
 

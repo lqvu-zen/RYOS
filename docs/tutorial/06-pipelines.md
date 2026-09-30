@@ -4,12 +4,12 @@ A **pipeline** runs several scripts one after another: *build, then test, then p
 
 ## Make one
 
-Click **+ Pipeline** in the header (or **File → New Pipeline…**), name it, and the editor opens. To change it later, point at its row and click **✎**, or right-click → **Edit…**.
+Click **+ Pipeline** in the header (or **File → New Pipeline…**), name it, and the editor opens. To change it later, point at its row and click the pencil, or right-click → **Edit…**.
 
 ![The pipeline editor for "Resilient": Name; four steps reading "Flaky · keeps going · 3 retries", "Always fails · keeps going", "Cleanup · only if something has failed" and "Say hello"; Up, Down, Remove and With Prev; the step settings; Add step; and Save and Cancel](images/06-pipeline-editor.png)
 
 - **Add a step**: pick a script under **Add step** and click **Add**.
-- **Order**: select a step and use **▲ Up** / **▼ Down**. **✕ Remove** takes it out.
+- **Order**: select a step and use **Up** / **Down**. **Remove** takes it out.
 - **With Prev**: the selected step starts together with the one above it instead of after it. Such steps are marked **∥** in the list.
 
 Select a step to set how it behaves; the list says in words what you've changed:
@@ -25,7 +25,7 @@ Click **Save** when you're done.
 
 ## Run it
 
-Click the pipeline's **▶**. The output shows each step as it starts and how it ended, then the pipeline's result:
+Click the pipeline's play button. The output shows each step as it starts and how it ended, then the pipeline's result:
 
 ![The output of the Morning report pipeline: Step 2/2 "Write a report", the line it printed, exit code 0, and a green "Pipeline complete" line](images/06-pipeline-output.png)
 

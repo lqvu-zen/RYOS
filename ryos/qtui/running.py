@@ -15,10 +15,10 @@ from datetime import datetime
 from typing import Callable
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget)
 
 from ..jobs import format_elapsed
+from .icons import IconButton
 
 #: How often the elapsed labels are refreshed. Once a second is enough for a
 #: seconds-resolution label and costs nothing.
@@ -57,7 +57,7 @@ class RunningRow(QFrame):
         self.time_label.setObjectName("cardPath")
         row.addWidget(self.time_label)
 
-        self.stop_button = QPushButton("⏹ Stop")
+        self.stop_button = IconButton("stop", "Stop", role="ink", size=12)
         self.stop_button.setObjectName("stop")
         self.stop_button.clicked.connect(
             lambda: self.stop_requested.emit(self.job))

@@ -384,10 +384,10 @@ def step_pipeline(s: Session) -> None:
         problem(f"step policies saved as {[r[10:13] for r in steps]}")
 
     s.card("Project", "Release").run_button.click()
-    s.wait_for(lambda: "cleanup ran" in s.output("⚡ Release"), "the pipeline's cleanup step",
+    s.wait_for(lambda: "cleanup ran" in s.output("Release"), "the pipeline's cleanup step",
                timeout=30)
     s.idle("pipeline", timeout=30)
-    text = s.output("⚡ Release")
+    text = s.output("Release")
     if not marker.exists():
         problem("the pipeline's Mark step did not write its file")
     order = [text.find(x) for x in ("hello world", "marked", "it broke", "cleanup ran")]

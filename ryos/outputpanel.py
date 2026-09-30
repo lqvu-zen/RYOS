@@ -69,15 +69,16 @@ def section_is_visible(*, query_active: bool, has_cards: bool,
 
 # --- the output header and tabs: wording and small rules, shared -----------------
 
-SHOW_OUTPUT = "▲  Show Output"
-HIDE_OUTPUT = "▼  Hide Output"
-CLEAR = "🗑 Clear"
-CLOSE_ALL = "✕ Close All"
+#: Words only: each button draws its icon (qtui/icons.py).
+SHOW_OUTPUT = "Show output"
+HIDE_OUTPUT = "Hide output"
+CLEAR = "Clear"
+CLOSE_ALL = "Close all"
 FIND = "Find"
 ERRORS_ONLY = "Errors only"
-TAB_COPY = "⎘  Copy"
-TAB_SAVE = "💾  Save"
-TAB_CLOSE = "✕  Close"
+TAB_COPY = "Copy"
+TAB_SAVE = "Save"
+TAB_CLOSE = "Close"
 SAVE_TITLE = "Save output"
 NOTHING_TO_SAVE = "Nothing to save."
 COPIED = "Log copied to clipboard."

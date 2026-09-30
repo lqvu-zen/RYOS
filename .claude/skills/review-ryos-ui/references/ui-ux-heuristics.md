@@ -20,6 +20,7 @@ work. Most visits are seconds long. Everything below serves that loop.
 | Compact rows | One line: star, name, kind, outcome, Run | same |
 | Favourites | A wrapping strip of pills: name, outcome dot, small Run | `CardList(flow=True)`, `QFrame#card[chip="true"]` |
 | Run | A green circle (`btn_run_bg`), ↻ on red (`error`) after a failure. The only filled thing on a row | `cardstyle.run_button()` |
+| Icons | One drawn set (`qtui/icons.py`): 24-unit grid, 2-unit stroke, round ends, outline except play, stop, the brand bolt and a favourite's star; tinted by colour role, re-tinted on a theme change. Never a font glyph or an emoji | `IconButton`, `IconLabel`, `menus._icon` |
 | Words for state | Kind, badges and outcome are coloured words ("● OK", "● Failed"), never filled chips | `_tag`, `_status_chip` |
 | Maximised | List on the left (compact rows), the chosen item on the right: name, Run/Retry, Run with…, Schedule…, Run history, preset chips, steps, facts, output | `qtui/detail.py`, rules `ryos/detail.py` |
 | Output | Dark terminal (`out_*` keys) under the list, or under the detail when maximised; a small pill tab per run | `shell.py` `OutputPane` |

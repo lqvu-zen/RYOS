@@ -47,6 +47,8 @@ from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from .stylesheet import stylesheet
+from . import icons
+from .icons import IconButton, IconLabel
 from .widgets import literal, set_tooltip
 
 #: Matches the Tk placeholder, so the two shells prompt identically.
@@ -280,6 +282,7 @@ class MainWindow(QMainWindow):
 
         self.running = RunningSection(self._palette, on_stop=self._stop_job)
 
+        self._menu_icons: list = []
         self.setMenuWidget(self._build_header())
         # The list over the output; and, maximised, the detail pane beside
         # them, which the output panel moves into (`set_workspace`).
@@ -352,7 +355,9 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(header)
         row.setContentsMargins(14, 6, 10, 6)
         row.setSpacing(4)
-        bolt = QLabel("⚡")
+        # The brand bolt, drawn: the emoji came in its own orange, whatever
+        # the theme's bolt colour.
+        bolt = IconLabel("bolt", role="bolt", size=18, palette=self._palette)
         bolt.setObjectName("appBolt")
         row.addWidget(bolt)
         title = QLabel("RYOS")
@@ -408,7 +413,7 @@ class MainWindow(QMainWindow):
         self.group_tab_bar.dropped_on_group.connect(self._on_drop_on_group)
         self.group_tab_bar.menu_requested.connect(self._show_group_menu)
         self.group_tab_bar.reordered.connect(self._on_tabs_reordered)
-        self.new_group_button = QPushButton("+")
+        self.new_group_button = IconButton("plus", size=14, palette=self._palette)
         self.new_group_button.setObjectName("newGroupPill")
         set_tooltip(self.new_group_button, "New group")
         self.new_group_button.clicked.connect(self.new_group)
@@ -431,16 +436,20 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(header)
         row.setContentsMargins(8, 2, 8, 2)
         row.addWidget(QLabel("Output"))
-        self.output_toggle = QPushButton(outputpanel.SHOW_OUTPUT)
+        self.output_toggle = IconButton("chevron-up", outputpanel.SHOW_OUTPUT,
+                                        role="link", hover_role="link",
+                                        size=14, palette=self._palette)
         self.output_toggle.setFlat(True)
         self.output_toggle.clicked.connect(lambda: self.set_output_expanded(
             not self.output_expanded))
         row.addWidget(self.output_toggle)
         row.addStretch(1)
-        clear = QPushButton(outputpanel.CLEAR)
+        clear = IconButton("trash", outputpanel.CLEAR, role="link",
+                           hover_role="link", size=14, palette=self._palette)
         clear.setFlat(True)
         clear.clicked.connect(self.clear_output)
-        close_all = QPushButton(outputpanel.CLOSE_ALL)
+        close_all = IconButton("close", outputpanel.CLOSE_ALL, role="link",
+                               hover_role="link", size=14, palette=self._palette)
         close_all.setFlat(True)
         close_all.clicked.connect(self.close_all_output)
         row.addWidget(clear)
@@ -501,6 +510,7 @@ class MainWindow(QMainWindow):
         self.output_findbar.setVisible(on)
         self.output_toggle.setText(outputpanel.HIDE_OUTPUT if on
                                    else outputpanel.SHOW_OUTPUT)
+        self.output_toggle.set_shape("chevron-down" if on else "chevron-up")
         # Collapsed, the panel is its header and no taller: capped here, so
         # the splitter cannot hand it empty space -- which it did when this
         # ran during construction, before the splitter existed.
@@ -602,11 +612,14 @@ class MainWindow(QMainWindow):
         handlers = {outputpanel.TAB_COPY: lambda: self.copy_output(key),
                     outputpanel.TAB_SAVE: lambda: self.save_output(key),
                     outputpanel.TAB_CLOSE: lambda: self._close_output_key(key)}
+        shapes = {outputpanel.TAB_COPY: "copy", outputpanel.TAB_SAVE: "save",
+                  outputpanel.TAB_CLOSE: "close"}
+        ink = icons.role_colors(self._palette)["menu"]
         for label in outputpanel.tab_menu(key):
             if label is None:
                 menu.addSeparator()
             else:
-                action = menu.addAction(label)
+                action = menu.addAction(icons.icon(shapes[label], ink), label)
                 action.setData(label)
                 action.triggered.connect(lambda _c=False, go=handlers[label]: go())
         self.popup(menu, bar.mapToGlobal(pos))
@@ -641,29 +654,34 @@ class MainWindow(QMainWindow):
         # alone in File -- where people look for New and Import.
         bar = self.menuBar()
         file_menu = bar.addMenu("&File")
-        for label, slot in (("New &Script…", self.add_script),
-                            ("New &Pipeline…", self.new_pipeline),
-                            ("New &Group…", self.new_group)):
+        for label, slot, shape in (("New &Script…", self.add_script, "plus"),
+                                   ("New &Pipeline…", self.new_pipeline, "bolt"),
+                                   ("New &Group…", self.new_group, "folder")):
             action = QAction(label, self)
             action.triggered.connect(slot)
+            self._menu_icon(action, shape)
             file_menu.addAction(action)
         file_menu.addSeparator()
-        for label, slot in (("&Import config…", self.import_config),
-                            ("&Export all groups…", self.export_all)):
+        for label, slot, shape in (("&Import config…", self.import_config, "import"),
+                                   ("&Export all groups…", self.export_all, "export")):
             action = QAction(label, self)
             action.triggered.connect(slot)
+            self._menu_icon(action, shape)
             file_menu.addAction(action)
         file_menu.addSeparator()
         quit_action = QAction("E&xit", self)
         quit_action.triggered.connect(self.close)
+        self._menu_icon(quit_action, "close")
         file_menu.addAction(quit_action)
 
         options = bar.addMenu("&Options")
         self.options_action = QAction("&Options…", self)
         self.options_action.triggered.connect(self.open_options)
+        self._menu_icon(self.options_action, "settings")
         options.addAction(self.options_action)
         self.appearance_action = QAction("&Appearance…", self)
         self.appearance_action.triggered.connect(self.open_appearance)
+        self._menu_icon(self.appearance_action, "palette")
         options.addAction(self.appearance_action)
         self.startup_action = QAction("Start with &Windows", self)
         self.startup_action.setCheckable(True)
@@ -672,11 +690,13 @@ class MainWindow(QMainWindow):
         options.addAction(self.startup_action)
         options.addSeparator()
         self.select_action = QAction(selection.ENTER_LABEL, self)
+        self._menu_icon(self.select_action, "select")
         self.select_action.triggered.connect(
             lambda: self.set_select_mode(not self.select_mode))
         options.addAction(self.select_action)
         options.addSeparator()
-        self.delete_all_action = QAction("🗑  Delete All", self)
+        self.delete_all_action = QAction("Delete All…", self)
+        self._menu_icon(self.delete_all_action, "trash", danger=True)
         self.delete_all_action.triggered.connect(self.delete_all)
         options.addAction(self.delete_all_action)
 
@@ -684,7 +704,14 @@ class MainWindow(QMainWindow):
         self.update_action = QAction("Check for &updates", self)
         self.update_action.triggered.connect(
             lambda: self.check_for_updates(manual=True))
+        self._menu_icon(self.update_action, "import")
         help_menu.addAction(self.update_action)
+
+    def _menu_icon(self, action, shape: str, *, danger: bool = False) -> None:
+        """Give a menu action an icon from the set, re-tinted on a theme change."""
+        self._menu_icons.append((action, shape, danger))
+        roles = icons.role_colors(self._palette)
+        action.setIcon(icons.icon(shape, roles["danger" if danger else "menu"]))
 
     # -- cards -------------------------------------------------------------
     def set_cards(self, group_name: str, records, base_dir: str = "", *,
@@ -723,6 +750,8 @@ class MainWindow(QMainWindow):
             # line of every group page before the first card.
             row = QHBoxLayout()
             row.setSpacing(6)
+            row.addWidget(IconLabel("folder", role="muted", size=15,
+                                    palette=self._palette))
             row.addWidget(banner, 1)
             if quick is not None:
                 row.addWidget(quick[0])
@@ -951,7 +980,8 @@ class MainWindow(QMainWindow):
         Neutral, not filled: filled near-black in the light themes, it was the
         heaviest thing on the page, outweighing the green Run buttons.
         """
-        toggle = QPushButton("⚡ Quick Run")
+        toggle = IconButton("bolt", "Quick Run", role="link", hover_role="link",
+                            size=14, palette=self._palette)
         toggle.setObjectName("quickRunToggle")
         bar = QuickRunBar(
             base_dir=base_dir, index=self._quick_run_index(),
@@ -1413,7 +1443,7 @@ class MainWindow(QMainWindow):
         self.update_download.setObjectName("primary")
         self.update_download.clicked.connect(lambda: self.open_url(url))
         row.addWidget(self.update_download)
-        dismiss = QPushButton("✕")
+        dismiss = IconButton("close", role="ink", size=14)
         dismiss.setObjectName("quiet")
         set_tooltip(dismiss, "Dismiss")
         dismiss.clicked.connect(self.dismiss_update_banner)
@@ -1769,10 +1799,13 @@ class MainWindow(QMainWindow):
         row.addWidget(self.select_label, 1)
         self.select_all_button = QPushButton("Select All")
         self.select_all_button.clicked.connect(self.toggle_select_all)
-        self.run_selected_button = QPushButton("▶ Run Selected")
+        self.run_selected_button = IconButton("play", "Run selected", size=12,
+                                              palette=self._palette)
+        self.run_selected_button.set_colors(self._palette["btn_run_fg"])
         self.run_selected_button.setObjectName("run")
         self.run_selected_button.clicked.connect(self.run_selected)
-        self.delete_selected_button = QPushButton("🗑 Delete Selected")
+        self.delete_selected_button = IconButton("trash", "Delete selected", size=14,
+                                                 palette=self._palette)
         self.delete_selected_button.clicked.connect(self.delete_selected)
         for b in (self.select_all_button, self.run_selected_button,
                   self.delete_selected_button):
@@ -2154,6 +2187,13 @@ class MainWindow(QMainWindow):
 
     def _on_job_started(self, job) -> None:
         self.add_output_tab(job.tab_key, job.name)
+        if getattr(job, "pipeline_name", None):
+            # A pipeline's tab carries the drawn bolt, as its row's tag did.
+            pane = self._output_tabs.get(job.tab_key)
+            if pane is not None:
+                self.output_tabs.setTabIcon(
+                    self.output_tabs.indexOf(pane),
+                    icons.icon("bolt", icons.role_colors(self._palette)["pipe"], 14))
         self.running.add(job)
         # Opening the panel on every run takes attention from the cards, so it
         # is opt-in, as in Tk; the tab is there either way.
@@ -2292,6 +2332,10 @@ class MainWindow(QMainWindow):
         """
         self._palette = palette
         self.setStyleSheet(stylesheet(palette))
+        icons.retint_all(self, palette)
+        roles = icons.role_colors(palette)
+        for action, shape, danger in self._menu_icons:
+            action.setIcon(icons.icon(shape, roles["danger" if danger else "menu"]))
         for pane in self._output_tabs.values():
             pane.set_palette(palette)
         self.detail.set_palette(palette)

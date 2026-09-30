@@ -100,4 +100,4 @@ NO_BASE_DIR = "No base folder — click to set"
 
 def banner_text(base_dir: str) -> str:
     """The banner at the top of a group: its base folder, or how to set one."""
-    return f"📁  {base_dir or NO_BASE_DIR}"
+    return base_dir or NO_BASE_DIR

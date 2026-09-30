@@ -4,13 +4,13 @@
 
 **Options → Options… → Cards → Compact cards** puts each script on one line — star, name, kind, how it last went, Run — so a long list fits. Point at a row for a moment to see its path and parameters.
 
-![The window in compact mode: one-line rows, each with a star, the name, its kind (PYTHON, BATCH, ⚡ PIPE) and a small Run button](images/12-compact.png)
+![The window in compact mode: one-line rows, each with a star, the name, its kind (PYTHON, BATCH, PIPE) and a small Run button](images/12-compact.png)
 
 ## Run or delete several at once
 
-**Options → Select scripts** adds a tick box to every script. Tick the ones you want, then **▶ Run Selected** or **Delete Selected**. **Select All** ticks them all; **Options → Cancel select** leaves the mode.
+**Options → Select scripts** adds a tick box to every script. Tick the ones you want, then **Run selected** or **Delete selected**. **Select All** ticks them all; **Options → Cancel select** leaves the mode.
 
-![Select mode: a yellow bar saying "2 of 10 selected" with Select All, Run Selected and Delete Selected, and tick boxes beside the scripts](images/12-select-mode.png)
+![Select mode: a yellow bar saying "2 of 10 selected" with Select All, Run selected and Delete selected, and tick boxes beside the scripts](images/12-select-mode.png)
 
 ## Dark, or your own colours
 

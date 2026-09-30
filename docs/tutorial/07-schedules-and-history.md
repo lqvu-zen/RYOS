@@ -11,7 +11,7 @@ Right-click a script or pipeline → **Schedule…** to have RYOS run it by itse
 - **Next runs** shows when it will run, so you can check before saving.
 - **Enabled** turns the schedule off without deleting it; **Remove schedule** deletes it.
 
-A scheduled row is marked **🕒 SCHEDULED**. Schedules only run while RYOS is open — on Windows, saving one offers to start RYOS when you sign in.
+A scheduled row is marked **SCHEDULED**. Schedules only run while RYOS is open — on Windows, saving one offers to start RYOS when you sign in.
 
 ## Look back at runs
 

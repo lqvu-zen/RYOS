@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
                                QVBoxLayout, QWidget)
 
 from .. import pipelinesteps
+from .icons import IconButton
 
 LEGEND = pipelinesteps.LEGEND
 
@@ -51,9 +52,9 @@ class PipelineEditorDialog(QDialog):
         col.addWidget(self.list, 1)
 
         controls = QHBoxLayout()
-        self.up_button = QPushButton("▲ Up")
-        self.down_button = QPushButton("▼ Down")
-        self.remove_button = QPushButton("✕ Remove")
+        self.up_button = IconButton("arrow-up", "Up", role="ink", size=14)
+        self.down_button = IconButton("arrow-down", "Down", role="ink", size=14)
+        self.remove_button = IconButton("close", "Remove", role="ink", size=14)
         self.trigger_button = QPushButton("∥ With Prev")
         for b in (self.up_button, self.down_button, self.remove_button,
                   self.trigger_button):

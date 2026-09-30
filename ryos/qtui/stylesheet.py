@@ -60,6 +60,8 @@ def drawn_colors(c: dict) -> dict:
         "neutral_hover_fg": _legible(c["btn_neutral_fg"], c["btn_neutral_hover"]),
         "tooltip_fg": _legible(c["name_fg"], c["tooltip_bg"]),
         "status_fg": _legible(c["path_fg"], c["status_bg"]),
+        "stop_fg": _legible(c["fg_on_dark"], c["btn_stop_active"],
+                            c["btn_stop_active_hover"]),
         # Paths, hints, captions: the theme's muted colour, shaded only as
         # far as it takes to read on a row, a hovered row and the window.
         # Kept as a shade rather than _legible's black or white, so it stays
@@ -90,6 +92,7 @@ DRAWN_PAIRS = (
     ("neutral_hover_fg", ("btn_neutral_hover",), TEXT_MIN),
     ("tooltip_fg", ("tooltip_bg",), TEXT_MIN),
     ("status_fg", ("status_bg",), TEXT_MIN),
+    ("stop_fg", ("btn_stop_active", "btn_stop_active_hover"), TEXT_MIN),
     ("muted_fg", ("card_bg", "card_hover", "bg"), TEXT_MIN),
     ("tab_selected_fg", ("card_bg",), GLYPH_MIN),
     ("star", ("card_bg", "card_hover", "accent_wash"), GLYPH_MIN),
@@ -118,7 +121,7 @@ REQUIRED_KEYS = (
     "btn_fg", "btn_neutral_bg", "btn_neutral_hover", "btn_neutral_fg",
     "btn_dark_bg", "btn_dark_hover",
     "btn_run_bg", "btn_run_hover", "btn_run_fg",
-    "btn_stop_idle", "btn_stop_idle_hover", "btn_stop_idle_fg",
+    "btn_stop_active", "btn_stop_active_hover",
     "btn_disabled_bg", "btn_disabled_fg",
     "tab_inactive_bg", "tab_inactive_hover",
     "out_bg", "out_stdout", "out_stderr", "out_tabbar",
@@ -226,8 +229,10 @@ QPushButton:disabled {{
 }}
 QPushButton#run {{ background: {c['btn_run_bg']}; color: {c['btn_run_fg']}; }}
 QPushButton#run:hover {{ background: {c['btn_run_hover']}; }}
-QPushButton#stop {{ background: {c['btn_stop_idle']}; color: {c['btn_stop_idle_fg']}; }}
-QPushButton#stop:hover {{ background: {c['btn_stop_idle_hover']}; }}
+/* Stop is only on screen while something runs (the Running list), so it is
+   always the live red: in the idle grey it read as a disabled button. */
+QPushButton#stop {{ background: {c['btn_stop_active']}; color: {d['stop_fg']}; }}
+QPushButton#stop:hover {{ background: {c['btn_stop_active_hover']}; color: {d['stop_fg']}; }}
 QPushButton#primary {{ background: {c['accent']}; color: {d['primary_fg']}; }}
 QPushButton#primary:hover {{ background: {c['accent2']}; color: {d['primary_hover_fg']}; }}
 QPushButton#dark {{ background: {c['btn_dark_bg']}; color: {c['btn_fg']}; }}
@@ -242,36 +247,27 @@ QPushButton:default:disabled {{
 /* Filled buttons say what they are with the fill; the edge is for neutral ones. */
 QPushButton#run, QPushButton#stop, QPushButton#primary, QPushButton#dark,
 QPushButton:default {{ border: none; }}
-/* A quiet button anywhere: a glyph or word, boxed only under the pointer
-   (Quick Run's close, the update banner's dismiss). */
+/* A quiet button anywhere: an icon or a word, boxed only under the pointer
+   (Quick Run's close, the update banner's dismiss). Icons come from the one
+   drawn set in qtui/icons.py, tinted from the palette -- never a font glyph
+   or an emoji, which each draw in their own style and colour. */
 QPushButton#quiet {{
     background: transparent; border: none; color: {d['muted_fg']};
     border-radius: 4px; padding: 4px 8px; min-height: 24px;
 }}
 QPushButton#quiet:hover {{ background: {c['accent_wash']}; color: {c['name_fg']}; }}
-/* A card's button strip holds glyphs, not words (▶ ↻ ★ ✎ ▶+): at the body
-   size they drew a few pixels tall, and ↻ -- the retry -- was hard to make
-   out. Tk draws them larger too. */
-QFrame#card QPushButton {{ font-size: 13pt; padding: 2px 0; }}
-/* Glyphs from Segoe UI Symbol first: left to font fallback, ⚙ came from the
-   colour-emoji font in its own pale lavender, ignoring the button's ink --
-   all but invisible on Light. */
-QFrame#card QPushButton {{ font-family: "Segoe UI Symbol", "Segoe UI"; }}
-/* Quiet: a glyph in the muted ink, boxed only under the pointer, so Run --
+/* Quiet: an icon in the muted ink, boxed only under the pointer, so Run --
    round and filled -- is the one thing on the row that looks pressable. */
 QFrame#card QPushButton {{
     background: transparent;
-    color: {d['muted_fg']};
     border: none;
     border-radius: 4px;
+    padding: 2px 0;
     min-height: 28px;
 }}
-QFrame#card QPushButton:hover {{ background: {c['accent_wash']}; color: {c['name_fg']}; }}
-QFrame#card QPushButton#run {{ font-size: 11pt; padding: 0; }}
-QFrame#card[compact="true"] QPushButton#run {{ font-size: 9pt; }}
+QFrame#card QPushButton:hover {{ background: {c['accent_wash']}; }}
+QFrame#card QPushButton#run {{ padding: 0; }}
 QFrame#card[compact="true"] QPushButton {{ min-height: 24px; }}
-/* A favourite's star is gold. */
-QFrame#card QPushButton#favOn {{ color: {d['star']}; }}
 /* The preset Run will pass, on a row's second line: a word to click, not
    a drop-down box. */
 QFrame#card QPushButton#paramPick {{

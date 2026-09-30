@@ -176,7 +176,8 @@ class JobBridge(QObject):
             return False
         job = self.controller.new_job(
             "pipeline", script_id=None, pipeline_id=pipeline_id,
-            name=f"⚡ {name}", group=plan.group, pipeline_name=name,
+            # No emoji bolt: the output tab draws one (see MainWindow).
+            name=name, group=plan.group, pipeline_name=name,
             pipeline_queue=list(plan.steps), pipeline_total=len(plan.steps),
             trigger=trigger)
         job.start_time = datetime.now()

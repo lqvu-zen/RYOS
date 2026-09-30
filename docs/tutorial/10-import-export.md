@@ -7,7 +7,7 @@ Save your setup to a file and load it back — for a backup, or to move to anoth
 ## Export
 
 - **File → Export all groups…** saves every group, script and pipeline to one file.
-- To save just one group, right-click its pill → **Export group**.
+- To save just one group, right-click its pill → **Export group…**.
 
 ## Import
 

@@ -26,7 +26,7 @@ Click **+ Script** in the header (or **File → New Script…**). Fill in the di
 | **Working folder** | *(optional)* The folder it runs in. Blank means the script's own folder. |
 | **Environment** | *(optional)* Extra variables, one `KEY=value` per line. |
 
-To change a script later, point at its row and click **✎**, or right-click it and choose **Edit…**. The same dialog has a **Delete** button at the bottom left.
+To change a script later, point at its row and click the pencil, or right-click it and choose **Edit…**. The same dialog has a **Delete** button at the bottom left.
 
 ---
 [← The main window](01-main-window.md) · [Contents](README.md) · [Next: Running a script →](03-running-and-output.md)

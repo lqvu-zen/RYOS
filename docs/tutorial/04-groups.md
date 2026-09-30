@@ -20,11 +20,11 @@ Right-click a group's pill:
 
 | Entry | What it does |
 | --- | --- |
-| **Rename** | Give the group a new name. |
-| **Clone Group** | Copy the group with all its scripts and pipelines. |
+| **Rename…** | Give the group a new name. |
+| **Clone group** | Copy the group with all its scripts and pipelines. |
 | **Base folder…** | Set or change the group's folder (clicking the folder line under the pills does the same). |
-| **Export group** | Save just this group to a file. See [Import and export](10-import-export.md). |
-| **Delete Group** | Remove the group and what's in it, after asking. |
+| **Export group…** | Save just this group to a file. See [Import and export](10-import-export.md). |
+| **Delete group** | Remove the group and what's in it, after asking. |
 
 Drag a pill left or right to change the order of your groups.
 

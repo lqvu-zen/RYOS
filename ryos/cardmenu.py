@@ -56,6 +56,7 @@ class MenuItem:
     enabled: bool = True
     children: tuple = field(default_factory=tuple)   # a submenu when non-empty
     highlight: str | None = None     # the colour an entry previews, if any
+    icon: str | None = None          # a shape from qtui/icons.py, drawn by the menu
 
 
 SEPARATOR = MenuItem(None)
@@ -83,17 +84,18 @@ def _highlight_menu(current: str | None) -> MenuItem:
     entries = [MenuItem(highlight_key(None), f"{mark(None)}None"), SEPARATOR]
     entries += [MenuItem(highlight_key(c), f"{mark(c)}{label}", highlight=c)
                 for c, label in HIGHLIGHTS.items()]
-    return MenuItem(HIGHLIGHT, "🎨  Highlight", children=tuple(entries))
+    return MenuItem(HIGHLIGHT, "Highlight", children=tuple(entries), icon="palette")
 
 
 def _favorite_item(favorite: bool) -> MenuItem:
-    return MenuItem(FAVORITE, "☆  Remove from favorites" if favorite
-                    else "★  Add to favorites")
+    return MenuItem(FAVORITE, "Remove from favorites" if favorite
+                    else "Add to favorites",
+                    icon="star" if favorite else "star-filled")
 
 
 #: Opens the item's dialog. First on both menus: a row shows its pencil only
 #: under the pointer, so the menu is the way in that is always there.
-EDIT_ITEM = MenuItem(EDIT, "✎  Edit…")
+EDIT_ITEM = MenuItem(EDIT, "Edit…", icon="edit")
 
 
 def script_menu(*, favorite: bool, color: str | None,
@@ -106,20 +108,20 @@ def script_menu(*, favorite: bool, color: str | None,
     """
     return [
         EDIT_ITEM,
-        MenuItem(RUN_WITH, "▶  Run with parameters…"),
+        MenuItem(RUN_WITH, "Run with parameters…", icon="run-with"),
         SEPARATOR,
         _favorite_item(favorite),
         _highlight_menu(color),
         SEPARATOR,
-        MenuItem(MOVE_TOP, "⤒  Move to top", enabled=can_move_up),
-        MenuItem(MOVE_UP, "▲  Move up", enabled=can_move_up),
-        MenuItem(MOVE_DOWN, "▼  Move down", enabled=can_move_down),
+        MenuItem(MOVE_TOP, "Move to top", enabled=can_move_up, icon="arrow-top"),
+        MenuItem(MOVE_UP, "Move up", enabled=can_move_up, icon="arrow-up"),
+        MenuItem(MOVE_DOWN, "Move down", enabled=can_move_down, icon="arrow-down"),
         SEPARATOR,
-        MenuItem(SCHEDULE, "🕒  Schedule…"),
-        MenuItem(HISTORY, "🕘  Run history…"),
-        MenuItem(CLONE, "⧉  Clone"),
+        MenuItem(SCHEDULE, "Schedule…", icon="clock"),
+        MenuItem(HISTORY, "Run history…", icon="history"),
+        MenuItem(CLONE, "Clone", icon="copy"),
         SEPARATOR,
-        MenuItem(DELETE, "🗑  Delete", danger=True),
+        MenuItem(DELETE, "Delete", danger=True, icon="trash"),
     ]
 
 
@@ -130,22 +132,22 @@ def pipeline_menu(*, favorite: bool, color: str | None) -> list[MenuItem]:
         _favorite_item(favorite),
         _highlight_menu(color),
         SEPARATOR,
-        MenuItem(SCHEDULE, "🕒  Schedule…"),
-        MenuItem(HISTORY, "🕘  Run history…"),
-        MenuItem(CLONE, "⧉  Clone"),
+        MenuItem(SCHEDULE, "Schedule…", icon="clock"),
+        MenuItem(HISTORY, "Run history…", icon="history"),
+        MenuItem(CLONE, "Clone", icon="copy"),
         SEPARATOR,
-        MenuItem(DELETE, "🗑  Delete", danger=True),
+        MenuItem(DELETE, "Delete", danger=True, icon="trash"),
     ]
 
 
 def group_menu() -> list[MenuItem]:
     return [
-        MenuItem(RENAME_GROUP, "✏  Rename"),
-        MenuItem(CLONE_GROUP, "📋  Clone Group"),
-        MenuItem(BASE_DIR, "📁  Base folder…"),
-        MenuItem(EXPORT_GROUP, "📤  Export group"),
+        MenuItem(RENAME_GROUP, "Rename…", icon="edit"),
+        MenuItem(CLONE_GROUP, "Clone group", icon="copy"),
+        MenuItem(BASE_DIR, "Base folder…", icon="folder"),
+        MenuItem(EXPORT_GROUP, "Export group…", icon="export"),
         SEPARATOR,
-        MenuItem(DELETE_GROUP, "🗑  Delete Group", danger=True),
+        MenuItem(DELETE_GROUP, "Delete group", danger=True, icon="trash"),
     ]
 
 

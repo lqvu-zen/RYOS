@@ -5639,6 +5639,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/jobs.py": "imports PySide6; same reason",
         "ryos/qtui/running.py": "imports PySide6; same reason",
         "ryos/qtui/detail.py": "imports PySide6; same reason",
+        "ryos/qtui/icons.py": "imports PySide6; same reason",
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
         "ryos/qtui/dragdrop.py": "imports PySide6; same reason",
@@ -7315,7 +7316,8 @@ class TestFileDropAndCardDetails(unittest.TestCase):
 
     def test_banner(self):
         from ryos import sections
-        self.assertEqual(sections.banner_text("C:/x"), "📁  C:/x")
+        # The folder icon is drawn beside it (qtui/icons.py), not an emoji.
+        self.assertEqual(sections.banner_text("C:/x"), "C:/x")
         self.assertIn(sections.NO_BASE_DIR, sections.banner_text(""))
 
 
@@ -8231,9 +8233,9 @@ class TestMaximisedLayout(unittest.TestCase):
         self.assertFalse(detail.use_workspace(True, True, enabled=False))
 
     def test_run_label_follows_the_row(self):
-        self.assertEqual(detail.run_label(None), "▶  Run")
-        self.assertEqual(detail.run_label("ok"), "▶  Run")
-        self.assertEqual(detail.run_label("error"), "↻  Retry")
+        self.assertEqual(detail.run_label(None), "Run")
+        self.assertEqual(detail.run_label("ok"), "Run")
+        self.assertEqual(detail.run_label("error"), "Retry")
 
     def test_subtitle_says_what_it_is_and_how_it_went(self):
         rec = {"path": "C:/p/tools/a.py", "base_dir": "C:/p",
@@ -8255,3 +8257,33 @@ class TestMaximisedLayout(unittest.TestCase):
         self.assertEqual(facts["Last run"], "—")
         self.assertTrue(all(v for _k, v in detail.script_facts({})))
         self.assertEqual(dict(detail.pipeline_facts({}))["Schedule"], "None")
+
+
+# --- one icon set ----------------------------------------------------------------------
+class TestMenusUseTheIconSet(unittest.TestCase):
+    """Menu entries draw an icon from qtui/icons.py; their words carry no glyph.
+
+    They used to lead with emoji (🕒 🗑 📋) and font glyphs (✎ ⤒), each in its
+    own style; the icon set is one style, tinted by the theme.
+    """
+
+    SHAPES_FILE = Path(__file__).resolve().parents[1] / "ryos" / "qtui" / "icons.py"
+
+    def _entries(self):
+        menus = [cardmenu.script_menu(favorite=f, color=None, can_move_up=True,
+                                      can_move_down=True) for f in (False, True)]
+        menus += [cardmenu.pipeline_menu(favorite=f, color=None) for f in (False, True)]
+        menus.append(cardmenu.group_menu())
+        return [i for m in menus for i in m if i.key is not None]
+
+    def test_every_entry_has_a_known_icon(self):
+        source = self.SHAPES_FILE.read_text(encoding="utf-8")
+        for item in self._entries():
+            with self.subTest(item.key):
+                self.assertTrue(item.icon, f"{item.key} has no icon")
+                self.assertIn(f'"{item.icon}":', source, f"no shape {item.icon!r}")
+
+    def test_labels_are_words(self):
+        for item in self._entries():
+            with self.subTest(item.key):
+                self.assertTrue(item.label[0].isalpha(), item.label)

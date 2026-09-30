@@ -87,6 +87,11 @@ class RunButton:
     def is_retry(self) -> bool:
         return self.state == RETRY
 
+    @property
+    def icon(self) -> str:
+        """The drawn icon (`qtui/icons.py`) the button shows."""
+        return "retry" if self.is_retry else "play"
+
 
 def run_button(last_status: str | None) -> RunButton:
     """What the Run button becomes, given the last run's outcome.
@@ -140,10 +145,11 @@ class TagBadge:
 
 
 SCHEDULE_TIP = "Runs on a schedule — right-click to edit"
-TEMP_PARAM_BADGE = TagBadge("⏱ TEMP PARAM", "accent",
+TEMP_PARAM_BADGE = TagBadge("ASKS EACH RUN", "accent",
                             "Asks for a temporary parameter on each run (not saved)")
-SCRIPT_SCHEDULED_BADGE = TagBadge("🕒 SCHEDULED", "pipe_accent", SCHEDULE_TIP)
-PIPELINE_SCHEDULED_BADGE = TagBadge("🕒", "accent", SCHEDULE_TIP)
+#: Words, not emoji: the colour-emoji font ignores the theme (see qtui/icons.py).
+SCRIPT_SCHEDULED_BADGE = TagBadge("SCHEDULED", "pipe_accent", SCHEDULE_TIP)
+PIPELINE_SCHEDULED_BADGE = TagBadge("SCHEDULED", "accent", SCHEDULE_TIP)
 
 
 def script_badges(*, temp_param: bool, scheduled: bool) -> list[TagBadge]:

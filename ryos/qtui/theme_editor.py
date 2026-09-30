@@ -156,7 +156,15 @@ class ThemeEditorDialog(QDialog):
     def _build_preview(self) -> None:
         col = QVBoxLayout(self.preview)
         col.setContentsMargins(0, 0, 0, 0)
-        self.p_header = QLabel("⚡ RYOS")
+        # The header as the app draws it: the drawn bolt, then the name.
+        self.p_header = QFrame()
+        head = QHBoxLayout(self.p_header)
+        head.setContentsMargins(8, 5, 8, 5)
+        head.setSpacing(6)
+        self.p_bolt = QLabel()
+        head.addWidget(self.p_bolt)
+        self.p_title = QLabel("RYOS")
+        head.addWidget(self.p_title, 1)
         col.addWidget(self.p_header)
         self.p_card = QFrame()
         card = QVBoxLayout(self.p_card)
@@ -181,8 +189,11 @@ class ThemeEditorDialog(QDialog):
         self.preview.setStyleSheet(
             f"QFrame#themePreview {{ background: {p['bg']}; border: 1px solid {p['border']}; }}")
         self.p_header.setStyleSheet(
-            f"background: {p['header_bg']}; color: {p['fg_on_dark']}; "
-            f"font-weight: 700; padding: 5px 8px;")
+            f"QFrame {{ background: {p['header_bg']}; }} "
+            f"QLabel {{ background: transparent; color: {p['fg_on_dark']}; "
+            f"font-weight: 700; }}")
+        from .icons import pixmap
+        self.p_bolt.setPixmap(pixmap("bolt", p.get("bolt", "#FFD23F"), 14))
         self.p_card.setStyleSheet(
             f"background: {p['card_bg']}; border: 1px solid {p['border']};")
         self.p_name.setStyleSheet(f"color: {p['name_fg']}; font-weight: 700; border: none;")

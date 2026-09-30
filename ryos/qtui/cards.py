@@ -25,8 +25,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygonF
+from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
                                QMenu, QPushButton, QSizePolicy, QVBoxLayout,
                                QWidget)
@@ -34,6 +33,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel
 from .. import cardstyle, scriptform
 from ..interpreter import _script_tag
 from ..themes import _readable_on, ink_on
+from .icons import IconButton, IconLabel
 from .widgets import ElidedLabel, ScrollingLabel, literal, set_tooltip
 
 # The button columns every card carries, so a mixed list lines up. The
@@ -44,30 +44,6 @@ from .widgets import ElidedLabel, ScrollingLabel, literal, set_tooltip
 BUTTON_WIDTH = 32
 #: The longest a chip's name gets before it is shortened with an ellipsis.
 CHIP_NAME_WIDTH = 170
-
-
-def run_with_icon(color: str, size: int = 18) -> QIcon:
-    """Run with parameters: a play triangle with a plus, drawn, not a glyph.
-
-    "▶+" was two characters from two fonts, at two sizes, and read as such.
-    Drawn at twice the size so it stays sharp on a scaled screen.
-    """
-    scale = 2
-    pix = QPixmap(size * scale, size * scale)
-    pix.setDevicePixelRatio(scale)
-    pix.fill(Qt.GlobalColor.transparent)
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    ink = QColor(color)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.setBrush(ink)
-    s = size / 18
-    p.drawPolygon(QPolygonF([QPointF(2 * s, 3 * s), QPointF(2 * s, 15 * s),
-                             QPointF(11 * s, 9 * s)]))
-    p.drawRoundedRect(QRectF(11.5 * s, 3 * s, 5.5 * s, 1.8 * s), 0.9 * s, 0.9 * s)
-    p.drawRoundedRect(QRectF(13.35 * s, 1.15 * s, 1.8 * s, 5.5 * s), 0.9 * s, 0.9 * s)
-    p.end()
-    return QIcon(pix)
 
 
 class _CardBase(QFrame):
@@ -109,7 +85,7 @@ class _CardBase(QFrame):
         return _readable_on(color, (c["card_bg"], c["card_hover"]))
 
     def _tag(self, text: str, color: str, object_name: str) -> QLabel:
-        """A kind label -- BATCH, ⚡ PIPELINE -- as small coloured capitals."""
+        """A kind label -- BATCH, PIPELINE -- as small coloured capitals."""
         label = QLabel(text.upper())
         label.setObjectName(object_name)
         label.setStyleSheet(f"color: {self._ink(color)}; font-size: 8pt;"
@@ -190,9 +166,12 @@ class _CardBase(QFrame):
             self._hover_only.append(w)
 
     # -- button strip ------------------------------------------------------
-    def _button(self, glyph: str, tooltip: str = "",
-                object_name: str = "") -> QPushButton:
-        b = QPushButton(glyph)
+    def _button(self, shape: str, tooltip: str = "", object_name: str = "",
+                role: str = "muted", hover_role: str = "text",
+                size: int = 16) -> IconButton:
+        """A quiet button showing one of the app's icons (`icons.py`)."""
+        b = IconButton(shape, role=role, hover_role=hover_role, size=size,
+                       palette=self._palette)
         b.setFixedWidth(BUTTON_WIDTH)
         if object_name:
             b.setObjectName(object_name)
@@ -214,18 +193,18 @@ class _CardBase(QFrame):
     def _run_button(self, last_status: str | None) -> QPushButton:
         """The Run button, which becomes Retry after a failure: a circle,
         smaller on a compact row, smaller still on a chip."""
-        b = self._button("", "", object_name="run")
         side = (cardstyle.CHIP_RUN_DIAMETER if self._chip
                 else cardstyle.RUN_DIAMETER[self._compact])
+        b = self._button("play", "", object_name="run", size=max(10, side * 7 // 16))
         b.setFixedSize(side, side)
         self._style_run_button(b, last_status)
         return b
 
     def _fav_button(self, is_favorite: bool) -> QPushButton:
-        return self._button("★" if is_favorite else "☆",
-                            "Remove from favorites" if is_favorite
-                            else "Add to favorites",
-                            object_name="favOn" if is_favorite else "")
+        if is_favorite:
+            return self._button("star-filled", "Remove from favorites",
+                                object_name="favOn", role="star", hover_role="star")
+        return self._button("star", "Add to favorites")
 
     def _lay_out_buttons(self, fav, middle, run, is_favorite: bool) -> None:
         """The strip: star, the middle cells, Run.
@@ -278,7 +257,11 @@ class _CardBase(QFrame):
 
     def _style_run_button(self, b: QPushButton, last_status: str | None) -> None:
         spec = cardstyle.run_button(last_status)
-        b.setText(spec.glyph)
+        c = self._palette
+        b.set_shape(spec.icon)
+        # The icon in the fill's own ink, and in the hover fill's under the
+        # pointer -- the retry red and its dark hover need different inks.
+        b.set_colors(c[spec.fg_key], ink_on(c[spec.hover_fg_key]))
         set_tooltip(b, spec.tooltip)
         # The tooltip explains; the name is the action.
         b.setAccessibleName(f"Retry {self._name}" if spec.is_retry
@@ -450,10 +433,8 @@ class ScriptCard(_CardBase):
         # A pencil, the usual sign for Edit. It was ⚙, which Windows draws
         # from its colour-emoji font in pale lavender -- all but invisible on
         # Light -- and as a thin ring in Segoe UI Symbol.
-        self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
-        self.param_button = self._button("", "Run with parameters…")
-        self.param_button.setIcon(run_with_icon(palette["path_fg"]))
-        self.param_button.setIconSize(QSize(18, 18))
+        self.edit_button = self._button("edit", "Edit")
+        self.param_button = self._button("run-with", "Run with parameters…", size=18)
         self.run_button = self._run_button(last_status)
         self._lay_out_buttons(self.fav_button,
                               (self.edit_button, self.param_button),
@@ -528,9 +509,13 @@ class PipelineCard(_CardBase):
         header = QHBoxLayout()
         header.setSpacing(8)
         accent = palette.get("pipe_accent", palette["accent"])
-        tag = self._tag("⚡" if chip else "⚡ PIPE" if compact else "⚡ PIPELINE",
-                        accent, "pipeTag")
-        if not compact or chip:
+        tag = self._tag("PIPE" if compact else "PIPELINE", accent, "pipeTag")
+        if chip:
+            # A favourite pill has no room for a word: the drawn bolt says
+            # "pipeline", in the pipeline colour.
+            header.addWidget(IconLabel("bolt", role="pipe", size=12, palette=palette))
+            tag.hide()
+        elif not compact:
             header.addWidget(tag)
         self._tag_badges(header, () if compact else badges)
         self.name_label = self._name_label(name, label_color)
@@ -563,7 +548,7 @@ class PipelineCard(_CardBase):
         self._row.addLayout(text, 0 if chip else 1)
 
         self.fav_button = self._fav_button(is_favorite)
-        self.edit_button = self._button(cardstyle.EDIT_GLYPH, "Edit")
+        self.edit_button = self._button("edit", "Edit")
         self.spacer = self._spacer()          # where ▶+ sits on a script card
         self.run_button = self._run_button(last_status)
         self._lay_out_buttons(self.fav_button, (self.edit_button, self.spacer),

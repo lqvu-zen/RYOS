@@ -23,30 +23,30 @@ Type in **Search scripts and pipelines…** to show only what matches; the count
 
 Below it are your **groups**, drawn as pills. The dark pill is the group on screen; click another to switch. The dashed **+** makes a new group, and **All** shows every group at once. See [Groups](04-groups.md).
 
-Under the pills is the group's **folder** (click it to change it) and **⚡ Quick Run** (see [Quick Run](08-quick-run.md)).
+Under the pills is the group's **folder** (click it to change it) and **Quick Run** with its bolt (see [Quick Run](08-quick-run.md)).
 
 ## Favorites, pipelines and scripts
 
 The rest of the window is the group's things to run, in three sections. Click a section's **▾** heading to fold it away.
 
-- **FAVORITES** — a strip of small pills for the things you run most, each with its own **▶**.
-- **PIPELINES** — scripts chained together, marked **⚡ PIPELINE** with a purple edge.
+- **FAVORITES** — a strip of small pills for the things you run most, each with its own play button.
+- **PIPELINES** — scripts chained together, marked **PIPELINE** with a purple edge.
 - **SCRIPTS** — your scripts, marked with their kind (**PYTHON**, **BATCH**, **POWERSHELL**…) and a blue edge.
 
-Each row shows the name, the file (or a pipeline's steps) and, once it has run, how the last run went: **● OK** or **● Failed**. On the right is the round green **▶** that runs it.
+Each row shows the name, the file (or a pipeline's steps) and, once it has run, how the last run went: **● OK** or **● Failed**. On the right is the round green play button that runs it.
 
 ## A row's other buttons
 
-A row shows only **▶** (and a gold **★** if it's a favorite) until you point at it. Then its other buttons appear beside Run:
+A row shows only its play button (and a gold star if it's a favorite) until you point at it. Then its other buttons appear beside Run:
 
 ![Three script rows; the pointer is over Flaky, which shows a pencil, a run-with-parameters icon and an empty star beside its Run button. Say hello, a favorite, shows its gold star](images/01-rows-hover.png)
 
 | Button | What it does |
 | --- | --- |
-| **✎** | Edit the script. |
-| **▶ with a +** | Run with different parameters, just this once or saved. |
-| **☆ / ★** | Add to or remove from Favorites. |
-| **▶** | Run it. After a failed run it turns red and shows **↻**: press it to try again. |
+| Pencil | Edit the script. |
+| Play with a plus | Run with different parameters, just this once or saved. |
+| Star | Add to or remove from Favorites (gold when it is one). |
+| Play (green) | Run it. After a failed run it turns red with a circular arrow: press it to try again. |
 
 **Right-click** a row for everything else: edit, run with parameters, favorites, a highlight colour for the name, moving it up or down, schedule, run history, clone and delete.
 

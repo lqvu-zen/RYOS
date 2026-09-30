@@ -37,9 +37,8 @@ def use_workspace(maximized: bool, full_screen: bool, enabled: bool = True) -> b
 
 
 def run_label(last_status: str | None) -> str:
-    """The pane's Run button: the row's glyph, with the word beside it."""
-    spec = cardstyle.run_button(last_status)
-    return f"{spec.glyph}  {'Retry' if spec.is_retry else 'Run'}"
+    """The pane's Run button's word; the button draws the row's icon beside it."""
+    return "Retry" if cardstyle.run_button(last_status).is_retry else "Run"
 
 
 def _or_dash(value) -> str:

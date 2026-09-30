@@ -6,8 +6,11 @@ Picking an entry calls ``on_pick(key)`` with the entry's action key.
 A `QAction` has no per-item text colour, so the Tk menu's coloured entries
 become something else: highlight entries get a swatch icon, shaded by the same
 `themes.readable_highlight` the Tk menu uses. Dangerous entries (Delete) are
-not red in Qt -- a stylesheet cannot select one action -- and rely on their
-🗑 glyph and their confirmation prompt.
+not red in Qt -- a stylesheet cannot select one action -- so their icon is
+drawn in the danger colour, and they confirm.
+
+Other entries carry an icon from the app's one set (`icons.py`), in the
+menu's own ink.
 """
 
 from __future__ import annotations
@@ -18,9 +21,16 @@ from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QMenu, QWidget
 
 from ..themes import readable_highlight
+from . import icons
 from .widgets import literal
 
 SWATCH_PX = 12
+
+
+def _icon(item, palette: dict) -> QIcon:
+    roles = icons.role_colors(palette)
+    return icons.icon(item.icon, roles["danger" if item.danger else "menu"],
+                      disabled=roles["disabled"])
 
 
 def _swatch(color: str) -> QIcon:
@@ -45,11 +55,15 @@ def _fill(menu: QMenu, items, on_pick, palette: dict) -> None:
         if item.children:
             sub = menu.addMenu(literal(item.label))
             sub.menuAction().setData(item.key)
+            if item.icon:
+                sub.setIcon(_icon(item, palette))
             _fill(sub, item.children, on_pick, palette)
             continue
         action = menu.addAction(literal(item.label))
         action.setData(item.key)
         action.setEnabled(item.enabled)
+        if item.icon:
+            action.setIcon(_icon(item, palette))
         if item.highlight:
             color = readable_highlight(item.highlight, palette["menu_bg"])
             if color:

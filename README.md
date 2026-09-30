@@ -1,6 +1,6 @@
 # RYOS — Run Your Own Scripts
 
-A lightweight Windows desktop app for keeping the scripts you run often in one window and running any of them with one click. Save your Python, Node, Bash, PowerShell, Batch — or any executable — once, then press its green **▶**. No terminal juggling, no remembering paths and arguments.
+A lightweight Windows desktop app for keeping the scripts you run often in one window and running any of them with one click. Save your Python, Node, Bash, PowerShell, Batch — or any executable — once, then press its green play button. No terminal juggling, no remembering paths and arguments.
 
 Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python required on the target machine) or runs straight from source.
 
@@ -18,7 +18,7 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 
 ## Features
 
-- **One-click list** — every script is a row with a round **▶**, its kind, and how its last run went (**● OK** / **● Failed**). After a failure **▶** becomes **↻ Retry**. Edit and run-with-parameters wait under the pointer and in the right-click menu.
+- **One-click list** — every script is a row with a round green play button, its kind, and how its last run went (**● OK** / **● Failed**). After a failure it turns red: Retry. Edit and run-with-parameters wait under the pointer and in the right-click menu.
 - **Favorites** — star what you run most; it gets a pill in a strip at the top.
 - **Groups** — pills across the top, each with its own base folder; rename, clone, export or reorder them.
 - **Pipelines** — chain scripts in order, run steps side by side, and decide per step whether a failure stops the pipeline, how many retries it gets, and whether it runs only after a failure (clean-up) or only if nothing failed.
@@ -29,7 +29,7 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 - **Tabbed output** — live output per run, **errors in red**, find, errors-only, copy or save any tab.
 - **Drag & drop** — drop script files on the window to add them; drag rows to reorder or onto a group to move them.
 - **Tray, notifications, updates** — keep running in the tray, a Windows toast when a run finishes, and a check for new releases.
-- **Themes** — Light and Dark built in, a theme creator (7 colours + live preview), import/export, and more in the [theme gallery](theme-gallery/GALLERY.md). Every colour follows the theme and is checked for contrast.
+- **Themes** — one set of drawn icons that follows the theme; Light and Dark built in, a theme creator (7 colours + live preview), import/export, and more in the [theme gallery](theme-gallery/GALLERY.md). Every colour follows the theme and is checked for contrast.
 - **Multi-monitor aware** — opens on the monitor under the cursor; at login, on the last screen you used.
 
 ## Getting Started
@@ -59,13 +59,13 @@ The **[illustrated user guide](docs/tutorial/README.md)** walks through every sc
 | To… | Do this | Guide |
 |-----|---------|-------|
 | Add a script | **+ Script**, or drop the file on the window | [Adding a script](docs/tutorial/02-adding-a-script.md) |
-| Run it | Click its green **▶**; **Show Output** to read what it printed | [Running](docs/tutorial/03-running-and-output.md) |
-| Edit it | Point at the row and click **✎**, or right-click → **Edit…** | [The main window](docs/tutorial/01-main-window.md) |
+| Run it | Click its green play button; **Show output** to read what it printed | [Running](docs/tutorial/03-running-and-output.md) |
+| Edit it | Point at the row and click the pencil, or right-click → **Edit…** | [The main window](docs/tutorial/01-main-window.md) |
 | Organise | **+ Group**; drag rows onto a group's pill; right-click a pill for rename, base folder, export | [Groups](docs/tutorial/04-groups.md) |
 | Pass arguments | Parameters and **+ Preset** in the script dialog; pick a preset on the row | [Parameters and presets](docs/tutorial/05-parameters-and-presets.md) |
 | Chain scripts | **+ Pipeline**, add steps, set what happens on failure | [Pipelines](docs/tutorial/06-pipelines.md) |
 | Run on a timer | Right-click → **Schedule…** | [Schedules and history](docs/tutorial/07-schedules-and-history.md) |
-| Run a file by name | **⚡ Quick Run** (groups with a base folder) | [Quick Run](docs/tutorial/08-quick-run.md) |
+| Run a file by name | **Quick Run** (groups with a base folder) | [Quick Run](docs/tutorial/08-quick-run.md) |
 | Back up / move | **File → Export all groups…** / **Import config…** | [Import and export](docs/tutorial/10-import-export.md) |
 | Change settings and look | **Options → Options…** and **Appearance…** | [Settings](docs/tutorial/11-settings.md) |
 

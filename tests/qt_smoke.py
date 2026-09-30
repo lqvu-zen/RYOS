@@ -3991,6 +3991,56 @@ def check_review_fixes(app):
           "history defaults to Close, new schedules start on")
 
 
+def check_one_icon_set(app):
+    """No button or menu text carries an emoji or a symbol glyph.
+
+    Icons come from qtui/icons.py, drawn in one style and tinted by the theme.
+    Glyphs came from two fonts and emoji from the colour-emoji font, in its
+    own colours. Kept as text on purpose: the + of "+ Script", the ● outcome
+    dots, the ▾/▸ fold arrows, ∥ and → for a step that starts with the one
+    above, and the ○/● marks of the highlight choices.
+    """
+    import tempfile
+    import unicodedata
+
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QAbstractButton
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    allowed = set("+●○▾▸∥→…—·–")
+
+    def bad(text: str) -> list:
+        return [ch for ch in text if ch not in allowed and (
+            ord(ch) >= 0x1F000 or unicodedata.category(ch) == "So")]
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "icons.db")
+    db.create_group("G")
+    sid = db.add("tool", str(tmp / "t.py"), "", "", "G")
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    found = []
+    menus: list = []
+    win.popup = lambda menu, _pos: menus.append(menu)
+    win._show_card_menu("script", sid, QPoint(0, 0), "scripts")
+    win._show_group_menu("G", QPoint(0, 0))
+    for button in win.findChildren(QAbstractButton):
+        found += [(type(button).__name__, button.text(), c) for c in bad(button.text())]
+    for bar_action in win.menuBar().actions():
+        menus.append(bar_action.menu())
+    for menu in menus:
+        for action in menu.actions():
+            found += [("menu", action.text(), c) for c in bad(action.text())]
+    if found:
+        PROBLEMS.append(f"glyphs or emoji in button and menu text: {found[:6]}")
+    win.close()
+    win.deleteLater()
+    print("  [ok] one icon set: no emoji or symbol glyphs in button or menu text")
+
+
 def check_maximised_layout(app):
     """Maximised: the list beside the chosen item, acting through its row.
 
@@ -4003,7 +4053,7 @@ def check_maximised_layout(app):
     import tempfile
     import time as _time
 
-    from PySide6.QtWidgets import QFrame
+    from PySide6.QtWidgets import QFrame, QPushButton
 
     from ryos import cardmenu, detail
     from ryos.db import ScriptDB
@@ -4064,7 +4114,7 @@ def check_maximised_layout(app):
         app.processEvents()
         if win.detail.name.text() != "plain" or not row("script").property("selected"):
             PROBLEMS.append(f"clicking a row showed {win.detail.name.text()!r}")
-        chips = [w for w in win.detail.findChildren(type(win.detail.run))
+        chips = [w for w in win.detail.findChildren(QPushButton)
                  if w.objectName() == "paramChip"]
         if [c.text() for c in chips][1:] != ["--base", "--fast", "--fail"]:
             PROBLEMS.append(f"chips read {[c.text() for c in chips]}")
@@ -4076,7 +4126,7 @@ def check_maximised_layout(app):
                 PROBLEMS.append(f"the pane's Run did not pass the chosen chip: {lines}")
             pump_until(lambda: len(bridge.registry) == 0)
             # A failure turns the pane's Run into Retry, as it does the row's.
-            chips = [w for w in win.detail.findChildren(type(win.detail.run))
+            chips = [w for w in win.detail.findChildren(QPushButton)
                      if w.objectName() == "paramChip" and w.text() == "--fail"]
             chips[0].click()
             app.processEvents()
@@ -4211,6 +4261,7 @@ def main() -> int:
     check_ticks_are_drawn(app)
     check_strip_and_preset(app)
     check_review_fixes(app)
+    check_one_icon_set(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

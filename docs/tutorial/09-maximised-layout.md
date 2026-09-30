@@ -6,9 +6,9 @@ Maximise the window (or make it full screen) and RYOS uses the room: the list mo
 
 ## What the right side shows
 
-Click a row on the left to show it. At the top are its kind and name, the star, **Edit** and **⋯** (the row's right-click menu). Under that:
+Click a row on the left to show it. At the top are its kind and name, the star, **Edit** and the three dots (the row's right-click menu). Under that:
 
-- **▶ Run** — or **↻ Retry** after a failure — with **Run with…**, **Schedule…** and **Run history** beside it.
+- **Run** — or **Retry** after a failure — with **Run with…**, **Schedule…** and **Run history** beside it.
 - **PARAMETERS** — a script's presets as chips; the highlighted one is what Run passes. Click another to switch.
 - For a pipeline, its **STEPS** in order.
 - A few **facts**: the path, the base folder, the saved parameters, whether it asks each run, its schedule and when it last ran.
