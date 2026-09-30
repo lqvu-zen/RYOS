@@ -1628,6 +1628,20 @@ class TestInstanceListener(unittest.TestCase):
         self.assertEqual(self._send(b"tok", b" RESTORE_CURSOR\n", pause=0.2), b"OK\n")
         self.assertEqual(self._verb(), "RESTORE_CURSOR")
 
+    def test_the_caller_closes_first(self):
+        # The listener used to shut its side down right after replying, which
+        # made it the side that closed first: Windows then kept each
+        # connection in TIME_WAIT on the listener's port, and a new
+        # connection that reused a client port collided with one and was
+        # reset (WinError 10054) -- about 1 handshake in 100 when they came
+        # quickly. The caller reads the reply and closes; the listener waits.
+        with socket.create_connection(("127.0.0.1", self.port), timeout=3) as c:
+            c.sendall(b"nope RESTORE\n")
+            self.assertEqual(c.recv(16), b"NO\n")
+            c.settimeout(0.3)
+            with self.assertRaises(socket.timeout, msg="the listener closed first"):
+                c.recv(16)
+
     def test_a_wrong_token_is_refused_without_a_signal(self):
         # An explicit refusal, not just a close: on Windows loopback a close
         # with nothing sent was sometimes never seen, and the caller hung.

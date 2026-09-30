@@ -130,17 +130,27 @@ def _read_line(conn, limit: int = 256) -> bytes:
     return data
 
 
+#: How long the listener waits for the caller to close. The caller reads one
+#: reply and closes, so this only bounds a caller that never does.
+_CLOSE_WAIT = 1.0
+
+
 def _close_gracefully(conn) -> None:
-    """Close without resetting the connection.
+    """Close without resetting the connection -- after the caller does.
 
     On Windows, closing a socket with unread input sends a reset, which can
     discard the "OK" already sent: the second launch then retries, and after
-    three such failures it would start as a second primary. So say we are
-    done, let the client's side finish, then close.
+    three such failures it would start as a second primary. So read until the
+    caller closes, then close.
+
+    The caller closes first, not us. When the listener shut its side down
+    first it became the side that closed first, and Windows kept each
+    connection in TIME_WAIT on the listener's port; a later connection that
+    reused a client port collided with one and was reset (about 1 in 100
+    handshakes in quick succession).
     """
     try:
-        conn.shutdown(socket.SHUT_WR)
-        conn.settimeout(0.2)
+        conn.settimeout(_CLOSE_WAIT)
         while conn.recv(256):
             pass
     except OSError:
