@@ -4017,6 +4017,48 @@ def check_review_fixes(app):
           "history defaults to Close, new schedules start on")
 
 
+def check_focus_starts_in_search(app):
+    """The window opens with focus in the search box, and a click leaves no
+    button holding focus -- the stylesheet draws focus, so "+ Pipeline"
+    (first in the chain) looked pressed on every launch, and a clicked Run
+    kept a ring. Tab still reaches the buttons."""
+    import tempfile
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "focus.db")
+    db.create_group("G")
+    db.add("tool", str(tmp / "t.py"), "", "", "G")
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    win.show()
+    win.activateWindow()
+    app.processEvents()
+    try:
+        if QApplication.focusWidget() is not win.search_box:
+            PROBLEMS.append(f"the window opened with focus on "
+                            f"{QApplication.focusWidget()!r}, not the search box")
+        card = win.card_lists["G"].section("scripts").cards[0]
+        card.run_button.clicked.disconnect()
+        QTest.mouseClick(card.run_button, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        if QApplication.focusWidget() is card.run_button:
+            PROBLEMS.append("clicking Run left it holding focus (drawn as a ring)")
+        if not card.run_button.focusPolicy() & Qt.FocusPolicy.TabFocus \
+                or not win.add_pipeline_button.focusPolicy() & Qt.FocusPolicy.TabFocus:
+            PROBLEMS.append("Tab no longer reaches the row and header buttons")
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] focus: starts in the search box; clicks leave no button focused; Tab reaches them")
+
+
 def check_search_empty_state(app):
     """A search with no match says so, hides empty sections, and survives a
     reload -- which used to bring every card back under the search."""
@@ -4339,6 +4381,7 @@ def main() -> int:
     check_review_fixes(app)
     check_one_icon_set(app)
     check_search_empty_state(app)
+    check_focus_starts_in_search(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

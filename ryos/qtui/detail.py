@@ -163,6 +163,7 @@ class DetailPane(QWidget):
     def _link(text: str, tip: str) -> QPushButton:
         b = QPushButton(text)
         b.setObjectName("detailLink")
+        b.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         set_tooltip(b, tip)
         return b
 
@@ -258,6 +259,7 @@ class DetailPane(QWidget):
         for text in entries:
             chip = QPushButton(literal(text))
             chip.setObjectName("paramChip")
+            chip.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             chip.setCheckable(True)
             chip.setChecked(text == combo.currentText())
             chip.clicked.connect(lambda _c=False, t=text: self._choose_preset(t))

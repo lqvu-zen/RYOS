@@ -416,6 +416,7 @@ class ScriptCard(_CardBase):
             if self.params_combo is not None:
                 self.params_pick = QPushButton()
                 self.params_pick.setObjectName("paramPick")
+                self.params_pick.setFocusPolicy(Qt.FocusPolicy.TabFocus)
                 self.params_pick.setCursor(Qt.CursorShape.PointingHandCursor)
                 set_tooltip(self.params_pick, "Parameters Run passes -- click to choose")
                 self.params_pick.clicked.connect(self._pick_preset)

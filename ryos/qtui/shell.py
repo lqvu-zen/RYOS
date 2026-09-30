@@ -316,6 +316,14 @@ class MainWindow(QMainWindow):
         # Files dropped anywhere on the window become scripts, as in Tk.
         self.setAcceptDrops(True)
         self._let_bars_shrink()
+        # The window's own buttons take focus from Tab, not from a click:
+        # the stylesheet draws focus, and a clicked button kept the look.
+        for button in (self.add_pipeline_button, self.add_group_button,
+                       self.add_script_button, self.select_all_button):
+            button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        # Start in the search box, so typing filters. Qt gave the first
+        # button focus instead, and drew "+ Pipeline" as if pressed.
+        self.search_box.setFocus()
 
     #: The narrowest the window may be; the bars below must fit inside it.
     MIN_WIDTH = 480

@@ -145,6 +145,9 @@ class IconButton(QPushButton):
         self._colors: dict = {}
         self._hovered = False
         self.setIconSize(QSize(size, size))
+        # Tab reaches it; a click does not leave it holding focus -- which
+        # the stylesheet draws, so a clicked button stayed highlighted.
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         if palette is not None:
             self.retint(palette)
 

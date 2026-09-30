@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .. import sections
@@ -29,6 +30,7 @@ class Section(QWidget):
         col.setSpacing(2)
         self.header = QPushButton(sections.header_text(key, collapsed))
         self.header.setObjectName("sectionHeader")
+        self.header.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.header.setFlat(True)
         self.header.clicked.connect(self.toggle)
         col.addWidget(self.header)
