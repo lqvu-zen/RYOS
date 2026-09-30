@@ -76,7 +76,6 @@ class RunButton:
     """
 
     state: str
-    glyph: str
     fg_key: str
     bg_key: str
     hover_key: str
@@ -98,14 +97,14 @@ def run_button(last_status: str | None) -> RunButton:
 
     After a failure the Run button *is* the retry: same action, so it needs no
     second control, and unlike a status badge the button strip is present in
-    every card mode and size. The ↻ glyph rather than ✕ keeps it from reading
-    as a stop button while it is red.
+    every card mode and size. A circular arrow (the "retry" icon) rather than
+    a cross keeps it from reading as a stop button while it is red.
     """
     if last_status == "error":
-        return RunButton(RETRY, "↻", "error_fg", "error", "btn_stop_active",
+        return RunButton(RETRY, "error_fg", "error", "btn_stop_active",
                          "btn_stop_active",
                          "Last run failed — click to run it again")
-    return RunButton(RUN, "▶", "btn_run_fg", "btn_run_bg", "btn_run_hover",
+    return RunButton(RUN, "btn_run_fg", "btn_run_bg", "btn_run_hover",
                      "btn_run_hover", "Run")
 
 
@@ -185,9 +184,8 @@ def last_run_text(iso: str | None) -> str:
     return iso.replace("T", " ")[:16]
 
 
-#: The Edit button's glyph, and how the steps hint refers to it.
-EDIT_GLYPH = "✎"
-NO_STEPS = f"No steps — click {EDIT_GLYPH} to add scripts"
+#: What a pipeline with no steps says, on its row and in its steps list.
+NO_STEPS = "No steps yet."
 
 
 def steps_summary(names) -> str:
@@ -210,7 +208,6 @@ def steps_summary(names) -> str:
 # --- the hover preview and the steps popup ------------------------------------------
 
 NO_VALUE = "—"
-NO_STEPS = "No steps yet."
 
 
 def script_preview_rows(path: str, params: str) -> list[tuple[str, str, bool]]:

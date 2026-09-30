@@ -106,6 +106,7 @@ real ones.
 | `detail.py` | The maximised layout's detail pane: the chosen item's name, actions, presets, steps and facts, with the output under them. Its buttons press the chosen row's own, so the two cannot drift. |
 | `scriptdialog.py`, `pipeline.py`, `dialogs.py`, `smalldialogs.py` | The script dialog, the pipeline editor, the Options dialog (generated from `settings_schema`), and the small ones: new group, base folder, parameters, schedule, run history, close-to-tray. |
 | `jobs.py`, `running.py` | `JobBridge` runs jobs through `JobController` and drains the output queue on a `QTimer`; `RunningSection` lists what is running, with Stop. |
+| `icons.py` | The one icon set: line icons on a 24-unit grid, drawn from SVG and tinted by colour role from the palette; `IconButton` / `IconLabel` re-tint on a theme change. No font glyph or emoji is used as an icon -- `check_one_icon_set` in `tests/qt_smoke.py` enforces it. |
 | `stylesheet.py` | Turns a palette into one Qt stylesheet. Pure — no Qt import — so it is unit-tested in the main suite, including that every text colour it draws is legible in every shipped theme. |
 | `appearance.py`, `theme_editor.py` | The Appearance dialog and the custom-theme editor. |
 | `quickrun.py`, `menus.py`, `tray.py`, `placement.py`, `widgets.py` | The Quick Run bar, menus from `cardmenu` data, the tray icon, monitor work areas from `QScreen`, and small shared widgets (the marquee label, the elided label). |

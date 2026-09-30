@@ -29,7 +29,7 @@ from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QMainWindow, QPlainTextEdit, QPushButton,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
@@ -495,6 +495,7 @@ class MainWindow(QMainWindow):
         self.output_tabs.setTabsClosable(True)
         self.output_tabs.tabCloseRequested.connect(self._close_output_tab)
         self.output_tabs.currentChanged.connect(lambda _i: self._sync_output_bar())
+        self.output_tabs.currentChanged.connect(lambda _i: self._tint_tab_closes())
         bar = self.output_tabs.tabBar()
         bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         bar.customContextMenuRequested.connect(self._show_output_tab_menu)
@@ -2192,8 +2193,32 @@ class MainWindow(QMainWindow):
         if pane is None:
             pane = OutputPane(self._palette)
             self._output_tabs[key] = pane
-            self.output_tabs.addTab(pane, literal(label))
+            index = self.output_tabs.addTab(pane, literal(label))
+            if key != outputpanel.ALL:
+                # The app's own cross, in place of Qt's: it was the last icon
+                # outside the set, 16 px, and out of Tab's reach.
+                close = IconButton("close", size=12, palette=self._palette)
+                close.setObjectName("tabClose")
+                close.setFixedSize(24, 24)
+                set_tooltip(close, "Close tab")
+                close.clicked.connect(lambda _c=False, k=key: self._close_output_key(k))
+                self.output_tabs.tabBar().setTabButton(
+                    index, QTabBar.ButtonPosition.RightSide, close)
+                self._tint_tab_closes()
         return pane
+
+    def _tint_tab_closes(self) -> None:
+        """The chosen pill is filled with the text colour: its cross takes
+        the pill's ink there, the muted ink on the others."""
+        from .stylesheet import drawn_colors
+        d = drawn_colors(self._palette)
+        bar = self.output_tabs.tabBar()
+        for i in range(bar.count()):
+            close = bar.tabButton(i, QTabBar.ButtonPosition.RightSide)
+            if isinstance(close, IconButton):
+                ink = d["pill_fg"] if i == bar.currentIndex() else d["muted_fg"]
+                close.set_colors(ink, d["pill_fg"] if i == bar.currentIndex()
+                                 else self._palette["name_fg"])
 
     def _close_output_tab(self, index: int) -> None:
         widget = self.output_tabs.widget(index)
@@ -2390,6 +2415,7 @@ class MainWindow(QMainWindow):
         self._palette = palette
         self.setStyleSheet(stylesheet(palette))
         icons.retint_all(self, palette)
+        self._tint_tab_closes()
         roles = icons.role_colors(palette)
         for action, shape, danger in self._menu_icons:
             action.setIcon(icons.icon(shape, roles["danger" if danger else "menu"]))

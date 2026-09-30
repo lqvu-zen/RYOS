@@ -35,16 +35,6 @@ for _fname in ("scripts.db", "settings.json"):
         shutil.move(str(_old), _new)
 
 
-_CORNER_CHOICES = [
-    ("↘  Bottom right", "bottom_right"),
-    ("↙  Bottom left",  "bottom_left"),
-    ("↗  Top right",    "top_right"),
-    ("↖  Top left",     "top_left"),
-    ("Off",             "none"),
-]
-_CORNER_VAL_TO_LABEL = {v: l for l, v in _CORNER_CHOICES}
-_CORNER_LABEL_TO_VAL = {l: v for l, v in _CORNER_CHOICES}
-
 _SETTINGS_DEFAULTS: dict = {
     "remember_last_group":    True,
     "last_group":             None,

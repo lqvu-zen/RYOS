@@ -157,6 +157,12 @@ def audit_screen(name: str, top: QWidget, findings: dict) -> None:
     for card in cards:
         card.set_hovered(False)
     driver.pump(0.2)
+    # Settle every layout before measuring: once, under load, a pass caught
+    # the header mid-layout and reported its buttons a few pixels short.
+    for w in [top, *top.findChildren(QWidget)]:
+        if w.layout() is not None:
+            w.layout().activate()
+    driver.pump(0.2)
     widgets = [w for w in top.findChildren(QWidget) if w.isVisibleTo(top)
                # Qt's own parts of a spin box or combo box are the box.
                and not isinstance(w.parentWidget(), (QComboBox, QAbstractSpinBox))]

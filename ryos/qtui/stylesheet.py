@@ -363,6 +363,11 @@ QTabWidget#outputTabs QTabBar::tab {{
     font-weight: 600;
 }}
 QTabWidget#outputTabs QTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
+QPushButton#tabClose {{
+    background: transparent; border: none; border-radius: 12px; padding: 0;
+    min-height: 0;
+}}
+QPushButton#tabClose:hover {{ background: {c['tab_inactive_hover']}; }}
 QTabWidget#outputTabs QTabBar::tab:selected {{
     background: {c['name_fg']};
     color: {d['pill_fg']};
