@@ -117,13 +117,13 @@ def icon_path(name: str) -> str:
 REQUIRED_KEYS = (
     "bg", "card_bg", "card_hover", "border", "header_bg", "status_bg",
     "accent", "accent2", "accent_wash",
-    "name_fg", "path_fg", "tab_fg",
+    "name_fg", "path_fg",
     "btn_fg", "btn_neutral_bg", "btn_neutral_hover", "btn_neutral_fg",
     "btn_dark_bg", "btn_dark_hover",
     "btn_run_bg", "btn_run_hover", "btn_run_fg",
     "btn_stop_active", "btn_stop_active_hover",
     "btn_disabled_bg", "btn_disabled_fg",
-    "tab_inactive_bg", "tab_inactive_hover",
+    "tab_inactive_hover",
     "out_bg", "out_stdout", "out_stderr", "out_tabbar",
     "tooltip_bg", "tooltip_border",
     "error", "ok", "running",
@@ -286,21 +286,32 @@ QFrame#card QPushButton#paramPick {{
 }}
 QFrame#card QPushButton#paramPick:hover {{ background: {c['accent_wash']}; }}
 
-/* --- group tabs ----------------------------------------------------- */
-QTabWidget::pane {{ border: 1px solid {c['border']}; background: {c['card_bg']}; }}
+/* --- tabs ------------------------------------------------------------- */
+/* Every tab is a pill, as the group and output tabs are, over a page drawn
+   like a section panel (Options is the one plain QTabWidget). */
+QTabWidget::pane {{
+    border: 1px solid {c['border']};
+    border-radius: 4px;
+    background: {c['card_bg']};
+}}
+QTabWidget::tab-bar {{ left: 0; }}
 QTabBar::tab {{
-    background: {c['tab_inactive_bg']};
-    color: {c['tab_fg']};
-    padding: 6px 14px;
+    background: transparent;
+    color: {d['pill_idle_fg']};
     border: none;
+    border-radius: 14px;
+    padding: 5px 14px;
+    margin: 0 4px 8px 0;
+    font-weight: 600;
 }}
 QTabBar::tab:hover {{ background: {c['tab_inactive_hover']}; }}
 QTabBar::tab:selected {{
-    background: {c['card_bg']};
-    color: {d['tab_selected_fg']};
-    font-weight: 600;
-    border-bottom: 2px solid {c['accent']};
+    background: {c['name_fg']};
+    color: {d['pill_fg']};
+    font-weight: 700;
 }}
+
+/* --- group tabs ----------------------------------------------------- */
 /* The group tabs are pills on the window, with no frame round the page:
    the section panels are the page. */
 QTabWidget#groupTabs::pane {{ border: none; background: transparent; }}
