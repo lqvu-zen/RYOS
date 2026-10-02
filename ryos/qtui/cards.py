@@ -336,12 +336,37 @@ class _CardBase(QFrame):
             return
         self._last_status = status
         self._style_run_button(self.run_button, status)
+        home = (self._header if self._result_slot is None
+                else self._result_slot.layout())
         if self.status_chip is not None:
-            self._header.removeWidget(self.status_chip)
+            home.removeWidget(self.status_chip)
             self.status_chip.deleteLater()
         self.status_chip = self._status_chip(status)
         if self.status_chip is not None:
-            self._header.addWidget(self.status_chip)
+            home.addWidget(self.status_chip)
+
+    def _add_status(self, header: QHBoxLayout, status: str | None) -> None:
+        """The outcome chip, last in the header. On a compact row it sits in
+        a slot as wide as the widest outcome, kept even when empty, so the
+        kind tag before it lines up down the list whatever each row's
+        outcome (issue #10)."""
+        self._result_slot: QWidget | None = None
+        if self._compact and not self._chip:
+            probe = self._status_chip("retrying")
+            probe.ensurePolished()
+            width = probe.sizeHint().width()
+            probe.deleteLater()
+            self._result_slot = QWidget()
+            self._result_slot.setObjectName("resultSlot")
+            self._result_slot.setFixedWidth(width)
+            slot = QHBoxLayout(self._result_slot)
+            slot.setContentsMargins(0, 0, 0, 0)
+            slot.setSpacing(0)
+            header.addWidget(self._result_slot)
+        self.status_chip = self._status_chip(status)
+        if self.status_chip is not None:
+            (header if self._result_slot is None
+             else self._result_slot.layout()).addWidget(self.status_chip)
 
     def _style_run_button(self, b: QPushButton, last_status: str | None) -> None:
         spec = cardstyle.run_button(last_status)
@@ -468,9 +493,7 @@ class ScriptCard(_CardBase):
             tag.hide()
         self._header = header
         self._last_status = last_status
-        self.status_chip = self._status_chip(last_status)
-        if self.status_chip is not None:
-            header.addWidget(self.status_chip)
+        self._add_status(header, last_status)
         text.addLayout(header)
 
         # The preset drop-down: which parameters Run passes. Offered, as in
@@ -613,9 +636,7 @@ class PipelineCard(_CardBase):
             header.addWidget(tag)
         self._header = header
         self._last_status = last_status
-        self.status_chip = self._status_chip(last_status)
-        if self.status_chip is not None:
-            header.addWidget(self.status_chip)
+        self._add_status(header, last_status)
         text.addLayout(header)
 
         if not compact:
