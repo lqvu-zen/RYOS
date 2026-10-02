@@ -28,7 +28,7 @@ from ryos import quickrun_index  # noqa: E402
 from ryos import quickrun as qr_mod  # noqa: E402
 from ryos import quickrun_actions as qra  # noqa: E402
 from ryos import schedule_runner  # noqa: E402
-from ryos import cardmenu, cardstyle, grouping, themes  # noqa: E402
+from ryos import cardmenu, grouping, themes  # noqa: E402
 from ryos.jobs import RETRYING, RUNNING, live_statuses  # noqa: E402
 from ryos import selection  # noqa: E402
 from ryos import configio  # noqa: E402
