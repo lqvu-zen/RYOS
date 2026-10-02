@@ -309,6 +309,9 @@ QTabBar::tab {{
     border: none;
     border-radius: 14px;
     padding: 5px 14px;
+    /* Qt draws square corners, not clamped ones, when the radius is more
+       than half the pill's height (issue #11): 18 + 2 x 5 padding = 28. */
+    min-height: 18px;
     margin: 0 4px 8px 0;
     font-weight: 600;
 }}
@@ -330,6 +333,9 @@ QTabBar#groupTabBar::tab {{
     border: none;
     border-radius: 14px;
     padding: 5px 14px;
+    /* Qt draws square corners, not clamped ones, when the radius is more
+       than half the pill's height (issue #11): 18 + 2 x 5 padding = 28. */
+    min-height: 18px;
     margin: 0 4px 8px 0;
     font-weight: 600;
 }}
@@ -378,6 +384,7 @@ QTabWidget#outputTabs QTabBar::tab {{
     border: none;
     border-radius: 11px;
     padding: 3px 10px;
+    min-height: 16px;   /* 16 + 2 x 3 = 22: room for the 11 px radius */
     margin: 4px 2px 6px 0;
     font-weight: 600;
 }}

@@ -4453,6 +4453,72 @@ def _real_log_state():
     return (st.st_size, st.st_mtime_ns)
 
 
+def check_pill_corners(app):
+    """#11: every tab pill keeps its rounded corners. Qt draws a square box,
+    not a clamped curve, when border-radius is more than half the pill's
+    height -- so a small font made the selected group tab a square block.
+    Drawn with a deliberately small font, the corner of each selected pill
+    must still be background, not the pill's fill."""
+    from PySide6.QtGui import QFont
+    from PySide6.QtWidgets import QTabBar, QTabWidget, QVBoxLayout, QWidget
+    from ryos.qtui.dragdrop import GroupTabBar
+    from ryos.themes import REFERENCE
+
+    pal = REFERENCE["dark"]
+    app.setStyleSheet(stylesheet(pal))
+    old_font = app.font()
+    small = QFont(old_font)
+    small.setPointSize(7)
+    app.setFont(small)
+    host = QWidget()
+    col = QVBoxLayout(host)
+    bars = {}
+    for name, obj, bar_cls in (("group", "groupTabs", GroupTabBar),
+                               ("output", "outputTabs", None),
+                               ("options", "", None)):
+        tabs = QTabWidget()
+        tabs.setObjectName(obj)
+        if bar_cls is not None:
+            bar = bar_cls()
+            bar.setObjectName("groupTabBar")
+            bar.setDrawBase(False)
+            tabs.setTabBar(bar)
+        for text in ("Asphalt", "Tools"):
+            tabs.addTab(QWidget(), text)
+        tabs.setCurrentIndex(0)
+        col.addWidget(tabs)
+        bars[name] = tabs.findChild(QTabBar)
+    host.resize(400, 300)
+    host.show()
+    app.processEvents()
+    fill = pal["name_fg"].lower()
+    for name, bar in bars.items():
+        bar.clearFocus()            # no focus outline over the pill
+    app.processEvents()
+    for name, bar in bars.items():
+        rect = bar.tabRect(0)
+        img = host.grab(bar.geometry().translated(
+            bar.mapTo(host, bar.rect().topLeft()) - bar.pos())).toImage()
+        img = img.copy(rect)
+        # The pill's box: every pixel of its fill. A rounded pill leaves the
+        # box's corners unfilled; a square one fills them.
+        pts = [(x, y) for y in range(img.height()) for x in range(img.width())
+               if img.pixelColor(x, y).name() == fill]
+        if not pts:
+            PROBLEMS.append(f"{name} tabs: no pixel of the selected fill {fill} "
+                            "-- the check is not looking at the pill")
+            continue
+        left = min(x for x, _ in pts)
+        top = min(y for _, y in pts)
+        if img.pixelColor(left, top).name() == fill:
+            PROBLEMS.append(f"{name} tabs: the selected pill has square corners "
+                            f"({rect.height()} px tab) (#11)")
+    host.hide()
+    host.deleteLater()
+    app.setFont(old_font)
+    print("  [ok] tab pills keep round corners at a small font (#11)")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     real_log = _real_log_state()
@@ -4470,6 +4536,7 @@ def main() -> int:
     check_scrolling_label(app)
     check_tooltip_is_native(app)
     check_cards(app)
+    check_pill_corners(app)
     check_options_form(app)
     check_script_dialog(app)
     check_pipeline_editor(app)
