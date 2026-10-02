@@ -135,6 +135,16 @@ def status_badge(status: str | None) -> StatusBadge | None:
     return None
 
 
+def status_words(status: str | None) -> str | None:
+    """What a dot-only chip says to the pointer and a screen reader:
+    "Last run: OK" for an outcome, plain "Running" for a run in flight."""
+    spec = status_badge(status)
+    if spec is None:
+        return None
+    word = spec.text.lstrip("● ")
+    return word if status in ("running", "retrying") else f"Last run: {word}"
+
+
 # --- the badges beside a card's name ---------------------------------------------
 
 @dataclass(frozen=True)

@@ -8409,6 +8409,13 @@ class TestStopAndLiveStatus(unittest.TestCase):
         # Running is not a failure: the button is Run, not Retry.
         self.assertFalse(cardstyle.run_button("running").is_retry)
 
+    def test_a_dot_chip_says_now_not_last_run_for_live_states(self):
+        self.assertEqual(cardstyle.status_words("ok"), "Last run: OK")
+        self.assertEqual(cardstyle.status_words("error"), "Last run: Failed")
+        self.assertEqual(cardstyle.status_words("running"), "Running")
+        self.assertEqual(cardstyle.status_words("retrying"), "Retrying")
+        self.assertIsNone(cardstyle.status_words(None))
+
     def test_a_script_waiting_for_input_does_not_hang(self):
         q = _queue.Queue()
         job = Job(1, "script", 1, None, "t", "job:1", "g")
