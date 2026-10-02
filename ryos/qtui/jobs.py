@@ -28,7 +28,7 @@ from ..db import SOURCE_MANUAL, SOURCE_SCHEDULE, ScriptDB
 from ..logger import get_logger
 from ..job_controller import JobController
 from ..jobs import JobRegistry
-from ..runner import run_subprocess
+from ..runner import run_subprocess, terminate_tree
 from ..settings import _SETTINGS_DEFAULTS
 
 #: Same cadence as the Tk drain loop, so output appears at the same rate.
@@ -94,10 +94,7 @@ class JobBridge(QObject):
         for job in self.registry.all():
             job.stopped = True
             for proc in job.active_processes():
-                try:
-                    proc.terminate()
-                except OSError:
-                    pass
+                terminate_tree(proc)
 
     def _on_finish(self, job) -> None:
         """Unregister a finished job, then tell whoever is listening.

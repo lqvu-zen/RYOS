@@ -46,6 +46,8 @@ from .sections import GroupPage
 from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
+from ..jobs import live_statuses
+from ..runner import terminate_tree
 from .stylesheet import stylesheet
 from . import icons
 from .icons import IconButton, IconLabel
@@ -863,12 +865,15 @@ class MainWindow(QMainWindow):
                                    self._palette["card_hover"])
         kind = rec["kind"]
         chip = section == sections.FAVORITES
+        # A card built mid-run (a search, a group switch) still says so.
+        live = self._live_statuses().get((kind, rec["id"]))
+        last_status = live or rec.get("status")
         if kind == cardmenu.PIPELINE:
             card = PipelineCard(pipeline_id=rec["id"], name=rec["name"],
                                 step_count=rec.get("steps", 0), chip=chip,
                                 palette=self._palette, compact=compact, size=size,
                                 is_favorite=bool(rec.get("favorite")),
-                                label_color=shade, last_status=rec.get("status"),
+                                label_color=shade, last_status=last_status,
                                 badges=cardstyle.pipeline_badges(
                                     scheduled=bool(rec.get("scheduled"))),
                                 step_names=rec.get("step_names"))
@@ -877,7 +882,7 @@ class MainWindow(QMainWindow):
                               path=rec.get("path", ""), palette=self._palette,
                               compact=compact, size=size, chip=chip,
                               is_favorite=bool(rec.get("favorite")),
-                              label_color=shade, last_status=rec.get("status"),
+                              label_color=shade, last_status=last_status,
                               param_choices=scriptform.card_param_choices(
                                   rec.get("params", ""), rec.get("presets") or []),
                               badges=cardstyle.script_badges(
@@ -2291,7 +2296,10 @@ class MainWindow(QMainWindow):
         bridge.status.connect(self.statusBar().showMessage)
         bridge.started.connect(self._on_job_started)
         bridge.finished.connect(self.running.remove)
-        bridge.finished.connect(self._refresh_card_statuses)
+        # Started, advanced to a step, retrying, finished: each one changes
+        # what some card should say (issue #13).
+        for sig in (bridge.started, bridge.renamed, bridge.finished):
+            sig.connect(self._refresh_card_statuses)
         for sig in (bridge.started, bridge.finished, bridge.renamed):
             sig.connect(lambda _job: self._sync_tray())
         bridge.notify.connect(self._on_job_notify)
@@ -2323,6 +2331,7 @@ class MainWindow(QMainWindow):
         scripts = {row[0]: row[7] for row in rows}
         last_runs = {row[0]: row[6] for row in rows}
         pipelines = self._db.last_pipeline_status()
+        live = self._live_statuses()
         for (kind, item_id), (rec, _group) in self._records.items():
             rec["status"] = (pipelines if kind == cardmenu.PIPELINE
                              else scripts).get(item_id)
@@ -2333,12 +2342,22 @@ class MainWindow(QMainWindow):
             # favourite's top card kept showing its old outcome.
             for card in [*page.cards, *page.favorite_cards]:
                 if isinstance(card, PipelineCard):
-                    card.set_last_status(pipelines.get(card.pipeline_id))
+                    card.set_last_status(
+                        live.get((cardmenu.PIPELINE, card.pipeline_id))
+                        or pipelines.get(card.pipeline_id))
                 else:
-                    card.set_last_status(scripts.get(card.script_id))
+                    card.set_last_status(
+                        live.get((cardmenu.SCRIPT, card.script_id))
+                        or scripts.get(card.script_id))
                     card.set_last_run(last_runs.get(card.script_id))
         if self.workspace:
             self.detail.refresh()
+
+    def _live_statuses(self) -> dict:
+        """Running / retrying, by card key, for whatever is in flight."""
+        if getattr(self, "_bridge", None) is None:
+            return {}
+        return live_statuses(self._bridge.registry.all())
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""
@@ -2346,10 +2365,7 @@ class MainWindow(QMainWindow):
         if getattr(job, "pipeline_queue", None):
             job.pipeline_queue.clear()
         for proc in job.active_processes():
-            try:
-                proc.terminate()
-            except OSError:
-                pass   # already gone
+            terminate_tree(proc)
         self.statusBar().showMessage("Stopped.")
 
     # -- the maximised layout: list and detail ----------------------------------

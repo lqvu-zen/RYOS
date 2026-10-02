@@ -28,7 +28,8 @@ from ryos import quickrun_index  # noqa: E402
 from ryos import quickrun as qr_mod  # noqa: E402
 from ryos import quickrun_actions as qra  # noqa: E402
 from ryos import schedule_runner  # noqa: E402
-from ryos import cardmenu, grouping, themes  # noqa: E402
+from ryos import cardmenu, cardstyle, grouping, themes  # noqa: E402
+from ryos.jobs import RETRYING, RUNNING, live_statuses  # noqa: E402
 from ryos import selection  # noqa: E402
 from ryos import configio  # noqa: E402
 from ryos import traypolicy  # noqa: E402
@@ -8340,3 +8341,114 @@ class TestRowSteps(unittest.TestCase):
         self.assertEqual(step_row(3, None, "down"), 0)
         self.assertEqual(step_row(3, None, "up"), 2)
         self.assertIsNone(step_row(0, None, "down"))
+
+
+class TestStopAndLiveStatus(unittest.TestCase):
+    """Issues #12 (Stop left a pipeline running) and #13 (show running/retrying)."""
+
+    def _controller(self, launch, renamed=None):
+        reg = JobRegistry()
+        q = _queue.Queue()
+        ctl = JobController(
+            reg, q, _make_db(),
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda *a: None, on_started=lambda *a: None,
+            on_finish=lambda job: reg.remove(job.job_id),
+            on_rename=(renamed or (lambda *a: None)), launch=launch)
+        return reg, q, ctl
+
+    def _pipeline(self, reg, steps):
+        job = Job(1, "pipeline", None, 7, "p", "job:1", "g", pipeline_name="P",
+                  pipeline_queue=list(steps), pipeline_total=len(steps))
+        reg.add(job)
+        return job
+
+    def test_a_stopped_step_is_not_retried(self):
+        launched = []
+        reg, q, ctl = self._controller(
+            lambda job, spec, name, sid, token=None: launched.append(token))
+        job = self._pipeline(reg, [_policy_step("a", retries=3)])
+        ctl.run_next_pipeline_step(job)
+        job.stopped = True
+        # The kill shows up as an ordinary failure.
+        q.put(("done_tag", job.job_id, 1, "error", "stderr", "", launched[0]))
+        ctl.pump()
+        self.assertEqual(len(launched), 1)
+        self.assertIsNone(reg.get(job.job_id))     # finished, row can go
+
+    def test_a_retry_is_announced_and_tracked(self):
+        launched, renames = [], []
+        reg, q, ctl = self._controller(
+            lambda job, spec, name, sid, token=None: launched.append(token),
+            renamed=lambda job: renames.append(dict(job.retrying)))
+        job = self._pipeline(reg, [_policy_step("a", retries=2)])
+        ctl.run_next_pipeline_step(job)
+        q.put(("done_tag", job.job_id, 1, "error", "stderr", "", launched[0]))
+        ctl.pump()
+        self.assertEqual(job.retrying, {launched[0]: "1/2"})
+        self.assertIn({launched[0]: "1/2"}, renames)
+        self.assertEqual(live_statuses(reg.all()),
+                         {("pipeline", 7): RETRYING, ("script", 1): RETRYING})
+        q.put(("done_tag", job.job_id, 1, "ok", "ok", "", launched[0]))
+        ctl.pump()
+        self.assertEqual(job.retrying, {})
+
+    def test_live_statuses(self):
+        script = Job(1, "script", 5, None, "s", "job:1", "g")
+        self.assertEqual(live_statuses([script]), {("script", 5): RUNNING})
+        self.assertEqual(live_statuses([]), {})
+        pipe = Job(2, "pipeline", None, 3, "p", "job:2", "g")
+        pipe.group_pending = {1}
+        pipe.step_rows = {1: _policy_step("x")}
+        self.assertEqual(live_statuses([pipe]),
+                         {("pipeline", 3): RUNNING, ("script", 1): RUNNING})
+
+    def test_badges_for_live_states(self):
+        self.assertEqual(cardstyle.status_badge("running").text, "● Running")
+        self.assertEqual(cardstyle.status_badge("retrying").text, "● Retrying")
+        # Running is not a failure: the button is Run, not Retry.
+        self.assertFalse(cardstyle.run_button("running").is_retry)
+
+    def test_a_script_waiting_for_input_does_not_hang(self):
+        q = _queue.Queue()
+        job = Job(1, "script", 1, None, "t", "job:1", "g")
+        code = "import sys; sys.stdin.read(); print('past the prompt')"
+        t = __import__("threading").Thread(
+            target=run_subprocess,
+            args=(q, job, [sys.executable, "-c", code], "t", 1), daemon=True)
+        t.start()
+        t.join(20)
+        self.assertFalse(t.is_alive(), "run blocked on stdin")
+
+    def test_terminate_tree_uses_taskkill_on_windows(self):
+        from ryos.runner import terminate_tree
+        calls = []
+
+        class Proc:
+            pid = 42
+            alive = True
+            terminated = False
+
+            def poll(self):
+                return None if self.alive else 1
+
+            def terminate(self):
+                self.terminated = True
+
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            proc.alive = False
+
+        proc = Proc()
+        terminate_tree(proc, platform="win32", run=fake_run)
+        self.assertEqual(calls, [["taskkill", "/T", "/F", "/PID", "42"]])
+        self.assertFalse(proc.terminated)
+
+        proc = Proc()
+        terminate_tree(proc, platform="linux", run=fake_run)
+        self.assertTrue(proc.terminated)
+
+        proc = Proc()
+        proc.alive = False
+        terminate_tree(proc, platform="win32", run=fake_run)   # already gone
+        self.assertEqual(len(calls), 1)

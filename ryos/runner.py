@@ -40,6 +40,33 @@ def child_env(env: dict | None, base=None) -> dict | None:
     return {**source, "PYTHONUNBUFFERED": "1"}
 
 
+def terminate_tree(proc, *, platform=None, run=subprocess.run) -> None:
+    """Stop a run and everything it started.
+
+    On Windows ``terminate()`` ends only the process RYOS launched. A batch
+    file's own children (python, a game client) survive it, keep the output
+    pipe open, and the worker never sees end-of-file -- so the job stayed
+    "running" after Stop (issue #12). ``taskkill /T`` takes the whole tree.
+    Never raises: a process already gone is the outcome Stop wanted.
+    """
+    if proc is None or proc.poll() is not None:
+        return
+    if (platform or sys.platform) == "win32":
+        try:
+            run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                check=False)
+        except OSError:
+            pass
+        if proc.poll() is not None:
+            return
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+
+
 def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, step_token=None):
     """Launch a run, stream stdout to output_queue, and post a completion item.
 
@@ -67,6 +94,10 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            # Nobody can type into a hidden run, so a `pause` or input() would
+            # wait forever and the job could never finish (issue #12). With no
+            # stdin they get end-of-file at once and the run carries on.
+            stdin=subprocess.DEVNULL,
             bufsize=1,
             text=True,
             cwd=spec.cwd,

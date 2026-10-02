@@ -64,7 +64,13 @@ class RunningRow(QFrame):
         row.addWidget(self.stop_button)
 
     def _elapsed(self) -> str:
-        return format_elapsed(self.job.start_time, datetime.now())
+        text = format_elapsed(self.job.start_time, datetime.now())
+        retrying = getattr(self.job, "retrying", None)
+        if retrying:
+            # Which attempt, so a step stuck failing doesn't look like a
+            # slow first run (issue #13).
+            text = f"↻ retry {', '.join(retrying.values())}  ·  {text}"
+        return text
 
     def tick(self) -> None:
         self.time_label.setText(self._elapsed())

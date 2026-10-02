@@ -124,6 +124,10 @@ def status_badge(status: str | None) -> StatusBadge | None:
     Reports only — the Run button carries the retry, so this never needs to be
     clickable.
     """
+    if status == "running":
+        return StatusBadge("● Running", "fg_on_dark", "running")
+    if status == "retrying":
+        return StatusBadge("● Retrying", "fg_on_dark", "warn_fg")
     if status == "error":
         return StatusBadge("● Failed", "error_fg", "error")
     if status == "ok":
