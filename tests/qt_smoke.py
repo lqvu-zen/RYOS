@@ -376,6 +376,36 @@ def check_cards(app):
                     f"{kind} with last_status={status!r}: run button is "
                     f"{got!r}, expected {want_state!r} (#4)")
             card.deleteLater()
+
+    # #10: on compact rows the kind tag and the outcome are columns -- the
+    # tag sits at the same x whether or not the row has an outcome yet, and
+    # stays put when one lands.
+    rows = [cls(**{key: 1}, name="n", palette=pal, compact=True,
+                last_status=status, **extra)
+            for cls, key, extra in ((PipelineCard, "pipeline_id", {"step_count": 1}),
+                                    (ScriptCard, "script_id", {"path": "x.bat"}))
+            for status in ("ok", None, "retrying")]
+    for r in rows:
+        r.resize(320, 40)
+        r.show()
+    app.processEvents()
+
+    def tag_x(card):
+        tag = card.findChild(QLabel, "pipeTag") or card.findChild(QLabel, "scriptTag")
+        return tag.mapTo(card, tag.rect().topRight()).x()
+    for group in (rows[:3], rows[3:]):
+        xs = [tag_x(r) for r in group]
+        if len(set(xs)) != 1:
+            PROBLEMS.append(f"compact rows: kind tag right edges at {xs}, "
+                            "not one column (#10)")
+    before = tag_x(rows[1])
+    rows[1].set_last_status("error")
+    app.processEvents()
+    if tag_x(rows[1]) != before:
+        PROBLEMS.append("compact row: the kind tag moved when an outcome landed (#10)")
+    for r in rows:
+        r.hide()
+        r.deleteLater()
     print(f"  [ok] cards: columns aligned, Run round, spacer reads as a gap, "
           f"run/retry {seen['script-error']}/{seen['script-ok']}")
 
