@@ -331,6 +331,9 @@ def step_stop(s: Session) -> None:
     s.wait_for(lambda: "tick 3" in s.output("Slow"), "the slow script to tick")
     if not s.win.running.isVisibleTo(s.win):
         problem("the Running list is hidden while a job runs")
+    chip = s.card("Project", "Slow").status_chip
+    if chip is None or "Running" not in chip.text():
+        problem("the running script's card does not say Running (issue #13)")
     rows = list(s.win.running._rows.values())
     if len(rows) != 1:
         problem(f"{len(rows)} rows in Running for one job")
@@ -345,6 +348,9 @@ def step_stop(s: Session) -> None:
         problem("the Running list stays up after the job ended")
     if s.win.running.count != 0:
         problem("the stopped job is still listed as running")
+    chip = s.card("Project", "Slow").status_chip
+    if chip is not None and "Running" in chip.text():
+        problem("the card still says Running after the job ended")
     runs = s.runs(script_id=slow)
     ok(f"stop: the process ends, Running empties, recorded as {runs[-1][0] if runs else None!r}")
 

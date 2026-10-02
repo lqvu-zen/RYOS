@@ -396,9 +396,9 @@ class _CardBase(QFrame):
         if self._chip:
             # A dot alone is colour alone: say it, to the pointer and to a
             # screen reader.
-            word = spec.text.lstrip("● ")
-            chip.setToolTip(f"Last run: {word}")
-            chip.setAccessibleName(f"Last run {word}")
+            words = cardstyle.status_words(status)
+            chip.setToolTip(words)
+            chip.setAccessibleName(words.replace(":", ""))
         chip.setStyleSheet(f"color: {self._ink(self._palette[spec.bg_key])};"
                            f" font-size: {8 if self._chip else 9}pt; font-weight: 600;")
         return chip

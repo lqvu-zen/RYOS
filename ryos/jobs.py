@@ -32,6 +32,8 @@ class Job:
         # mis-attributed to whatever step is pending by then.
         self.released_steps: set = set()
         self.step_retries: dict = {}
+        # token -> "attempt/budget" while that step is on a retry attempt.
+        self.retrying: dict = {}
         # Two distinct flags. pipeline_failed means *something* failed and
         # drives run_when; pipeline_stopping means a step whose policy is
         # 'stop' failed, which halts normal steps and fails the run. A step set
@@ -64,6 +66,38 @@ class Job:
         """Live handles for every in-flight step of this job (snapshot)."""
         return [p for p in list(self.processes.values())
                 if p is not None and p.poll() is None]
+
+
+RUNNING = "running"
+RETRYING = "retrying"
+
+
+def live_statuses(jobs) -> dict:
+    """What each card should say while jobs are in flight (issue #13).
+
+    Maps ``(kind, id)`` -- the window's card keys, "script" / "pipeline" --
+    to RUNNING or RETRYING. A pipeline also lights up the scripts of its
+    in-flight steps. Retrying wins over running, so a script that is both a
+    step being retried and running on its own reads as retrying.
+    """
+    out: dict = {}
+
+    def mark(key, state):
+        if out.get(key) != RETRYING:
+            out[key] = state
+
+    for job in jobs:
+        if job.kind == "pipeline":
+            retrying = bool(job.retrying)
+            mark(("pipeline", job.pipeline_id), RETRYING if retrying else RUNNING)
+            for token in job.group_pending:
+                row = job.step_rows.get(token)
+                if row is not None:
+                    mark(("script", row[1]),
+                         RETRYING if token in job.retrying else RUNNING)
+        elif job.script_id is not None:
+            mark(("script", job.script_id), RUNNING)
+    return out
 
 
 def format_elapsed(start_time: datetime, now: datetime) -> str:

@@ -459,7 +459,12 @@ class JobController:
             # same token and stays pending, so the group has not settled and
             # nothing downstream sees a failure yet. Each attempt has already
             # recorded its own history row above.
-            if status != "ok" and job.step_retries.get(token, 0) > 0:
+            job.retrying.pop(token, None)
+            # Not after Stop: the failure being retried is usually the kill
+            # itself, and relaunching it is what kept a stopped pipeline
+            # running (issue #12).
+            if (status != "ok" and not job.stopped
+                    and job.step_retries.get(token, 0) > 0):
                 row = job.step_rows.get(token)
                 if row is not None:
                     job.step_retries[token] -= 1
@@ -471,6 +476,9 @@ class JobController:
                         f"{job.group_labels.get(token, '')}\n",
                         "info")
                     job.step_started[token] = self._now()
+                    job.retrying[token] = f"{attempt}/{budget}"
+                    # Lets the window show the card as retrying (issue #13).
+                    self._on_rename(job)
                     self._launch_step(job, token, row)
                     return
 

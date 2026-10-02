@@ -124,11 +124,25 @@ def status_badge(status: str | None) -> StatusBadge | None:
     Reports only — the Run button carries the retry, so this never needs to be
     clickable.
     """
+    if status == "running":
+        return StatusBadge("● Running", "fg_on_dark", "running")
+    if status == "retrying":
+        return StatusBadge("● Retrying", "fg_on_dark", "warn_fg")
     if status == "error":
         return StatusBadge("● Failed", "error_fg", "error")
     if status == "ok":
         return StatusBadge("● OK", "ok_fg", "ok")
     return None
+
+
+def status_words(status: str | None) -> str | None:
+    """What a dot-only chip says to the pointer and a screen reader:
+    "Last run: OK" for an outcome, plain "Running" for a run in flight."""
+    spec = status_badge(status)
+    if spec is None:
+        return None
+    word = spec.text.lstrip("● ")
+    return word if status in ("running", "retrying") else f"Last run: {word}"
 
 
 # --- the badges beside a card's name ---------------------------------------------
