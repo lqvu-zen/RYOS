@@ -89,8 +89,20 @@ def _or_dash(value) -> str:
     return str(value) if value else cardstyle.NO_VALUE
 
 
-def subtitle(kind: str, rec: dict, step_count: int = 0) -> str:
-    """The line under the name: what it is, and how its last run went."""
+def _when_words(stamp, now) -> str:
+    """When a run started, as the Activity bar and the last-run box say it:
+    "Today 22:33", "Yesterday 08:00", "Mon 08:00", "09-29 20:43"."""
+    started = history.parse_stamp(stamp)
+    if started is None:
+        return ""
+    when = activity.ago_text(started, now)
+    return f"Today {when}" if started.date() == now.date() else when
+
+
+def subtitle(kind: str, rec: dict, step_count: int = 0, now=None) -> str:
+    """The line under the name: what it is, and how its last run went --
+    in the same words as the last-run box below it."""
+    from datetime import datetime
     status = {"ok": "OK", "error": "failed", "stopped": "stopped"}.get(
         rec.get("status") or "")
     if kind == "pipeline":
@@ -98,8 +110,11 @@ def subtitle(kind: str, rec: dict, step_count: int = 0) -> str:
         head = f"{step_count} step{plural}"
     else:
         head = cardstyle.display_path(rec.get("path", ""), rec.get("base_dir", ""))
-    when = cardstyle.last_run_text(rec.get("last_run"))
+    when = _when_words(rec.get("last_run"), now or datetime.now())
     if status and when:
+        # Mid-sentence: "today", "yesterday"; a day's name keeps its capital.
+        if when.startswith(("Today", "Yesterday")):
+            when = when[0].lower() + when[1:]
         return f"{head}  ·  last run {when}, {status}"
     if status:
         return f"{head}  ·  last run {status}"
@@ -114,7 +129,6 @@ def script_facts(rec: dict) -> list[tuple[str, str]]:
         ("Parameters", _or_dash(rec.get("params"))),
         ("Asks each run", "Yes" if rec.get("temp_param") else "No"),
         ("Schedule", "Runs on a schedule" if rec.get("scheduled") else "None"),
-        ("Last run", _or_dash(cardstyle.last_run_text(rec.get("last_run")))),
     ]
 
 
@@ -177,11 +191,7 @@ def last_run_lines(row, now) -> tuple[str, str] | None:
         return None
     status = row[7]
     word = {"ok": "OK", "error": "Failed"}.get(status, "Stopped")
-    started = history.parse_stamp(row[5])
-    when = activity.ago_text(started, now) if started else "—"
-    if started is not None and started.date() == now.date():
-        when = f"Today {when}"
-    parts = [when, history.format_duration(row[5], row[6])]
+    parts = [_when_words(row[5], now) or "—", history.format_duration(row[5], row[6])]
     if status == "error":
         parts.append("did not start" if row[8] is None else f"exit code {row[8]}")
     return f"Last run  ·  {word}", "  ·  ".join(p for p in parts if p != "—")

@@ -22,8 +22,8 @@ work. Most visits are seconds long. Everything below serves that loop.
 | Run | A green circle (`btn_run_bg`), ↻ on red (`error`) after a failure. The only filled thing on a row | `cardstyle.run_button()` |
 | Icons | One drawn set (`qtui/icons.py`): 24-unit grid, 2-unit stroke, round ends, outline except play, stop, the brand bolt and a favourite's star; tinted by colour role, re-tinted on a theme change. Never a font glyph or an emoji | `IconButton`, `IconLabel`, `menus._icon` |
 | Words for state | Kind, badges and outcome are coloured words ("● OK", "● Failed"), never filled chips | `_tag`, `_status_chip` |
-| Maximised | List on the left (compact rows), the chosen item on the right: name, Run/Retry, Run with…, Schedule…, Run history, preset chips, steps, facts, output | `qtui/detail.py`, rules `ryos/detail.py` |
-| Output | Dark terminal (`out_*` keys) under the list, or under the detail when maximised; a small pill tab per run | `shell.py` `OutputPane` |
+| Maximised | A rail of places (Library, Search, Activity with a running count; Appearance, Options at its foot); a group picker over the compact list instead of the pills; the chosen item's name and Run/Retry over pill tabs: Overview (preset pills that also run, step cards, facts, Last run box), Output (the output panel, lent here), History; the Activity bar (running now with Stop, up next, recent); a summary on the status bar's right | `qtui/detail.py`, `qtui/rail.py`, `qtui/activity.py`; rules `ryos/detail.py`, `ryos/activity.py` |
+| Output | Dark terminal (`out_*` keys) under the list, or in the detail's Output tab when maximised; a small pill tab per run | `shell.py` `OutputPane` |
 
 **Principles** (from `design-system/project/README.md`): flat, near-square,
 hairlined; one filled action per area; colour from the palette only; words

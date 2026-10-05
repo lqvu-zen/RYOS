@@ -28,7 +28,7 @@ from .icons import IconButton, IconLabel
 from .widgets import ElidedLabel, FlowLayout, literal, set_tooltip
 
 #: A step card's size: the same for every step, so the row reads as a sequence.
-STEP_CARD = (184, 108)
+STEP_CARD = (196, 118)
 
 
 def _alive(widget) -> bool:
@@ -446,18 +446,18 @@ class DetailPane(QWidget):
         where.setObjectName("cardPath")
         col.addWidget(where)
         col.addStretch(1)
-        foot = QHBoxLayout()
-        foot.setSpacing(8)
         spec = cardstyle.status_badge(step.status)
         if spec is not None:
             word = QLabel(spec.text)
             word.setStyleSheet(f"color: {_readable_on(c[spec.bg_key], (c['card_bg'],))};"
                                " font-size: 9pt; font-weight: 600;")
-            foot.addWidget(word)
+            col.addWidget(word)
+        # Their own line: beside the outcome, "only if something has failed"
+        # was cut to "only if som… has failed".
         notes = ElidedLabel("  ·  ".join(step.notes))
         notes.setObjectName("cardPath")
-        foot.addWidget(notes, 1)
-        col.addLayout(foot)
+        notes.setVisible(bool(step.notes))
+        col.addWidget(notes)
         said = [f"Step {step.number}: {step.name}", step.file,
                 cardstyle.status_words(step.status) or "", *step.notes]
         card.setToolTip("\n".join(s for s in said if s))

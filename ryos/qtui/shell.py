@@ -533,8 +533,9 @@ class MainWindow(QMainWindow):
         self._top_col = col
         col.addWidget(self._build_select_bar())
         # Maximised, the group pills give way to a picker over the list.
-        self.group_picker = IconButton("folder", "", role="muted", hover_role="text",
-                                       size=16, palette=self._palette)
+        # No folder icon: a group is not a folder, and the group's base
+        # folder sits right under it with that icon.
+        self.group_picker = QPushButton("")
         self.group_picker.setObjectName("groupPicker")
         self.group_picker.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         set_tooltip(self.group_picker, "Choose a group")

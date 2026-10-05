@@ -8378,10 +8378,16 @@ class TestMaximisedLayout(unittest.TestCase):
 
     def test_subtitle_says_what_it_is_and_how_it_went(self):
         rec = {"path": "C:/p/tools/a.py", "base_dir": "C:/p",
-               "status": "error", "last_run": "2026-09-29T20:43:10"}
-        self.assertEqual(detail.subtitle("script", rec),
+               "status": "error", "last_run": "2026-09-20T20:43:10"}
+        now = __import__("datetime").datetime(2026, 10, 5, 22, 0)
+        self.assertEqual(detail.subtitle("script", rec, now=now),
                          f"{os.path.join('tools', 'a.py')}  ·  "
-                         "last run 2026-09-29 20:43, failed")
+                         "last run 09-20 20:43, failed")
+        this_week = dict(rec, last_run="2026-10-02T20:43:10")
+        self.assertIn("last run Fri 20:43", detail.subtitle("script", this_week, now=now))
+        today = dict(rec, last_run="2026-10-05T21:09:00")
+        self.assertTrue(detail.subtitle("script", today, now=now).endswith(
+            "last run today 21:09, failed"), "the box's words, not a second format")
         self.assertEqual(detail.subtitle("pipeline", {"status": "ok"}, 1),
                          "1 step  ·  last run OK")
         self.assertEqual(detail.subtitle("pipeline", {}, 3), "3 steps")
@@ -8393,7 +8399,7 @@ class TestMaximisedLayout(unittest.TestCase):
         self.assertEqual(facts["Parameters"], "—")
         self.assertEqual(facts["Asks each run"], "Yes")
         self.assertEqual(facts["Schedule"], "Runs on a schedule")
-        self.assertEqual(facts["Last run"], "—")
+        self.assertNotIn("Last run", facts)       # the last-run box says it
         self.assertTrue(all(v for _k, v in detail.script_facts({})))
         self.assertEqual(dict(detail.pipeline_facts({}))["Schedule"], "None")
 
