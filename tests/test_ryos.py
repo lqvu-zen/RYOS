@@ -6310,6 +6310,27 @@ class TestQtStylesheet(unittest.TestCase):
                             f"{key} {drawn[key]} on {fill} {pal[fill]}")
                     self.assertIn(drawn[key], css)
 
+    def test_running_rows_read_on_their_tint(self):
+        # The Running list's rows are tinted toward the strip colour so they
+        # stand apart from the cards; the name and time drawn on them must
+        # still read, on a script's tint and a pipeline's, in every theme.
+        from ryos.qtui.stylesheet import drawn_colors
+        for name, seed in self._all_seeds().items():
+            pal = build_palette(seed)
+            d = drawn_colors(pal)
+            for fill in ("running_wash", "pipe_wash"):
+                with self.subTest(theme=name, fill=fill):
+                    self.assertGreaterEqual(
+                        contrast_ratio(d["running_name_fg"], d[fill]), 4.5)
+                    self.assertGreaterEqual(
+                        contrast_ratio(d["running_time_fg"], d[fill]), 4.5)
+                    self.assertNotEqual(d[fill], pal["bg"])
+
+    def test_running_heading(self):
+        from ryos.jobs import running_heading
+        self.assertEqual(running_heading(1), "● RUNNING  ·  1")
+        self.assertEqual(running_heading(3), "● RUNNING  ·  3")
+
     def test_every_image_it_names_exists(self):
         # Qt draws nothing for a url() it cannot open -- a ticked box with no
         # tick -- and says nothing either.

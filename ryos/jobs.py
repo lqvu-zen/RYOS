@@ -100,6 +100,15 @@ def live_statuses(jobs) -> dict:
     return out
 
 
+def running_heading(count: int) -> str:
+    """The Running list's heading: what the rows under it are, and how many.
+
+    Without it the rows sat between the cards and the output bar looking like
+    one more card -- hard to tell a run was going at all.
+    """
+    return f"● RUNNING  ·  {count}"
+
+
 def format_elapsed(start_time: datetime, now: datetime) -> str:
     """Return the running-row time label, e.g. '14:03:09  ·  1m 05s'.
 

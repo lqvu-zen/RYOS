@@ -45,6 +45,18 @@ def _legible(fg: str, *fills: str, floor: float = TEXT_MIN) -> str:
     return ink_on(*fills)
 
 
+def _running_washes(c: dict) -> dict:
+    """A running row's fill, and the name and time drawn on it."""
+    script = _mix(c["bg"], c["running"], 0.16)
+    pipe = _mix(c["bg"], c.get("pipe_accent", c["accent"]), 0.16)
+    return {
+        "running_wash": script,
+        "pipe_wash": pipe,
+        "running_name_fg": _legible(c["name_fg"], script, pipe),
+        "running_time_fg": _readable_on(c["path_fg"], (script, pipe)),
+    }
+
+
 def drawn_colors(c: dict) -> dict:
     """Text colours the stylesheet draws where the palette's own key does not
     always read. Measured across the shipped themes: white on Nord's pale
@@ -78,6 +90,14 @@ def drawn_colors(c: dict) -> dict:
         # The header bar is the theme's header colour, which is dark in most
         # themes and pale in a few; its words and menus follow it.
         "header_fg": _legible(c["fg_on_dark"], c["header_bg"]),
+        # The Running list: its heading in the running colour, readable on
+        # the window; each row tinted toward its strip's colour (green for a
+        # script, the pipeline colour for a pipeline) and edged in it, so a
+        # run in progress is not mistaken for one more card.
+        "running_ink": _readable_on(c["running"], (c["bg"],)),
+        "running_edge": _edge(c["running"], c["bg"], floor=GLYPH_MIN),
+        "pipe_edge": _edge(c.get("pipe_accent", c["accent"]), c["bg"], floor=GLYPH_MIN),
+        **_running_washes(c),
         # The outline of + Pipeline and + Group. Words alone on the header
         # read as labels, not buttons; the edge is held to 3:1, the minimum
         # for a control's boundary, since it is the only thing that says so.
@@ -109,6 +129,9 @@ DRAWN_PAIRS = (
     ("tab_selected_fg", ("card_bg", "accent_wash"), GLYPH_MIN),
     ("star", ("card_bg", "card_hover", "accent_wash"), GLYPH_MIN),
     ("header_fg", ("header_bg",), TEXT_MIN),
+    ("running_ink", ("bg",), TEXT_MIN),
+    ("running_edge", ("bg",), GLYPH_MIN),
+    ("pipe_edge", ("bg",), GLYPH_MIN),
     ("header_edge", ("header_bg",), GLYPH_MIN),
     ("pill_fg", ("name_fg",), TEXT_MIN),
     ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
@@ -675,6 +698,29 @@ QFrame#dropIndicator {{ background: {c['accent']}; border: none; }}
 QLabel#statusOk {{ color: {c['ok']}; }}
 QLabel#statusError {{ color: {c['error']}; }}
 QLabel#statusRunning {{ color: {c['running']}; }}
+/* --- running list ---------------------------------------------------- */
+QLabel#runningHeading {{
+    background: transparent;
+    color: {d['running_ink']};
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    padding: 4px 2px 0 2px;
+}}
+QFrame#runningRow {{
+    background: {d['running_wash']};
+    border: 1px solid {d['running_edge']};
+    border-radius: 6px;
+}}
+QFrame#runningRow[kind="pipeline"] {{
+    background: {d['pipe_wash']};
+    border-color: {d['pipe_edge']};
+}}
+QFrame#runningRow QLabel {{ background: transparent; }}
+QFrame#runningRow QLabel#runningName {{
+    color: {d['running_name_fg']}; font-weight: 700;
+}}
+QFrame#runningRow QLabel#runningTime {{ color: {d['running_time_fg']}; }}
 """.strip() + "\n"
 
 
