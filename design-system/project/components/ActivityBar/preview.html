@@ -1,0 +1,98 @@
+<!-- @dsCard group="Surfaces" height=410 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
+</style>
+<style>
+.ab { width:280px; display:flex; flex-direction:column; gap:8px; }
+.box { background:var(--card_bg); border:1px solid var(--border); border-radius:4px; padding:6px 6px 6px 8px; }
+.ar { display:flex; gap:8px; align-items:flex-start; padding:5px 6px; border-radius:3px; }
+.ar:hover { background:var(--card_hover); }
+.an { font-weight:600; }
+.rr { display:flex; align-items:center; gap:8px; padding:3px 6px 3px 0; background:var(--running_wash);
+      border:1px solid var(--running_edge); border-left:5px solid var(--running); border-radius:6px; }
+.rn { flex:1; font-weight:700; color:var(--running_name_fg); padding-left:6px; }
+.rt { color:var(--running_time_fg); font-size:12px; }
+.stop { width:34px; height:22px; border-radius:3px; background:var(--btn_stop_active);
+        display:flex; align-items:center; justify-content:center; }
+</style>
+
+<div class="stage" style="flex-direction:row;align-items:flex-start;gap:24px">
+ <div class="ab">
+  <div style="font-weight:700">ACTIVITY</div>
+  <div class="cap">Running now</div>
+  <div class="box"><div class="rr"><span class="rn">Count a minute</span><span class="rt">22:33:58 · 42s</span>
+   <span class="stop"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--stop_fg);flex:none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg></span></div></div>
+  <div class="cap">Up next</div>
+  <div class="box"><div class="ar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg><div><div class="an">Morning report</div>
+   <div class="muted">Tomorrow 08:00 &nbsp;·&nbsp; Daily at 08:00</div></div></div></div>
+  <div class="cap">Recent</div>
+  <div class="box">
+   <div class="ar"><span class="ok">●</span><div><div class="an">Nightly</div><div class="muted">OK &nbsp;·&nbsp; 03:00 &nbsp;·&nbsp; 9.4s</div></div></div>
+   <div class="ar"><span class="err">●</span><div><div class="an">Deploy site</div><div class="muted">Failed &nbsp;·&nbsp; 02:10 &nbsp;·&nbsp; exit code 1</div></div></div>
+   <div class="ar"><span class="stopped">●</span><div><div class="an">Long job</div><div class="muted">Stopped &nbsp;·&nbsp; Yesterday 18:02 &nbsp;·&nbsp; 1m 05s</div></div></div>
+  </div>
+ </div>
+ <div class="ab">
+  <div style="font-weight:700">ACTIVITY</div>
+  <div class="cap">Running now</div><div class="box"><div class="muted" style="padding:4px">Nothing running.</div></div>
+  <div class="cap">Up next</div><div class="box"><div class="muted" style="padding:4px">Nothing scheduled.</div></div>
+  <div class="cap">Recent</div><div class="box"><div class="muted" style="padding:4px">No runs yet.</div></div>
+ </div>
+</div>

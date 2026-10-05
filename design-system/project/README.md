@@ -3,12 +3,6 @@ one a script or a pipeline you can run, with the output of every run in a
 terminal panel underneath. This is its interface language, extracted from
 `ryos/themes.py`, `ryos/qtui/*` and `ryos/interpreter.py`.
 
-> **Component notes being redrawn.** This book, `tokens.json` and the token
-> notes describe the Qt interface as it is (redesigned September 2026). The
-> per-component notes and previews under `components/` predate that redesign
-> and are to be rewritten; where one disagrees with this book, this book is
-> right.
-
 The whole system is built to be re-skinned. A theme is **seven colours and a
 mode**, and `build_palette()` expands that seed into the 55-key palette every
 widget reads. Design to the token names below and your work themes itself.
@@ -45,17 +39,26 @@ button *becomes* the retry: same action, `error` fill, a circular arrow. The
 user already has.
 
 **Density is a setting, not a style.** Rows come in three sizes and a compact
-form (`cardstyle.CARD_PADDING`); maximised, the list goes compact beside a
-detail pane. Never hard-code a row's padding.
+form (`cardstyle.CARD_PADDING`). Never hard-code a row's padding.
+
+**Maximised, the window spreads out.** A rail of places down the left edge;
+the list goes compact beside the chosen item, whose Overview, Output and
+History are tabs; an Activity bar down the right says what is running, what
+runs next and what ran last. The same rows, the same Run -- the pane acts
+through the chosen row's own buttons, so the two cannot drift.
 
 ## Colour
 
 Take the ground from `bg`, surfaces from `card_bg`, and every line from
 `border`. Primary text is `name_fg`. Secondary text -- paths, hints, captions
 -- is `path_fg`, drawn through `drawn_colors()["muted_fg"]`, which shades it
-just enough to read 4.5:1 on a row, a hovered row and the window. Every text
-colour goes through `drawn_colors()`; the unit suite checks each pair in every
-shipped theme (`DRAWN_PAIRS`).
+just enough to read 4.5:1 on a row, a hovered row, the window and the chosen
+row's wash. Every text colour goes through `drawn_colors()`; the unit suite
+checks each pair in every shipped theme (`DRAWN_PAIRS`). The tokens carry the
+results -- the drawn colours by name (`muted_fg`, `primary_fg`, `focus_edge`…)
+and the inks a row paints its coloured words in (`ink-ok`, `tag-python-ink`,
+`highlight-red-ink`…) -- so a design never has to guess what reaches the
+screen.
 
 `bolt` (`#ffd23f`) is the one colour that does not theme. It is the mark in
 the header, and a favourite's star is shaded from it. Spend it on nothing else.

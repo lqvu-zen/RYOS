@@ -1,37 +1,81 @@
-<!-- @dsCard group="Chrome" height=160 -->
+<!-- @dsCard group="Chrome" height=100 -->
 <style>
   :root { color-scheme: light dark; }
   html, body { margin:0; background:var(--bg); color:var(--name_fg);
-    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
   .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
-  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
-  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
-  .fb { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
-        padding:5px 12px; color:var(--btn_fg); background:var(--btn_create_bg); line-height:1.35; }
-  .fb:hover { background:var(--btn_create_hover); }
-  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
 </style>
 <style>
-  .hdr { background:var(--header_bg); padding:14px 18px; display:flex; width:100%;
-         align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-  .mark { color:var(--fg_on_dark); font-size:19px; font-weight:700; display:flex; align-items:center; }
-  .bolt { color:var(--bolt); }
-  .acts { display:flex; gap:6px; align-items:center; }
-  .gear { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
-          padding:5px 12px; margin-left:8px; color:var(--btn_fg); background:var(--btn_dark_bg); }
-  .gear:hover { background:var(--btn_dark_hover); }
+.hdr { display:flex; align-items:center; gap:4px; width:640px; padding:6px 10px 6px 14px;
+       background:var(--header_bg); color:var(--header_fg); }
+.brand { font-size:17px; font-weight:700; margin:0 10px 0 4px; }
+.menu { padding:4px 8px; border-radius:4px; }
+.menu:hover, .hb:hover { background:color-mix(in srgb, var(--header_bg) 86%, var(--header_fg)); }
+.hb { padding:5px 10px; border:1px solid var(--header_edge); border-radius:4px; font-weight:600; }
+.hb.primary { background:var(--accent); border-color:var(--accent); color:var(--primary_fg); }
 </style>
-<div class="stage" style="padding:0;width:100%">
-  <div class="hdr">
-    <div class="mark"><span class="bolt">⚡</span><span>&nbsp;RYOS</span></div>
-    <div class="acts">
-      <button class="fb" style="width:104px" title="Create a pipeline">+ Pipeline</button>
-      <button class="fb" style="width:104px" title="Create a group">+ Group</button>
-      <button class="fb" style="width:104px" title="Create a script">+ Script</button>
-      <button class="gear" title="Options">⚙</button>
-    </div>
-  </div>
-  <div style="padding:14px 18px 0;width:100%">
-    <div class="cap">space-18 sets the window's outer margin — the search bar lines up with the mark</div>
-  </div>
+
+<div class="stage" style="padding:0;gap:0">
+ <div class="hdr">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--bolt);flex:none" aria-hidden="true"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z" fill="currentColor"/></svg><span class="brand">RYOS</span>
+  <span class="menu">File</span><span class="menu">Options</span><span class="menu">Help</span>
+  <span style="flex:1"></span>
+  <span class="hb">+ Pipeline</span><span class="hb">+ Group</span>
+  <span class="hb primary">+ Script</span>
+ </div>
+ <div class="stage"><div class="cap">The header bar: places to go are menus, things to make are buttons; one is filled</div></div>
 </div>

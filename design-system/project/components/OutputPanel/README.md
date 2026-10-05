@@ -1,34 +1,21 @@
 # OutputPanel
 
-The console under the card list, in the bottom half of a vertical
-`PanedWindow`. `_build_output_panel()` and the drain loop in `ryos/ui/app.py`.
+Every run's output, in a terminal of its own. `ryos/qtui/shell.py`
+`OutputPane` and `_build_output`; routing in `ryos/outputpanel.py`.
 
-It keeps **its own dark world on every theme.** `out_bg` is `#1e1e1e` under
-Light, Sepia and Forest Canopy alike, with `out_header` and `out_tabbar` above
-it and `fg_on_dark_2` on the chrome. A theme may override the five `out_*` keys
-in its seed's advanced section, but the default is deliberate: this is a
-terminal, and a terminal that changes colour with the app's chrome stops reading
-as one.
+## Anatomy
 
-Body type is `terminal` (Consolas 10), and the four line colours are the only
-semantics: `out_stdout` for program output, `out_stderr` for its error stream,
-`out_status` for the runner's own lines (started, exit code), `out_success` for a
-clean exit. All four clear 6.0:1 on `out_bg`.
-
-A tab per job on `out_tabbar`, plus a pinned **All** tab that interleaves
-everything. Find is inline in the header, mono-set, with the current match
-highlighted in `bolt` on `out_bg`.
-
-## How text gets here
-
-Never directly. The worker thread puts lines on a `queue.Queue`; the main loop
-drains it on a recurring `after(80, …)` timer and writes to the `Text` widget.
-Writing to the widget from the worker will eventually corrupt Tk's state.
+A header (**Output**, Show/Hide output, Clear, Close all, in
+`tab_selected_fg` words with icons), a find row (**Find**, matches, **Errors
+only**), the run tabs as small pills, then the terminal: `out_bg`, Consolas,
+`out_stdout`, `out_stderr` in red, `out_status` for step headers,
+`out_success` for exit lines.
 
 ## Rules
 
-- Tag every line with one of the four `out_*` colours. Untagged text inherits
-  `out_stdout` and a status line becomes indistinguishable from program output.
-- The panel collapses to its header, never to nothing — the toggle must stay
-  reachable.
-- Don't tint it to match the chrome.
+- The terminal keeps its own dark world on light themes too; don't tint it to
+  the chrome.
+- Maximised, the panel lives in the detail pane's Output tab, always open --
+  its title and hide toggle go.
+- A pipeline's tab carries the bolt; a parallel step's lines carry a coloured
+  prefix chip (`step_fg`, `step_ok_fg`, `step_fail_fg`).

@@ -1,0 +1,87 @@
+<!-- @dsCard group="Chrome" height=300 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
+</style>
+<style>
+.rail { width:56px; background:var(--card_bg); border-right:1px solid var(--border);
+        display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 0; height:300px; }
+.rb { position:relative; width:40px; height:40px; border-radius:8px; display:flex;
+      align-items:center; justify-content:center; }
+.rb:hover { background:var(--tab_inactive_hover); }
+.rb.on { background:var(--accent_wash); }
+.badge { position:absolute; top:1px; right:1px; min-width:16px; height:16px; padding:0 3px;
+         border-radius:8px; background:var(--running); color:var(--badge_fg);
+         font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+</style>
+
+<div class="stage" style="flex-direction:row;align-items:stretch;padding:0">
+ <div class="rail">
+  <span class="rb on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tab_selected_fg);flex:none" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg></span>
+  <span class="rb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg></span>
+  <span class="rb on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tab_selected_fg);flex:none" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span class="badge">2</span></span>
+  <span style="flex:1"></span>
+  <span class="rb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c.9 0 1.4-.7 1.4-1.5 0-.8-.6-1.3-.6-2.1 0-.8.7-1.5 1.6-1.5h2.1a4 4 0 0 0 4-4c0-4.4-3.8-7.9-8.5-7.9z"/><circle cx="7.8" cy="11" r="1.1" fill="currentColor"/><circle cx="12" cy="7.6" r="1.1" fill="currentColor"/><circle cx="16.2" cy="11" r="1.1" fill="currentColor"/></svg></span>
+  <span class="rb"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span>
+ </div>
+ <div class="stage"><div class="cap">Maximised only</div>
+  <div class="muted" style="max-width:420px">Places, not actions: Library (the list), Search,
+  Activity (shows or hides the Activity bar; the badge counts runs in progress), and at the
+  foot Appearance… and Options…. What is showing sits on the chosen row's wash.</div></div>
+</div>

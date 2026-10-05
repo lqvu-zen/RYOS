@@ -1,36 +1,24 @@
 # IconButton
 
-The square glyph buttons in a card's right-hand gutter: reorder, favourite,
-edit, history, stop, run. The `_rbtn` factory inside `ScriptCard` and
-`PipelineCard` in `ryos/ui/cards.py`.
+The app's one drawn icon set and the quiet buttons made from it.
+`ryos/qtui/icons.py`: `SHAPES`, `IconButton`, `IconLabel`.
 
-Three characters wide, `control` type (10pt), full card height, no border. They
-sit on a frame painted `border` with 1px frames between them, so the gutter's
-background is what draws every divider.
+## The set
 
-Each button caches its own `_bg` and `_hbg` on the widget and restores from
-those on `<Leave>` — so a button whose fill changes with state (run → retry,
-stop idle → armed) must update both attributes, not just `config(bg=...)`, or
-the next hover reverts it to the stale colour.
+Line icons on a 24-unit grid with a 2-unit stroke and round ends, outline
+except where filling means something: play, stop, the brand bolt and a
+favourite's star. Each is tinted by a colour role (`muted`, `text`, `link`,
+`star`, `pipe`, `danger`…) and re-tinted on a theme change. Usually 16px.
 
-## Consumer supplies
+## Quiet buttons
 
-`text, bg, hover_bg, command`, plus optional `tip`, `fg`, `active_fg`,
-`disabled_fg` and `state`.
+A row's cells, the detail pane's star and ⋯, a tab's close: `muted_fg` at
+rest, darker under the pointer, on `accent_wash` when focused, never a box of
+their own. Each has an accessible name (`set_tooltip`).
 
 ## Rules
 
-- Default fill is `btn_neutral_bg` / `btn_neutral_hover` with `btn_neutral_fg`.
-- A favourited star is `accent_wash`; an unfavourited one is neutral.
-- Flip a button's state with `set_button_enabled()`, never a bare
-  `config(state=...)`. Tk dims only the label, and on a custom palette it dims
-  it to a Windows system colour unrelated to the theme; the helper swaps the
-  slab too, which is what makes the state legible. It also gives the button the
-  `arrow` cursor.
-- Tk keeps delivering `<Enter>` to a disabled widget, so the hover bindings
-  check state before swapping. Skip that check and a dead button lights up
-  under the pointer and looks clickable.
-- A blank spacer cell is painted `border`, the strip's own colour — not
-  `btn_neutral_bg`, which sits 1.03:1 against the strip and reads as a button
-  whose icon failed to load rather than as empty space.
-- Every icon button takes a `Tooltip`. A bare glyph without one is a bug.
+- Never a font glyph or an emoji as an icon -- they come in two fonts and the
+  colour-emoji font's own colours. `check_one_icon_set` in `tests/qt_smoke.py`
+  fails on one. Kept as typography on purpose: the `+` of + Script, the ●
+  outcome dots, the ▾/▸ fold arrows.

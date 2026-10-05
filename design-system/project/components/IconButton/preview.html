@@ -1,47 +1,73 @@
-<!-- @dsCard group="Actions" height=150 -->
+<!-- @dsCard group="Actions" height=230 -->
 <style>
   :root { color-scheme: light dark; }
   html, body { margin:0; background:var(--bg); color:var(--name_fg);
-    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
   .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
-  .stage.row { flex-direction:row; align-items:center; flex-wrap:wrap; gap:8px; }
-  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
-  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
 </style>
 <style>
-  .gutter { display:inline-flex; background:var(--border); gap:1px; height:44px; }
-  .ib { width:34px; border:0; cursor:pointer; font-family:inherit; font-size:13px;
-        background:var(--btn_neutral_bg); color:var(--btn_neutral_fg); }
-  .ib:hover { background:var(--btn_neutral_hover); }
-  .ib.run { background:var(--btn_run_bg); color:var(--btn_run_fg); }
-  .ib.run:hover { background:var(--btn_run_hover); }
-  .ib.retry { background:var(--error); color:var(--error_fg); }
-  .ib.stop { background:var(--btn_stop_idle); color:var(--btn_stop_idle_fg); cursor:default; }
-  .ib.stop.armed { background:var(--btn_stop_active); color:var(--fg_on_dark); cursor:pointer; }
-  .ib.fav { background:var(--accent_wash); color:var(--accent); }
-  .ib[disabled] { background:var(--btn_disabled_bg); color:var(--btn_disabled_fg);
-                  cursor:default; }
-  .ib.spacer { background:var(--border); cursor:default; }
+.grid { display:grid; grid-template-columns:repeat(9, 84px); gap:6px 4px; }
+.ic { display:flex; flex-direction:column; align-items:center; gap:3px; font-size:11px; color:var(--muted_fg); }
 </style>
+
 <div class="stage">
-  <div class="cap">Neutral · favourite · edit · stop (idle / armed) · run · retry</div>
-  <div class="gutter">
-    <button class="ib" title="Move up">▲</button>
-    <button class="ib" title="Move down">▼</button>
-    <button class="ib fav" title="Unfavourite">★</button>
-    <button class="ib" title="Run history">🕒</button>
-    <button class="ib" title="Modify">✎</button>
-    <button class="ib stop" title="Nothing running">■</button>
-    <button class="ib run" title="Run">▶</button>
-  </div>
-  <div class="gutter">
-    <button class="ib" disabled title="Already at the top">▲</button>
-    <button class="ib" title="Move down">▼</button>
-    <button class="ib spacer" disabled></button>
-    <button class="ib" title="Favourite">☆</button>
-    <button class="ib" title="Run history">🕒</button>
-    <button class="ib" title="Modify">✎</button>
-    <button class="ib stop armed" title="Stop">■</button>
-    <button class="ib retry" title="Last run failed — click to run it again">↻</button>
-  </div>
+ <div class="cap">The one drawn set: 24-unit grid, 2-unit stroke, round ends; tinted by role</div>
+ <div class="grid"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg><span>play</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg><span>stop</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/></svg><span>retry</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg><span>edit</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z"/></svg><span>star</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z" fill="currentColor"/></svg><span>star-filled</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>plus</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg><span>close</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/></svg><span>more</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z" fill="currentColor"/></svg><span>bolt</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h3.8l2 2h7.2a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg><span>folder</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="M6.5 7l.9 12.5h9.2L17.5 7"/></svg><span>trash</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg><span>clock</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/><path d="M12 8v4l2.8 1.8"/></svg><span>history</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2"/><path d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/></svg><span>copy</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c.9 0 1.4-.7 1.4-1.5 0-.8-.6-1.3-.6-2.1 0-.8.7-1.5 1.6-1.5h2.1a4 4 0 0 0 4-4c0-4.4-3.8-7.9-8.5-7.9z"/><circle cx="7.8" cy="11" r="1.1" fill="currentColor"/><circle cx="12" cy="7.6" r="1.1" fill="currentColor"/><circle cx="16.2" cy="11" r="1.1" fill="currentColor"/></svg><span>palette</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M12 14.5V3.5M7.5 8 12 3.5 16.5 8"/><path d="M4.5 14.5v4a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/></svg><span>export</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M12 3.5v11M7.5 10l4.5 4.5 4.5-4.5"/><path d="M4.5 14.5v4a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/></svg><span>import</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M5.5 3.5h10l3 3v12a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"/><path d="M8 3.5v4.5h7V3.5M7.5 20.5v-6h9v6"/></svg><span>save</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>select</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg><span>settings</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg><span>chevron-up</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg><span>chevron-down</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg><span>list</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg><span>search</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span>activity</span></span><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>arrow-right</span></span></div>
+ <div class="line"><span class="cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></span><span class="cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--star);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z" fill="currentColor"/></svg></span>
+ <span class="cell" style="background:var(--accent_wash)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--name_fg);flex:none" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span>
+ <span class="muted">quiet: muted at rest, the wash under the pointer or the keyboard</span></div>
 </div>

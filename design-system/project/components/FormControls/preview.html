@@ -1,46 +1,77 @@
-<!-- @dsCard group="Input" height=220 -->
+<!-- @dsCard group="Input" height=180 -->
 <style>
   :root { color-scheme: light dark; }
   html, body { margin:0; background:var(--bg); color:var(--name_fg);
-    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
   .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
-  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
-  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
 </style>
 <style>
-  .cb { position:relative; display:flex; align-items:center; width:260px; gap:8px;
-        background:var(--card_bg); border:1px solid var(--border); padding:2px 4px;
-        font-size:13px; color:var(--name_fg); }
-  .cb.foc { border-color:var(--accent); }
-  .cb.open { border-color:var(--accent); }
-  .cb span { flex:1; } .cb i { font-style:normal; color:var(--path_fg); font-size:12px; }
-  .list { position:absolute; top:100%; left:-1px; right:-1px; background:var(--card_bg);
-          border:1px solid var(--border); z-index:2; }
-  .list div { padding:2px 4px; } .list .sel { background:var(--accent_wash); }
-  .nb { display:flex; gap:0; background:var(--bg); }
-  .nb span { padding:6px 12px; font-size:12px; color:var(--path_fg); background:var(--bg);
-             border:1px solid var(--border); border-bottom:0; cursor:pointer; }
-  .nb span.on { background:var(--card_bg); color:var(--accent); }
-  .nbody { display:flex; background:var(--card_bg); border:1px solid var(--border);
-           padding:10px 12px; font-size:12px; color:var(--path_fg); gap:10px; }
-  .nbody { align-items:stretch; }
-  .scroll { width:12px; background:var(--bg); margin-left:auto; flex:none; }
-  .thumb { width:12px; height:36px; background:var(--border); }
-  .sash { height:4px; background:var(--border); }
+.form { display:grid; grid-template-columns:110px 1fr; gap:8px 12px; align-items:center; width:100%; }
+.dd { display:flex; justify-content:space-between; align-items:center; }
+.box { width:16px; height:16px; border:1px solid var(--control_edge); border-radius:3px;
+       display:inline-flex; align-items:center; justify-content:center; }
+.box.on { background:var(--accent); border-color:var(--accent); }
 </style>
-<div class="stage">
-  <div class="cap">Combobox — resting, focused, open</div>
-  <div class="stage" style="padding:0;gap:6px">
-    <div class="cb"><span>(no parameters)</span><i>▾</i></div>
-    <div class="cb foc"><span>--verbose --dry-run</span><i>▾</i></div>
-    <div class="cb open"><span>--verbose --dry-run</span><i>▾</i>
-      <div class="list"><div>(no parameters)</div><div class="sel">--verbose --dry-run</div><div>--full</div></div>
-    </div>
-  </div>
-  <div class="cap">Notebook tabs · scrollbar · sash</div>
-  <div class="stage" style="padding:0;gap:0;width:100%;max-width:420px">
-    <div class="nb"><span class="on">General</span><span>Scheduling</span><span>Appearance</span></div>
-    <div class="nbody">Settings for the selected tab.<div class="scroll"><div class="thumb"></div></div></div>
-    <div class="sash"></div>
-  </div>
+
+<div class="stage" style="width:520px">
+ <div class="form">
+  <span class="muted">Name</span><span class="field">Backup photos</span>
+  <span class="muted">Interpreter</span><span class="field dd">Python <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+  <span class="muted">Retries</span><span class="field dd" style="width:80px">3 <span style="display:inline-flex;flex-direction:column"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span></span>
+  <span></span><span class="line"><span class="box on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--fg_on_dark);flex:none" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></span> Ask for parameters each run</span>
+ </div>
 </div>

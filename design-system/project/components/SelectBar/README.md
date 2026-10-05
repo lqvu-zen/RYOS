@@ -1,28 +1,18 @@
 # SelectBar
 
-The banner shown while multi-select is on. `_build_select_bar()` in
-`ryos/ui/app.py`.
+Select mode's bar: tick rows, then run or delete them together.
+`ryos/qtui/shell.py` `_build_select_bar`; wording in `ryos/selection.py`.
 
-`warn_bg` ground with a `warn_border` hairline and `warn_fg` text — the app's
-only use of the warning family, and it is not a warning. It is a **mode
-indicator**: checkboxes have appeared on every card and the next click means
-something different. Amber because the state is temporary and the user must be
-able to see, at a glance, that they are in it.
+## Anatomy
 
-Left: the hint, in `body` — `Tick the checkboxes next to the scripts you want to
-run or delete.` — replaced by a live count once anything is ticked. Right:
-Select All flat on the banner (`warn_bg` fill, `warn_border` hover), then
-`▶ Run Selected` on `btn_run_bg`, then `🗑 Delete Selected` on a fixed dark red
-that is neither `error` nor `btn_stop_active`: destructive-and-bulk is its own
-weight, and it must not read as the retry red.
-
-`warn_fg` on `warn_bg` measures 7.0–8.4:1 across the themes — the most legible
-pair in the system, which is appropriate for the one thing that says *you are in
-a mode*.
+A strip in the warn colours (`warn_bg`, `warn_border`, `warn_fg`) -- you are in
+a mode. The words say what to do (`Tick the checkboxes next to the scripts you
+want to run or delete.`), then how many are ticked (`2 of 6 selected`). Then
+**Select All**, **Run selected** in Run's green with the play icon, and a
+trash icon for **Delete selected**.
 
 ## Rules
 
-- Packed on demand, never hidden with a disabled state.
-- The hint is the empty state. Swap its text for the count; don't add a second
-  label.
-- Destructive bulk actions get the dark red, not `error`.
+- The warn colours mean a mode, and nothing else uses them.
+- Each row shows a check box; Space ticks the row the keyboard is on.
+- Delete selected confirms, naming how many go.

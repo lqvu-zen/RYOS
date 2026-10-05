@@ -1,43 +1,83 @@
-<!-- @dsCard group="Output" height=300 -->
+<!-- @dsCard group="Output" height=250 -->
 <style>
   :root { color-scheme: light dark; }
   html, body { margin:0; background:var(--bg); color:var(--name_fg);
-    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
   .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
-  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
-  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
 </style>
 <style>
-  .panel { width:100%; background:var(--out_bg); }
-  .ohdr { display:flex; align-items:center; gap:14px; background:var(--out_header);
-          color:var(--fg_on_dark_2); font-size:11px; padding:4px 10px; flex-wrap:wrap; }
-  .oact { cursor:pointer; }
-  .oact:hover { color:var(--fg_on_dark); }
-  .otabs { display:flex; gap:1px; background:var(--out_tabbar); padding:0 4px; }
-  .ot { color:var(--fg_on_dark_2); font-size:11px; padding:4px 10px; cursor:pointer;
-        background:var(--out_header); }
-  .ot.on { background:var(--out_bg); color:var(--fg_on_dark); }
-  .obody { font-family:var(--font-mono); font-size:13px; line-height:1.5; padding:8px 10px;
-           white-space:pre; overflow-x:auto; }
-  .so { color:var(--out_stdout); } .se { color:var(--out_stderr); }
-  .st { color:var(--out_status); }  .su { color:var(--out_success); }
-  .obody span { display:block; }
+.oh { display:flex; align-items:center; gap:8px; padding:3px 8px; width:100%; font-weight:600; }
+.box { width:15px; height:15px; border:1px solid var(--control_edge); border-radius:3px; }
+.term div { white-space:pre; }
+.term { background:var(--out_bg); font-family:var(--font-mono); font-size:13px; line-height:18px;
+        
+        padding:8px 10px; width:100%; }
 </style>
-<div class="stage" style="width:100%;padding:0">
-  <div class="panel">
-    <div class="ohdr"><span>Output</span><div style="flex:1"></div>
-      <span class="oact">Find</span><span class="oact">🗑 Clear</span><span class="oact">✕ Close All</span>
-      <span class="oact">▼ Hide Output</span></div>
-    <div class="otabs"><span class="ot on">All</span><span class="ot">nightly-backup</span>
-      <span class="ot">release-candidate</span></div>
-    <div class="obody">
-<span class="st">▶ nightly-backup — started 03:00:01</span>
-<span class="so">Scanning 4 volumes…</span>
-<span class="so">  /data          1.2 TB   ok</span>
-<span class="so">  /home          380 GB   ok</span>
-<span class="se">  /mnt/archive   unreachable after 30s</span>
-<span class="st">◼ exited with code 1</span>
-<span class="su">✓ release-candidate — 3 steps completed in 4m12s</span>
-    </div>
-  </div>
+
+<div class="stage" style="padding:0;gap:0;width:640px">
+ <div class="oh"><span>Output</span><span class="link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tab_selected_fg);flex:none" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg> Hide output</span>
+  <span style="flex:1"></span><span class="link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tab_selected_fg);flex:none" aria-hidden="true"><path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="M6.5 7l.9 12.5h9.2L17.5 7"/></svg> Clear</span>
+  <span class="link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--tab_selected_fg);flex:none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg> Close all</span></div>
+ <div class="oh"><span>Find</span><span class="field" style="flex:1;padding:3px"></span><span class="box"></span> Errors only</div>
+ <div class="line" style="gap:2px;padding:4px 8px"><span class="pill on" style="height:24px;padding:0 10px">All</span>
+  <span class="pill" style="height:24px;padding:0 10px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--pipe_accent);flex:none" aria-hidden="true"><path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z" fill="currentColor"/></svg>&nbsp;Nightly</span></div>
+ <div class="term"><div style="color:var(--out_status)">Step 1/2:  Backup photos</div>
+  <div style="color:var(--out_stdout)">copied 214 files</div>
+  <div style="color:var(--out_success)">  exit code 0  ·  03:00:04</div>
+  <div style="color:var(--out_stderr)">ERROR: could not reach \\nas\share</div>
+  <div style="color:var(--out_success)">✓  Pipeline complete  ·  03:00:09</div></div>
 </div>

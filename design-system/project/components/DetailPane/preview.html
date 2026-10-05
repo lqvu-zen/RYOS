@@ -1,0 +1,102 @@
+<!-- @dsCard group="Surfaces" height=450 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
+</style>
+<style>
+.steps { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.hold { display:inline-flex; align-items:center; gap:6px; }
+.sc { width:196px; height:118px; background:var(--card_bg); border:1px solid var(--border);
+      border-radius:4px; padding:9px 10px 9px 12px; display:flex; flex-direction:column; gap:2px; }
+.sc .h { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em; }
+.sc .n { font-size:15px; font-weight:700; }
+.sc .f, .sc .notes { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+                     text-overflow:ellipsis; }
+.sc .sp { flex:1; }
+
+.head { display:flex; align-items:center; gap:12px; width:100%; }
+.bar { width:3px; height:42px; background:var(--pipe_accent); }
+.big { font-size:21px; font-weight:700; }
+.drun { display:inline-flex; align-items:center; gap:6px; height:38px; padding:0 22px 0 18px;
+        border-radius:19px; background:var(--btn_run_bg); color:var(--btn_run_fg);
+        font-size:15px; font-weight:700; }
+.facts { display:flex; flex-direction:column; gap:2px; }
+.last { width:100%; display:flex; align-items:center; gap:12px; padding:10px 12px 10px 14px;
+        background:var(--card_bg); border:1px solid var(--border); border-radius:4px; }
+</style>
+
+<div class="stage" style="width:700px;gap:12px">
+ <div class="head">
+  <span class="bar"></span>
+  <div style="flex:1;min-width:0"><div class="l1"><span class="kind" style="color:var(--ink-pipe_accent)">PIPELINE</span>
+  <span class="big">Nightly</span></div><div class="muted">2 steps &nbsp;·&nbsp; last run today 03:00, OK</div></div>
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z"/></svg><span class="link">Edit</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/></svg>
+ </div>
+ <div class="line"><span class="drun"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg> Run</span>
+  <span class="link">Schedule…</span></div>
+ <div class="line" style="gap:4px"><span class="pill on">Overview</span><span class="pill">Output</span><span class="pill">History</span></div>
+ <div class="cap" style="margin-top:4px">Steps</div>
+ <div class="steps">
+  <div class="sc"><span class="h">STEP 1</span><span class="n">Backup photos</span><span class="f">backup.py</span><span class="sp"></span><span class="word ok">● OK</span><span class="notes"></span></div><span class="hold"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><div class="sc"><span class="h">STEP 2</span><span class="n">Clean temp</span><span class="f">clean.bat</span><span class="sp"></span><span class="word ok">● OK</span><span class="notes">only if nothing has failed</span></div></span>
+ </div>
+ <div class="facts"><span class="muted">Schedule</span><span>Daily at 03:00</span></div>
+ <div class="last"><span class="ok" style="font-size:20px">●</span>
+  <div style="flex:1"><div style="font-weight:700">Last run &nbsp;·&nbsp; OK</div>
+  <div class="muted">Today 03:00 &nbsp;·&nbsp; 9.4s</div></div><span class="btn">Open output</span></div>
+</div>

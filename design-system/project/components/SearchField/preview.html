@@ -2,30 +2,67 @@
 <style>
   :root { color-scheme: light dark; }
   html, body { margin:0; background:var(--bg); color:var(--name_fg);
-    font-family:var(--font-sans); -webkit-font-smoothing:antialiased; }
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
   .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
-  .cap { font-size:11px; color:var(--path_fg); letter-spacing:.06em; text-transform:uppercase; }
-  * { border-radius:0; box-shadow:none; box-sizing:border-box; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
 </style>
-<style>
-  .bar { display:flex; align-items:center; gap:4px; width:100%; max-width:540px; }
-  .g { color:var(--path_fg); font-size:13px; padding-right:4px; }
-  .fld { flex:1; background:var(--card_bg); color:var(--name_fg); font-size:13px;
-         padding:4px; min-height:25px; display:flex; align-items:center; }
-  .fld.ph { color:var(--path_fg); }
-  .car { display:inline-block; width:1px; height:15px; background:var(--name_fg); margin-left:1px; }
-  .go { border:0; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
-        padding:5px 12px; color:var(--btn_fg); background:var(--btn_run_bg); margin-left:4px; }
-  .go:hover { background:var(--btn_run_hover); }
-</style>
-<div class="stage" style="width:100%">
-  <div class="cap">Placeholder</div>
-  <div class="bar"><span class="g">🔍</span><div class="fld ph">Filter scripts &amp; pipelines…</div></div>
-  <div class="cap">Typed</div>
-  <div class="bar"><span class="g">🔍</span><div class="fld">backup<span class="car"></span></div></div>
-  <div class="cap">Quick-run entry — same field, mono-flavoured hint</div>
-  <div class="bar" style="border:1px solid var(--border);background:var(--bg);padding:6px 8px">
-    <div class="fld ph" style="flex:1">script name [params...]</div>
-    <button class="go">▶ Run</button>
-  </div>
+
+<div class="stage" style="width:560px">
+ <div class="field" style="width:100%"><span class="placeholder">Search scripts and pipelines...</span></div>
+ <div class="field focus" style="width:100%">deploy</div>
+ <div class="muted">Nothing here matches “zzz”.</div>
+ <div class="muted">↓ goes into the list; Esc clears the box.</div>
 </div>

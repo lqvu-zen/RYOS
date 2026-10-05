@@ -1,0 +1,76 @@
+<!-- @dsCard group="Surfaces" height=300 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
+</style>
+<style>
+.sh { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.04em; padding-top:4px; }
+.sh:hover { color:var(--name_fg); }
+</style>
+
+<div class="stage" style="width:560px">
+ <div class="sh">▾&nbsp; PIPELINES</div>
+ <div class="panel" style="width:100%">
+  <div class="row pipe"><div class="lines"><div class="l1"><span class="kind" style="color:var(--ink-pipe_accent)">PIPELINE</span><span class="name">Nightly</span><span class="word ok">● OK</span></div><div class="path">2 steps &nbsp;·&nbsp; Backup photos → Clean temp</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row pipe"><div class="lines"><div class="l1"><span class="kind" style="color:var(--ink-pipe_accent)">PIPELINE</span><span class="name">Release</span></div><div class="path">2 steps &nbsp;·&nbsp; Weekly report → Deploy site</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+ </div>
+ <div class="sh">▸&nbsp; SCRIPTS &nbsp;(4)</div>
+ <div class="sh">▾&nbsp; FAVORITES</div>
+ <div class="muted">No favorites yet — point at a script or pipeline and click its star.</div>
+</div>

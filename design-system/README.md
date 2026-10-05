@@ -17,7 +17,8 @@ project/
   README.md                 the brand book: principles, colour, type, spacing, writing
   themes.md                 the seed -> palette engine, and all thirteen seeds
   accessibility.md          the contrast mechanisms, and where the palettes miss
-  tokens.json               GENERATED - 94 tokens across 8 themes
+  tokens.json               GENERATED - 133 colour tokens across 8 themes, plus type,
+                            spacing, radius and size
   components/<Name>/        README.md (guidelines) + preview.html (live preview)
   components/Cover/         the system's cover; no README, by design
   assets/AppIcon/           GENERATED pngs + svg, plus an authored README
@@ -27,9 +28,11 @@ project/
 
 `build.py` owns exactly this, and overwrites it:
 
-- `project/tokens.json` — palettes resolved through `build_palette()`, the
-  script-tag fills from `_script_tag()`, the highlight seeds from
-  `HIGHLIGHT_SEEDS`
+- `project/tokens.json` — palettes resolved through `build_palette()`; the
+  colours the stylesheet actually draws (`drawn_colors()`); the inks a row
+  paints its coloured words in (outcome words, kind tags, highlights), each
+  shaded to read on the row; the script-tag fills from `_script_tag()` and the
+  highlight seeds from `HIGHLIGHT_SEEDS`
 - `project/assets/AppIcon/ryos-{16,32,64,256}.png` — extracted from `icon.ico`
 - `project/assets/AppIcon/ryos-mark.svg` — the polygon `make_icon.py` draws
 
@@ -45,8 +48,9 @@ python design-system/build.py --check   # exit 1 if they are stale (what CI runs
 python design-system/build.py --audit   # the WCAG contrast table, all 8 themes
 ```
 
-No dependencies beyond the standard library; it mocks tkinter the way
-`tests/test_ryos.py` does, so it runs on a headless runner.
+No dependencies beyond the standard library and the app's own toolkit-free
+modules (`themes.py`, `interpreter.py`, and `qtui/stylesheet.py`, which is
+pure Python), so it runs on a headless runner without Qt.
 
 ## Keeping it current
 
@@ -82,11 +86,12 @@ knows.
 
 ## Known gaps
 
-- The previews are HTML renditions of Tk widgets, not the widgets themselves.
-  RYOS is a Python desktop app, so there is no component bundle to ship; each
-  preview is built from the real construction and its README names the source
+- The previews are HTML renditions of the Qt widgets, not the widgets
+  themselves. RYOS is a Python desktop app, so there is no component bundle to
+  ship; each preview uses the stylesheet's own values (tokens as CSS
+  variables, the app's icon shapes inline) and its README names the source
   file, but they are recreations and will drift if nobody looks.
 - Eight of thirteen themes ship; the format caps a system at eight. The other
   five are documented as seeds in `themes.md`.
-- Eight colour pairs are below their contrast floor. They are the app's real
+- Three colour cells are below their contrast floor. They are the themes' own
   values, recorded rather than corrected — see `accessibility.md`.

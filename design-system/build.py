@@ -42,8 +42,9 @@ sys.path.insert(0, str(ROOT))
 # Every value below is read from the app's own modules, so a seed changed in
 # the app shows up as a design-system diff -- the whole point.
 from ryos.interpreter import _script_tag  # noqa: E402
+from ryos.qtui.stylesheet import drawn_colors  # noqa: E402  -- pure, no Qt
 from ryos.themes import (  # noqa: E402
-    HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, _rel_luminance, _shade,
+    HIGHLIGHT_MIN_RATIO, HIGHLIGHT_SEEDS, _readable_on, _rel_luminance, _shade,
     build_palette, contrast_ratio,
 )
 
@@ -69,66 +70,66 @@ THEMES: list[tuple[str, str, str]] = [
 # is the order themes.py declares the keys in, and it is also the order the
 # tokens appear in the published system.
 USAGE: list[tuple[str, str]] = [
-    ("bg", "Window ground behind the tab bar, card list and search bar. Seed colour."),
-    ("card_bg", "ScriptCard and PipelineCard surface, and the active GroupTab's face. Carries name_fg and path_fg. Seed colour (`surface`)."),
-    ("card_hover", "Card surface under the pointer. Derived: surface shaded -3% on a light theme, +10% on a dark one. highlight_fg() checks label colours against this as well as card_bg."),
-    ("status_bg", "StatusBar strip along the window's bottom edge. Derived: bg shaded -5% light / +5% dark."),
-    ("header_bg", "AppHeader band behind the bolt mark and the create buttons. Carries fg_on_dark. Seed colour."),
-    ("border", "1px hairline on every card, the gutter behind a card's icon buttons and their 1px separators, the PanedWindow sash, and the scrollbar thumb. Seed colour."),
-    ("accent", "Brand hue: the ScriptCard's 5px left rail, the active GroupTab's label and 3px indicator, the Combobox focus ring, and the + Script / + Group / + Pipeline buttons. Seed colour."),
-    ("accent2", "Pressed and hover state for every accent-filled button. Derived: accent shaded -15%."),
-    ("accent_wash", "Tinted fill behind a selected Combobox row, an active tab's hover, and a favourited card's star button. Derived: accent shaded +86% light / -55% dark."),
-    ("bolt", "The lightning mark in the header and the Quick Run bar's toggle, and the current match in output search. Fixed across every theme -- it is the identity, not a themed surface."),
-    ("bolt_hover", "Quick Run toggle under the pointer."),
-    ("name_fg", "Primary text: card names, dialog body copy, entry text. Reads on bg, card_bg and card_hover."),
-    ("path_fg", "Secondary text: script paths, last-run timestamps, the search glyph, the Combobox arrow. Reads on bg and card_bg."),
-    ("fg_on_dark", "Text and glyphs on header_bg, accent, pipe_accent, menu_bg and tooltip_bg."),
-    ("fg_on_dark_2", "Muted text on the output panel's header and tab bar."),
-    ("tab_fg", "Label on an inactive GroupTab. Reads on tab_inactive_bg."),
-    ("btn_fg", "Label on the accent-filled FlatButtons: create, modify, and the header actions. Reads on btn_create_bg and btn_mod_bg. NOT the run button or the status badges -- those carry their own derived ink (btn_run_fg, ok_fg, error_fg), because a fixed white was unreadable on the green."),
-    ("btn_run_bg", "Run button fill on cards and the Run Selected action."),
-    ("btn_run_hover", "Run button under the pointer. Derived from btn_run_bg when a theme overrides it."),
-    ("btn_run_fg", "Ink on the run fill: the card's ▶ glyph and the ▶ Run Selected label. Derived: whichever of the light or dark pole measures better against btn_run_bg AND btn_run_hover, so a user-pinned run colour of any luminance gets legible ink."),
-    ("btn_mod_bg", "Modify / edit button fill. Tracks accent."),
-    ("btn_mod_hover", "Modify button under the pointer. Tracks accent2."),
-    ("btn_create_bg", "Header create buttons (+ Script, + Group, + Pipeline). Tracks accent."),
-    ("btn_create_hover", "Header create buttons under the pointer. Tracks accent2."),
-    ("btn_neutral_bg", "Unfilled icon buttons in a card's right-hand gutter: reorder, history, star. Derived: surface shaded -6% light / +8% dark."),
-    ("btn_neutral_hover", "Neutral icon button under the pointer. Derived: surface shaded -12% light / +14% dark."),
-    ("btn_neutral_fg", "Glyph on a neutral icon button. Tracks text_muted."),
-    ("btn_stop_idle", "Stop button fill while nothing is running. Fixed across themes -- the stop control reads the same everywhere."),
-    ("btn_stop_idle_fg", "Stop glyph while disabled."),
-    ("btn_stop_idle_active_fg", "Stop glyph while disabled and moused over."),
-    ("btn_stop_idle_hover", "Disabled stop button under the pointer."),
-    ("btn_stop_active", "Stop button fill while a job is running, and the pressed state of the retry Run button."),
-    ("btn_stop_active_hover", "Armed stop button under the pointer."),
-    ("btn_disabled_bg", "Slab of a control that is born disabled and never flips -- the palette default. A control that toggles calls disabled_pair() with its own colours instead. Derived: btn_neutral_bg mixed 45% toward card_bg, or shaded away from it where there is nowhere to mix toward."),
-    ("btn_disabled_fg", "Label on a disabled control. Derived: btn_neutral_fg mixed toward its own slab in 24 steps until it drops to 2.6:1 -- dim enough to read as disabled, not so dim it vanishes."),
-    ("btn_dark_bg", "The header's options (gear) button."),
-    ("btn_dark_hover", "Options button under the pointer; also the StatusBar's text colour."),
-    ("tab_inactive_bg", "Inactive GroupTab face and its 3px indicator. Derived: bg shaded -5% light / +6% dark."),
-    ("tab_inactive_hover", "Inactive GroupTab under the pointer. Derived: bg shaded -10% light / +11% dark."),
-    ("ok", "Success badge fill on a card that last ran clean."),
-    ("ok_fg", "Ink on the ✓ OK badge. Derived from ok by the same rule as btn_run_fg."),
-    ("running", "Fill for a card's in-flight run row."),
-    ("error", "Failure badge fill, and the Run button's retry state after a failed run."),
-    ("error_fg", "Ink on the ✕ Failed badge and the ↻ retry glyph. Derived from error."),
-    ("warn_bg", "SelectBar banner ground while multi-select is on."),
-    ("warn_border", "SelectBar hairline, and the Select All button's hover fill."),
-    ("warn_fg", "SelectBar text. Reads on warn_bg."),
-    ("pipe_accent", "PipelineCard's 5px left rail and the SCHEDULED badge, separating a pipeline from a script at a glance."),
-    ("pipe_accent2", "Pipeline hover and step connectors. Derived: pipe_accent shaded +12% when a theme overrides it."),
-    ("out_bg", "Output panel ground. Fixed across themes by default: the terminal keeps a console's look whatever the chrome does."),
-    ("out_header", "Output panel header strip and the Find bar."),
-    ("out_tabbar", "Output panel per-job tab strip."),
-    ("out_stdout", "stdout text in the output panel, set in the mono family."),
-    ("out_stderr", "stderr text in the output panel."),
-    ("out_status", "Runner status lines (started, exit code) in the output panel."),
-    ("out_success", "Clean-exit line in the output panel."),
-    ("menu_bg", "Right-click and options menu ground. Carries fg_on_dark; highlight swatches are re-shaded against this, not against card_bg."),
-    ("menu_danger", "Destructive menu entries (Delete)."),
-    ("tooltip_bg", "Tooltip ground. Carries fg_on_dark."),
-    ("tooltip_border", "Tooltip 1px hairline."),
+    ("bg", "The window's ground: behind the list, the pills, the dialogs, the Activity bar. Seed colour."),
+    ("card_bg", "The surface of a section's panel and its rows, fields, step cards, the last-run box, the Activity bar's boxes and the rail. Seed colour (`surface`)."),
+    ("card_hover", "A row (or chip, or Activity line) under the pointer. Derived: surface shaded -3% light / +10% dark. Highlights and coloured words are shaded to read on this as well as card_bg."),
+    ("status_bg", "The status bar along the window's bottom edge. Derived: bg shaded -5% light / +5% dark."),
+    ("header_bg", "The header bar behind the bolt, the menus and the make buttons. Seed colour. Its words are header_fg."),
+    ("border", "Every 1px hairline: a panel's border and the line between its rows, field borders, the splitters, menu borders. Seed colour."),
+    ("accent", "Brand hue: a script row's 3px rail, + Script and a dialog's default button, a focused field's border, a chosen preset's edge, a menu's highlighted entry. Seed colour."),
+    ("accent2", "The accent under the pointer, and a focused primary's ring. Derived: accent shaded -15%."),
+    ("accent_wash", "The chosen row (maximised), the row the keyboard is on, a quiet button's hover and focus, the rail's current place, the chosen preset. Derived: accent shaded +86% light / -55% dark."),
+    ("bolt", "The brand bolt in the header and on Quick Run; a favourite's star is shaded from it. Fixed across themes -- the identity, not a surface."),
+    ("bolt_hover", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("name_fg", "Primary text: names, field text, dialog words; also the chosen pill's fill. Reads on bg, card_bg, card_hover and accent_wash."),
+    ("path_fg", "The theme's muted colour. Painted through muted_fg (paths, hints, captions) and, shaded, as the Stopped outcome word."),
+    ("fg_on_dark", "Text on the menu ground and a menu's highlighted entry; the seed of header_fg and stop_fg."),
+    ("fg_on_dark_2", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("tab_fg", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_fg", "The seed of primary_fg, the words on accent-filled buttons."),
+    ("btn_run_bg", "Run's green circle, the detail pane's Run, Run selected."),
+    ("btn_run_hover", "Run under the pointer. Derived from btn_run_bg when a theme overrides it."),
+    ("btn_run_fg", "The play icon on Run's green. Derived: whichever of the light or dark pole measures better against btn_run_bg AND btn_run_hover."),
+    ("btn_mod_bg", "Only the theme editor's preview swatch. Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_mod_hover", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_create_bg", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_create_hover", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_neutral_bg", "A neutral button's fill (Cancel, Select All, Open output). Derived: surface shaded -6% light / +8% dark."),
+    ("btn_neutral_hover", "A neutral button under the pointer. Derived: surface shaded -12% light / +14% dark."),
+    ("btn_neutral_fg", "The seed of neutral_fg, a neutral button's words. Tracks text_muted."),
+    ("btn_stop_idle", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete. Stop only exists while something runs."),
+    ("btn_stop_idle_fg", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_stop_idle_active_fg", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_stop_idle_hover", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_stop_active", "Stop's red fill in the running list and the Activity bar; Retry under the pointer."),
+    ("btn_stop_active_hover", "Stop under the pointer."),
+    ("btn_disabled_bg", "A disabled button's fill. Derived: btn_neutral_bg mixed 45% toward card_bg."),
+    ("btn_disabled_fg", "A disabled control's words, and a disabled menu entry. Derived: dimmed to 2.6:1 -- reads as unavailable without vanishing."),
+    ("btn_dark_bg", "A button role (`#dark`) no widget uses now. Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("btn_dark_hover", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("tab_inactive_bg", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete. (Its hover twin is drawn.)"),
+    ("tab_inactive_hover", "An unchosen pill under the pointer, a rail button's hover, a preset's play button hover. Derived: bg shaded -10% light / +11% dark."),
+    ("ok", "The ● OK word (shaded to read: ink-ok), a passed step's chip over the output."),
+    ("ok_fg", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete. The OK word carries its own shaded ink instead of a filled chip."),
+    ("running", "The ● Running word, the running list's strip and wash, the rail's running-count badge."),
+    ("error", "The ● Failed word (ink-error), Retry's fill, a failed step's chip."),
+    ("error_fg", "The retry icon on Retry's red."),
+    ("warn_bg", "The select bar while select mode is on."),
+    ("warn_border", "The select bar's hairline."),
+    ("warn_fg", "The select bar's words, and the ● Retrying word (shaded: ink-warn_fg)."),
+    ("pipe_accent", "A pipeline's 3px rail, the PIPELINE kind word and the SCHEDULED badge (shaded: ink-pipe_accent), the bolt on a pipeline's output tab, a running pipeline's wash."),
+    ("pipe_accent2", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("out_bg", "The terminal's ground. Fixed across themes by default: a console's look whatever the chrome does."),
+    ("out_header", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("out_tabbar", "Not painted by the Qt interface; kept so theme files and the theme editor stay complete."),
+    ("out_stdout", "stdout in the terminal, in the mono family; a parallel step's chip words."),
+    ("out_stderr", "stderr in the terminal."),
+    ("out_status", "Step headers and runner status lines in the terminal."),
+    ("out_success", "Exit lines and Pipeline complete in the terminal."),
+    ("menu_bg", "The ground of every menu."),
+    ("menu_danger", "Destructive menu entries (Delete) and their icons."),
+    ("tooltip_bg", "A tooltip's ground. Its words are tooltip_fg."),
+    ("tooltip_border", "A tooltip's 1px hairline."),
 ]
 
 # Extensions whose badge colour is worth naming in a usage note, in the order
@@ -149,7 +150,7 @@ TAG_ORDER = [
     (".code-workspace", "tag-vscode", "VS Code workspaces"),
 ]
 
-PT_TO_PX = 4 / 3  # Tk sizes are points; the app is laid out for 96 dpi
+PT_TO_PX = 4 / 3  # Qt font sizes are points; the app is laid out for 96 dpi
 
 
 def _style(name, pt, weight=400, italic=False, usage=""):
@@ -159,6 +160,41 @@ def _style(name, pt, weight=400, italic=False, usage=""):
     if italic:
         d["fontStyle"] = "italic"
     return d
+
+
+# The colours the stylesheet actually paints text and edges in, where a
+# palette key would not read on every theme: `drawn_colors()` shades each one
+# until it clears its floor (`DRAWN_PAIRS`, checked by the unit suite). A
+# preview that writes text should use these, not the raw palette key.
+DRAWN_USAGE: list[tuple[str, str]] = [
+    ("primary_fg", "Words on a filled primary button (+ Script, a dialog's default) -- btn_fg, or black/white where it would not read on accent."),
+    ("primary_hover_fg", "The same words on the primary button's hover fill (accent2)."),
+    ("neutral_fg", "Words on a neutral button (Cancel, Clear history...)."),
+    ("neutral_hover_fg", "The same words on the neutral button's hover fill."),
+    ("tooltip_fg", "A tooltip's text, on tooltip_bg."),
+    ("status_fg", "The status bar's text, on status_bg."),
+    ("stop_fg", "Stop's icon and word on its active red fill."),
+    ("muted_fg", "Paths, hints, captions, notes: path_fg shaded just enough to read on a row, a hovered row, the window and the chosen row's wash -- kept muted, never black or white."),
+    ("tab_selected_fg", "The accent as a word: links (Schedule..., Edit), a row's preset, the output header's words. Held to 3:1 on card_bg and the wash."),
+    ("star", "A favourite's gold star, shaded from bolt until it shows on a row, hovered or chosen."),
+    ("header_fg", "Words and menus on the header bar -- fg_on_dark, or dark ink on a pale header_bg."),
+    ("running_ink", "The running list's heading, in the running green, readable on the window."),
+    ("running_edge", "The edge of a running script's row in the running list."),
+    ("pipe_edge", "The edge of a running pipeline's row in the running list."),
+    ("running_wash", "A running script's row fill: the window mixed 16% toward running."),
+    ("pipe_wash", "A running pipeline's row fill: the window mixed 16% toward pipe_accent."),
+    ("running_name_fg", "A job's name on either running wash."),
+    ("running_time_fg", "A job's elapsed time on either running wash."),
+    ("step_fg", "A parallel step's chip over the output, in the terminal's own text colour."),
+    ("step_fail_fg", "That chip once its step failed: error, readable on out_bg."),
+    ("step_ok_fg", "That chip once its step passed: running green, readable on out_bg."),
+    ("header_edge", "The outline of + Pipeline and + Group on the header: the only thing that says they are buttons, so held to 3:1."),
+    ("pill_fg", "The chosen pill's words (group, output, detail and Options tabs): the window colour on a name_fg fill."),
+    ("pill_idle_fg", "An unchosen pill's words, on the window and on its hover fill."),
+    ("control_edge", "The 1px outline of fields, neutral buttons, the group picker and preset pills -- in Light the fills alone are 1.01:1 to the window."),
+    ("focus_edge", "The 2px outline round the row the keyboard is on (and a focused chip's edge): the accent, shaded to 3:1 against the row's wash and the rows around it."),
+    ("badge_fg", "The running count on the rail's Activity button, on the running fill."),
+]
 
 
 def palettes() -> dict[str, dict]:
@@ -209,6 +245,32 @@ def build_tokens() -> dict:
     colors = [{"name": k, "value": {t: pal[t][k].lower() for t in ids}, "usage": u}
               for k, u in USAGE]
 
+    drawn = {t: drawn_colors(pal[t]) for t in ids}
+    noted = {k for k, _ in DRAWN_USAGE}
+    if set(drawn["light"]) != noted:
+        raise SystemExit(
+            "design-system/build.py: drawn_colors() and DRAWN_USAGE disagree: "
+            f"unnoted {sorted(set(drawn['light']) - noted)}, "
+            f"gone {sorted(noted - set(drawn['light']))}.")
+    colors += [{"name": k, "value": {t: drawn[t][k].lower() for t in ids},
+                "usage": f"Drawn: {u}"} for k, u in DRAWN_USAGE]
+
+    # What a row actually paints a coloured word in: the colour shaded until
+    # it reads on the row and the hovered row (cards._ink). A fixed tag fill
+    # or a highlight seed is never painted as-is, and in a dark theme the raw
+    # value can all but vanish.
+    def ink(theme: str, color: str) -> str:
+        return _readable_on(color, (pal[theme]["card_bg"], pal[theme]["card_hover"])).lower()
+
+    for key, what in (("ok", "the ● OK outcome word"), ("error", "the ● Failed outcome word"),
+                      ("running", "the ● Running outcome word"),
+                      ("path_fg", "the ● Stopped outcome word"),
+                      ("warn_fg", "the ● Retrying outcome word"),
+                      ("pipe_accent", "the PIPELINE / PIPE kind word and the SCHEDULED badge")):
+        colors.append({"name": f"ink-{key}", "value": {t: ink(t, pal[t][key]) for t in ids},
+                       "usage": f"Painted: {what} on a row -- {key} shaded to read on "
+                                "card_bg and card_hover."})
+
     for key, seed in HIGHLIGHT_SEEDS.items():
         colors.append({
             "name": f"highlight-{key}", "value": seed.lower(),
@@ -217,19 +279,30 @@ def build_tokens() -> dict:
                       "card_hover until it clears 4.5:1 on both, so one set of seven "
                       "stays legible on every theme.")})
 
+    for key, seed in HIGHLIGHT_SEEDS.items():
+        colors.append({
+            "name": f"highlight-{key}-ink", "value": {t: ink(t, seed) for t in ids},
+            "usage": f"Painted: a {key}-highlighted row's name, the seed shaded to read."})
+
     known = {ext for ext, _, _ in TAG_ORDER}
     for ext, name, label in TAG_ORDER:
         _tag_label, fill = _script_tag(f"x{ext}")
         colors.append({
             "name": name, "value": fill.lower(),
-            "usage": (f"ScriptTypeBadge fill for {label}. Fixed across themes -- the "
-                      "badge names the language, so its colour is part of the label. "
-                      "Carries fg_on_dark.")})
+            "usage": (f"The colour of {label}: fixed across themes -- it names the "
+                      "language, so it is part of the label. Never painted as-is; "
+                      f"see {name}-ink.")})
+        colors.append({
+            "name": f"{name}-ink", "value": {t: ink(t, fill) for t in ids},
+            "usage": f"Painted: a {label} row's kind word, {name} shaded to read on the row."})
     _unknown_label, unknown_fill = _script_tag("x.nosuchext")
     colors.append({
         "name": "tag-unknown", "value": unknown_fill.lower(),
-        "usage": ("ScriptTypeBadge fill for any other extension, whose upper-cased "
-                  "extension becomes the label. Fixed across themes. Carries fg_on_dark.")})
+        "usage": ("The colour for any other extension, whose upper-cased extension "
+                  "becomes the kind word. Fixed across themes; see tag-unknown-ink.")})
+    colors.append({
+        "name": "tag-unknown-ink", "value": {t: ink(t, unknown_fill) for t in ids},
+        "usage": "Painted: that kind word, shaded to read on the row."})
     # .cmd shares .bat's fill by design; anything else new needs a usage note.
     src = inspect.getsource(_script_tag)
     for ext in re.findall(r'"(\.[a-z0-9-]+)":', src):
@@ -333,16 +406,20 @@ def _provenance() -> dict:
             "docs": ["README.md", "CLAUDE.md", "docs/ARCHITECTURE.md", "theme-gallery/"],
         },
         "components": {
-            "ScriptCard": "ryos/qtui/cards.py", "PipelineCard": "ryos/qtui/cards.py",
-            "FlatButton": "ryos/qtui/stylesheet.py", "IconButton": "ryos/qtui/cards.py",
-            "RunButton": "ryos/qtui/cards.py", "StatusBadge": "ryos/qtui/cards.py",
-            "ScriptTypeBadge": "ryos/interpreter.py", "LabelHighlight": "ryos/themes.py",
-            "Tooltip": "ryos/qtui/widgets.py", "AppHeader": "ryos/qtui/shell.py",
-            "GroupTab": "ryos/qtui/shell.py", "SelectBar": "ryos/qtui/shell.py",
-            "StatusBar": "ryos/qtui/shell.py", "SearchField": "ryos/qtui/shell.py",
-            "QuickRunBar": "ryos/qtui/quickrun.py", "FormControls": "ryos/qtui/stylesheet.py",
+            "AppHeader": "ryos/qtui/shell.py", "Rail": "ryos/qtui/rail.py",
+            "StatusBar": "ryos/qtui/shell.py", "SectionPanel": "ryos/qtui/sections.py",
+            "Row": "ryos/qtui/cards.py", "FavoriteChip": "ryos/qtui/cards.py",
+            "DetailPane": "ryos/qtui/detail.py", "StepCard": "ryos/qtui/detail.py",
+            "ActivityBar": "ryos/qtui/activity.py", "Buttons": "ryos/qtui/stylesheet.py",
+            "RunButton": "ryos/qtui/cards.py", "IconButton": "ryos/qtui/icons.py",
+            "PresetPill": "ryos/qtui/detail.py", "PillTabs": "ryos/qtui/stylesheet.py",
+            "SearchField": "ryos/qtui/shell.py", "FormControls": "ryos/qtui/stylesheet.py",
+            "QuickRunBar": "ryos/qtui/quickrun.py", "SelectBar": "ryos/qtui/shell.py",
+            "OutcomeWord": "ryos/cardstyle.py", "KindTag": "ryos/qtui/cards.py",
+            "LabelHighlight": "ryos/themes.py", "Tooltip": "ryos/qtui/widgets.py",
             "OutputPanel": "ryos/qtui/shell.py",
         },
+
     }
 
 
@@ -387,31 +464,27 @@ def icon_files() -> dict[str, bytes]:
 
 # --- WCAG audit --------------------------------------------------------------
 
-# (fg, bg, floor, where it appears). WCAG 2 asks 4.5:1 of body text and 3:1 of
-# text at 24px+ / bold 19px+ and of non-text marks that carry meaning. Nothing
-# in RYOS is large text -- the biggest is the 19px wordmark -- so the only 3:1
-# rows here are marks: the card rail and the tab indicator.
+# (fg, bg, floor, where it appears): the raw palette pairs the Qt interface
+# paints as they are. Every other text colour goes through drawn_colors(),
+# which shades it to its floor -- DRAWN_PAIRS in ryos/qtui/stylesheet.py, checked
+# in every theme by the unit suite -- so it is not repeated here. WCAG 2 asks
+# 4.5:1 of body text and 3:1 of the marks that carry meaning: the rails.
 AUDIT_PAIRS: list[tuple[str, str, float, str]] = [
-    ("name_fg", "bg", 4.5, "card names on the window ground"),
-    ("name_fg", "card_bg", 4.5, "card names"),
-    ("name_fg", "card_hover", 4.5, "card names under the pointer"),
-    ("path_fg", "bg", 4.5, "the search glyph and group counts"),
-    ("path_fg", "card_bg", 4.5, "script paths and last-run timestamps"),
-    ("tab_fg", "tab_inactive_bg", 4.5, "inactive GroupTab labels"),
-    ("fg_on_dark", "header_bg", 4.5, "the wordmark and header text"),
-    ("fg_on_dark", "accent", 4.5, "create-button labels"),
-    ("ok_fg", "ok", 4.5, "the OK badge"),
-    ("fg_on_dark", "pipe_accent", 4.5, "the SCHEDULED badge"),
-    ("btn_run_fg", "btn_run_bg", 4.5, "the Run glyph and Run Selected"),
-    ("btn_run_fg", "btn_run_hover", 4.5, "the Run button under the pointer"),
-    ("error_fg", "error", 4.5, "the Failed badge and the retry glyph"),
-    ("btn_neutral_fg", "btn_neutral_bg", 4.5, "card gutter glyphs"),
-    ("warn_fg", "warn_bg", 4.5, "the SelectBar hint"),
+    ("name_fg", "bg", 4.5, "names and words on the window"),
+    ("name_fg", "card_bg", 4.5, "a row's name"),
+    ("name_fg", "card_hover", 4.5, "a row's name under the pointer"),
+    ("name_fg", "accent_wash", 4.5, "the chosen row's name, maximised"),
+    ("btn_run_fg", "btn_run_bg", 3.0, "the play icon on Run"),
+    ("btn_run_fg", "btn_run_hover", 3.0, "the play icon on Run under the pointer"),
+    ("error_fg", "error", 3.0, "the retry icon on Retry"),
+    ("warn_fg", "warn_bg", 4.5, "the select bar's words"),
+    ("fg_on_dark", "menu_bg", 4.5, "menu entries"),
     ("out_stdout", "out_bg", 4.5, "stdout"),
     ("out_stderr", "out_bg", 4.5, "stderr"),
-    ("out_status", "out_bg", 4.5, "runner status lines"),
-    ("out_success", "out_bg", 4.5, "clean-exit lines"),
-    ("accent", "card_bg", 3.0, "the 5px card rail and the 3px tab indicator"),
+    ("out_status", "out_bg", 4.5, "step headers and status lines"),
+    ("out_success", "out_bg", 4.5, "exit lines"),
+    ("accent", "card_bg", 3.0, "a script row's 3px rail"),
+    ("pipe_accent", "card_bg", 3.0, "a pipeline row's 3px rail"),
 ]
 
 

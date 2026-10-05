@@ -1,0 +1,83 @@
+<!-- @dsCard group="Surfaces" height=660 -->
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin:0; background:var(--bg); color:var(--name_fg);
+    font-family:var(--font-sans); font-size:13px; -webkit-font-smoothing:antialiased; }
+  * { box-sizing:border-box; box-shadow:none; }
+  .stage { padding:18px; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
+  .line { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .cap { font-size:11px; font-weight:700; color:var(--muted_fg); letter-spacing:.06em;
+         text-transform:uppercase; }
+  .muted { color:var(--muted_fg); font-size:12px; }
+  .mono { font-family:var(--font-mono); }
+  /* A row: one of a panel's, a 3px rail down its left edge. */
+  .panel { background:var(--card_bg); border:1px solid var(--border); border-radius:4px;
+           overflow:hidden; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px;
+         border-left:3px solid var(--accent); border-bottom:1px solid var(--border); }
+  .row:last-child { border-bottom:none; }
+  .row:hover { background:var(--card_hover); }
+  .row.pipe { border-left-color:var(--pipe_accent); }
+  .row.compact { padding:6px 12px; }
+  .row.chosen { background:var(--accent_wash); }
+  .row.focus { background:var(--accent_wash); outline:2px solid var(--focus_edge);
+               outline-offset:-3px; }
+  .lines { flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+  .l1 { display:flex; align-items:baseline; gap:8px; min-width:0; }
+  .kind { font-size:11px; font-weight:700; letter-spacing:.03em; flex:none; }
+  .name { font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .compact .name { font-size:13px; font-weight:600; }
+  .path { font-size:12px; color:var(--muted_fg); white-space:nowrap; overflow:hidden;
+          text-overflow:ellipsis; }
+  .ok { color:var(--ink-ok); } .err { color:var(--ink-error); } .run-ink { color:var(--ink-running); }
+  .stopped { color:var(--ink-path_fg); }
+  .word { font-size:12px; font-weight:600; white-space:nowrap; flex:none; }
+  .runb { width:32px; height:32px; border-radius:50%; background:var(--btn_run_bg);
+          color:var(--btn_run_fg); display:flex; align-items:center; justify-content:center;
+          flex:none; }
+  .runb:hover { background:var(--btn_run_hover); }
+  .runb.retry { background:var(--error); color:var(--error_fg); }
+  .compact .runb { width:26px; height:26px; }
+  .cell { width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+          border-radius:4px; flex:none; }
+  .cell:hover { background:var(--accent_wash); }
+  .preset { font-family:var(--font-mono); font-size:12px; color:var(--tab_selected_fg); }
+  .pill { display:inline-flex; align-items:center; height:28px; padding:0 14px;
+          border-radius:14px; font-weight:600; color:var(--pill_idle_fg); }
+  .pill.on { background:var(--name_fg); color:var(--pill_fg); font-weight:700; }
+  .pill:not(.on):hover { background:var(--tab_inactive_hover); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px;
+         border-radius:3px; border:1px solid var(--control_edge);
+         background:var(--btn_neutral_bg); color:var(--neutral_fg); font:inherit; }
+  .btn.primary { background:var(--accent); border-color:var(--accent);
+                 color:var(--primary_fg); }
+  .link { color:var(--tab_selected_fg); font-weight:600; padding:4px 6px; border-radius:4px; }
+  .link:hover { background:var(--accent_wash); }
+  .field { background:var(--card_bg); border:1px solid var(--border); border-radius:3px;
+           padding:5px 7px; color:var(--name_fg); }
+  .field.focus { border-color:var(--accent); }
+  .placeholder { color:var(--muted_fg); }
+</style>
+
+<div class="stage" style="width:580px">
+ <div class="cap">At rest · under the pointer · after a failure</div>
+ <div class="panel" style="width:100%">
+  <div class="row"><div class="lines"><div class="l1"><span class="kind" style="color:var(--tag-python-ink)">PYTHON</span><span class="name">Backup photos</span><span class="word ok">● OK</span></div><div class="path">backup.py&nbsp;&nbsp;<span class="preset">--full</span></div></div><span class="cell"></span><span class="cell"></span><span class="cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--star);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z" fill="currentColor"/></svg></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row"><div class="lines"><div class="l1"><span class="kind" style="color:var(--tag-powershell-ink)">POWERSHELL</span><span class="name">Deploy site</span></div><div class="path">deploy.ps1</div></div><span class="cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></span><span class="cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></span><span class="cell"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z"/></svg></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row"><div class="lines"><div class="l1"><span class="kind" style="color:var(--tag-batch-ink)">BATCH</span><span class="name">Clean temp</span><span class="word err">● Failed</span></div><div class="path">clean.bat</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb retry"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--error_fg);flex:none" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/></svg></span></div>
+ </div>
+ <div class="cap">Running · stopped · chosen (maximised) · keyboard focus</div>
+ <div class="panel" style="width:100%">
+  <div class="row"><div class="lines"><div class="l1"><span class="kind" style="color:var(--tag-python-ink)">PYTHON</span><span class="name">Count a minute</span><span class="word run-ink">● Running</span></div><div class="path">counter.py</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row"><div class="lines"><div class="l1"><span class="kind" style="color:var(--tag-python-ink)">PYTHON</span><span class="name">Long job</span><span class="word stopped">● Stopped</span></div><div class="path">long.py</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row pipe chosen"><div class="lines"><div class="l1"><span class="kind" style="color:var(--ink-pipe_accent)">PIPELINE</span><span class="name">Nightly</span></div><div class="path">2 steps &nbsp;·&nbsp; Backup photos → Clean temp</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row focus"><div class="lines"><div class="l1"><span class="kind" style="color:var(--tag-python-ink)">PYTHON</span><span class="name">Weekly report</span></div><div class="path">report.py</div></div><span class="cell"></span><span class="cell"></span><span class="cell"></span><span class="runb"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+ </div>
+ <div class="cap">Compact: one line, the kind and outcome as columns</div>
+ <div class="panel" style="width:100%">
+  <div class="row compact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--star);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z" fill="currentColor"/></svg><span class="name" style="flex:1">Backup photos</span><span class="kind" style="color:var(--tag-python-ink)">PYTHON</span><span class="word ok" style="width:74px">● OK</span><span class="runb"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row compact pipe"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z"/></svg><span class="name" style="flex:1">Nightly</span><span class="kind" style="color:var(--ink-pipe_accent)">PIPE</span><span class="word " style="width:74px"></span><span class="runb"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--btn_run_fg);flex:none" aria-hidden="true"><path d="M7 4.8v14.4l12-7.2z" fill="currentColor" stroke-width="1.6"/></svg></span></div>
+  <div class="row compact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted_fg);flex:none" aria-hidden="true"><path d="m12 3.2 2.7 5.5 6 .9-4.35 4.25 1.03 6L12 17l-5.38 2.85 1.03-6L3.3 9.6l6-.9z"/></svg><span class="name" style="flex:1">Clean temp</span><span class="kind" style="color:var(--tag-batch-ink)">BATCH</span><span class="word err" style="width:74px">● Failed</span><span class="runb retry"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--error_fg);flex:none" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1"/><path d="M3.5 4v5h5"/></svg></span></div>
+ </div>
+</div>

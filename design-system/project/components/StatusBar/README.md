@@ -1,21 +1,16 @@
 # StatusBar
 
-A single label across the bottom of the window. `_build_status_bar()` in
-`ryos/ui/app.py`.
+The strip along the bottom of the window. Qt's `QStatusBar`, styled with
+`status_bg` and `status_fg`.
 
-`status_bg` ground (derived: `bg` shaded ±5%), text in `btn_dark_hover`,
-`meta` type, `space-10` × `space-4`, left-aligned, driven by one
-`StringVar`.
+## Anatomy
 
-It is the app's only ambient channel. Messages are complete sentences ending in
-a period — `Ready.`, `Running nightly-backup…`, `3 scripts selected.` — and it
-resets to `Ready.` when nothing is happening. Errors that need an answer go to a
-dialog; errors that merely happened go here and to the output panel.
+On the left, what just happened, briefly: `Ready`, `Done.`, `Failed.`,
+`Stopped.`, `Pipeline complete.`. Maximised, a summary on the right from
+`ryos/activity.py` `summary()`: `1 running  ·  next: Morning report,
+Tomorrow 08:00`.
 
 ## Rules
 
-- One line, never wrapped, never two.
-- No colour. The bar doesn't turn red on failure; the card and the output panel
-  carry that.
-- Never a progress bar. Long work reports through the output panel, which is
-  already open while a job runs.
+- A report, not a log: one short line, replaced by the next.
+- Text in `status_fg`, which is `path_fg` shaded to read on `status_bg`.

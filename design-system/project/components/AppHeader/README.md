@@ -1,24 +1,21 @@
 # AppHeader
 
-The band across the top of the window: the mark on the left, the create buttons
-and the options gear on the right. `_build_header()` in `ryos/ui/app.py`.
+The bar across the top of the window: the drawn bolt and RYOS, the File /
+Options / Help menus, and the buttons that make things. `ryos/qtui/shell.py`
+`_build_header`, styled as `QFrame#appHeader`.
 
-`header_bg` ground, `space-18` horizontal and `space-14` vertical padding — the
-value that sets the window's outer margin, so anything else flush to the window
-edge should match it.
+## Anatomy
 
-The mark is two labels, not an image: `⚡` in `bolt` and ` RYOS` in
-`fg_on_dark`, both `brand` (14pt bold). It is the largest type in the app and
-the only place `bolt` appears besides the Quick Run trigger. The drawn icon in
-`assets/AppIcon/` is for the OS — taskbar, tray, installer — never the header.
-
-The three create buttons all pass `width=6` so they align regardless of label
-length, and the gear uses `btn_dark_bg` rather than the accent: it opens a menu
-rather than creating anything, and shouldn't compete with the three that do.
+`bolt` icon (role `bolt`), the wordmark in `brand`, the menus, a stretch, then
+**+ Pipeline** and **+ Group** outlined in `header_edge` and **+ Script**
+filled with `accent` -- the window's one primary button.
 
 ## Rules
 
-- Text on `header_bg` is `fg_on_dark`. Never a literal white.
-- New header actions are `btn_create_bg` only if they create something.
-  Everything else is `btn_dark_bg`.
-- Every header button takes a `Tooltip` — the gear is a bare glyph.
+- Places to go are menus; things to make are buttons. Nothing else goes here.
+- Words and menus use `header_fg`, never `fg_on_dark` directly: a few themes
+  have a pale `header_bg`.
+- The outline is the only thing that says + Pipeline and + Group are buttons,
+  so `header_edge` is held to 3:1.
+- Hover lifts the header toward its ink (14%); a focused button gets a
+  `header_fg` edge.
