@@ -23,6 +23,8 @@ from .db import (FAIL_CONTINUE, RUN_PIPELINE, RUN_SCRIPT, RUN_STEP,
 from .interpreter import build_command, build_run_spec, resolve_interpreter
 from .jobs import Job
 from .logger import get_logger
+from .outputpanel import (STEP_FAILED, STEP_OK, STEP_RETRYING, STEP_RUNNING,
+                          step_prefix)
 from .runner import decode_output_item
 
 if TYPE_CHECKING:
@@ -39,7 +41,7 @@ def _format_elapsed_secs(secs: float) -> str:
 
 def _tag_lines(text: str, label: str) -> str:
     """Prefix each non-empty line with a short step label, for concurrent-group output."""
-    tag = f"[{label[:12]}] "
+    tag = step_prefix(label)
     return "".join(tag + line if line.strip() else line for line in text.splitlines(keepends=True))
 
 
@@ -138,7 +140,9 @@ class JobController:
         output_queue: "queue.Queue",
         db: "ScriptDB",
         *,
-        on_output: Callable[[str, str, str | None], None],
+        # (tab_key, text, tag[, step]): step is (token, label) for a line from
+        # a step running beside others.
+        on_output: Callable[..., None],
         on_status: Callable[[str], None],
         on_notify: Callable[[str, str], None],
         on_started: Callable[[Job], None],
@@ -146,18 +150,26 @@ class JobController:
         on_rename: Callable[[Job], None],
         launch: Callable[[Job, object, str, int, object], None],
         now: Callable[[], datetime] = datetime.now,
+        on_step: Callable[[str, int, str, str], None] = lambda *a: None,
     ) -> None:
         self._registry = registry
         self._queue = output_queue
         self._db = db                    # persists per-step run status
-        self._on_output = on_output      # (tab_key, text, tag) -> None
+        self._on_output = on_output      # (tab_key, text, tag[, step]) -> None
         self._on_status = on_status      # (text) -> None
         self._on_notify = on_notify      # (title, body) -> None; app gates on the setting
         self._on_started = on_started    # (job) -> None; app builds tab + elapsed ticker
         self._on_finish = on_finish      # (job) -> None; widget teardown stays in the app
         self._on_rename = on_rename      # (job) -> None; running-row label refresh
         self._launch = launch            # (job, run_spec, name, script_id, step_token=None) -> None
+        # (tab_key, token, label, state) -> None: a step running beside others
+        # started, retried or finished, for that step's chip in the output tab.
+        self._on_step = on_step
         self._now = now
+        # Launcher scripts released while their process still runs: id -> job.
+        # Their output keeps reaching their tab; their eventual exit is not a
+        # second verdict on a run already counted done.
+        self._released: dict[int, Job] = {}
 
     def at_capacity(self, max_jobs: int) -> bool:
         """True when a positive cap is set and the registry is already that full."""
@@ -254,14 +266,26 @@ class JobController:
                 item = self._queue.get_nowait()
                 job = self._registry.get(item[1])
                 act = decode_output_item(item)
+                released = self._released.get(item[1])
+                if released is not None:
+                    if act.text is not None and act.status is None:
+                        self._on_output(released.tab_key, act.text, act.tag)
+                    elif act.status is not None:
+                        del self._released[item[1]]
+                    continue
                 if act.text is not None and job:
                     text = act.text
                     # Gate on the group's fixed launch size (not the live
                     # count), so the prefix doesn't vanish mid-group as
                     # siblings finish one by one.
                     if job.group_size > 1 and act.token in job.group_labels:
-                        text = _tag_lines(text, job.group_labels[act.token])
-                    self._on_output(job.tab_key, text, act.tag)
+                        label = job.group_labels[act.token]
+                        # The step rides along so the tab can colour its
+                        # prefix and filter to it.
+                        self._on_output(job.tab_key, _tag_lines(text, label), act.tag,
+                                        (act.token, label))
+                    else:
+                        self._on_output(job.tab_key, text, act.tag)
                 if act.status is not None:
                     # A completion item always carries its script id (protocol).
                     assert act.sid is not None
@@ -333,6 +357,9 @@ class JobController:
         self._on_status(status_line)
         self._on_rename(job)
 
+        if job.group_size > 1:
+            for token, _step in prepared:
+                self._on_step(job.tab_key, token, job.group_labels[token], STEP_RUNNING)
         for token, step in prepared:
             self._launch_step(job, token, step)
 
@@ -409,6 +436,26 @@ class JobController:
         job.released_steps.add(token)
         return True
 
+    def release_launcher_script(self, job: Job, sid: int) -> bool:
+        """Count a launcher run on its own as done while what it opened runs on.
+
+        A launcher -- a batch file that starts a server, say -- hands its
+        output to what it started, so the run never reached end-of-file and
+        sat in Running for as long as that was up, though the script itself
+        was "don't keep in Running". Pipeline steps were already released
+        this way (release_launcher_step); a run on its own was not.
+
+        False when there was nothing to release: it already finished, or it
+        was stopped.
+        """
+        if (job.stopped or job.job_id in self._released
+                or self._registry.get(job.job_id) is not job):
+            return False
+        self._released[job.job_id] = job
+        self._db.mark_run_status(sid, "ok")
+        self.handle_step_done(job, sid, "ok")
+        return True
+
     def _exit_code(self, job: Job, token) -> int | None:
         """The finished step's process exit code, or None if it never launched.
 
@@ -479,6 +526,9 @@ class JobController:
                     job.retrying[token] = f"{attempt}/{budget}"
                     # Lets the window show the card as retrying (issue #13).
                     self._on_rename(job)
+                    if job.group_size > 1:
+                        self._on_step(job.tab_key, token,
+                                      job.group_labels.get(token, ""), STEP_RETRYING)
                     self._launch_step(job, token, row)
                     return
 
@@ -494,6 +544,9 @@ class JobController:
                     token = job.group_pending.pop()
                 else:
                     job.group_pending.discard(token)
+                if job.group_size > 1:
+                    self._on_step(job.tab_key, token, job.group_labels.get(token, ""),
+                                  STEP_OK if status == "ok" else STEP_FAILED)
                 if status != "ok":
                     # Any failure arms run_when; only a 'stop' member's failure
                     # poisons the group and, with it, the run.

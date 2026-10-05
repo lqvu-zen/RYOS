@@ -38,7 +38,7 @@ from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
 from . import placement
-from ..themes import REFERENCE, readable_highlight
+from ..themes import REFERENCE, readable_highlight, step_colour
 from .cards import PipelineCard, ScriptCard
 from .detail import DetailPane
 from .dragdrop import GroupTabBar
@@ -73,13 +73,32 @@ class OutputPane(QWidget):
     def __init__(self, palette: dict | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self._palette = palette or REFERENCE["dark"]
-        self.lines: list[tuple[str, str]] = []
+        # (line, tag, step): step is (token, label) for a line from a step
+        # running beside others, else None.
+        self.lines: list[tuple[str, str, tuple | None]] = []
         self.query = ""
         self.errors_only = False
+        # The parallel steps seen in this tab, token -> (label, state), and
+        # the one the chips narrow the view to (None = every line).
+        self.steps: dict[int, tuple[str, str]] = {}
+        self.step_filter: int | None = None
         self.match: int | None = None
         self.spans: list[tuple[int, int]] = []
         col = QVBoxLayout(self)
         col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+        # One chip per parallel step, shown once a group has run here: the
+        # step's state at a glance, and a click to read its lines alone.
+        self.step_bar = QWidget()
+        self.step_bar.setObjectName("stepBar")
+        self._step_row = QHBoxLayout(self.step_bar)
+        self._step_row.setContentsMargins(6, 4, 6, 4)
+        self._step_row.setSpacing(4)
+        self.step_chips: dict[int | None, QPushButton] = {}
+        self._add_step_chip(None, outputpanel.ALL_STEPS, "")
+        self._step_row.addStretch(1)
+        self.step_bar.hide()
+        col.addWidget(self.step_bar)
         self.text = QPlainTextEdit()
         self.text.setObjectName("output")
         self.text.setReadOnly(True)
@@ -92,26 +111,40 @@ class OutputPane(QWidget):
         fmt.setForeground(QColor(self._palette[self.TAG_COLORS.get(tag, "out_stdout")]))
         return fmt
 
-    def _write(self, line: str, tag: str) -> None:
-        from PySide6.QtGui import QTextCursor
+    def _write(self, line: str, tag: str, step: tuple | None = None) -> None:
+        from PySide6.QtGui import QColor, QTextCursor
         cursor = QTextCursor(self.text.document())
         cursor.movePosition(QTextCursor.MoveOperation.End)
         if not self.text.document().isEmpty():
             cursor.insertBlock()
+        if step is not None:
+            # The step's "[name] " in its own colour, so interleaved lines
+            # can be told apart at a glance.
+            prefix = outputpanel.step_prefix(step[1])
+            if line.startswith(prefix):
+                fmt = self._format(tag)
+                fmt.setForeground(QColor(step_colour(step[0], self._palette["out_bg"])))
+                fmt.setFontWeight(700)
+                cursor.insertText(prefix, fmt)
+                line = line[len(prefix):]
         cursor.insertText(line, self._format(tag))
 
+    def _shown(self, tag: str, step: tuple | None) -> bool:
+        return (outputpanel.shown_when_filtered(tag, self.errors_only)
+                and outputpanel.shown_for_step(step[0] if step else None,
+                                               self.step_filter))
+
     def append(self, text: str, max_lines: int, *, scroll: bool = True,
-               tag: str | None = None) -> None:
+               tag: str | None = None, step: tuple | None = None) -> None:
         tag = tag or "stdout"
         line = text.rstrip("\n")
-        self.lines.append((line, tag))
-        if outputpanel.shown_when_filtered(tag, self.errors_only):
-            self._write(line, tag)
+        self.lines.append((line, tag, step))
+        if self._shown(tag, step):
+            self._write(line, tag, step)
         drop = outputpanel.overflow_lines(len(self.lines), max_lines)
         if drop:
             dropped, self.lines = self.lines[:drop], self.lines[drop:]
-            shown = sum(outputpanel.shown_when_filtered(tg, self.errors_only)
-                        for _l, tg in dropped)
+            shown = sum(self._shown(tg, st) for _l, tg, st in dropped)
             self._drop_blocks(shown)
         if scroll:
             bar = self.text.verticalScrollBar()
@@ -135,18 +168,21 @@ class OutputPane(QWidget):
     def rebuild(self) -> None:
         """Redraw from the kept lines -- for the filter, and a new palette."""
         self.text.clear()
-        for line, tag in self.lines:
-            if outputpanel.shown_when_filtered(tag, self.errors_only):
-                self._write(line, tag)
+        for line, tag, step in self.lines:
+            if self._shown(tag, step):
+                self._write(line, tag, step)
         self.search()
 
     def clear(self) -> None:
         self.lines = []
         self.text.clear()
+        self.set_step_filter(None)
         self.search()
 
     def set_palette(self, palette: dict) -> None:
         self._palette = palette
+        for token, (label, state) in self.steps.items():
+            self.set_step_state(token, label, state)
         self.rebuild()
 
     def set_errors_only(self, on: bool) -> None:
@@ -156,7 +192,52 @@ class OutputPane(QWidget):
 
     def plain_text(self) -> str:
         """Everything this tab holds, whatever the filter shows."""
-        return "\n".join(line for line, _tag in self.lines)
+        return "\n".join(line for line, _tag, _step in self.lines)
+
+    # -- parallel steps ----------------------------------------------------------------
+    def _add_step_chip(self, token: int | None, text: str, tip: str) -> QPushButton:
+        chip = QPushButton(text)
+        chip.setObjectName("stepChip")
+        chip.setCheckable(True)
+        chip.setChecked(token is None)
+        chip.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        if tip:
+            set_tooltip(chip, tip)
+        chip.clicked.connect(lambda _c=False, t=token: self.set_step_filter(t))
+        self.step_chips[token] = chip
+        # Before the stretch, in the order the steps ran.
+        self._step_row.insertWidget(self._step_row.count() - 1
+                                    if self._step_row.count() else 0, chip)
+        return chip
+
+    def set_step_state(self, token: int, label: str, state: str) -> None:
+        """A parallel step started, retried, passed or failed."""
+        self.steps[token] = (label, state)
+        chip = self.step_chips.get(token)
+        text = outputpanel.step_chip_text(token, label, state)
+        tip = outputpanel.step_chip_tip(token, label, state)
+        if chip is None:
+            chip = self._add_step_chip(token, text, tip)
+        else:
+            chip.setText(text)
+            set_tooltip(chip, tip)
+        chip.setProperty("state", state)
+        chip.style().unpolish(chip)
+        chip.style().polish(chip)
+        # A chip's own colour: the same hue as its step's lines.
+        chip.setStyleSheet(f"QPushButton#stepChip {{ border-left: 3px solid "
+                           f"{step_colour(token, self._palette['out_bg'])}; }}")
+        self.step_bar.show()
+
+    def set_step_filter(self, token: int | None) -> None:
+        """Show only step ``token``'s lines, or every line for None."""
+        if token is not None and token not in self.steps:
+            token = None
+        for key, chip in self.step_chips.items():
+            chip.setChecked(key == token)
+        if token != self.step_filter:
+            self.step_filter = token
+            self.rebuild()
 
     # -- finding ---------------------------------------------------------------------
     def set_query(self, query: str) -> None:
@@ -2271,16 +2352,26 @@ class MainWindow(QMainWindow):
         return None
 
     def append_output(self, text: str, tab_key: str | None = None,
-                      tag: str | None = None) -> None:
-        """Write a line wherever the shared routing rule says it belongs."""
+                      tag: str | None = None, step: tuple | None = None) -> None:
+        """Write a line wherever the shared routing rule says it belongs.
+        ``step`` is (token, label) for a line from a step running beside
+        others."""
         max_lines = self._settings.get("max_output_lines", 2000)
         scroll = self._settings.get("auto_scroll_output", True)
         for key in outputpanel.target_tabs(tab_key, self.active_output_key(),
                                            self._output_tabs):
-            self._output_tabs[key].append(text, max_lines, scroll=scroll, tag=tag)
+            # Only the job's own tab knows its steps: on All, tokens from
+            # different jobs would collide, so the line goes in plain.
+            self._output_tabs[key].append(text, max_lines, scroll=scroll, tag=tag,
+                                          step=step if key == tab_key else None)
         # Re-run an active search once output settles, not on every line.
         if self.output_find.text():
             self._output_search_timer.start()
+
+    def _on_step_state(self, tab_key: str, token: int, label: str, state: str) -> None:
+        pane = self._output_tabs.get(tab_key)
+        if pane is not None:
+            pane.set_step_state(token, label, state)
 
     # -- jobs --------------------------------------------------------------
     def attach_jobs(self, bridge) -> None:
@@ -2292,7 +2383,9 @@ class MainWindow(QMainWindow):
         """
         self._bridge = bridge
         bridge.output.connect(
-            lambda tab_key, text, tag=None: self.append_output(text, tab_key, tag))
+            lambda tab_key, text, tag=None, step=None:
+                self.append_output(text, tab_key, tag, step))
+        bridge.step_state.connect(self._on_step_state)
         bridge.status.connect(self.statusBar().showMessage)
         bridge.started.connect(self._on_job_started)
         bridge.finished.connect(self.running.remove)

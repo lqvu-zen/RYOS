@@ -46,7 +46,9 @@ class JobBridge(QObject):
     the bridge testable without one.
     """
 
-    output = Signal(str, str, object)      # (tab_key, text, tag)
+    output = Signal(str, str, object, object)  # (tab_key, text, tag, step or None)
+    #: (tab_key, token, label, state): a step running beside others changed.
+    step_state = Signal(str, int, str, str)
     status = Signal(str)
     notify = Signal(str, str)              # (title, body)
     started = Signal(object)
@@ -62,14 +64,15 @@ class JobBridge(QObject):
         self.queue: "queue.Queue" = queue.Queue()
         self.controller = JobController(
             self.registry, self.queue, self.db,
-            on_output=lambda tab_key, text, tag=None:
-                self.output.emit(tab_key, text, tag),
+            on_output=lambda tab_key, text, tag=None, step=None:
+                self.output.emit(tab_key, text, tag, step),
             on_status=self.status.emit,
             on_notify=lambda title, body: self.notify.emit(title, body),
             on_started=self.started.emit,
             on_finish=self._on_finish,
             on_rename=self.renamed.emit,
             launch=self._launch,
+            on_step=self.step_state.emit,
         )
         self._timer = QTimer(self)
         self._timer.setInterval(PUMP_MS)
@@ -122,17 +125,23 @@ class JobBridge(QObject):
             },
             daemon=True,
         ).start()
-        # A launcher step opens something and keeps running, so waiting for it
-        # would stall the pipeline (issue #5). Released after the same grace
-        # period the Tk app uses.
-        if step_token is not None and self.db.is_detached(script_id):
+        # A launcher opens something and keeps running, so waiting for it
+        # would stall the pipeline (issue #5) -- or, run on its own, leave it
+        # in Running for as long as what it opened is up. Released after the
+        # same grace period the Tk app uses.
+        if self.db.is_detached(script_id):
             secs = max(0, int(self._settings.get(
                 "launcher_release_seconds",
                 _SETTINGS_DEFAULTS["launcher_release_seconds"])))
-            QTimer.singleShot(
-                secs * 1000,
-                lambda: self.controller.release_launcher_step(
-                    job, step_token, script_id))
+            if step_token is not None:
+                QTimer.singleShot(
+                    secs * 1000,
+                    lambda: self.controller.release_launcher_step(
+                        job, step_token, script_id))
+            elif job.kind == "script":
+                QTimer.singleShot(
+                    secs * 1000,
+                    lambda: self.controller.release_launcher_script(job, script_id))
 
     # -- starting work -----------------------------------------------------
     def run_script(self, script_id: int, name: str, path: str, params: str,

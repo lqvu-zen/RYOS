@@ -904,7 +904,7 @@ def check_jobs_run(app):
     bridge = JobBridge(db, {"max_parallel_jobs": 4})
     lines: list = []
     finished: list = []
-    bridge.output.connect(lambda key, text, tag: lines.append(text))
+    bridge.output.connect(lambda key, text, tag, *_step: lines.append(text))
     bridge.finished.connect(finished.append)
     bridge.start()
 
@@ -3249,7 +3249,7 @@ def check_run_with_params_and_new_pipeline(app):
                                                   "max_parallel_jobs": 4})
     bridge = JobBridge(db, {"max_parallel_jobs": 4})
     lines: list = []
-    bridge.output.connect(lambda key, text, tag: lines.append(text))
+    bridge.output.connect(lambda key, text, tag, *_step: lines.append(text))
     win.attach_jobs(bridge)
     bridge.start()
     win.load_from_db(db)
@@ -4328,7 +4328,7 @@ def check_maximised_layout(app):
     win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
     bridge = JobBridge(db, {"max_parallel_jobs": 4})
     lines: list = []
-    bridge.output.connect(lambda key, text, tag: lines.append(text))
+    bridge.output.connect(lambda key, text, tag, *_step: lines.append(text))
     win.attach_jobs(bridge)
     bridge.start()
     win.load_from_db(db)
@@ -4535,6 +4535,144 @@ def check_pill_corners(app):
     print("  [ok] tab pills keep round corners at a small font (#11)")
 
 
+def check_parallel_step_output(app):
+    """Steps running side by side: their lines were interleaved in one tab
+    behind a short, uncoloured "[name]", so it was hard to follow one step or
+    see which failed. A real pipeline of two parallel steps -- one passes, one
+    fails -- must give its tab a chip per step with its result, colour each
+    step's prefix, and narrow the tab to one step's lines on a click."""
+    import sys as _sys
+    import tempfile
+    import time as _time
+    from PySide6.QtGui import QColor
+    from ryos import outputpanel as op
+    from ryos.db import ScriptDB, TRIGGER_WITH
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE, step_colour
+
+    tmp = Path(tempfile.mkdtemp(prefix="ryos-steps-"))
+    good = tmp / "good.py"
+    good.write_text("import time\nfor i in range(3):\n    print('good', i, flush=True)\n"
+                    "    time.sleep(0.05)\n")
+    bad = tmp / "bad.py"
+    bad.write_text("import sys, time\nfor i in range(3):\n    print('bad', i, flush=True)\n"
+                   "    time.sleep(0.05)\nsys.exit(2)\n")
+    db = ScriptDB(tmp / "steps.db")
+    db.create_group("G")
+    good_id = db.add("good", str(good), "", _sys.executable, "G")
+    bad_id = db.add("bad", str(bad), "", _sys.executable, "G")
+    pid = db.create_pipeline("Both", "G")
+    db.add_pipeline_step(pid, good_id)
+    second = db.add_pipeline_step(pid, bad_id)
+    db.set_step_trigger_mode(second, TRIGGER_WITH)
+
+    pal = REFERENCE["dark"]
+    win = MainWindow(pal, settings={"max_parallel_jobs": 4})
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.show()
+    app.processEvents()
+    if not bridge.run_pipeline(pid, "Both", active_group="G"):
+        PROBLEMS.append("the two-step parallel pipeline did not start")
+        return
+    end = _time.time() + 30
+    while _time.time() < end and win.running.count:
+        app.processEvents()
+        _time.sleep(0.02)
+    app.processEvents()
+    pane = next((p for k, p in win._output_tabs.items() if k != op.ALL), None)
+    if pane is None:
+        PROBLEMS.append("the parallel pipeline got no output tab")
+        return
+    chips = {t: c.text() for t, c in pane.step_chips.items() if t is not None}
+    # isHidden, not isVisibleTo: the output panel itself starts collapsed.
+    if pane.step_bar.isHidden() or chips != {1: "1. good ✓", 2: "2. bad ✗"}:
+        PROBLEMS.append(f"parallel step chips read {chips}, "
+                        "expected 1. good ✓ and 2. bad ✗")
+    # The prefix is drawn in the step's colour.
+    doc = pane.text.document()
+    want = QColor(step_colour(2, pal["out_bg"])).name()
+    found = False
+    block = doc.begin()
+    while block.isValid():
+        if block.text().startswith(op.step_prefix("bad")):
+            fmt = block.begin().fragment().charFormat()
+            found = fmt.foreground().color().name() == want
+            break
+        block = block.next()
+    if not found:
+        PROBLEMS.append("the failing step's [bad] prefix is not in its step colour")
+    # Narrowing to the failed step shows its lines and nothing else.
+    pane.step_chips[2].click()
+    app.processEvents()
+    # Blank lines (the step's exit footer opens with one) carry no prefix.
+    shown = [line for line in pane.text.toPlainText().splitlines() if line.strip()]
+    if not shown or not all(line.startswith(op.step_prefix("bad")) for line in shown):
+        PROBLEMS.append(f"filtered to step 2, the tab shows {shown[:4]}")
+    pane.step_chips[None].click()
+    app.processEvents()
+    if "good 0" not in pane.text.toPlainText():
+        PROBLEMS.append("All steps did not bring every line back")
+    bridge.stop()
+    win.hide()
+    win.deleteLater()
+    print("  [ok] parallel steps: a chip per step with its result, coloured "
+          "prefixes, and a click shows one step's lines")
+
+
+def check_launcher_leaves_running(app):
+    """A script marked Launcher ("don't keep in Running"), run on its own,
+    stayed in Running for as long as what it opened was up: the release only
+    applied to pipeline steps. Run a real launcher that keeps going, and its
+    row must go after the grace period while its process is still alive."""
+    import sys as _sys
+    import tempfile
+    import time as _time
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp(prefix="ryos-launcher-"))
+    server = tmp / "server.py"
+    server.write_text("import time\nprint('listening', flush=True)\ntime.sleep(60)\n")
+    db = ScriptDB(tmp / "launcher.db")
+    db.create_group("G")
+    sid = db.add("server", str(server), "", _sys.executable, "G", detached=1)
+    settings = {"max_parallel_jobs": 4, "launcher_release_seconds": 0}
+    win = MainWindow(REFERENCE["dark"], settings=settings)
+    bridge = JobBridge(db, settings)
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.show()
+    bridge.run_script(sid, "server", str(server), "", _sys.executable, active_group="G")
+
+    def pump_until(predicate, timeout=15.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    jobs = list(bridge.registry.all())
+    proc_of = (lambda: next(iter(jobs[0].processes.values()), None)) if jobs else (lambda: None)
+    pump_until(lambda: proc_of() is not None, 5)
+    proc = proc_of()
+    if not pump_until(lambda: win.running.count == 0):
+        PROBLEMS.append("a launcher run on its own stayed in Running")
+    elif proc is None or proc.poll() is not None:
+        PROBLEMS.append("the launcher's process was not still running when its row went")
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+        proc.wait(5)
+    bridge.stop()
+    win.hide()
+    win.deleteLater()
+    print("  [ok] launcher: run on its own, it leaves Running while what it opened runs on")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     real_log = _real_log_state()
@@ -4559,6 +4697,8 @@ def main() -> int:
     check_shell(app)
     check_jobs_run(app)
     check_running_section(app)
+    check_launcher_leaves_running(app)
+    check_parallel_step_output(app)
     check_small_dialogs(app)
     check_quick_run(app)
     check_drag_and_drop(app)
