@@ -260,6 +260,9 @@ QFrame#card[compact="true"] QWidget#cardName {{ font-weight: 600; font-size: 10p
 QFrame#card QLabel, QFrame#card #cardName {{ background: transparent; }}
 /* The empty column on a pipeline card is a gap in the card (#7). */
 QWidget#cardSpacer {{ background: transparent; }}
+/* So is a compact row's outcome slot while the row has no outcome yet:
+   painted, it read as an empty box beside Run. */
+QWidget#resultSlot {{ background: transparent; }}
 QLabel#cardPath {{ color: {d['muted_fg']}; font-size: 9pt; }}
 
 /* --- buttons -------------------------------------------------------- */

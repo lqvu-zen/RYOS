@@ -398,6 +398,18 @@ def check_cards(app):
         if len(set(xs)) != 1:
             PROBLEMS.append(f"compact rows: kind tag right edges at {xs}, "
                             "not one column (#10)")
+    # An empty slot (no outcome yet) is part of the row, not a box of the
+    # window colour beside Run -- the #7 hole again, from the catch-all rule.
+    for r in (rows[1], rows[4]):
+        slot = r.findChild(QWidget, "resultSlot")
+        shot = r.grab().toImage()
+        scale = shot.devicePixelRatio()
+        centre = slot.mapTo(r, slot.rect().center())
+        drawn = shot.pixelColor(int(centre.x() * scale), int(centre.y() * scale)).name()
+        row_there = shot.pixelColor(int(centre.x() * scale), int(1 * scale)).name()
+        if drawn != row_there:
+            PROBLEMS.append(f"compact row: the empty outcome slot is drawn {drawn}; "
+                            f"the row around it is {row_there}")
     before = tag_x(rows[1])
     rows[1].set_last_status("error")
     app.processEvents()
