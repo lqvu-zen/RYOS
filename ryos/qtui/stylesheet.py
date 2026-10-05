@@ -778,7 +778,9 @@ QMenu::icon {{ left: 12px; }}
    drawn with the app's own tick rather than Qt's glyph. */
 QMenu::indicator {{ left: 12px; width: 14px; height: 14px; }}
 QMenu::indicator:checked {{ image: url("{menu_tick}"); }}
-QMenu::item:selected {{ background: {c['accent']}; color: {c['fg_on_dark']}; }}
+/* The words on the accent: primary_fg, checked in every theme -- fg_on_dark
+   was 2.0:1 on Nord's pale accent. */
+QMenu::item:selected {{ background: {c['accent']}; color: {d['primary_fg']}; }}
 QMenu::item:disabled {{ color: {c['btn_disabled_fg']}; }}
 QMenu::separator {{ height: 1px; background: {c['border']}; margin: 4px 8px; }}
 
