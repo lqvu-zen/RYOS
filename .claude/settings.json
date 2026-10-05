@@ -70,7 +70,15 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run python C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/fullscreen_mock.py)",
       "Bash(export QT_QPA_PLATFORM=offscreen)",
       "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/run-ryos/driver.py workspace --theme dark)",
-      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py)"
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py)",
+      "Bash(awk 'NR>=1180 && NR<=1290 && /def load_from_db|def reload|_apply_search\\\\\\(|_show_selected\\\\\\(\\\\\\)|return$/ {print NR\": \"$0}' ryos/qtui/shell.py)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/act_probe.py\")",
+      "Bash(sed -i 's/^win = driver.window\\(\"light\"\\)/driver.load_samples\\(\\)\\\\nwin = driver.window\\(\"light\"\\)/' C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/act_probe.py)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/act_probe.py)",
+      "Bash(grep -n \"^from ryos.* detail\\\\|^from ryos import .*detail\\\\|detail,\\\\s*$\\\\|^    detail\" tests/test_ryos.py)",
+      "Bash(sed -i 's/badge.setFixedSize\\(side, 15\\)/badge.setFixedSize\\(side, 16\\)/; s/side = max\\(15, badge.width\\(\\)\\)/side = max\\(16, badge.width\\(\\)\\)/' ryos/qtui/rail.py)",
+      "Bash(sed -i \"s/border-radius: 7px;\\\\n    font-size: 8pt/X/\" ryos/qtui/stylesheet.py)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/review-ryos-ui/scripts/audit.py --theme light)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
