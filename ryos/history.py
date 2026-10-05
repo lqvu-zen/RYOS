@@ -111,8 +111,10 @@ def summarize(rows) -> str:
     if not rows:
         return "No runs recorded yet."
     ok = sum(1 for r in rows if r[7] == "ok")
+    stopped = sum(1 for r in rows if r[7] == "stopped")
     plural = "s" if len(rows) != 1 else ""
-    return f"{len(rows)} run{plural} · {ok} passed · {len(rows) - ok} failed"
+    text = f"{len(rows)} run{plural} · {ok} passed · {len(rows) - ok - stopped} failed"
+    return text + (f" · {stopped} stopped" if stopped else "")
 
 
 def prune_run_history(db, settings: dict) -> int:

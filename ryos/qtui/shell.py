@@ -1030,7 +1030,8 @@ class MainWindow(QMainWindow):
                               base_dir=rec.get("base_dir", ""),
                               last_run=rec.get("last_run"))
         card.section = section
-        status = {"ok": ", last run OK", "error": ", last run failed"}.get(
+        status = {"ok": ", last run OK", "error": ", last run failed",
+                  "stopped": ", last run stopped"}.get(
             rec.get("status") or "", "")
         card.setAccessibleName(f"{rec['name']}{status}")
         card.setAccessibleDescription(sections.ROW_KEYS_HINT)

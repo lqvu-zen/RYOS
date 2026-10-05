@@ -70,6 +70,8 @@ class Job:
 
 RUNNING = "running"
 RETRYING = "retrying"
+#: A run the user stopped -- recorded as neither passed nor failed.
+STOPPED = "stopped"
 
 
 def live_statuses(jobs) -> dict:

@@ -98,15 +98,16 @@ def recent(runs, now: datetime, limit: int = RECENT_COUNT) -> list[Entry]:
     out = []
     for row in runs:
         kind, status = row[3], row[7]
-        if kind not in ("script", "pipeline") or status not in ("ok", "error"):
+        if kind not in ("script", "pipeline") or status not in ("ok", "error", "stopped"):
             continue
         item_id = row[2] if kind == "pipeline" else row[1]
         if item_id is None:
             continue
         started = history.parse_stamp(row[5])
         when = ago_text(started, now) if started else "—"
-        if status == "ok":
-            meta = f"OK  ·  {when}  ·  {history.format_duration(row[5], row[6])}"
+        if status in ("ok", "stopped"):
+            word = "OK" if status == "ok" else "Stopped"
+            meta = f"{word}  ·  {when}  ·  {history.format_duration(row[5], row[6])}"
         elif row[8] is None:
             meta = f"Failed  ·  {when}  ·  did not start"
         else:

@@ -21,7 +21,7 @@ from .db import (FAIL_CONTINUE, RUN_PIPELINE, RUN_SCRIPT, RUN_STEP,
                  SOURCE_MANUAL, SOURCE_PIPELINE, TRIGGER_WITH,
                  WHEN_ON_FAILURE, WHEN_ON_SUCCESS)
 from .interpreter import build_command, build_run_spec, resolve_interpreter
-from .jobs import Job
+from .jobs import STOPPED, Job
 from .logger import get_logger
 from .outputpanel import (STEP_FAILED, STEP_OK, STEP_RETRYING, STEP_RUNNING,
                           step_prefix)
@@ -289,9 +289,15 @@ class JobController:
                 if act.status is not None:
                     # A completion item always carries its script id (protocol).
                     assert act.sid is not None
-                    self._db.mark_run_status(act.sid, act.status)
+                    status = act.status
+                    # Stop kills the process, so it exits non-zero: the user's
+                    # doing, not a failure. A run that finished OK before the
+                    # kill landed still counts as OK.
+                    if job is not None and job.stopped and status != "ok":
+                        status = STOPPED
+                    self._db.mark_run_status(act.sid, status)
                     if job:
-                        self.handle_step_done(job, act.sid, act.status, act.token)
+                        self.handle_step_done(job, act.sid, status, act.token)
         except queue.Empty:
             pass
 
@@ -590,6 +596,20 @@ class JobController:
                     self.run_next_pipeline_step(job)
                     return
 
+            # Stopped by the user: neither passed nor failed, and nothing
+            # to notify about -- they know, they pressed it.
+            if job.stopped:
+                job.pipeline_queue.clear()
+                self._on_output(job.tab_key, "\n[Pipeline stopped]\n", "info")
+                self._on_status("Pipeline stopped.")
+                self._record(
+                    RUN_PIPELINE, name=job.pipeline_name or job.name,
+                    pipeline_id=job.pipeline_id, started_at=job.start_time,
+                    finished_at=finished_at, status=STOPPED,
+                    step_index=job.pipeline_step_idx, trigger_source=job.trigger,
+                )
+                self._on_finish(job)
+                return
             # Terminal. The verdict is the run's, not the last step's: a
             # cleanup step succeeding after a failure must not turn the
             # pipeline green.
@@ -641,6 +661,8 @@ class JobController:
             if status == "ok":
                 self._on_status("Done.")
                 self._on_notify("RYOS — Script passed", f"✓  {job.name}  ·  {elapsed}")
+            elif status == STOPPED:
+                self._on_status("Stopped.")
             else:
                 self._on_status("Failed.")
                 self._on_notify("RYOS — Script failed", f"✗  {job.name}  ·  {elapsed}")

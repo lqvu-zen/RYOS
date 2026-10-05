@@ -91,7 +91,8 @@ def _or_dash(value) -> str:
 
 def subtitle(kind: str, rec: dict, step_count: int = 0) -> str:
     """The line under the name: what it is, and how its last run went."""
-    status = {"ok": "OK", "error": "failed"}.get(rec.get("status") or "")
+    status = {"ok": "OK", "error": "failed", "stopped": "stopped"}.get(
+        rec.get("status") or "")
     if kind == "pipeline":
         plural = "s" if step_count != 1 else ""
         head = f"{step_count} step{plural}"

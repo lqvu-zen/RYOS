@@ -132,6 +132,9 @@ def status_badge(status: str | None) -> StatusBadge | None:
         return StatusBadge("● Failed", "error_fg", "error")
     if status == "ok":
         return StatusBadge("● OK", "ok_fg", "ok")
+    if status == "stopped":
+        # Stopped by hand: said, but in the muted colour -- not a warning.
+        return StatusBadge("● Stopped", "name_fg", "path_fg")
     return None
 
 

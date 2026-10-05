@@ -8755,3 +8755,74 @@ class TestToastsCanBeBlocked(unittest.TestCase):
                                   create=True):
             notifications._show_notification("Done", "a finished")
         popen.assert_called_once()
+
+
+class TestAStoppedRunIsStopped(unittest.TestCase):
+    """Stop kills the process, which then exits non-zero -- that is the user's
+    doing, not a failure: it is recorded as stopped, keeps Run (not Retry),
+    and sends no "failed" notification."""
+
+    def _controller(self):
+        reg, q, notes = JobRegistry(), _queue.Queue(), []
+        ctl = JobController(
+            reg, q, _make_db(),
+            on_output=lambda *a: None, on_status=lambda *a: None,
+            on_notify=lambda title, body: notes.append(title),
+            on_started=lambda *a: None,
+            on_finish=lambda job: reg.remove(job.job_id),
+            on_rename=lambda *a: None,
+            launch=lambda job, spec, name, sid, token=None: None)
+        return reg, q, ctl, notes
+
+    def test_a_stopped_script(self):
+        reg, q, ctl, notes = self._controller()
+        job = Job(1, "script", 5, None, "s", "job:1", "g")
+        reg.add(job)
+        job.stopped = True
+        q.put(("done", job.job_id, 5, "error", ""))
+        ctl.pump()
+        self.assertEqual([r[7] for r in ctl._db.list_runs(script_id=5)], ["stopped"])
+        self.assertEqual(notes, [])
+        self.assertIsNone(reg.get(job.job_id))
+
+    def test_a_stopped_pipeline_and_its_step(self):
+        reg, q, ctl, notes = self._controller()
+        job = Job(1, "pipeline", None, 7, "p", "job:1", "g", pipeline_name="P",
+                  pipeline_queue=[_policy_step("a"), _policy_step("b")],
+                  pipeline_total=2)
+        reg.add(job)
+        ctl.run_next_pipeline_step(job)
+        token = next(iter(job.group_pending)) if job.group_pending else None
+        job.stopped = True
+        job.pipeline_queue.clear()          # what the window's Stop does
+        q.put(("done_tag", job.job_id, 1, "error", "stderr", "", token))
+        ctl.pump()
+        runs = {r[3]: r[7] for r in ctl._db.list_runs(pipeline_id=7)}
+        self.assertEqual(runs, {"step": "stopped", "pipeline": "stopped"})
+        self.assertEqual(notes, [])
+        self.assertIsNone(reg.get(job.job_id))
+
+    def test_a_run_that_finished_before_the_stop_still_counts(self):
+        reg, q, ctl, notes = self._controller()
+        job = Job(1, "script", 5, None, "s", "job:1", "g")
+        reg.add(job)
+        job.stopped = True
+        q.put(("done", job.job_id, 5, "ok", ""))
+        ctl.pump()
+        self.assertEqual([r[7] for r in ctl._db.list_runs(script_id=5)], ["ok"])
+
+    def test_stopped_reads_as_stopped_everywhere(self):
+        from ryos import history
+        self.assertFalse(cardstyle.run_button("stopped").is_retry)
+        self.assertEqual(cardstyle.status_badge("stopped").text, "● Stopped")
+        self.assertEqual(cardstyle.status_words("stopped"), "Last run: Stopped")
+        row = (1, 5, None, "script", "s", "2026-10-05T21:00:00", "2026-10-05T21:00:30",
+               "stopped", 1, None, "manual")
+        now = __import__("datetime").datetime(2026, 10, 5, 22, 0)
+        self.assertEqual(activity.recent([row], now)[0].meta, "Stopped  ·  21:00  ·  30.0s")
+        self.assertEqual(detail.last_run_lines(row, now),
+                         ("Last run  ·  Stopped", "Today 21:00  ·  30.0s"))
+        self.assertEqual(detail.subtitle("pipeline", {"status": "stopped"}, 2),
+                         "2 steps  ·  last run stopped")
+        self.assertEqual(history.summarize([row, row[:7] + ("ok",) + row[8:]]),
+                         "2 runs · 1 passed · 0 failed · 1 stopped")
