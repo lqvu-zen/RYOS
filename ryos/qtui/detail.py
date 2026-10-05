@@ -24,8 +24,11 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
 from .. import cardmenu, cardstyle, detail
 from ..interpreter import _script_tag
 from ..themes import _readable_on, ink_on
-from .icons import IconButton
-from .widgets import ElidedLabel, literal, set_tooltip
+from .icons import IconButton, IconLabel
+from .widgets import ElidedLabel, FlowLayout, literal, set_tooltip
+
+#: A step card's size: the same for every step, so the row reads as a sequence.
+STEP_CARD = (184, 108)
 
 
 def _alive(widget) -> bool:
@@ -58,6 +61,10 @@ class DetailPane(QWidget):
                  on_menu: Callable[[str, int, str], None],
                  on_more: Callable[[str, int, QPoint], None],
                  make_history: Callable[[str, int], QWidget] | None = None,
+                 step_statuses: Callable[[], dict] | None = None,
+                 last_run: Callable[[str, int], object] | None = None,
+                 can_open_output: Callable[[str, int], bool] | None = None,
+                 open_output: Callable[[str, int], None] | None = None,
                  parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("detailPane")
@@ -65,6 +72,12 @@ class DetailPane(QWidget):
         self._on_menu = on_menu
         self._on_more = on_more
         self._make_history = make_history
+        # What the window knows and the pane shows: the steps' scripts' last
+        # outcomes, the item's last run, and whether its output is still open.
+        self._step_statuses = step_statuses or dict
+        self._last_run = last_run or (lambda _k, _i: None)
+        self._can_open_output = can_open_output or (lambda _k, _i: False)
+        self._open_output = open_output or (lambda _k, _i: None)
         self.history_view = None
         self.card = None
         self.kind: str | None = None
@@ -154,26 +167,46 @@ class DetailPane(QWidget):
         ocol.addStretch(1)
         self.stack.addWidget(overview)
 
-        # -- the script's presets, or the pipeline's steps
+        # -- the script's presets, or the pipeline's steps, as cards
         self.params_title = self._heading(detail.PARAMETERS)
         body.addWidget(self.params_title)
-        self.chips = QHBoxLayout()
-        self.chips.setSpacing(6)
-        body.addLayout(self.chips)
+        self.chips_box = QWidget()
+        self.chips = FlowLayout(self.chips_box, spacing=8)
+        body.addWidget(self.chips_box)
         self.steps_title = self._heading(detail.STEPS)
         body.addWidget(self.steps_title)
         self.steps_panel = QWidget()
-        self.steps_panel.setObjectName("sectionPanel")
-        self.steps_panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.steps_rows = QVBoxLayout(self.steps_panel)
-        self.steps_rows.setContentsMargins(0, 0, 0, 0)
-        self.steps_rows.setSpacing(0)
+        self.steps_rows = FlowLayout(self.steps_panel, spacing=6)
         body.addWidget(self.steps_panel)
 
         self.facts = QGridLayout()
         self.facts.setHorizontalSpacing(24)
         self.facts.setVerticalSpacing(6)
         body.addLayout(self.facts)
+
+        # -- how the last run went, and the way to its output
+        self.last_box = QFrame()
+        self.last_box.setObjectName("lastRun")
+        last = QHBoxLayout(self.last_box)
+        last.setContentsMargins(14, 10, 12, 10)
+        last.setSpacing(12)
+        self.last_dot = QLabel("●")
+        self.last_dot.setObjectName("lastRunDot")
+        last.addWidget(self.last_dot)
+        words = QVBoxLayout()
+        words.setSpacing(1)
+        self.last_title = QLabel("")
+        self.last_title.setObjectName("lastRunTitle")
+        words.addWidget(self.last_title)
+        self.last_meta = ElidedLabel("")
+        self.last_meta.setObjectName("cardPath")
+        words.addWidget(self.last_meta)
+        last.addLayout(words, 1)
+        self.last_button = QPushButton("")
+        self.last_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.last_button.clicked.connect(self._on_last_button)
+        last.addWidget(self.last_button)
+        body.addWidget(self.last_box)
 
         # Where the output panel goes while the layout is on.
         output = QWidget()
@@ -319,26 +352,50 @@ class DetailPane(QWidget):
         self._fill_facts(detail.pipeline_facts(self.rec)
                          if self.kind == cardmenu.PIPELINE
                          else detail.script_facts(self.rec))
-        # A run just finished, most likely: the History tab shows it too.
+        # A run just finished, most likely: the History tab shows it too,
+        # the last-run box says how it went, and a step's card its outcome.
         if self.history_view is not None and self.current_tab() == detail.HISTORY_TAB:
             self.history_view.reload()
+        self._fill_last_run()
+        if self.kind == cardmenu.PIPELINE:
+            self._fill_steps()
 
     def _fill_chips(self) -> None:
-        """The script's presets as chips; the chosen one is what Run passes."""
+        """The script's presets as cards: pick one -- what Run passes -- or
+        run it straight away with its own play button."""
         _clear(self.chips)
         combo = getattr(self.card, "params_combo", None)
         entries = ([combo.itemText(i) for i in range(combo.count())]
                    if combo is not None else [])
         self.params_title.setVisible(bool(entries))
+        self.chips_box.setVisible(bool(entries))
         for text in entries:
+            chosen = text == combo.currentText()
+            card = QFrame()
+            card.setObjectName("presetCard")
+            card.setProperty("chosen", chosen)
+            row = QHBoxLayout(card)
+            row.setContentsMargins(3, 3, 3, 3)
+            row.setSpacing(0)
             chip = QPushButton(literal(text))
             chip.setObjectName("paramChip")
             chip.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             chip.setCheckable(True)
-            chip.setChecked(text == combo.currentText())
+            chip.setChecked(chosen)
             chip.clicked.connect(lambda _c=False, t=text: self._choose_preset(t))
-            self.chips.addWidget(chip)
-        self.chips.addStretch(1)
+            row.addWidget(chip)
+            go = IconButton("play", role="muted", hover_role="text", size=12,
+                            palette=self._palette)
+            go.setObjectName("presetRun")
+            set_tooltip(go, f"Run with {text}")
+            go.clicked.connect(lambda _c=False, t=text: self._run_preset(t))
+            row.addWidget(go)
+            self.chips.addWidget(card)
+
+    def _run_preset(self, text: str) -> None:
+        """Run with one preset, in one click: choose it, then Run."""
+        self._choose_preset(text)
+        self._press("run_button")
 
     def _choose_preset(self, text: str) -> None:
         combo = getattr(self.card, "params_combo", None)
@@ -347,35 +404,100 @@ class DetailPane(QWidget):
         self._fill_chips()
 
     def _fill_steps(self) -> None:
+        """The steps as cards in order, wrapping: an arrow into each step
+        after the first, a + into one that starts with the step before. The
+        mark travels with its card, so a wrapped line starts "→ step" rather
+        than the line above ending in an arrow to nothing."""
         _clear(self.steps_rows)
-        rows = cardstyle.pipeline_preview_rows(self._steps)
-        if not rows:
+        cards = detail.step_cards(self._steps, self._step_statuses())
+        if not cards:
             empty = QLabel(cardstyle.NO_STEPS)
             empty.setObjectName("cardPath")
-            empty.setContentsMargins(12, 8, 12, 8)
             self.steps_rows.addWidget(empty)
-        for i, (number, name, path, override) in enumerate(rows):
-            row = QFrame()
-            row.setObjectName("stepRow")
-            row.setProperty("last", i == len(rows) - 1)
-            line = QHBoxLayout(row)
-            line.setContentsMargins(12, 7, 12, 7)
-            line.setSpacing(10)
-            n = QLabel(number)
-            n.setObjectName("cardPath")
-            n.setFixedWidth(22)
-            line.addWidget(n)
-            title = QLabel(name)
-            title.setObjectName("cardName")
-            line.addWidget(title)
-            where = ElidedLabel(path)
-            where.setObjectName("cardPath")
-            line.addWidget(where, 1)
-            if override:
-                extra = QLabel(f"[{override}]")
-                extra.setObjectName("cardPath")
-                line.addWidget(extra)
-            self.steps_rows.addWidget(row)
+        for i, step in enumerate(cards):
+            card = self._step_card(step)
+            if i == 0:
+                self.steps_rows.addWidget(card)
+                continue
+            holder = QWidget()
+            row = QHBoxLayout(holder)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(6)
+            mark = IconLabel("plus" if step.together else "arrow-right", role="muted",
+                             size=14, palette=self._palette)
+            mark.setToolTip("Starts with the step before" if step.together else "Then")
+            row.addWidget(mark)
+            row.addWidget(card)
+            self.steps_rows.addWidget(holder)
+
+    def _step_card(self, step) -> QFrame:
+        c = self._palette
+        card = QFrame()
+        card.setObjectName("stepCard")
+        card.setFixedSize(*STEP_CARD)
+        col = QVBoxLayout(card)
+        col.setContentsMargins(12, 9, 10, 9)
+        col.setSpacing(2)
+        col.addWidget(self._heading(f"STEP {step.number}"))
+        name = ElidedLabel(step.name)
+        name.setObjectName("stepName")
+        col.addWidget(name)
+        where = ElidedLabel(step.file)
+        where.setObjectName("cardPath")
+        col.addWidget(where)
+        col.addStretch(1)
+        foot = QHBoxLayout()
+        foot.setSpacing(8)
+        spec = cardstyle.status_badge(step.status)
+        if spec is not None:
+            word = QLabel(spec.text)
+            word.setStyleSheet(f"color: {_readable_on(c[spec.bg_key], (c['card_bg'],))};"
+                               " font-size: 9pt; font-weight: 600;")
+            foot.addWidget(word)
+        notes = ElidedLabel("  ·  ".join(step.notes))
+        notes.setObjectName("cardPath")
+        foot.addWidget(notes, 1)
+        col.addLayout(foot)
+        said = [f"Step {step.number}: {step.name}", step.file,
+                cardstyle.status_words(step.status) or "", *step.notes]
+        card.setToolTip("\n".join(s for s in said if s))
+        card.setAccessibleName(", ".join(s for s in said if s))
+        return card
+
+    def _fill_last_run(self) -> None:
+        """The last-run box: how it went, when, and the way to its output."""
+        if self.kind is None:
+            return
+        from datetime import datetime
+        item_id = self._item_id()
+        row = self._last_run(self.kind, item_id)
+        lines = detail.last_run_lines(row, datetime.now())
+        c = self._palette
+        if lines is None:
+            self.last_title.setText(detail.NOT_RUN)
+            self.last_meta.setText("")
+            self.last_dot.hide()
+            self.last_button.hide()
+            return
+        self.last_title.setText(lines[0])
+        self.last_meta.setText(lines[1])
+        spec = cardstyle.status_badge(row[7])
+        if spec is not None:
+            self.last_dot.setStyleSheet(
+                f"color: {_readable_on(c[spec.bg_key], (c['card_bg'],))}; font-size: 16pt;")
+        self.last_dot.setVisible(spec is not None)
+        self.last_button.setText(detail.OPEN_OUTPUT
+                                 if self._can_open_output(self.kind, item_id)
+                                 else detail.SEE_HISTORY)
+        self.last_button.show()
+
+    def _on_last_button(self) -> None:
+        if self.kind is None:
+            return
+        if self.last_button.text() == detail.OPEN_OUTPUT:
+            self._open_output(self.kind, self._item_id())
+        else:
+            self.show_tab(detail.HISTORY_TAB)
 
     def _fill_facts(self, facts) -> None:
         _clear(self.facts)

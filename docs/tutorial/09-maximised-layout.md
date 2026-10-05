@@ -14,7 +14,10 @@ While the window is maximised, the group pills give way to a **group picker** ov
 
 Click a row on the left to show it. At the top are its kind and name, the star, **Edit** and the three dots (the row's right-click menu), and **Run** — or **Retry** after a failure — with **Run with…** and **Schedule…** beside it. Under that are three tabs:
 
-- **Overview** — a script's presets as chips (the highlighted one is what Run passes; click another to switch), or a pipeline's **STEPS** in order, and a few facts: the path, the base folder, the saved parameters, whether it asks each run, its schedule and when it last ran.
+- **Overview** — for a script, its presets as pills: the highlighted one is what Run passes (click another to switch), and each pill's own ▶ runs with it straight away. For a pipeline, its **STEPS** as cards in order — an arrow into each step, a + into one that starts with the step before — each with its script's file, how its last run went, and anything set differently from the default (its own parameters, keeps going, retries). Then a few facts, and a **Last run** box: how it went, when and how long it took, with **Open output** while that run's output is still open (otherwise **History**).
+
+![The Resilient pipeline's Overview: four step cards joined by arrows -- Flaky, Always fails, Cleanup and Say hello -- each with its file, its outcome and notes such as keeps going and 3 retries, then the Last run box with Open output](images/09-maximised-steps.png)
+
 - **Output** — the output panel, with a tab per run. When you run the item you are looking at, RYOS switches here for you.
 - **History** — its recorded runs, newest first, with **Clear history…**.
 

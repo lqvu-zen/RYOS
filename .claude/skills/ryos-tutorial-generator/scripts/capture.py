@@ -174,6 +174,8 @@ def main() -> int:
     driver.card(win, "Resilient").run_button.click()
     driver.idle(win)
     driver.card(win, "Resilient").activated.emit()
+    win.detail.show_tab("Overview")
+    save(win, "09-maximised-steps")
     win.detail.show_tab("Output")
     save(win, "09-maximised-pipeline")
     win.detail.show_tab("Overview")

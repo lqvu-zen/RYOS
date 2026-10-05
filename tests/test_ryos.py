@@ -8680,3 +8680,53 @@ class TestActivityBar(unittest.TestCase):
     def test_the_rail_has_activity_among_the_working_places(self):
         place = next(p for p in detail.RAIL if p.key == "activity")
         self.assertFalse(place.foot)
+
+
+class TestOverviewCards(unittest.TestCase):
+    """The detail pane's Overview: steps as cards, the last-run box."""
+
+    NOW = __import__("datetime").datetime(2026, 10, 5, 22, 0)
+
+    @staticmethod
+    def _step(script_id, name, path, override=None, trigger="after",
+              on_failure="stop", retries=0, run_when="always", detached=0):
+        # list_pipeline_steps: step_id, script_id, name, path, params,
+        # interpreter, params_override, trigger_mode, env_vars, work_dir,
+        # on_failure, retries, run_when, detached
+        return (1, script_id, name, path, "", "", override, trigger, None, None,
+                on_failure, retries, run_when, detached)
+
+    def test_a_step_card_says_what_runs_and_only_what_differs(self):
+        from ryos.db import FAIL_CONTINUE, TRIGGER_WITH
+        steps = [self._step(5, "Flaky", r"C:\s\flaky.py", retries=3,
+                            on_failure=FAIL_CONTINUE),
+                 self._step(6, "Hello", "/home/s/hello.py", override="--name RYOS",
+                            trigger=TRIGGER_WITH),
+                 self._step(7, "Plain", "plain.bat", override="")]
+        cards = detail.step_cards(steps, {5: "ok", 6: "error"})
+        self.assertEqual([(c.number, c.name, c.file, c.status) for c in cards],
+                         [(1, "Flaky", "flaky.py", "ok"),
+                          (2, "Hello", "hello.py", "error"),
+                          (3, "Plain", "plain.bat", None)])
+        self.assertEqual(cards[0].notes, ("keeps going", "3 retries"))
+        self.assertEqual(cards[1].notes, ("--name RYOS",))
+        self.assertEqual(cards[2].notes, ("no parameters",))
+        self.assertEqual([c.together for c in cards], [False, True, False])
+
+    def test_the_last_run_box(self):
+        self.assertIsNone(detail.last_run_lines(None, self.NOW))
+        ok = (1, 5, None, "script", "a", "2026-10-05T21:09:00", "2026-10-05T21:09:12",
+              "ok", 0, None, "manual")
+        self.assertEqual(detail.last_run_lines(ok, self.NOW),
+                         ("Last run  ·  OK", "Today 21:09  ·  12.0s"))
+        bad = (2, 5, None, "script", "a", "2026-10-04T08:00:00", "2026-10-04T08:00:01",
+               "error", 3, None, "manual")
+        self.assertEqual(detail.last_run_lines(bad, self.NOW),
+                         ("Last run  ·  Failed", "Yesterday 08:00  ·  1.0s  ·  exit code 3"))
+
+    def test_a_pipelines_last_run_is_its_own_not_a_steps(self):
+        step = (3, 5, 9, "step", "Flaky", "t", "t", "ok", 0, 1, "manual")
+        own = (2, None, 9, "pipeline", "P", "t", "t", "error", None, None, "manual")
+        self.assertIs(detail.last_run_row([step, own], "pipeline"), own)
+        self.assertIs(detail.last_run_row([step, own], "script"), step)
+        self.assertIsNone(detail.last_run_row([step], "pipeline"))

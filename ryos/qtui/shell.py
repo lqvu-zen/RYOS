@@ -337,6 +337,8 @@ class MainWindow(QMainWindow):
         self._on_run = on_run
         self._cards: list = []
         self._output_tabs: dict[str, OutputPane] = {}
+        # (kind, id) -> the output tab of its latest run, for "Open output".
+        self._latest_tab: dict[tuple, str] = {}
         self._bridge = None
         self.quick_run_bars: dict[str, QuickRunBar] = {}
         self._qr_index = None
@@ -387,7 +389,11 @@ class MainWindow(QMainWindow):
             on_menu=lambda kind, item_id, key: self.on_card_menu(kind, item_id, key),
             on_more=lambda kind, item_id, pos: self._show_card_menu(
                 kind, item_id, pos, self._selected_section()),
-            make_history=self._history_view)
+            make_history=self._history_view,
+            step_statuses=self._script_statuses,
+            last_run=self._last_run_of,
+            can_open_output=lambda kind, item_id: self._output_of(kind, item_id) is not None,
+            open_output=self._open_output_of)
         self.outer = QSplitter(Qt.Orientation.Horizontal)
         self.outer.setObjectName("outerSplit")
         self.outer.addWidget(self.splitter)
@@ -2453,9 +2459,14 @@ class MainWindow(QMainWindow):
 
     def _on_job_started(self, job) -> None:
         self.add_output_tab(job.tab_key, job.name)
+        kind = getattr(job, "kind", None)
+        item = getattr(job, "pipeline_id" if kind == cardmenu.PIPELINE else "script_id", None)
+        if kind is not None:
+            self._latest_tab[(kind, item)] = job.tab_key
         if self.workspace:
-            tab = detail.tab_when_run_starts(self._selected, job.kind,
-                                             job.script_id, job.pipeline_id)
+            tab = detail.tab_when_run_starts(self._selected, kind,
+                                             getattr(job, "script_id", None),
+                                             getattr(job, "pipeline_id", None))
             if tab:
                 self.detail.show_tab(tab)
         if getattr(job, "pipeline_name", None):
@@ -2661,6 +2672,29 @@ class MainWindow(QMainWindow):
         menu.addAction(detail.NEW_GROUP).triggered.connect(lambda _c=False: self.new_group())
         self.popup(menu, self.group_picker.mapToGlobal(
             QPoint(0, self.group_picker.height())))
+
+    def _script_statuses(self) -> dict:
+        """Each script's last outcome as its row shows it -- live, so a
+        pipeline's running step says so on its card."""
+        return {c.script_id: getattr(c, "_last_status", None) for c in self._cards
+                if getattr(c, "script_id", None) is not None}
+
+    def _last_run_of(self, kind: str, item_id: int):
+        if self._db is None:
+            return None
+        ids = ({"pipeline_id": item_id} if kind == cardmenu.PIPELINE
+               else {"script_id": item_id})
+        return detail.last_run_row(self._db.list_runs(limit=20, **ids), kind)
+
+    def _output_of(self, kind: str, item_id: int):
+        """The output tab of the item's latest run, while it is still open."""
+        return self._output_tabs.get(self._latest_tab.get((kind, item_id), ""))
+
+    def _open_output_of(self, kind: str, item_id: int) -> None:
+        pane = self._output_of(kind, item_id)
+        if pane is not None:
+            self.output_tabs.setCurrentWidget(pane)
+        self.detail.show_tab(detail.OUTPUT_TAB)
 
     def _history_view(self, kind: str, item_id: int):
         """The History tab's view of ``item_id``'s runs."""

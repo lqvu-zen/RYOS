@@ -4431,13 +4431,40 @@ def check_maximised_layout(app):
             if win.detail.run.text() != detail.run_label("error"):
                 PROBLEMS.append(f"after a failure the pane's Run read "
                                 f"{win.detail.run.text()!r}")
-            # Its History tab lists both runs, newest first.
+            # The last-run box says it failed, and opens that run's output.
+            if win.detail.last_title.text() != "Last run  ·  Failed" \
+                    or win.detail.last_button.text() != detail.OPEN_OUTPUT:
+                PROBLEMS.append(f"the last-run box reads {win.detail.last_title.text()!r} "
+                                f"with {win.detail.last_button.text()!r}")
+            else:
+                win.detail.last_button.click()
+                app.processEvents()
+                if win.detail.current_tab() != detail.OUTPUT_TAB \
+                        or win.output_tabs.currentWidget() is not win._output_of("script", sid):
+                    PROBLEMS.append("Open output did not show the run's own output")
+                win.detail.show_tab(detail.OVERVIEW_TAB)
+                app.processEvents()
+            # A preset's own play button runs with it, in one click.
+            before = sum("ARGS=--fast" in ln for ln in lines)
+            fast = next((card for card in win.detail.findChildren(QFrame, "presetCard")
+                         if card.isVisible() and any(
+                             b.objectName() == "paramChip" and b.text() == "--fast"
+                             for b in card.findChildren(QPushButton))), None)
+            if fast is None:
+                PROBLEMS.append("no preset card for --fast")
+            else:
+                next(b for b in fast.findChildren(QPushButton)
+                     if b.objectName() == "presetRun").click()
+                if not pump_until(lambda: sum("ARGS=--fast" in ln for ln in lines) > before):
+                    PROBLEMS.append("a preset's play button did not run with it")
+                pump_until(lambda: len(bridge.registry) == 0)
+            # Its History tab lists all three runs, newest first.
             win.detail.show_tab(detail.HISTORY_TAB)
             app.processEvents()
             view = win.detail.history_view
-            if view is None or len(view.rows()) != 2:
+            if view is None or len(view.rows()) != 3:
                 PROBLEMS.append(f"the History tab shows "
-                                f"{None if view is None else len(view.rows())} runs, not 2")
+                                f"{None if view is None else len(view.rows())} runs, not 3")
 
         # A pipeline lists its steps; History follows the choice.
         row("pipeline").activated.emit()
@@ -4447,7 +4474,7 @@ def check_maximised_layout(app):
             PROBLEMS.append("the History tab did not follow the choice to the pipeline")
         win.detail.show_tab(detail.OVERVIEW_TAB)
         steps = [w for w in win.detail.steps_panel.findChildren(QFrame)
-                 if w.objectName() == "stepRow"]
+                 if w.objectName() == "stepCard" and w.isVisible()]
         if win.detail.kind != cardmenu.PIPELINE or len(steps) != 1 \
                 or win.detail.run_with.isVisible():
             PROBLEMS.append(f"the pipeline's pane: kind {win.detail.kind!r}, "
@@ -4513,8 +4540,9 @@ def check_maximised_layout(app):
         win.close()
         win.deleteLater()
     print("  [ok] maximised: rail, group picker, tabs (Output opens on a run, History "
-          "follows the choice), Activity (recent, up next, status, toggle), rows "
-          "compact, chips, Retry, steps; restored")
+          "follows the choice), Activity (recent, up next, status, toggle), "
+          "Overview (preset cards run, last run opens its output, step cards), "
+          "rows compact, Retry; restored")
 
 
 def check_ampersands_show(app):

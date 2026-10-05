@@ -9,9 +9,10 @@ unit-tested without a display.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
-from . import cardstyle
+from . import activity, cardstyle, history, pipelinesteps
 
 #: What the pane shows before anything is chosen.
 EMPTY = "Choose a script or pipeline on the left to see it here."
@@ -121,3 +122,73 @@ def pipeline_facts(rec: dict) -> list[tuple[str, str]]:
     return [
         ("Schedule", "Runs on a schedule" if rec.get("scheduled") else "None"),
     ]
+
+
+# -- the Overview: steps as cards, the last run -------------------------------------
+
+#: What the last-run box says before anything has run.
+NOT_RUN = "Not run yet."
+#: Its buttons: the run's output while its tab is open, else the history.
+OPEN_OUTPUT, SEE_HISTORY = "Open output", "History"
+
+
+@dataclass(frozen=True)
+class StepCard:
+    """One step of a pipeline, as a card in the Overview."""
+    number: int
+    name: str
+    file: str
+    status: str | None
+    #: Starts with the step before it rather than after it.
+    together: bool
+    notes: tuple
+
+
+def _file_name(path: str) -> str:
+    return re.split(r"[\\/]", path or "")[-1]
+
+
+def step_cards(steps, statuses: dict) -> list[StepCard]:
+    """The pipeline's steps as cards: what each runs and how it behaves.
+
+    ``steps`` are `ScriptDB.list_pipeline_steps` rows; ``statuses`` maps a
+    script id to its last outcome. Notes are only what differs from the
+    default -- the parameters it passes instead of the script's own, and the
+    policies `pipelinesteps.policy_marks` words for the editor's list.
+    """
+    cards = []
+    for i, step in enumerate(steps, 1):
+        override = step[6] if len(step) > 6 else None
+        notes = []
+        if override is not None:
+            notes.append(override or "no parameters")
+        notes += [m for m in pipelinesteps.policy_marks(step).split("  ·  ") if m]
+        cards.append(StepCard(i, step[2], _file_name(step[3]),
+                              statuses.get(step[1]),
+                              pipelinesteps.runs_with_previous(step), tuple(notes)))
+    return cards
+
+
+def last_run_lines(row, now) -> tuple[str, str] | None:
+    """The last-run box's two lines, from a `ScriptDB.list_runs` row:
+    ("Last run  ·  OK", "Today 21:09  ·  12.4s"); None before any run."""
+    if row is None:
+        return None
+    status = row[7]
+    word = {"ok": "OK", "error": "Failed"}.get(status, "Stopped")
+    started = history.parse_stamp(row[5])
+    when = activity.ago_text(started, now) if started else "—"
+    if started is not None and started.date() == now.date():
+        when = f"Today {when}"
+    parts = [when, history.format_duration(row[5], row[6])]
+    if status == "error":
+        parts.append("did not start" if row[8] is None else f"exit code {row[8]}")
+    return f"Last run  ·  {word}", "  ·  ".join(p for p in parts if p != "—")
+
+
+def last_run_row(rows, kind: str):
+    """The row for an item's last run: a pipeline's own, not one of its steps."""
+    for row in rows:
+        if kind != "pipeline" or row[3] == "pipeline":
+            return row
+    return None

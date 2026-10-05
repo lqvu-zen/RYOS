@@ -710,6 +710,29 @@ QPushButton#activityRow {{
 QPushButton#activityRow:hover {{ background: {c['card_hover']}; }}
 QPushButton#activityRow:focus {{ background: {c['accent_wash']}; border: none; }}
 QFrame#activityBox QLabel {{ background: transparent; }}
+/* The detail pane's Overview: a pipeline's steps as cards, a script's
+   presets as pills that also run, and the last run in a box of its own. */
+QFrame#stepCard, QFrame#lastRun {{
+    background: {c['card_bg']}; border: 1px solid {c['border']}; border-radius: 4px;
+}}
+QFrame#stepCard QLabel, QFrame#lastRun QLabel {{ background: transparent; }}
+QLabel#stepName {{ color: {c['name_fg']}; font-size: 11pt; font-weight: 700; }}
+QLabel#lastRunTitle {{ color: {c['name_fg']}; font-weight: 700; }}
+QFrame#presetCard {{
+    background: {c['card_bg']}; border: 1px solid {d['control_edge']}; border-radius: 16px;
+}}
+QFrame#presetCard[chosen="true"] {{
+    background: {c['accent_wash']}; border: 1px solid {c['accent']};
+}}
+QFrame#presetCard QPushButton#paramChip, QFrame#presetCard QPushButton#paramChip:checked {{
+    background: transparent; border: none; min-height: 24px; padding: 0 6px 0 12px;
+}}
+QPushButton#presetRun {{
+    background: transparent; border: none; border-radius: 12px; padding: 0;
+    min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px;
+}}
+QPushButton#presetRun:hover {{ background: {c['tab_inactive_hover']}; }}
+QPushButton#presetRun:focus {{ background: {c['accent_wash']}; border: none; }}
 QLabel#activityName {{ color: {c['name_fg']}; font-weight: 600; }}
 QLabel#statusSummary {{ color: {d['status_fg']}; padding-right: 8px; }}
 
