@@ -58,7 +58,19 @@
       "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/menu_variants.py\")",
       "Bash(unset QT_QPA_PLATFORM)",
       "Bash(gh release *)",
-      "Edit(/.claude/skills/release-ryos/**)"
+      "Edit(/.claude/skills/release-ryos/**)",
+      "Bash(gh run *)",
+      "Bash(gh pr *)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/review-ryos-ui/scripts/audit.py --theme light dark)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/run-ryos/driver.py main compact --theme light)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/run-ryos/driver.py main compact --theme dark)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/run-ryos/driver.py workspace --theme light)",
+      "Bash(grep -nA8 \"^class ScriptCard\\\\|^class PipelineCard\" ryos/qtui/cards.py)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/fullscreen_mock.py\")",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/fullscreen_mock.py)",
+      "Bash(export QT_QPA_PLATFORM=offscreen)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/run-ryos/driver.py workspace --theme dark)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
