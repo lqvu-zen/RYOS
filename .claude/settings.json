@@ -81,7 +81,10 @@
       "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 uv run python .claude/skills/review-ryos-ui/scripts/audit.py --theme light)",
       "Bash(grep -n \"ON_FAILURE\\\\|RUN_WHEN\\\\|TRIGGER\\\\|_LABELS\\\\s*=\\\\|_CHOICES\\\\s*=\\\\|= {$\\\\|^def .*label\" ryos/pipelinesteps.py)",
       "Bash(sed -i 's/            tab = detail.tab_when_run_starts\\(self._selected, job.kind,/            tab = detail.tab_when_run_starts\\(self._selected, kind,/' ryos/qtui/shell.py)",
-      "Bash(sed -i 's/                                             job.script_id, job.pipeline_id\\)/                                             getattr\\(job, \"script_id\", None\\),\\\\n                                             getattr\\(job, \"pipeline_id\", None\\)\\)/' ryos/qtui/shell.py)"
+      "Bash(sed -i 's/                                             job.script_id, job.pipeline_id\\)/                                             getattr\\(job, \"script_id\", None\\),\\\\n                                             getattr\\(job, \"pipeline_id\", None\\)\\)/' ryos/qtui/shell.py)",
+      "Bash(export QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 RYOS_NO_TOASTS=1 PYTHONIOENCODING=utf-8)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs -r git checkout --)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
