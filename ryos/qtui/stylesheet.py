@@ -78,6 +78,11 @@ def drawn_colors(c: dict) -> dict:
         # The header bar is the theme's header colour, which is dark in most
         # themes and pale in a few; its words and menus follow it.
         "header_fg": _legible(c["fg_on_dark"], c["header_bg"]),
+        # The outline of + Pipeline and + Group. Words alone on the header
+        # read as labels, not buttons; the edge is held to 3:1, the minimum
+        # for a control's boundary, since it is the only thing that says so.
+        "header_edge": _edge(_mix(c["header_bg"], _legible(c["fg_on_dark"], c["header_bg"]), 0.3),
+                             c["header_bg"], floor=GLYPH_MIN),
         # A group pill: the chosen one is the body text colour, filled, with
         # the window colour for ink; the others are muted words on the window.
         "pill_fg": _legible(c["bg"], c["name_fg"]),
@@ -104,6 +109,7 @@ DRAWN_PAIRS = (
     ("tab_selected_fg", ("card_bg", "accent_wash"), GLYPH_MIN),
     ("star", ("card_bg", "card_hover", "accent_wash"), GLYPH_MIN),
     ("header_fg", ("header_bg",), TEXT_MIN),
+    ("header_edge", ("header_bg",), GLYPH_MIN),
     ("pill_fg", ("name_fg",), TEXT_MIN),
     ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
     ("control_edge", ("bg", "card_bg"), EDGE_MIN),
@@ -503,7 +509,8 @@ QFrame#hoverPreview {{ background: {c['card_bg']}; border: 1px solid {c['border'
 
 /* --- header bar ----------------------------------------------------- */
 /* The theme's header colour, holding the menus and what makes things.
-   Its buttons are words; + Script, the one filled, is the main action. */
+   + Script, the one filled, is the main action; + Pipeline and + Group are
+   outlined, so they read as buttons and not as labels. */
 QFrame#appHeader {{ background: {c['header_bg']}; border: none; }}
 QFrame#appHeader QLabel {{ background: transparent; color: {d['header_fg']}; }}
 QLabel#appTitle {{ font-size: 13pt; font-weight: 700; }}
@@ -511,15 +518,19 @@ QLabel#appBolt {{ color: {c.get('bolt', '#FFD23F')}; font-size: 13pt; }}
 QFrame#appHeader QPushButton {{
     background: transparent;
     color: {d['header_fg']};
-    border: none;
+    border: 1px solid {d['header_edge']};
     border-radius: 4px;
     padding: 5px 10px;
     font-weight: 600;
 }}
 QFrame#appHeader QPushButton:hover {{ background: {header_hover}; }}
-QFrame#appHeader QPushButton#primary {{ background: {c['accent']}; color: {d['primary_fg']}; }}
+QFrame#appHeader QPushButton#primary {{
+    background: {c['accent']}; color: {d['primary_fg']};
+    border: 1px solid {c['accent']};
+}}
 QFrame#appHeader QPushButton#primary:hover {{
     background: {c['accent2']}; color: {d['primary_hover_fg']};
+    border-color: {c['accent2']};
 }}
 QMenuBar#appMenu {{ background: transparent; color: {d['header_fg']}; }}
 QMenuBar#appMenu::item {{ background: transparent; padding: 4px 8px; border-radius: 4px; }}
@@ -624,7 +635,9 @@ QPushButton#detailStar:focus, QPushButton#quiet:focus,
 QPushButton#quickRunToggle:focus, QFrame#outputHeader QPushButton:focus {{
     background: {c['accent_wash']}; border: none;
 }}
-QFrame#appHeader QPushButton:focus {{ background: {header_hover}; border: none; }}
+QFrame#appHeader QPushButton:focus {{
+    background: {header_hover}; border: 1px solid {d['header_fg']};
+}}
 QFrame#appHeader QPushButton#primary:focus {{
     background: {c['accent2']}; border: 1px solid {d['primary_fg']};
 }}
