@@ -4508,10 +4508,19 @@ def check_maximised_layout(app):
             PROBLEMS.append(f"Up next: {[(e.name, e.meta) for e in up]}; status "
                             f"{win.activity_status.text()!r}")
         # The rail hides and shows it.
+        saved: list = []
+        win._save_settings = lambda s: saved.append(dict(s))
         win.go_to("activity")
         app.processEvents()
         if win.activity.isVisible() or win.rail.buttons["activity"].property("on"):
             PROBLEMS.append("the rail's Activity did not hide the bar")
+        if not saved or saved[-1].get("activity_shown") is not False:
+            PROBLEMS.append("hiding the Activity bar was not remembered")
+        later = MainWindow(REFERENCE["light"], settings={"activity_shown": False,
+                                                         "quick_run_enabled": False})
+        if later.activity_shown or later.rail.buttons["activity"].property("on"):
+            PROBLEMS.append("a new window did not start with the bar as it was left")
+        later.deleteLater()
         win.go_to("activity")
         app.processEvents()
         if not win.activity.isVisible():

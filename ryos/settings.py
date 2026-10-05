@@ -92,6 +92,9 @@ _SETTINGS_DEFAULTS: dict = {
     "card_size":              "medium",
     "hover_preview":          True,
     "workspace_when_maximized": True,
+    # Maximised: the Activity bar down the right edge, shown or hidden from
+    # the rail -- remembered, not an Options field.
+    "activity_shown":         True,
 }
 
 

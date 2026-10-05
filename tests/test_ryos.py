@@ -6637,10 +6637,11 @@ class TestSettingsSchema(unittest.TestCase):
     def test_only_internal_settings_are_left_out(self):
         # A new user-facing setting should be added to the schema; these are
         # driven by their own controls (the Appearance dialog owns theme,
-        # accent and the themes folder) or written by the app itself.
+        # accent and the themes folder) or written by the app itself (the
+        # rail's Activity toggle remembers activity_shown).
         uncovered = set(_SETTINGS_DEFAULTS) - set(settings_schema.BY_KEY)
-        self.assertEqual(uncovered, {"accent_color", "last_group", "theme",
-                                     "themes_dir", "window_geometry"})
+        self.assertEqual(uncovered, {"accent_color", "activity_shown", "last_group",
+                                     "theme", "themes_dir", "window_geometry"})
 
     # -- coercion ----------------------------------------------------------
     def test_a_number_below_the_minimum_is_clamped(self):

@@ -407,7 +407,7 @@ class MainWindow(QMainWindow):
         self.outer.setCollapsible(2, False)
         self.detail.hide()
         self.activity.hide()
-        self.activity_shown = True
+        self.activity_shown = bool(self._settings.get("activity_shown", True))
         # While it shows, its day words ("Today", "Tomorrow") and times stay
         # current between runs.
         self._activity_timer = QTimer(self)
@@ -2609,9 +2609,13 @@ class MainWindow(QMainWindow):
             self.open_options()
 
     def set_activity_shown(self, on: bool) -> None:
-        """Show or hide the Activity bar (maximised); the rail marks it."""
+        """Show or hide the Activity bar (maximised); the rail marks it, and
+        the choice is remembered."""
         self.activity_shown = on
         self.rail.set_on("activity", on)
+        if self._settings.get("activity_shown", True) != on:
+            self._settings["activity_shown"] = on
+            self._save_settings(self._settings)
         if self.workspace:
             self.activity.setVisible(on)
             if on:
