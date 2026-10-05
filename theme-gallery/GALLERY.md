@@ -1,82 +1,83 @@
 # Theme gallery — previews
 
-Pick a theme, then download its `.json` and **Import…** it in RYOS
-(⚙ → Advanced options → Appearance → Import…).
+Each preview is the RYOS window itself in that theme. Pick one, download
+its `.json`, and in RYOS choose **Options → Appearance… → Import…**
+(maximised, **Appearance** is also on the rail down the left edge).
 
 ## Light
 
-![Light preview](previews/light.svg)
+![RYOS in the Light theme](previews/light.png)
 
 [⬇ Download light.json](light.json)
 
 ## Dark
 
-![Dark preview](previews/dark.svg)
+![RYOS in the Dark theme](previews/dark.png)
 
 [⬇ Download dark.json](dark.json)
 
 ## Forest Canopy
 
-![Forest Canopy preview](previews/forest-canopy.svg)
+![RYOS in the Forest Canopy theme](previews/forest-canopy.png)
 
 [⬇ Download forest-canopy.json](forest-canopy.json)
 
 ## Golden Hour
 
-![Golden Hour preview](previews/golden-hour.svg)
+![RYOS in the Golden Hour theme](previews/golden-hour.png)
 
 [⬇ Download golden-hour.json](golden-hour.json)
 
 ## High Contrast
 
-![High Contrast preview](previews/high-contrast.svg)
+![RYOS in the High Contrast theme](previews/high-contrast.png)
 
 [⬇ Download high-contrast.json](high-contrast.json)
 
 ## Midnight Galaxy
 
-![Midnight Galaxy preview](previews/midnight-galaxy.svg)
+![RYOS in the Midnight Galaxy theme](previews/midnight-galaxy.png)
 
 [⬇ Download midnight-galaxy.json](midnight-galaxy.json)
 
 ## Nord
 
-![Nord preview](previews/nord.svg)
+![RYOS in the Nord theme](previews/nord.png)
 
 [⬇ Download nord.json](nord.json)
 
 ## Ocean Depths
 
-![Ocean Depths preview](previews/ocean-depths.svg)
+![RYOS in the Ocean Depths theme](previews/ocean-depths.png)
 
 [⬇ Download ocean-depths.json](ocean-depths.json)
 
 ## Sepia
 
-![Sepia preview](previews/sepia.svg)
+![RYOS in the Sepia theme](previews/sepia.png)
 
 [⬇ Download sepia.json](sepia.json)
 
 ## Solarized Dark
 
-![Solarized Dark preview](previews/solarized-dark.svg)
+![RYOS in the Solarized Dark theme](previews/solarized-dark.png)
 
 [⬇ Download solarized-dark.json](solarized-dark.json)
 
 ## Solarized Light
 
-![Solarized Light preview](previews/solarized-light.svg)
+![RYOS in the Solarized Light theme](previews/solarized-light.png)
 
 [⬇ Download solarized-light.json](solarized-light.json)
 
 ## Sunset Boulevard
 
-![Sunset Boulevard preview](previews/sunset-boulevard.svg)
+![RYOS in the Sunset Boulevard theme](previews/sunset-boulevard.png)
 
 [⬇ Download sunset-boulevard.json](sunset-boulevard.json)
 
 ## Tech Innovation
 
-![Tech Innovation preview](previews/tech-innovation.svg)
+![RYOS in the Tech Innovation theme](previews/tech-innovation.png)
 
 [⬇ Download tech-innovation.json](tech-innovation.json)

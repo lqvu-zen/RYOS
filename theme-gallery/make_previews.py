@@ -1,91 +1,139 @@
 #!/usr/bin/env python3
-"""Generate an SVG preview for every theme in this folder and a GALLERY.md
-index, so themes can be browsed and downloaded straight from GitHub.
+"""Make a preview of every theme in this folder, and the GALLERY.md index,
+so themes can be browsed and downloaded straight from GitHub.
 
-Run from anywhere:  python theme-gallery/make_previews.py
-Outputs:            theme-gallery/previews/<id>.svg, theme-gallery/GALLERY.md
+    uv run python theme-gallery/make_previews.py
 
-Previews are rendered from a theme's 7-colour seed (plus the fixed Run-green and
-terminal colours), so no dependency on the app — drop a new theme JSON in and
-re-run.
+Outputs ``previews/<id>.png`` and ``GALLERY.md``.
+
+Each preview is the real RYOS window, not a drawing of it: a small made-up
+list (two pipelines, a few scripts, one run that passed and one that failed,
+a favourite) in the theme, rendered off screen with the system's fonts. So a
+preview always shows what the app looks like now -- drop a new theme JSON in
+and re-run. Nothing touches your own RYOS: the data lives in a throwaway
+folder, and no window, notification or registry write ever appears.
 """
+from __future__ import annotations
+
 import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
 PREVIEWS = HERE / "previews"
+#: The window's size in the preview: the app's own default width.
+SIZE = (560, 600)
 
-# Order: light/dark first (templates), then the rest alphabetically.
+# Order: light/dark first (templates), then the rest by name.
 _FIRST = ["light", "dark"]
 
-
-def _esc(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def preview_svg(name: str, seed: dict) -> str:
-    s = seed
-    w, h = 440, 250
-    swatch_keys = ["bg", "surface", "border", "accent", "text", "text_muted", "header_bg"]
-    sw_w = 40
-    swatches = "".join(
-        f'<rect x="{16 + i * (sw_w + 6)}" y="202" width="{sw_w}" height="26" rx="4" '
-        f'fill="{s[k]}" stroke="#00000022"/>'
-        for i, k in enumerate(swatch_keys)
-    )
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="Segoe UI, Arial, sans-serif">
-  <rect width="{w}" height="{h}" rx="10" fill="{s['bg']}"/>
-  <rect width="{w}" height="40" rx="10" fill="{s['header_bg']}"/>
-  <rect y="20" width="{w}" height="20" fill="{s['header_bg']}"/>
-  <text x="16" y="26" fill="#ffffff" font-size="14" font-weight="bold">⚡ RYOS — {_esc(name)}</text>
-  <rect x="16" y="52" width="{w - 32}" height="92" rx="8" fill="{s['surface']}" stroke="{s['border']}"/>
-  <text x="30" y="80" fill="{s['text']}" font-size="15" font-weight="bold">deploy.py</text>
-  <text x="30" y="100" fill="{s['text_muted']}" font-size="11">C:\\scripts\\deploy.py</text>
-  <rect x="30" y="112" width="58" height="22" rx="5" fill="#2ecc71"/>
-  <text x="59" y="127" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">Run</text>
-  <rect x="96" y="112" width="74" height="22" rx="5" fill="{s['accent']}"/>
-  <text x="133" y="127" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle">Modify</text>
-  <rect x="16" y="154" width="{w - 32}" height="34" rx="6" fill="#1e1e1e"/>
-  <text x="28" y="175" font-family="Consolas, monospace" font-size="11">
-    <tspan fill="#d4d4d4">stdout </tspan><tspan fill="#ff6b6b">stderr </tspan><tspan fill="#5aa9e6">status</tspan>
-  </text>
-  {swatches}
-</svg>
-'''
+# Before ryos is imported: its data folder is fixed at import.
+_TMP = Path(tempfile.mkdtemp(prefix="ryos-gallery-"))
+os.environ["APPDATA"] = str(_TMP)
+os.environ["RYOS_NO_REGISTRY"] = "1"
+os.environ["RYOS_NO_TOASTS"] = "1"
+sys.path.insert(0, str(ROOT))
 
 
-def main() -> None:
-    PREVIEWS.mkdir(exist_ok=True)
-    themes = []
+def _themes() -> list[tuple[str, str, dict]]:
+    """(file stem, name, seed) for every theme JSON here, in gallery order."""
+    found = []
     for fp in HERE.glob("*.json"):
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        seed = data.get("seed")
-        name = data.get("name") or fp.stem
-        if not isinstance(seed, dict):
+        if isinstance(data.get("seed"), dict):
+            found.append((fp.stem, data.get("name") or fp.stem, data["seed"]))
+    found.sort(key=lambda t: (_FIRST.index(t[0]) if t[0] in _FIRST else len(_FIRST),
+                              t[1].lower()))
+    return found
+
+
+def _sample_db():
+    """The made-up list every preview shows."""
+    from ryos.db import ScriptDB
+    # A made-up folder: shown on the group's line, never opened -- nothing
+    # runs, and a row does not look for its file.
+    folder = r"C:\Scripts"
+    db = ScriptDB()
+    db.create_group("Work", folder)
+    ids = {}
+    for name, file in (("Backup photos", "backup.py"), ("Deploy site", "deploy.ps1"),
+                       ("Clean temp", "clean.bat"), ("Weekly report", "report.py")):
+        ids[name] = db.add(name, folder + "\\" + file, "", "", "Work")
+    night = db.create_pipeline("Nightly", "Work")
+    for name in ("Backup photos", "Clean temp"):
+        db.add_pipeline_step(night, ids[name])
+    release = db.create_pipeline("Release", "Work")
+    for name in ("Weekly report", "Deploy site"):
+        db.add_pipeline_step(release, ids[name])
+    start = datetime.now() - timedelta(minutes=5)
+    for name, status, code in (("Backup photos", "ok", 0), ("Deploy site", "error", 1)):
+        db.record_run("script", name=name, script_id=ids[name], started_at=start,
+                      finished_at=start + timedelta(seconds=3), status=status,
+                      exit_code=code)
+        db.mark_run_status(ids[name], status)
+    db.record_run("pipeline", name="Nightly", pipeline_id=night, started_at=start,
+                  finished_at=start + timedelta(seconds=9), status="ok")
+    db.set_favorite_script(ids["Weekly report"], True)
+    return db
+
+
+def _preview(app, db, theme_id: str, customs: dict, out: Path) -> None:
+    from PySide6.QtCore import Qt
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import resolve_palette
+    win = MainWindow(resolve_palette(theme_id, customs),
+                     settings={"quick_run_enabled": False})
+    win.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    win.resize(*SIZE)
+    win.load_from_db(db)
+    win.show_group("Work")
+    win.show()
+    for _ in range(5):
+        app.processEvents()
+    win.grab().save(str(out))
+    win.close()
+    win.deleteLater()
+    app.processEvents()
+
+
+def main() -> None:
+    from PySide6.QtWidgets import QApplication
+    from ryos.themes import load_user_themes, theme_choices
+    app = QApplication.instance() or QApplication([])
+    themes = _themes()
+    customs = load_user_themes(HERE)
+    by_name = {name: tid for tid, name in theme_choices(customs)}
+    db = _sample_db()
+    PREVIEWS.mkdir(exist_ok=True)
+    for old in PREVIEWS.glob("*.svg"):          # the drawn previews these replace
+        old.unlink()
+    made = []
+    for stem, name, _seed in themes:
+        # A built-in's file name is its id; a gallery theme loads under its name.
+        theme_id = stem if stem in _FIRST else by_name.get(name)
+        if theme_id is None:
+            print(f"skipped {stem}: not loadable as a theme")
             continue
-        themes.append((fp.stem, name, seed))
-
-    def order(item):
-        stem = item[0]
-        return (_FIRST.index(stem) if stem in _FIRST else len(_FIRST), item[1].lower())
-
-    themes.sort(key=order)
-
-    for stem, name, seed in themes:
-        (PREVIEWS / f"{stem}.svg").write_text(preview_svg(name, seed), encoding="utf-8")
+        _preview(app, db, theme_id, customs, PREVIEWS / f"{stem}.png")
+        made.append((stem, name))
 
     lines = ["# Theme gallery — previews", "",
-             "Pick a theme, then download its `.json` and **Import…** it in RYOS",
-             "(⚙ → Advanced options → Appearance → Import…).", ""]
-    for stem, name, seed in themes:
+             "Each preview is the RYOS window itself in that theme. Pick one, download",
+             "its `.json`, and in RYOS choose **Options → Appearance… → Import…**",
+             "(maximised, **Appearance** is also on the rail down the left edge).", ""]
+    for stem, name in made:
         lines += [f"## {name}", "",
-                  f"![{name} preview](previews/{stem}.svg)", "",
+                  f"![RYOS in the {name} theme](previews/{stem}.png)", "",
                   f"[⬇ Download {stem}.json]({stem}.json)", ""]
     (HERE / "GALLERY.md").write_text("\n".join(lines), encoding="utf-8")
-    print(f"Generated {len(themes)} previews + GALLERY.md")
+    print(f"Made {len(made)} previews and GALLERY.md")
 
 
 if __name__ == "__main__":
