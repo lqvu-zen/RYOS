@@ -14,11 +14,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget)
 
-from ..jobs import format_elapsed
+from ..jobs import format_elapsed, running_heading
 from .icons import IconButton
+from .widgets import ElidedLabel
 
 #: How often the elapsed labels are refreshed. Once a second is enough for a
 #: seconds-resolution label and costs nothing.
@@ -37,8 +38,12 @@ class RunningRow(QFrame):
         super().__init__(parent)
         self.job = job
         self.setObjectName("runningRow")
+        # Tinted and edged in the strip's colour (the stylesheet), so it is
+        # not mistaken for one more card in the list above.
+        self.setProperty("kind", "pipeline" if getattr(job, "kind", "") == "pipeline"
+                         else "script")
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 6, 0)
+        row.setContentsMargins(0, 3, 6, 3)
         row.setSpacing(8)
 
         strip = QWidget()
@@ -49,12 +54,14 @@ class RunningRow(QFrame):
         strip.setStyleSheet(f"background: {colour};")
         row.addWidget(strip)
 
-        self.name_label = QLabel(job.name)
-        self.name_label.setObjectName("cardName")
+        # Shortened in the middle, so a pipeline's "Steps 2-3/5" stays in
+        # view; a plain label was cut off mid-word ("Steps 2-").
+        self.name_label = ElidedLabel(job.name, mode=Qt.TextElideMode.ElideMiddle)
+        self.name_label.setObjectName("runningName")
         row.addWidget(self.name_label, 1)
 
         self.time_label = QLabel(self._elapsed())
-        self.time_label.setObjectName("cardPath")
+        self.time_label.setObjectName("runningTime")
         row.addWidget(self.time_label)
 
         self.stop_button = IconButton("stop", "Stop", role="ink", size=12)
@@ -75,7 +82,7 @@ class RunningRow(QFrame):
     def tick(self) -> None:
         self.time_label.setText(self._elapsed())
         # A pipeline renames itself as it advances through its steps.
-        if self.name_label.text() != self.job.name:
+        if self.name_label.full_text() != self.job.name:
             self.name_label.setText(self.job.name)
 
 
@@ -101,6 +108,9 @@ class RunningSection(QWidget):
         self._col = QVBoxLayout(self)
         self._col.setContentsMargins(0, 0, 0, 0)
         self._col.setSpacing(3)
+        self.heading = QLabel("")
+        self.heading.setObjectName("runningHeading")
+        self._col.addWidget(self.heading)
         self._col.addStretch(0)
 
         self._timer = QTimer(self)
@@ -146,6 +156,7 @@ class RunningSection(QWidget):
 
     # -- internals ---------------------------------------------------------
     def _refresh_empty(self) -> None:
+        self.heading.setText(running_heading(len(self._rows)))
         self.setVisible(bool(self._rows))
 
     def _tick(self) -> None:

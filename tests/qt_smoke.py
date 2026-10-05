@@ -1028,6 +1028,22 @@ def check_running_section(app):
     else:
         row = next(iter(win.running._rows.values()))
         label_before = row.time_label.text()
+        # The list must stand apart from the cards: a heading saying what it
+        # is, and each row framed and tinted rather than drawn on the window.
+        from PySide6.QtGui import QColor
+        from ryos.jobs import running_heading
+        if (win.running.heading.text() != running_heading(1)
+                or not win.running.heading.isVisibleTo(win)):
+            PROBLEMS.append(f"the running list's heading reads "
+                            f"{win.running.heading.text()!r}")
+        app.processEvents()
+        img = row.grab().toImage()
+        window_bg = QColor(REFERENCE["dark"]["bg"]).name()
+        edge = img.pixelColor(img.width() // 2, 0).name()
+        inside = img.pixelColor(int(img.width() * 0.6), 2).name()
+        if edge == window_bg or inside == window_bg:
+            PROBLEMS.append(f"a running row is drawn on the window colour "
+                            f"(edge {edge}, fill {inside}), not framed")
         row.stop_button.click()
         if not pump_until(lambda: win.running.count == 0):
             PROBLEMS.append("stopping a job did not clear its row")
