@@ -6,8 +6,10 @@ star. So the pane can never drift from the row -- the parameters drop-down,
 the ask-each-run prompt and Retry all behave as they do there -- and it holds
 no logic of its own beyond keeping itself up to date.
 
-The output panel is lent to the pane while the layout is on
-(`attach_output`) and handed back to the list's splitter when it is off.
+The pane is the chosen item's tabs: Overview, Output, History. The output
+panel is lent to the Output tab while the layout is on (`attach_output`) and
+handed back to the list's splitter when it is off; the History tab holds a
+`RunHistoryView` the window makes for the chosen item.
 """
 
 from __future__ import annotations
@@ -16,7 +18,8 @@ from typing import Callable
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QPushButton, QVBoxLayout, QWidget)
+                               QPushButton, QStackedWidget, QTabBar, QVBoxLayout,
+                               QWidget)
 
 from .. import cardmenu, cardstyle, detail
 from ..interpreter import _script_tag
@@ -46,17 +49,20 @@ def _clear(layout) -> None:
 
 
 class DetailPane(QWidget):
-    """The right-hand pane: one item's name, actions, settings and output."""
+    """The right-hand pane: one item's name and actions over its tabs."""
 
     def __init__(self, palette: dict, *,
                  on_menu: Callable[[str, int, str], None],
                  on_more: Callable[[str, int, QPoint], None],
+                 make_history: Callable[[str, int], QWidget] | None = None,
                  parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("detailPane")
         self._palette = palette
         self._on_menu = on_menu
         self._on_more = on_more
+        self._make_history = make_history
+        self.history_view = None
         self.card = None
         self.kind: str | None = None
         self.rec: dict = {}
@@ -65,19 +71,14 @@ class DetailPane(QWidget):
 
         col = QVBoxLayout(self)
         col.setContentsMargins(26, 20, 22, 10)
-        col.setSpacing(14)
+        col.setSpacing(12)
 
-        self.empty = QLabel(detail.EMPTY)
-        self.empty.setObjectName("cardPath")
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty.setWordWrap(True)
-        col.addWidget(self.empty)
-
-        self.body = QWidget()
-        body = QVBoxLayout(self.body)
+        # The name and its actions, over the tabs; hidden until one is chosen.
+        self.head_box = QWidget()
+        body = QVBoxLayout(self.head_box)
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(14)
-        col.addWidget(self.body)
+        col.addWidget(self.head_box)
 
         # -- the name, and what to do with it
         head = QHBoxLayout()
@@ -117,11 +118,38 @@ class DetailPane(QWidget):
         self.run.setFixedHeight(38)
         self.run_with = self._link(detail.RUN_WITH, "Run with parameters")
         self.schedule = self._link(detail.SCHEDULE, "Run it on a schedule")
-        self.history = self._link(detail.HISTORY, "Earlier runs")
-        for b in (self.run, self.run_with, self.schedule, self.history):
+        for b in (self.run, self.run_with, self.schedule):
             actions.addWidget(b)
         actions.addStretch(1)
         body.addLayout(actions)
+
+        # -- the tabs: there even with nothing chosen, so the output is too
+        self.tabs = QTabBar()
+        self.tabs.setObjectName("detailTabs")
+        self.tabs.setDrawBase(False)
+        self.tabs.setExpanding(False)
+        for name in detail.TABS:
+            self.tabs.addTab(name)
+        col.addWidget(self.tabs)
+        self.stack = QStackedWidget()
+        col.addWidget(self.stack, 1)
+
+        overview = QWidget()
+        ocol = QVBoxLayout(overview)
+        ocol.setContentsMargins(0, 4, 0, 0)
+        ocol.setSpacing(14)
+        self.empty = QLabel(detail.EMPTY)
+        self.empty.setObjectName("cardPath")
+        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty.setWordWrap(True)
+        ocol.addWidget(self.empty, 1)
+        self.body = QWidget()
+        body = QVBoxLayout(self.body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(14)
+        ocol.addWidget(self.body)
+        ocol.addStretch(1)
+        self.stack.addWidget(overview)
 
         # -- the script's presets, or the pipeline's steps
         self.params_title = self._heading(detail.PARAMETERS)
@@ -145,16 +173,25 @@ class DetailPane(QWidget):
         body.addLayout(self.facts)
 
         # Where the output panel goes while the layout is on.
-        self.output_slot = QVBoxLayout()
-        self.output_slot.setContentsMargins(0, 6, 0, 0)
-        col.addLayout(self.output_slot, 1)
+        output = QWidget()
+        self.output_slot = QVBoxLayout(output)
+        self.output_slot.setContentsMargins(0, 4, 0, 0)
+        self.stack.addWidget(output)
+        history = QWidget()
+        self.history_slot = QVBoxLayout(history)
+        self.history_slot.setContentsMargins(0, 4, 0, 0)
+        self.history_empty = QLabel(detail.EMPTY)
+        self.history_empty.setObjectName("cardPath")
+        self.history_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.history_slot.addWidget(self.history_empty)
+        self.stack.addWidget(history)
+        self.tabs.currentChanged.connect(self._on_tab)
 
         self.run.clicked.connect(lambda: self._press("run_button"))
         self.edit.clicked.connect(lambda: self._press("edit_button"))
         self.star.clicked.connect(lambda: self._press("fav_button"))
         self.run_with.clicked.connect(lambda: self._press("param_button"))
         self.schedule.clicked.connect(lambda: self._menu(cardmenu.SCHEDULE))
-        self.history.clicked.connect(lambda: self._menu(cardmenu.HISTORY))
         self.more.clicked.connect(self._show_more)
         self.show_empty()
 
@@ -177,11 +214,39 @@ class DetailPane(QWidget):
         c = self._palette
         return _readable_on(color, (c["bg"],))
 
+    # -- the tabs ------------------------------------------------------------------------
+    def current_tab(self) -> str:
+        return detail.TABS[self.tabs.currentIndex()]
+
+    def show_tab(self, name: str) -> None:
+        self.tabs.setCurrentIndex(detail.TABS.index(name))
+
+    def _on_tab(self, index: int) -> None:
+        self.stack.setCurrentIndex(index)
+        if detail.TABS[index] == detail.HISTORY_TAB:
+            self._fill_history()
+
+    def _fill_history(self) -> None:
+        """The chosen item's runs, made afresh: a new item, or new runs."""
+        if self.history_view is not None:
+            self.history_slot.removeWidget(self.history_view)
+            self.history_view.deleteLater()
+            self.history_view = None
+        if self.kind is None or self._make_history is None:
+            self.history_empty.show()
+            return
+        self.history_empty.hide()
+        self.history_view = self._make_history(self.kind, self._item_id())
+        self.history_slot.addWidget(self.history_view, 1)
+
     # -- what is shown ------------------------------------------------------------------
     def show_empty(self) -> None:
         self.card, self.kind, self.rec, self._steps = None, None, {}, []
+        self.head_box.hide()
         self.body.hide()
         self.empty.show()
+        if self.current_tab() == detail.HISTORY_TAB:
+            self._fill_history()
 
     def show_item(self, card, kind: str, rec: dict, *, steps=(),
                   name_color: str | None = None) -> None:
@@ -191,6 +256,7 @@ class DetailPane(QWidget):
         c = self._palette
         pipeline = kind == cardmenu.PIPELINE
         self.empty.hide()
+        self.head_box.show()
         self.body.show()
 
         accent = c.get("pipe_accent", c["accent"]) if pipeline else c["accent"]
@@ -213,6 +279,8 @@ class DetailPane(QWidget):
         if pipeline:
             self._fill_steps()
         self.refresh()
+        if self.current_tab() == detail.HISTORY_TAB:
+            self._fill_history()
 
     def refresh(self) -> None:
         """Bring the Run button, the star and the subtitle up to date."""
@@ -248,6 +316,9 @@ class DetailPane(QWidget):
         self._fill_facts(detail.pipeline_facts(self.rec)
                          if self.kind == cardmenu.PIPELINE
                          else detail.script_facts(self.rec))
+        # A run just finished, most likely: the History tab shows it too.
+        if self.history_view is not None and self.current_tab() == detail.HISTORY_TAB:
+            self.history_view.reload()
 
     def _fill_chips(self) -> None:
         """The script's presets as chips; the chosen one is what Run passes."""

@@ -41,6 +41,7 @@ from . import placement
 from ..themes import REFERENCE, readable_highlight, step_colour
 from .cards import PipelineCard, ScriptCard
 from .detail import DetailPane
+from .rail import Rail
 from .dragdrop import GroupTabBar
 from .sections import GroupPage
 from .menus import build_menu
@@ -383,7 +384,8 @@ class MainWindow(QMainWindow):
             self._palette,
             on_menu=lambda kind, item_id, key: self.on_card_menu(kind, item_id, key),
             on_more=lambda kind, item_id, pos: self._show_card_menu(
-                kind, item_id, pos, self._selected_section()))
+                kind, item_id, pos, self._selected_section()),
+            make_history=self._history_view)
         self.outer = QSplitter(Qt.Orientation.Horizontal)
         self.outer.setObjectName("outerSplit")
         self.outer.addWidget(self.splitter)
@@ -392,7 +394,16 @@ class MainWindow(QMainWindow):
         self.outer.setCollapsible(0, False)
         self.outer.setCollapsible(1, False)
         self.detail.hide()
-        self.setCentralWidget(self.outer)
+        # Maximised, the rail of places runs down the left of it all.
+        self.rail = Rail(self._palette, self.go_to)
+        self.rail.hide()
+        central = QWidget()
+        row = QHBoxLayout(central)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addWidget(self.rail)
+        row.addWidget(self.outer, 1)
+        self.setCentralWidget(central)
 
         self.statusBar().showMessage("Ready")
         self._build_menu()
@@ -495,11 +506,31 @@ class MainWindow(QMainWindow):
 
         self._top_col = col
         col.addWidget(self._build_select_bar())
+        # Maximised, the group pills give way to a picker over the list.
+        self.group_picker = IconButton("folder", "", role="muted", hover_role="text",
+                                       size=16, palette=self._palette)
+        self.group_picker.setObjectName("groupPicker")
+        self.group_picker.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        set_tooltip(self.group_picker, "Choose a group")
+        self.group_picker.clicked.connect(self._show_group_picker)
+        self.group_picker.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.group_picker.customContextMenuRequested.connect(
+            lambda pos: self._show_group_menu(
+                self.current_group(), self.group_picker.mapToGlobal(pos)))
+        # The drop-downs' chevron, at the far end: a menu opens from it.
+        chevron = QHBoxLayout(self.group_picker)
+        chevron.setContentsMargins(0, 0, 10, 0)
+        chevron.addStretch(1)
+        chevron.addWidget(IconLabel("chevron-down", role="muted", size=14,
+                                    palette=self._palette))
+        self.group_picker.hide()
+        col.insertWidget(0, self.group_picker)
 
         self.group_tabs = QTabWidget()
         self.group_tabs.setObjectName("groupTabs")
         self.group_tabs.currentChanged.connect(
             lambda _i: self._update_select_bar())
+        self.group_tabs.currentChanged.connect(lambda _i: self._sync_group_picker())
         # Must be set before any tab is added.
         self.group_tab_bar = GroupTabBar()
         self.group_tab_bar.setObjectName("groupTabBar")
@@ -530,7 +561,8 @@ class MainWindow(QMainWindow):
         header.setObjectName("outputHeader")
         row = QHBoxLayout(header)
         row.setContentsMargins(8, 2, 8, 2)
-        row.addWidget(QLabel("Output"))
+        self.output_title = QLabel("Output")
+        row.addWidget(self.output_title)
         self.output_toggle = IconButton("chevron-up", outputpanel.SHOW_OUTPUT,
                                         role="link", hover_role="link",
                                         size=14, palette=self._palette)
@@ -2399,6 +2431,11 @@ class MainWindow(QMainWindow):
 
     def _on_job_started(self, job) -> None:
         self.add_output_tab(job.tab_key, job.name)
+        if self.workspace:
+            tab = detail.tab_when_run_starts(self._selected, job.kind,
+                                             job.script_id, job.pipeline_id)
+            if tab:
+                self.detail.show_tab(tab)
         if getattr(job, "pipeline_name", None):
             # A pipeline's tab carries the drawn bolt, as its row's tag did.
             pane = self._output_tabs.get(job.tab_key)
@@ -2471,11 +2508,20 @@ class MainWindow(QMainWindow):
     def set_workspace(self, on: bool) -> None:
         """Switch between the single list and the list beside the detail pane.
 
-        The output panel moves with it: under the list, or under the detail.
+        The output panel moves with it: under the list, or into the detail's
+        Output tab. The rail and the group picker come with the pane; the
+        group pills give way to the picker.
         """
         if on == self.workspace:
             return
         self.workspace = on
+        self.rail.setVisible(on)
+        self.group_picker.setVisible(on)
+        self.group_tab_bar.setVisible(not on)
+        # In its own tab the output is always open: no title, nothing to hide.
+        self.output_title.setVisible(not on)
+        self.output_toggle.setVisible(not on)
+        self._sync_group_picker()
         if on:
             self._output_was_expanded = self.output_expanded
             self.detail.attach_output(self.output_panel)
@@ -2495,6 +2541,57 @@ class MainWindow(QMainWindow):
             self.reload()
         else:
             self._show_selected()
+
+    # -- the rail and the group picker ------------------------------------------------
+    def go_to(self, place: str) -> None:
+        """Do what a place on the rail stands for."""
+        if place == "library":
+            card = self._selected_card()
+            if card is not None and card.isVisible():
+                card.setFocus(Qt.FocusReason.TabFocusReason)
+            else:
+                self.focus_first_row()
+        elif place == "search":
+            self.search_box.setFocus(Qt.FocusReason.ShortcutFocusReason)
+            self.search_box.selectAll()
+        elif place == "appearance":
+            self.open_appearance()
+        elif place == "options":
+            self.open_options()
+
+    def _group_labels(self) -> list[tuple[int, str]]:
+        """(tab index, label) for each group and All, as the pills read."""
+        bar = self.group_tab_bar
+        return [(i, bar.tabText(i).replace("&&", "&")) for i in range(bar.count())]
+
+    def _sync_group_picker(self) -> None:
+        index = self.group_tabs.currentIndex()
+        labels = dict(self._group_labels())
+        self.group_picker.setText(labels.get(index, ""))
+        self.group_picker.setAccessibleName(f"Group: {labels.get(index, '')}")
+
+    def _show_group_picker(self) -> None:
+        """The groups as a menu: one to go to, or a new one."""
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        current = self.group_tabs.currentIndex()
+        for index, label in self._group_labels():
+            action = menu.addAction(literal(label))
+            action.setCheckable(True)
+            action.setChecked(index == current)
+            action.triggered.connect(
+                lambda _c=False, i=index: self.group_tabs.setCurrentIndex(i))
+        menu.addSeparator()
+        menu.addAction(detail.NEW_GROUP).triggered.connect(lambda _c=False: self.new_group())
+        self.popup(menu, self.group_picker.mapToGlobal(
+            QPoint(0, self.group_picker.height())))
+
+    def _history_view(self, kind: str, item_id: int):
+        """The History tab's view of ``item_id``'s runs."""
+        from .smalldialogs import RunHistoryView
+        ids = ({"pipeline_id": item_id} if kind == cardmenu.PIPELINE
+               else {"script_id": item_id})
+        return RunHistoryView(db=self._db, **ids)
 
     def select_item(self, kind: str, item_id: int,
                     section: str = sections.SCRIPTS) -> None:

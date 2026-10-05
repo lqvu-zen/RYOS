@@ -5717,6 +5717,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/jobs.py": "imports PySide6; same reason",
         "ryos/qtui/running.py": "imports PySide6; same reason",
         "ryos/qtui/detail.py": "imports PySide6; same reason",
+        "ryos/qtui/rail.py": "imports PySide6; same reason",
         "ryos/qtui/icons.py": "imports PySide6; same reason",
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
@@ -8345,6 +8346,29 @@ class TestMaximisedLayout(unittest.TestCase):
         self.assertTrue(detail.use_workspace(False, True))
         self.assertFalse(detail.use_workspace(False, False))
         self.assertFalse(detail.use_workspace(True, True, enabled=False))
+
+    def test_the_tabs_are_the_items_views(self):
+        self.assertEqual(detail.TABS, ("Overview", "Output", "History"))
+
+    def test_the_rail_is_places_with_names_the_working_ones_first(self):
+        keys = [p.key for p in detail.RAIL]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertTrue(all(p.name and p.icon for p in detail.RAIL))
+        feet = [p.foot for p in detail.RAIL]
+        self.assertEqual(feet, sorted(feet), "a foot place sits among the top ones")
+        self.assertEqual(detail.RAIL[0].key, "library")
+
+    def test_the_output_tab_opens_for_the_chosen_items_run_only(self):
+        chosen = ("script", 7, "scripts")
+        self.assertEqual(detail.tab_when_run_starts(chosen, "script", 7, None),
+                         detail.OUTPUT_TAB)
+        self.assertIsNone(detail.tab_when_run_starts(chosen, "script", 8, None))
+        # A pipeline that happens to share the id is another item.
+        self.assertIsNone(detail.tab_when_run_starts(chosen, "pipeline", None, 7))
+        self.assertEqual(detail.tab_when_run_starts(("pipeline", 3, "pipelines"),
+                                                    "pipeline", None, 3),
+                         detail.OUTPUT_TAB)
+        self.assertIsNone(detail.tab_when_run_starts(None, "script", 7, None))
 
     def test_run_label_follows_the_row(self):
         self.assertEqual(detail.run_label(None), "Run")

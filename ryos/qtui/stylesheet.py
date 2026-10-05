@@ -673,6 +673,23 @@ QFrame#stepRow QLabel, QFrame#stepRow QWidget {{ background: transparent; }}
 QLabel#factKey, QWidget#factKey {{ color: {d['muted_fg']}; font-size: 9pt; }}
 QWidget#factValue {{ font-size: 10pt; }}
 QSplitter#outerSplit::handle {{ background: {c['border']}; width: 1px; }}
+/* The rail of places down the left edge, maximised: quiet icons, the
+   current place on the chosen row's wash. Sized here: a stylesheet
+   min-height would override the button's fixed size. */
+QFrame#rail {{ background: {c['card_bg']}; border-right: 1px solid {c['border']}; }}
+QPushButton#railButton {{
+    background: transparent; border: none; border-radius: 8px; padding: 0;
+    min-width: 40px; max-width: 40px; min-height: 40px; max-height: 40px;
+}}
+QPushButton#railButton:hover {{ background: {c['tab_inactive_hover']}; }}
+QPushButton#railButton[on="true"] {{ background: {c['accent_wash']}; }}
+/* Maximised, the group pills give way to this: the group's name, a field. */
+QPushButton#groupPicker {{
+    background: {c['card_bg']}; color: {c['name_fg']};
+    border: 1px solid {d['control_edge']}; border-radius: 3px;
+    padding: 6px 10px; text-align: left; font-weight: 700;
+}}
+QPushButton#groupPicker:hover {{ background: {c['card_hover']}; }}
 
 /* --- keyboard focus ----------------------------------------------- */
 /* Styling a button's border removes Qt's own focus frame, so Tab moved

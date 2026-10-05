@@ -65,6 +65,11 @@ SHAPES: dict[str, str] = {
     "select": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
     "chevron-up": '<path d="m6 15 6-6 6 6"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>',
+    # The rail's places: the list, and the search box.
+    "list": ('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="{c}"/>'
+             '<circle cx="4.5" cy="12" r="1.2" fill="{c}"/>'
+             '<circle cx="4.5" cy="18" r="1.2" fill="{c}"/>'),
+    "search": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
     "settings": ('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/>'
                  '<circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
 }

@@ -312,25 +312,25 @@ class CloseToTrayPromptDialog(QDialog):
 
 # --- run history ---------------------------------------------------------------
 
-class RunHistoryDialog(QDialog):
+class RunHistoryView(QWidget):
     """The recorded runs for one script or pipeline, newest first.
 
     Rows are formatted by `history.format_run_row` under `history.header_row`,
     the same fixed-width columns as the Tk dialog, in a monospaced box so they
-    line up.
+    line up. In a dialog of its own, or the maximised pane's History tab.
     """
 
     def __init__(self, parent: QWidget | None = None, *, db,
                  script_id: int | None = None, pipeline_id: int | None = None,
-                 title: str = "", limit: int = 200):
+                 limit: int = 200, place_clear: bool = True):
         super().__init__(parent)
-        self.setWindowTitle(f"Run history — {title}" if title else "Run history")
         self.db = db
         self._script_id = script_id
         self._pipeline_id = pipeline_id
         self._limit = limit
 
         col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
         self.summary = QLabel("")
         self.summary.setObjectName("cardPath")
         col.addWidget(self.summary)
@@ -339,19 +339,18 @@ class RunHistoryDialog(QDialog):
         self.table.setReadOnly(True)
         self.table.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         col.addWidget(self.table, 1)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        close = buttons.button(QDialogButtonBox.StandardButton.Close)
-        close.setDefault(True)
         self.clear_button = QPushButton("Clear history…")
         # Never the default: as the first auto-default button it was drawn
         # filled -- the most prominent thing in a read-only view was the one
         # that deletes it.
         self.clear_button.setAutoDefault(False)
         self.clear_button.clicked.connect(self._confirm_clear)
-        buttons.rejected.connect(self.reject)
-        col.addWidget(button_row(buttons, self.clear_button))
-        self.resize(640, 420)
+        # A dialog puts it beside Close instead.
+        if place_clear:
+            row = QHBoxLayout()
+            row.addStretch(1)
+            row.addWidget(self.clear_button)
+            col.addLayout(row)
         self.reload()
 
     def rows(self) -> list:
@@ -385,6 +384,32 @@ class RunHistoryDialog(QDialog):
                                      pipeline_id=self._pipeline_id)
         self.reload()
         return removed
+
+
+class RunHistoryDialog(QDialog):
+    """`RunHistoryView` in a dialog, with Close and Clear history…."""
+
+    def __init__(self, parent: QWidget | None = None, *, db,
+                 script_id: int | None = None, pipeline_id: int | None = None,
+                 title: str = "", limit: int = 200):
+        super().__init__(parent)
+        self.setWindowTitle(f"Run history — {title}" if title else "Run history")
+        self.view = RunHistoryView(self, db=db, script_id=script_id,
+                                   pipeline_id=pipeline_id, limit=limit,
+                                   place_clear=False)
+        self.db = db
+        self.summary, self.table = self.view.summary, self.view.table
+        self.clear_button = self.view.clear_button
+        self.rows, self.reload, self.clear = self.view.rows, self.view.reload, self.view.clear
+
+        col = QVBoxLayout(self)
+        col.addWidget(self.view, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close = buttons.button(QDialogButtonBox.StandardButton.Close)
+        close.setDefault(True)
+        buttons.rejected.connect(self.reject)
+        col.addWidget(button_row(buttons, self.clear_button))
+        self.resize(640, 420)
 
 
 # --- schedules -----------------------------------------------------------------

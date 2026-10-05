@@ -4373,6 +4373,28 @@ def check_maximised_layout(app):
             PROBLEMS.append("maximised: the list's rows are not compact")
         if win.detail.body.isVisible() or not win.detail.empty.isVisible():
             PROBLEMS.append("maximised: the pane did not start empty")
+        # The frame: the rail of places, the picker in the pills' place, the
+        # tabs over the pane -- and the output is one of them, chosen or not.
+        if not win.rail.isVisible() or not win.group_picker.isVisible() \
+                or win.group_tab_bar.isVisible():
+            PROBLEMS.append("maximised: the rail / picker / pills are not as they should be")
+        if win.group_picker.text() != "G":
+            PROBLEMS.append(f"the picker reads {win.group_picker.text()!r}")
+        if not win.detail.tabs.isVisible() or win.detail.current_tab() != detail.OVERVIEW_TAB:
+            PROBLEMS.append("maximised: the pane's tabs are missing or not on Overview")
+        if not win.detail.isAncestorOf(win.output_panel):
+            PROBLEMS.append("maximised: the output is not in the pane's Output tab")
+        menus: list = []
+        win.popup = lambda menu, _pos: menus.append(menu)
+        win.group_picker.click()
+        entries = [a.text() for a in menus[-1].actions() if a.text()] if menus else []
+        if entries[:1] != ["G"] or detail.NEW_GROUP not in entries \
+                or "All" not in entries:
+            PROBLEMS.append(f"the group picker offers {entries}")
+        win.go_to("search")
+        app.processEvents()
+        if QApplication.focusWidget() is not win.search_box:
+            PROBLEMS.append("the rail's Search did not put the keyboard in the search box")
 
         # A click on the row chooses it; its presets are chips.
         row("script").activated.emit()
@@ -4390,6 +4412,9 @@ def check_maximised_layout(app):
             if not pump_until(lambda: any("ARGS=--fast" in ln for ln in lines)):
                 PROBLEMS.append(f"the pane's Run did not pass the chosen chip: {lines}")
             pump_until(lambda: len(bridge.registry) == 0)
+            if win.detail.current_tab() != detail.OUTPUT_TAB:
+                PROBLEMS.append("running the chosen item did not open its Output tab")
+            win.detail.show_tab(detail.OVERVIEW_TAB)
             # A failure turns the pane's Run into Retry, as it does the row's.
             chips = [w for w in win.detail.findChildren(QPushButton)
                      if w.objectName() == "paramChip" and w.text() == "--fail"]
@@ -4401,10 +4426,21 @@ def check_maximised_layout(app):
             if win.detail.run.text() != detail.run_label("error"):
                 PROBLEMS.append(f"after a failure the pane's Run read "
                                 f"{win.detail.run.text()!r}")
+            # Its History tab lists both runs, newest first.
+            win.detail.show_tab(detail.HISTORY_TAB)
+            app.processEvents()
+            view = win.detail.history_view
+            if view is None or len(view.rows()) != 2:
+                PROBLEMS.append(f"the History tab shows "
+                                f"{None if view is None else len(view.rows())} runs, not 2")
 
-        # A pipeline lists its steps.
+        # A pipeline lists its steps; History follows the choice.
         row("pipeline").activated.emit()
         app.processEvents()
+        view = win.detail.history_view
+        if view is None or view._pipeline_id is None:
+            PROBLEMS.append("the History tab did not follow the choice to the pipeline")
+        win.detail.show_tab(detail.OVERVIEW_TAB)
         steps = [w for w in win.detail.steps_panel.findChildren(QFrame)
                  if w.objectName() == "stepRow"]
         if win.detail.kind != cardmenu.PIPELINE or len(steps) != 1 \
@@ -4417,6 +4453,9 @@ def check_maximised_layout(app):
         app.processEvents()
         if win.output_panel.parentWidget() is not win.splitter or win.detail.isVisible():
             PROBLEMS.append("restored: the output panel did not come back")
+        if win.rail.isVisible() or win.group_picker.isVisible() \
+                or not win.group_tab_bar.isVisible():
+            PROBLEMS.append("restored: the rail or picker stayed, or the pills did not return")
         if row("script").property("compact") or row("script").property("selected"):
             PROBLEMS.append("restored: the rows are still compact, or marked")
         # And the option turns it off.
@@ -4428,8 +4467,8 @@ def check_maximised_layout(app):
         bridge.stop()
         win.close()
         win.deleteLater()
-    print("  [ok] maximised: list beside the detail, output moves, rows compact, "
-          "chips choose what the pane's Run passes, Retry, steps; restored")
+    print("  [ok] maximised: rail, group picker, tabs (Output opens on a run, History "
+          "follows the choice), rows compact, chips, Retry, steps; restored")
 
 
 def check_ampersands_show(app):
