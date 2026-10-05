@@ -21,5 +21,6 @@ The PNGs are lifted from the shipped `icon.ico` unchanged. `ryos-mark.svg` is
 the same geometry at the coordinates `make_icon.py` computes, so it scales
 where the raster sizes run out.
 
-In-app, the header shows the `⚡` glyph in `bolt` on `header_bg` rather than
-this file — the drawn mark is for the OS, the glyph is for the UI.
+In-app, the header draws the `bolt` icon from the app's icon set
+(`ryos/qtui/icons.py`) in `bolt` on `header_bg` rather than this file — the
+rounded-square mark is for the OS, the bare bolt is for the UI.
