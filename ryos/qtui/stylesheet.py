@@ -118,6 +118,8 @@ def drawn_colors(c: dict) -> dict:
         # The outline of the row the keyboard is on: the accent, shaded until
         # it shows against the row's wash inside and the rows around it.
         "focus_edge": _edge(c["accent"], c["accent_wash"], c["card_bg"], floor=GLYPH_MIN),
+        # The running count on the rail's Activity button, on the running colour.
+        "badge_fg": ink_on(c["running"]),
     }
 
 
@@ -145,6 +147,7 @@ DRAWN_PAIRS = (
     ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
     ("control_edge", ("bg", "card_bg"), EDGE_MIN),
     ("focus_edge", ("accent_wash", "card_bg"), GLYPH_MIN),
+    ("badge_fg", ("running",), TEXT_MIN),
 )
 
 
@@ -690,6 +693,25 @@ QPushButton#groupPicker {{
     padding: 6px 10px; text-align: left; font-weight: 700;
 }}
 QPushButton#groupPicker:hover {{ background: {c['card_hover']}; }}
+QLabel#railBadge {{
+    background: {c['running']}; color: {d['badge_fg']}; border-radius: 8px;
+    font-size: 8pt; font-weight: 700; padding: 0 3px;
+}}
+/* The Activity bar, on the window's ground; its lists in panels like the
+   list's sections, each line a quiet button that shows its item. */
+QLabel#activityTitle {{ color: {c['name_fg']}; font-size: 10pt; font-weight: 700; }}
+QFrame#activityBox {{
+    background: {c['card_bg']}; border: 1px solid {c['border']}; border-radius: 4px;
+}}
+QPushButton#activityRow {{
+    background: transparent; border: none; border-radius: 3px; padding: 0;
+    text-align: left;
+}}
+QPushButton#activityRow:hover {{ background: {c['card_hover']}; }}
+QPushButton#activityRow:focus {{ background: {c['accent_wash']}; border: none; }}
+QFrame#activityBox QLabel {{ background: transparent; }}
+QLabel#activityName {{ color: {c['name_fg']}; font-weight: 600; }}
+QLabel#statusSummary {{ color: {d['status_fg']}; padding-right: 8px; }}
 
 /* --- keyboard focus ----------------------------------------------- */
 /* Styling a button's border removes Qt's own focus frame, so Tab moved

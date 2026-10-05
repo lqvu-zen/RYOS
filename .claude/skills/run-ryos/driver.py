@@ -127,6 +127,17 @@ def scenario_workspace(theme: str) -> None:
     Off screen there is no window manager to maximise it, so it is sized as a
     maximised window would be and the layout switched on directly.
     """
+    # A schedule, so the Activity bar has something coming up.
+    import json
+    from datetime import datetime, timedelta
+    from ryos.db import ScriptDB
+    db = ScriptDB()
+    morning = next(r[0] for r in db.list_pipelines("Samples") if r[1] == "Morning report")
+    if not db.list_schedules(pipeline_id=morning):
+        db.add_schedule("pipeline", pipeline_id=morning, spec_type="daily",
+                        spec=json.dumps({"at": "08:00"}), enabled=True,
+                        next_run_at=(datetime.now() + timedelta(days=1)).replace(
+                            hour=8, minute=0, second=0, microsecond=0).isoformat())
     win = window(theme)
     win.resize(1280, 760)
     win.set_workspace(True)
@@ -143,6 +154,13 @@ def scenario_workspace(theme: str) -> None:
     win.detail.show_tab("Overview")
     card(win, "Say hello").activated.emit()
     shot(win, f"workspace_script_{theme}")
+    # Something running: its row and Stop in the Activity bar, the rail's count.
+    card(win, "Count a minute").run_button.click()
+    pump(1.5)
+    shot(win, f"workspace_running_{theme}")
+    for job in list(win.bridge.registry.all()):
+        win._stop_job(job)
+    idle(win)
     win.bridge.stop()
 
 

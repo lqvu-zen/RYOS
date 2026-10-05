@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from ..jobs import format_elapsed, running_heading
 from .icons import IconButton
-from .widgets import ElidedLabel
+from .widgets import ElidedLabel, set_tooltip
 
 #: How often the elapsed labels are refreshed. Once a second is enough for a
 #: seconds-resolution label and costs nothing.
@@ -66,6 +66,7 @@ class RunningRow(QFrame):
 
         self.stop_button = IconButton("stop", "Stop", role="ink", size=12)
         self.stop_button.setObjectName("stop")
+        self.stop_button.setAccessibleName("Stop")
         self.stop_button.clicked.connect(
             lambda: self.stop_requested.emit(self.job))
         row.addWidget(self.stop_button)
@@ -78,6 +79,11 @@ class RunningRow(QFrame):
             # slow first run (issue #13).
             text = f"↻ retry {', '.join(retrying.values())}  ·  {text}"
         return text
+
+    def set_narrow(self, narrow: bool) -> None:
+        """Stop as its icon alone, so a narrow column leaves the name room."""
+        self.stop_button.setText("" if narrow else "Stop")
+        set_tooltip(self.stop_button, "Stop" if narrow else "")
 
     def tick(self) -> None:
         self.time_label.setText(self._elapsed())
@@ -98,12 +104,16 @@ class RunningSection(QWidget):
     stop button.
     """
 
+    #: The number of jobs shown, whenever it changes.
+    changed = Signal(int)
+
     def __init__(self, palette: dict, parent: QWidget | None = None, *,
                  on_stop: Callable[[object], None] | None = None):
         super().__init__(parent)
         self._palette = palette
         self._on_stop = on_stop
         self._rows: dict[int, RunningRow] = {}
+        self._narrow = False
 
         self._col = QVBoxLayout(self)
         self._col.setContentsMargins(0, 0, 0, 0)
@@ -125,6 +135,7 @@ class RunningSection(QWidget):
         if existing is not None:
             return existing
         row = RunningRow(job, self._palette)
+        row.set_narrow(self._narrow)
         if self._on_stop is not None:
             row.stop_requested.connect(self._on_stop)
         self._rows[job.job_id] = row
@@ -150,6 +161,12 @@ class RunningSection(QWidget):
         for job_id in list(self._rows):
             self.remove(job_id)
 
+    def set_narrow(self, narrow: bool) -> None:
+        """Rows for a narrow column (the Activity bar), or a full-width one."""
+        self._narrow = narrow
+        for row in self._rows.values():
+            row.set_narrow(narrow)
+
     @property
     def count(self) -> int:
         return len(self._rows)
@@ -158,6 +175,7 @@ class RunningSection(QWidget):
     def _refresh_empty(self) -> None:
         self.heading.setText(running_heading(len(self._rows)))
         self.setVisible(bool(self._rows))
+        self.changed.emit(len(self._rows))
 
     def _tick(self) -> None:
         for row in list(self._rows.values()):

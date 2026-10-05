@@ -4395,6 +4395,11 @@ def check_maximised_layout(app):
         app.processEvents()
         if QApplication.focusWidget() is not win.search_box:
             PROBLEMS.append("the rail's Search did not put the keyboard in the search box")
+        # The Activity bar, with the running list lent to it.
+        if not win.activity.isVisible() or not win.activity.isAncestorOf(win.running):
+            PROBLEMS.append("maximised: no Activity bar, or the running list is not in it")
+        if win.activity.up_entries or not win.activity.nothing_running.isVisible():
+            PROBLEMS.append("the Activity bar did not start with nothing running or due")
 
         # A click on the row chooses it; its presets are chips.
         row("script").activated.emit()
@@ -4448,6 +4453,43 @@ def check_maximised_layout(app):
             PROBLEMS.append(f"the pipeline's pane: kind {win.detail.kind!r}, "
                             f"{len(steps)} step rows")
 
+        # Recent lists the runs above; a line shows its item's History.
+        names = [e.name for e in win.activity.recent_entries]
+        if "plain" not in names:
+            PROBLEMS.append(f"the Activity bar's Recent lists {names}")
+        else:
+            rows_ = [b for b in win.activity.findChildren(QPushButton, "activityRow")
+                     if b.isVisible() and b.accessibleName().startswith("plain,")]
+            rows_[0].click()
+            app.processEvents()
+            if win.detail.name.text() != "plain" \
+                    or win.detail.current_tab() != detail.HISTORY_TAB:
+                PROBLEMS.append("a Recent line did not show its item's History")
+            win.detail.show_tab(detail.OVERVIEW_TAB)
+        # A schedule shows under Up next, and in the status bar.
+        import json as _json
+        from datetime import datetime as _dt, timedelta as _td
+        db.add_schedule("pipeline", pipeline_id=pid, spec_type="daily",
+                        spec=_json.dumps({"at": "08:00"}), enabled=True,
+                        next_run_at=(_dt.now() + _td(days=1)).replace(
+                            hour=8, minute=0, second=0, microsecond=0).isoformat())
+        win.refresh_activity()
+        app.processEvents()
+        up = win.activity.up_entries
+        if [e.name for e in up] != ["P"] or "Daily at 08:00" not in up[0].meta \
+                or "next: P, Tomorrow 08:00" not in win.activity_status.text():
+            PROBLEMS.append(f"Up next: {[(e.name, e.meta) for e in up]}; status "
+                            f"{win.activity_status.text()!r}")
+        # The rail hides and shows it.
+        win.go_to("activity")
+        app.processEvents()
+        if win.activity.isVisible() or win.rail.buttons["activity"].property("on"):
+            PROBLEMS.append("the rail's Activity did not hide the bar")
+        win.go_to("activity")
+        app.processEvents()
+        if not win.activity.isVisible():
+            PROBLEMS.append("the rail's Activity did not bring the bar back")
+
         # Restored: the panel goes back under the list, the rows full size.
         win.set_workspace(False)
         app.processEvents()
@@ -4456,6 +4498,9 @@ def check_maximised_layout(app):
         if win.rail.isVisible() or win.group_picker.isVisible() \
                 or not win.group_tab_bar.isVisible():
             PROBLEMS.append("restored: the rail or picker stayed, or the pills did not return")
+        if win.activity.isVisible() or win.activity.isAncestorOf(win.running) \
+                or win.activity_status.isVisible():
+            PROBLEMS.append("restored: the Activity bar stayed, or kept the running list")
         if row("script").property("compact") or row("script").property("selected"):
             PROBLEMS.append("restored: the rows are still compact, or marked")
         # And the option turns it off.
@@ -4468,7 +4513,8 @@ def check_maximised_layout(app):
         win.close()
         win.deleteLater()
     print("  [ok] maximised: rail, group picker, tabs (Output opens on a run, History "
-          "follows the choice), rows compact, chips, Retry, steps; restored")
+          "follows the choice), Activity (recent, up next, status, toggle), rows "
+          "compact, chips, Retry, steps; restored")
 
 
 def check_ampersands_show(app):

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 
 from .. import detail
 from .icons import IconButton
@@ -50,15 +50,34 @@ class Rail(QFrame):
         col.addStretch(1)
         for b in feet:
             col.addWidget(b, 0, Qt.AlignmentFlag.AlignHCenter)
-        self.set_current("library")
+        self._badges: dict[str, QLabel] = {}
+        self.set_on("library", True)
 
-    def set_current(self, key: str) -> None:
-        """Mark the place the window is showing."""
-        icons = {place.key: place.icon for place in detail.RAIL}
-        for k, b in self.buttons.items():
-            on = k == key
-            b.set_shape(icons[k], role="link" if on else "muted")
-            if bool(b.property("on")) != on:
-                b.setProperty("on", on)
-                b.style().unpolish(b)
-                b.style().polish(b)
+    def set_on(self, key: str, on: bool) -> None:
+        """Mark a place as showing: the list, or the Activity bar beside it."""
+        b = self.buttons[key]
+        icon = next(p.icon for p in detail.RAIL if p.key == key)
+        b.set_shape(icon, role="link" if on else "muted")
+        if bool(b.property("on")) != on:
+            b.setProperty("on", on)
+            b.style().unpolish(b)
+            b.style().polish(b)
+
+    def set_badge(self, key: str, text: str) -> None:
+        """A small count on a place's corner; empty text takes it away."""
+        b = self.buttons[key]
+        badge = self._badges.get(key)
+        if badge is None:
+            badge = QLabel(b)
+            badge.setObjectName("railBadge")
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self._badges[key] = badge
+        badge.setText(text)
+        badge.adjustSize()
+        side = max(16, badge.width())
+        badge.setFixedSize(side, 16)
+        badge.move(BUTTON - side - 1, 1)
+        badge.setVisible(bool(text))
+        b.setAccessibleName(next(p.name for p in detail.RAIL if p.key == key)
+                            + (f", {text} running" if text else ""))

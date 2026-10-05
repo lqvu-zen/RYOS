@@ -5718,6 +5718,7 @@ class TestMypyScopeIsCurrent(unittest.TestCase):
         "ryos/qtui/running.py": "imports PySide6; same reason",
         "ryos/qtui/detail.py": "imports PySide6; same reason",
         "ryos/qtui/rail.py": "imports PySide6; same reason",
+        "ryos/qtui/activity.py": "imports PySide6; same reason",
         "ryos/qtui/icons.py": "imports PySide6; same reason",
         "ryos/qtui/smalldialogs.py": "imports PySide6; same reason",
         "ryos/qtui/quickrun.py": "imports PySide6; same reason",
@@ -8603,3 +8604,79 @@ class TestParallelStepOutput(unittest.TestCase):
         self.assertTrue(shown_for_step(2, 2))
         self.assertFalse(shown_for_step(3, 2))
         self.assertFalse(shown_for_step(None, 2))      # headers belong to no step
+
+
+from ryos import activity  # noqa: E402
+
+
+class TestActivityBar(unittest.TestCase):
+    """What the maximised window's Activity bar lists, and how it says it."""
+
+    NOW = __import__("datetime").datetime(2026, 10, 5, 21, 30)
+
+    def _schedule(self, kind, item_id, at, enabled=1, spec='{"at": "08:00"}'):
+        # list_schedules rows: id, kind, script_id, pipeline_id, spec_type,
+        # spec, enabled, catch_up, next_run_at, last_run_at, created_at
+        sid, pid = (None, item_id) if kind == "pipeline" else (item_id, None)
+        return (1, kind, sid, pid, "daily", spec, enabled, "once", at, None, None)
+
+    def _run(self, kind, item_id, name, status, start, end, code=0):
+        # list_runs rows: id, script_id, pipeline_id, kind, name, started_at,
+        # finished_at, status, exit_code, step_index, trigger_source
+        sid, pid = (None, item_id) if kind == "pipeline" else (item_id, None)
+        return (1, sid, pid, kind, name, start, end, status, code, None, "manual")
+
+    def test_day_words(self):
+        dt = __import__("datetime").datetime
+        self.assertEqual(activity.when_text(dt(2026, 10, 5, 22, 0), self.NOW), "Today 22:00")
+        self.assertEqual(activity.when_text(dt(2026, 10, 6, 8, 0), self.NOW), "Tomorrow 08:00")
+        self.assertEqual(activity.when_text(dt(2026, 10, 9, 8, 0), self.NOW), "Fri 08:00")
+        self.assertEqual(activity.when_text(dt(2026, 11, 1, 8, 0), self.NOW), "11-01 08:00")
+        self.assertEqual(activity.ago_text(dt(2026, 10, 5, 21, 9), self.NOW), "21:09")
+        self.assertEqual(activity.ago_text(dt(2026, 10, 4, 21, 9), self.NOW),
+                         "Yesterday 21:09")
+
+    def test_up_next_soonest_first_and_only_what_will_run(self):
+        names = {("pipeline", 1): "Morning report", ("script", 2): "Backup",
+                 ("script", 3): "Off"}
+        rows = [self._schedule("script", 2, "2026-10-07T09:00:00"),
+                self._schedule("pipeline", 1, "2026-10-06T08:00:00"),
+                self._schedule("script", 3, "2026-10-06T07:00:00", enabled=0),
+                self._schedule("script", 9, "2026-10-06T06:00:00"),      # item gone
+                self._schedule("script", 2, None)]                       # no time yet
+        up = activity.up_next(rows, names, self.NOW)
+        self.assertEqual([e.name for e in up], ["Morning report", "Backup"])
+        self.assertEqual(up[0].meta, "Tomorrow 08:00  ·  Daily at 08:00")
+        self.assertEqual((up[0].kind, up[0].item_id), ("pipeline", 1))
+
+    def test_recent_runs_stand_for_their_steps_and_say_how_they_went(self):
+        runs = [self._run("step", 5, "Flaky", "ok", "2026-10-05T21:09:00",
+                          "2026-10-05T21:09:01"),
+                self._run("pipeline", 4, "Resilient", "ok", "2026-10-05T21:09:00",
+                          "2026-10-05T21:09:12"),
+                self._run("script", 6, "Always fails", "error", "2026-10-05T21:08:00",
+                          "2026-10-05T21:08:01", code=3),
+                self._run("script", 7, "Missing", "error", "2026-10-04T10:00:00",
+                          None, code=None)]
+        got = activity.recent(runs, self.NOW)
+        self.assertEqual([e.name for e in got], ["Resilient", "Always fails", "Missing"])
+        self.assertEqual(got[0].meta, "OK  ·  21:09  ·  12.0s")
+        self.assertEqual(got[1].meta, "Failed  ·  21:08  ·  exit code 3")
+        self.assertEqual(got[2].meta, "Failed  ·  Yesterday 10:00  ·  did not start")
+        self.assertEqual([e.status for e in got], ["ok", "error", "error"])
+        self.assertEqual(len(activity.recent(runs * 5, self.NOW, limit=4)), 4)
+
+    def test_badge_and_summary(self):
+        self.assertEqual(activity.badge(0), "")
+        self.assertEqual(activity.badge(3), "3")
+        self.assertEqual(activity.badge(12), "9+")
+        nxt = activity.Entry("pipeline", 1, "Morning report",
+                             "Tomorrow 08:00  ·  Daily at 08:00")
+        self.assertEqual(activity.summary(1, nxt),
+                         "1 running  ·  next: Morning report, Tomorrow 08:00")
+        self.assertEqual(activity.summary(0, None), "")
+        self.assertEqual(activity.summary(2, None), "2 running")
+
+    def test_the_rail_has_activity_among_the_working_places(self):
+        place = next(p for p in detail.RAIL if p.key == "activity")
+        self.assertFalse(place.foot)

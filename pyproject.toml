@@ -98,5 +98,6 @@ files = [
     "ryos/themes.py",
     "ryos/single_instance.py",
     "ryos/detail.py",
+    "ryos/activity.py",
     "design-system/build.py",
 ]

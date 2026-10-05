@@ -6,7 +6,7 @@ Maximise the window (or make it full screen) and RYOS uses the room. Down the le
 
 ## The rail and the group picker
 
-The rail holds the places in the app: **Library** (back to the list), **Search** (into the search box), and at its foot **Appearance…** and **Options…**.
+The rail holds the places in the app: **Library** (back to the list), **Search** (into the search box), **Activity** (shows or hides the Activity bar; a small number on it says how many runs are going), and at its foot **Appearance…** and **Options…**.
 
 While the window is maximised, the group pills give way to a **group picker** over the list. Click it for a menu of your groups, **All** and **New group…**; right-click it to rename or delete the group you are on.
 
@@ -21,6 +21,16 @@ Click a row on the left to show it. At the top are its kind and name, the star, 
 ![The right side showing the Resilient pipeline on its Output tab: the run's output, step by step, ending in Pipeline complete](images/09-maximised-pipeline.png)
 
 Everything on the right does exactly what the row's own buttons do.
+
+## The Activity bar
+
+Down the right edge, **ACTIVITY** keeps an eye on everything at once:
+
+- **RUNNING NOW** — each run in progress, how long it has been going, and its Stop button.
+- **UP NEXT** — the next scheduled runs, with when and how often.
+- **RECENT** — the last runs, with how they went: **OK** and how long it took, or **Failed** and the exit code. A pipeline stands for its steps.
+
+Click a line under Up next or Recent to show that item on the right — Recent opens its **History** tab. The status bar repeats the gist: how many are running, and what runs next.
 
 Prefer the single list even when maximised? Turn off **Options → Options… → Cards → Maximised: list on the left, details on the right**.
 

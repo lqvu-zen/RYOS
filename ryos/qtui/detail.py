@@ -43,6 +43,9 @@ def _clear(layout) -> None:
     while layout.count():
         item = layout.takeAt(0)
         if item.widget() is not None:
+            # Hidden now: it is only deleted once the event loop is back,
+            # and until then it would show through what replaces it.
+            item.widget().hide()
             item.widget().deleteLater()
         elif item.layout() is not None:
             _clear(item.layout())

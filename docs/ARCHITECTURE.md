@@ -86,6 +86,7 @@ without a display, and that is still where new logic belongs.
 | `ryos/sections.py` | A group's sections (Favorites, Pipelines, Scripts): which records go where, the header and empty-section texts, the All tab's blocks, and a per-group `CollapseState` for the session. | yes |
 | `ryos/selection.py` | Select mode's wording and decisions: the bar text, Select / Deselect All, `plan_run` (resolve the job cap once), and the delete prompt. | yes |
 | `ryos/detail.py` | The maximised layout: when it applies (`use_workspace`), the rail's places (`RAIL`), the pane's tabs (`TABS`) and when a run opens Output (`tab_when_run_starts`), and what the pane says -- the Run/Retry label, the line under the name, and the facts it lists. | yes |
+| `ryos/activity.py` | The maximised window's Activity bar: the next scheduled runs (`up_next`), the last runs with a pipeline standing for its steps (`recent`), the day words, the rail's running count and the status bar's summary line. | yes |
 | `ryos/scheduleform.py` | The schedule dialog's form rules: which fields make up a spec per mode, how a stored schedule loads back, the catch-up labels, preview formatting, and when to offer starting RYOS at login. | yes |
 | `ryos/themes.py` | The theme gallery, palette building, custom themes, highlight colours and WCAG `contrast_ratio()` / `ink_on()`, used to keep every colour legible. | yes |
 | `ryos/single_instance.py` | Single-instance guard; a second launch asks the running window to restore and exits. `RYOS_ALLOW_MULTIPLE=1` bypasses it. | yes |
@@ -104,6 +105,7 @@ real ones.
 | `shell.py` | `MainWindow`: tabs, sections, search, select mode, menus, the output panel, placement, the tray and close rules. |
 | `cards.py`, `sections.py`, `dragdrop.py` | Script and pipeline cards (rows of one panel per section; compact rows are a launcher list), a group's collapsible sections, and drag-and-drop between them and onto tabs. |
 | `detail.py`, `rail.py` | The maximised layout: the rail of places down the left edge, and the detail pane -- the chosen item's name and actions over its tabs: Overview (presets, steps, facts), Output (the output panel, lent while maximised) and History. Its buttons press the chosen row's own, so the two cannot drift. |
+| `activity.py` | The Activity bar: the window's running list (lent while maximised, with its Stop buttons), Up next and Recent; each line shows its item in the detail pane. |
 | `scriptdialog.py`, `pipeline.py`, `dialogs.py`, `smalldialogs.py` | The script dialog, the pipeline editor, the Options dialog (generated from `settings_schema`), and the small ones: new group, base folder, parameters, schedule, run history, close-to-tray. |
 | `jobs.py`, `running.py` | `JobBridge` runs jobs through `JobController` and drains the output queue on a `QTimer`; `RunningSection` lists what is running, with Stop. |
 | `icons.py` | The one icon set: line icons on a 24-unit grid, drawn from SVG and tinted by colour role from the palette; `IconButton` / `IconLabel` re-tint on a theme change. No font glyph or emoji is used as an icon -- `check_one_icon_set` in `tests/qt_smoke.py` enforces it. |

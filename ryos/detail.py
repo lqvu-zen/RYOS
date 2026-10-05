@@ -46,6 +46,7 @@ class Place:
 RAIL = (
     Place("library", "list", "Library"),
     Place("search", "search", "Search"),
+    Place("activity", "activity", "Activity"),
     Place("appearance", "palette", "Appearance…", foot=True),
     Place("options", "settings", "Options…", foot=True),
 )

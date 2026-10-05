@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QScrollArea,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
+from .. import activity
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
@@ -42,6 +43,7 @@ from ..themes import REFERENCE, readable_highlight, step_colour
 from .cards import PipelineCard, ScriptCard
 from .detail import DetailPane
 from .rail import Rail
+from .activity import ActivityPanel
 from .dragdrop import GroupTabBar
 from .sections import GroupPage
 from .menus import build_menu
@@ -390,13 +392,25 @@ class MainWindow(QMainWindow):
         self.outer.setObjectName("outerSplit")
         self.outer.addWidget(self.splitter)
         self.outer.addWidget(self.detail)
+        # And beside the pane, what is running, what runs next, what ran.
+        self.activity = ActivityPanel(self._palette, on_open=self._open_from_activity)
+        self.outer.addWidget(self.activity)
         self.outer.setStretchFactor(1, 1)
         self.outer.setCollapsible(0, False)
         self.outer.setCollapsible(1, False)
+        self.outer.setCollapsible(2, False)
         self.detail.hide()
+        self.activity.hide()
+        self.activity_shown = True
+        # While it shows, its day words ("Today", "Tomorrow") and times stay
+        # current between runs.
+        self._activity_timer = QTimer(self)
+        self._activity_timer.setInterval(60_000)
+        self._activity_timer.timeout.connect(self.refresh_activity)
         # Maximised, the rail of places runs down the left of it all.
         self.rail = Rail(self._palette, self.go_to)
         self.rail.hide()
+        self.rail.set_on("activity", self.activity_shown)
         central = QWidget()
         row = QHBoxLayout(central)
         row.setContentsMargins(0, 0, 0, 0)
@@ -406,6 +420,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.statusBar().showMessage("Ready")
+        # Maximised: how many are running and what runs next, on the right.
+        self.activity_status = QLabel("")
+        self.activity_status.setObjectName("statusSummary")
+        self.activity_status.hide()
+        self.statusBar().addPermanentWidget(self.activity_status)
+        self.running.changed.connect(lambda _n: self.refresh_activity())
         self._build_menu()
         # Files dropped anywhere on the window become scripts, as in Tk.
         self.setAcceptDrops(True)
@@ -1261,6 +1281,8 @@ class MainWindow(QMainWindow):
         self._show_selected()
         if self.search_box.text():
             self._apply_search(self.search_box.text())
+        # A schedule saved, an item renamed or deleted: Up next may differ.
+        self.refresh_activity()
 
     def reload(self) -> None:
         if self._db is not None:
@@ -2482,6 +2504,7 @@ class MainWindow(QMainWindow):
                     card.set_last_run(last_runs.get(card.script_id))
         if self.workspace:
             self.detail.refresh()
+            self.refresh_activity()
 
     def _live_statuses(self) -> dict:
         """Running / retrying, by card key, for whatever is in flight."""
@@ -2516,6 +2539,15 @@ class MainWindow(QMainWindow):
             return
         self.workspace = on
         self.rail.setVisible(on)
+        self.activity.setVisible(on and self.activity_shown)
+        self.activity_status.setVisible(on)
+        if on:
+            self.activity.host_running(self.running)
+            self._activity_timer.start()
+        else:
+            self.activity.release_running(self.running)
+            self._top_col.addWidget(self.running)
+            self._activity_timer.stop()
         self.group_picker.setVisible(on)
         self.group_tab_bar.setVisible(not on)
         # In its own tab the output is always open: no title, nothing to hide.
@@ -2528,8 +2560,10 @@ class MainWindow(QMainWindow):
             self.detail.show()
             self.set_output_expanded(True, force=True)
             total = self.outer.width() or self.width()
+            side = activity.WIDTH if self.activity_shown else 0
             self.outer.setSizes([detail.LIST_WIDTH,
-                                 max(total - detail.LIST_WIDTH, 1)])
+                                 max(total - detail.LIST_WIDTH - side, 1), side])
+            self.refresh_activity()
         else:
             self.splitter.insertWidget(1, self.output_panel)
             self.splitter.setStretchFactor(1, 2)
@@ -2551,6 +2585,8 @@ class MainWindow(QMainWindow):
                 card.setFocus(Qt.FocusReason.TabFocusReason)
             else:
                 self.focus_first_row()
+        elif place == "activity":
+            self.set_activity_shown(not self.activity_shown)
         elif place == "search":
             self.search_box.setFocus(Qt.FocusReason.ShortcutFocusReason)
             self.search_box.selectAll()
@@ -2558,6 +2594,46 @@ class MainWindow(QMainWindow):
             self.open_appearance()
         elif place == "options":
             self.open_options()
+
+    def set_activity_shown(self, on: bool) -> None:
+        """Show or hide the Activity bar (maximised); the rail marks it."""
+        self.activity_shown = on
+        self.rail.set_on("activity", on)
+        if self.workspace:
+            self.activity.setVisible(on)
+            if on:
+                sizes = self.outer.sizes()
+                self.outer.setSizes([sizes[0], max(sizes[1] - activity.WIDTH, 1),
+                                     activity.WIDTH])
+                self.refresh_activity()
+
+    def refresh_activity(self) -> None:
+        """Bring the Activity bar, the rail's count and the status line up
+        to date. Only maximised: nothing shows them otherwise."""
+        count = self.running.count
+        self.rail.set_badge("activity", activity.badge(count))
+        if not self.workspace or self._db is None:
+            return
+        from datetime import datetime
+        now = datetime.now()
+        names = {key: rec.get("name", "") for key, (rec, _g) in self._records.items()}
+        up = activity.up_next(self._db.list_schedules(enabled_only=True), names, now)
+        recent = activity.recent(self._db.list_runs(limit=60), now)
+        if self.activity_shown:
+            self.activity.show_entries(up, recent)
+        self.activity_status.setText(activity.summary(count, up[0] if up else None))
+
+    def _open_from_activity(self, kind: str, item_id: int, tab: str) -> None:
+        """Show an item from the Activity bar: its group, its row, its tab."""
+        found = self._records.get((kind, item_id))
+        if found is None:
+            return
+        _rec, group = found
+        if not self.showing_all() and self.current_group() != group:
+            self.show_group(group)
+        self.select_item(kind, item_id, sections.PIPELINES
+                         if kind == cardmenu.PIPELINE else sections.SCRIPTS)
+        self.detail.show_tab(tab)
 
     def _group_labels(self) -> list[tuple[int, str]]:
         """(tab index, label) for each group and All, as the pills read."""
@@ -2657,3 +2733,4 @@ class MainWindow(QMainWindow):
         for pane in self._output_tabs.values():
             pane.set_palette(palette)
         self.detail.set_palette(palette)
+        self.activity.set_palette(palette)

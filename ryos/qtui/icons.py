@@ -70,6 +70,7 @@ SHAPES: dict[str, str] = {
              '<circle cx="4.5" cy="12" r="1.2" fill="{c}"/>'
              '<circle cx="4.5" cy="18" r="1.2" fill="{c}"/>'),
     "search": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
+    "activity": '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
     "settings": ('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/>'
                  '<circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
 }
