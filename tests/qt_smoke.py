@@ -4622,6 +4622,57 @@ def check_parallel_step_output(app):
           "prefixes, and a click shows one step's lines")
 
 
+def check_launcher_leaves_running(app):
+    """A script marked Launcher ("don't keep in Running"), run on its own,
+    stayed in Running for as long as what it opened was up: the release only
+    applied to pipeline steps. Run a real launcher that keeps going, and its
+    row must go after the grace period while its process is still alive."""
+    import sys as _sys
+    import tempfile
+    import time as _time
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp(prefix="ryos-launcher-"))
+    server = tmp / "server.py"
+    server.write_text("import time\nprint('listening', flush=True)\ntime.sleep(60)\n")
+    db = ScriptDB(tmp / "launcher.db")
+    db.create_group("G")
+    sid = db.add("server", str(server), "", _sys.executable, "G", detached=1)
+    settings = {"max_parallel_jobs": 4, "launcher_release_seconds": 0}
+    win = MainWindow(REFERENCE["dark"], settings=settings)
+    bridge = JobBridge(db, settings)
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.show()
+    bridge.run_script(sid, "server", str(server), "", _sys.executable, active_group="G")
+
+    def pump_until(predicate, timeout=15.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    jobs = list(bridge.registry.all())
+    proc_of = (lambda: next(iter(jobs[0].processes.values()), None)) if jobs else (lambda: None)
+    pump_until(lambda: proc_of() is not None, 5)
+    proc = proc_of()
+    if not pump_until(lambda: win.running.count == 0):
+        PROBLEMS.append("a launcher run on its own stayed in Running")
+    elif proc is None or proc.poll() is not None:
+        PROBLEMS.append("the launcher's process was not still running when its row went")
+    if proc is not None and proc.poll() is None:
+        proc.terminate()
+        proc.wait(5)
+    bridge.stop()
+    win.hide()
+    win.deleteLater()
+    print("  [ok] launcher: run on its own, it leaves Running while what it opened runs on")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     real_log = _real_log_state()
@@ -4646,6 +4697,7 @@ def main() -> int:
     check_shell(app)
     check_jobs_run(app)
     check_running_section(app)
+    check_launcher_leaves_running(app)
     check_parallel_step_output(app)
     check_small_dialogs(app)
     check_quick_run(app)

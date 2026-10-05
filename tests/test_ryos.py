@@ -2610,6 +2610,34 @@ class TestJobController(unittest.TestCase):
 
     # --- concurrent ("with previous") groups ---
 
+    def test_a_launcher_run_on_its_own_is_released(self):
+        # A launcher that opened something long-lived never reached
+        # end-of-file, so it sat in Running for as long as that was up.
+        job = self._job("script")
+        self.reg.add(job)
+        self.assertTrue(self.ctl.release_launcher_script(job, 1))
+        self.assertEqual(self.rec["finish"], [1])
+        self.assertIn((1, "ok"), self.db.marked)
+        # What it opened keeps writing to its tab...
+        self.q.put(("stdout", 1, "listening on :8080\n"))
+        # ...and its eventual exit is not a second verdict on the run.
+        self.q.put(("done_tag", 1, 1, "error", "stderr", "\n  exit code 1\n"))
+        self.ctl.pump()
+        self.assertIn(("job:1", "listening on :8080\n", None), self.rec["output"])
+        self.assertNotIn((1, "error"), self.db.marked)
+        self.assertEqual(self.rec["finish"], [1])
+
+    def test_a_launcher_that_already_finished_is_not_released(self):
+        job = self._job("script")
+        self.reg.add(job)
+        self.ctl.handle_step_done(job, 1, "ok")
+        self.reg.remove(job.job_id)
+        self.assertFalse(self.ctl.release_launcher_script(job, 1))
+        stopped = self._job("script")
+        stopped.stopped = True
+        self.reg.add(stopped)
+        self.assertFalse(self.ctl.release_launcher_script(stopped, 1))
+
     def test_parallel_steps_report_their_state_and_tag_their_lines(self):
         # Steps running side by side: each one's chip goes running -> its own
         # result, and its output lines carry the step, so the tab can colour

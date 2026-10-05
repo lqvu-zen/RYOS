@@ -166,6 +166,10 @@ class JobController:
         # started, retried or finished, for that step's chip in the output tab.
         self._on_step = on_step
         self._now = now
+        # Launcher scripts released while their process still runs: id -> job.
+        # Their output keeps reaching their tab; their eventual exit is not a
+        # second verdict on a run already counted done.
+        self._released: dict[int, Job] = {}
 
     def at_capacity(self, max_jobs: int) -> bool:
         """True when a positive cap is set and the registry is already that full."""
@@ -262,6 +266,13 @@ class JobController:
                 item = self._queue.get_nowait()
                 job = self._registry.get(item[1])
                 act = decode_output_item(item)
+                released = self._released.get(item[1])
+                if released is not None:
+                    if act.text is not None and act.status is None:
+                        self._on_output(released.tab_key, act.text, act.tag)
+                    elif act.status is not None:
+                        del self._released[item[1]]
+                    continue
                 if act.text is not None and job:
                     text = act.text
                     # Gate on the group's fixed launch size (not the live
@@ -423,6 +434,26 @@ class JobController:
         self._db.mark_run_status(sid, "ok")
         self.handle_step_done(job, sid, "ok", token)
         job.released_steps.add(token)
+        return True
+
+    def release_launcher_script(self, job: Job, sid: int) -> bool:
+        """Count a launcher run on its own as done while what it opened runs on.
+
+        A launcher -- a batch file that starts a server, say -- hands its
+        output to what it started, so the run never reached end-of-file and
+        sat in Running for as long as that was up, though the script itself
+        was "don't keep in Running". Pipeline steps were already released
+        this way (release_launcher_step); a run on its own was not.
+
+        False when there was nothing to release: it already finished, or it
+        was stopped.
+        """
+        if (job.stopped or job.job_id in self._released
+                or self._registry.get(job.job_id) is not job):
+            return False
+        self._released[job.job_id] = job
+        self._db.mark_run_status(sid, "ok")
+        self.handle_step_done(job, sid, "ok")
         return True
 
     def _exit_code(self, job: Job, token) -> int | None:

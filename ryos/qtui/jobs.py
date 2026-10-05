@@ -125,17 +125,23 @@ class JobBridge(QObject):
             },
             daemon=True,
         ).start()
-        # A launcher step opens something and keeps running, so waiting for it
-        # would stall the pipeline (issue #5). Released after the same grace
-        # period the Tk app uses.
-        if step_token is not None and self.db.is_detached(script_id):
+        # A launcher opens something and keeps running, so waiting for it
+        # would stall the pipeline (issue #5) -- or, run on its own, leave it
+        # in Running for as long as what it opened is up. Released after the
+        # same grace period the Tk app uses.
+        if self.db.is_detached(script_id):
             secs = max(0, int(self._settings.get(
                 "launcher_release_seconds",
                 _SETTINGS_DEFAULTS["launcher_release_seconds"])))
-            QTimer.singleShot(
-                secs * 1000,
-                lambda: self.controller.release_launcher_step(
-                    job, step_token, script_id))
+            if step_token is not None:
+                QTimer.singleShot(
+                    secs * 1000,
+                    lambda: self.controller.release_launcher_step(
+                        job, step_token, script_id))
+            elif job.kind == "script":
+                QTimer.singleShot(
+                    secs * 1000,
+                    lambda: self.controller.release_launcher_script(job, script_id))
 
     # -- starting work -----------------------------------------------------
     def run_script(self, script_id: int, name: str, path: str, params: str,
