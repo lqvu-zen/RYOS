@@ -63,7 +63,7 @@ without a display, and that is still where new logic belongs.
 | `ryos/interpreter.py` | Extension→interpreter detection, command building, working-directory selection, RYOS.exe self-relaunch guard. | yes |
 | `ryos/settings.py` | App-data paths, defaults, tolerant load/save. | yes |
 | `ryos/settings_schema.py` | Declarative description of the 31 settings the Options dialog shows — kind, label, tab, bounds, per-item tidying — plus `coerce()`, which turns a form's raw text into a usable value and never raises. The Options dialog is generated from it. | yes |
-| `ryos/notifications.py` | Windows toast + GitHub update check (`_parse_version`, `_fetch_latest_release`), and what a check's result means (`update_status`). | partial |
+| `ryos/notifications.py` | Windows toast (`RYOS_NO_TOASTS=1` blocks it; the smokes and the driver set it) + GitHub update check (`_parse_version`, `_fetch_latest_release`), and what a check's result means (`update_status`). | partial |
 | `ryos/logger.py` | Rotating-file logger setup for the `ryos` namespace, plus a global excepthook. | — |
 | `ryos/startup.py` | Windows "run at login" registry entry. `RYOS_NO_REGISTRY=1` blocks writes (the smokes set it). | — |
 | `ryos/scheduling.py` | Recurring schedules as pure functions over naive local time: `normalize_spec`, `next_occurrence`, `preview`, `resolve_due`, `describe_spec`. Interval / daily / weekly, with a catch-up policy for time the app spent closed. | yes |

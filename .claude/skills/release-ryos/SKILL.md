@@ -74,7 +74,7 @@ ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe
 A release that crashes on launch is worse than no release, so prove the exe starts before going further. `tests/launch_smoke.py` launches it the way the maintainer needs it launched:
 
 - **Never on the first screen.** The maintainer works there (and may be in a game). With no flag, the app runs on Qt's offscreen platform and no window appears anywhere; `--visible` puts it on the second screen (`tests/smoke_screen.py`), and falls back to the primary only when there is one monitor — so check `smoke_screen()` before using `--visible`. Never launch `RYOS.exe` directly with `Start-Process`: its window opens wherever Windows places it.
-- **Throwaway data, no registry writes.** `APPDATA` points at a temp folder and `RYOS_NO_REGISTRY=1`, so the real database, settings and run-at-login entry are never touched; the smoke fails if anything in the real `%APPDATA%\RYOS` changed.
+- **Throwaway data, no registry writes.** `APPDATA` points at a temp folder, `RYOS_NO_REGISTRY=1` and `RYOS_NO_TOASTS=1`, so no notification pops up and the real database, settings and run-at-login entry are never touched; the smoke fails if anything in the real `%APPDATA%\RYOS` changed.
 - **`RYOS_ALLOW_MULTIPLE=1`**, so the maintainer's own running RYOS is neither signalled nor made to swallow the launch. (Without it, the single-instance guard makes the new exe hand off and exit 0 — which looks like a crash. Never "fix" that by killing the maintainer's instance.)
 - **It checks the version.** The app logs `RYOS <version> starting`; the smoke fails unless that is the version in `ryos/__init__.py`, which is what proves you are testing the build you just made rather than a stale `dist/`.
 

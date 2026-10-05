@@ -60,4 +60,4 @@ The smokes take `--visible` (where supported) to show windows on the **second** 
 - **Console encoding**: card glyphs (▶ ↻ ★) do not survive a cp1252 console. Set `PYTHONIOENCODING=utf-8` if printing them.
 - **Never block on a modal**: a dialog opened with `exec()` waits for a person. Route it through `win.run_dialog` (the driver captures and rejects it).
 - **Jobs are real**: `run_button.click()` starts a real subprocess; call `idle(win)` before capturing the result, and `win.bridge.stop()` when done.
-- **The real data is never touched**: `APPDATA` points at a temp folder before `ryos` is imported, and registry writes are off (`RYOS_NO_REGISTRY=1`).
+- **The real data is never touched**: `APPDATA` points at a temp folder before `ryos` is imported, registry writes are off (`RYOS_NO_REGISTRY=1`), and so are Windows notifications (`RYOS_NO_TOASTS=1`) -- jobs run here, and each finished one would otherwise pop a toast on the screen in use.

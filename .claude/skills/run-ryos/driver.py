@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 os.environ["APPDATA"] = tempfile.mkdtemp(prefix="ryos-driver-")
 os.environ["RYOS_NO_REGISTRY"] = "1"
+os.environ["RYOS_NO_TOASTS"] = "1"       # jobs run here; no toasts on screen
 os.environ["RYOS_ALLOW_MULTIPLE"] = "1"
 
 from PySide6.QtCore import Qt  # noqa: E402

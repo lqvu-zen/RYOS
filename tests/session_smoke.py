@@ -618,6 +618,7 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="ryos-session-"))
     os.environ["APPDATA"] = str(tmp)
     os.environ["RYOS_NO_REGISTRY"] = "1"
+    os.environ["RYOS_NO_TOASTS"] = "1"
     os.environ["RYOS_ALLOW_MULTIPLE"] = "1"
     if not args.visible:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"

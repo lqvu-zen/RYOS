@@ -12,6 +12,7 @@ Everything that is not inside the process is kept away from the real thing:
   themes and instance lock are all new and all thrown away;
 * RYOS_NO_REGISTRY=1, so the run-at-login entry is never rewritten -- a build
   launched from dist/ would otherwise point it at itself;
+* RYOS_NO_TOASTS=1, so nothing pops up on the screen in use;
 * RYOS_ALLOW_MULTIPLE=1, so a running RYOS is neither signalled nor blocked;
 * the Qt "offscreen" platform, so no window appears on any screen, unless
   --visible, which puts it on a second screen when there is one.
@@ -77,7 +78,7 @@ def main() -> int:
             settings["window_geometry"] = geometry
     (data / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
 
-    env = dict(os.environ, APPDATA=str(tmp), RYOS_NO_REGISTRY="1",
+    env = dict(os.environ, APPDATA=str(tmp), RYOS_NO_REGISTRY="1", RYOS_NO_TOASTS="1",
                RYOS_ALLOW_MULTIPLE="1")
     if not args.visible:
         env["QT_QPA_PLATFORM"] = "offscreen"

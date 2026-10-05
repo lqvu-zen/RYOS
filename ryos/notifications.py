@@ -1,5 +1,6 @@
 """Toast notifications and GitHub update check."""
 import json
+import os
 import subprocess
 import sys
 import urllib.error
@@ -13,9 +14,15 @@ _RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
 
+def toasts_blocked() -> bool:
+    """True when RYOS_NO_TOASTS=1: test runs and screenshots run real jobs,
+    and each finished one popped a toast on the screen someone is using."""
+    return os.environ.get("RYOS_NO_TOASTS") == "1"
+
+
 def _show_notification(title: str, body: str) -> None:
     """Fire a Windows toast notification (fire-and-forget, Windows 10/11 only)."""
-    if sys.platform != "win32":
+    if sys.platform != "win32" or toasts_blocked():
         return
     import base64
     # Use PowerShell's own registered AppId so no app registration is needed.

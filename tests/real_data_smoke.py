@@ -191,6 +191,7 @@ def main() -> int:
     # folder from APPDATA when it is first imported.
     os.environ["APPDATA"] = str(tmp)
     os.environ["RYOS_NO_REGISTRY"] = "1"
+    os.environ["RYOS_NO_TOASTS"] = "1"
     if not args.visible:
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
     print(f"RYOS real-data smoke (a copy in {tmp}; "

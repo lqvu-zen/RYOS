@@ -8730,3 +8730,28 @@ class TestOverviewCards(unittest.TestCase):
         self.assertIs(detail.last_run_row([step, own], "pipeline"), own)
         self.assertIs(detail.last_run_row([step, own], "script"), step)
         self.assertIsNone(detail.last_run_row([step], "pipeline"))
+
+
+class TestToastsCanBeBlocked(unittest.TestCase):
+    """RYOS_NO_TOASTS=1 keeps test runs from popping notifications on screen."""
+
+    def test_no_toast_when_blocked(self):
+        from unittest import mock
+        from ryos import notifications
+        with mock.patch.dict(os.environ, {"RYOS_NO_TOASTS": "1"}), \
+                mock.patch.object(notifications.sys, "platform", "win32"), \
+                mock.patch.object(notifications.subprocess, "Popen") as popen:
+            notifications._show_notification("Done", "a finished")
+        popen.assert_not_called()
+
+    def test_a_toast_otherwise(self):
+        from unittest import mock
+        from ryos import notifications
+        env = {k: v for k, v in os.environ.items() if k != "RYOS_NO_TOASTS"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(notifications.sys, "platform", "win32"), \
+                mock.patch.object(notifications.subprocess, "Popen") as popen, \
+                mock.patch.object(notifications.subprocess, "CREATE_NO_WINDOW", 0,
+                                  create=True):
+            notifications._show_notification("Done", "a finished")
+        popen.assert_called_once()
