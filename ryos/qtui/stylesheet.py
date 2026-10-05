@@ -98,6 +98,11 @@ def drawn_colors(c: dict) -> dict:
         "running_edge": _edge(c["running"], c["bg"], floor=GLYPH_MIN),
         "pipe_edge": _edge(c.get("pipe_accent", c["accent"]), c["bg"], floor=GLYPH_MIN),
         **_running_washes(c),
+        # A parallel step's chip over the output: its words in the output's
+        # own colours, red once it failed and green once it passed.
+        "step_fg": _readable_on(c["out_stdout"], (c["out_bg"],)),
+        "step_fail_fg": _readable_on(c["error"], (c["out_bg"],)),
+        "step_ok_fg": _readable_on(c["running"], (c["out_bg"],)),
         # The outline of + Pipeline and + Group. Words alone on the header
         # read as labels, not buttons; the edge is held to 3:1, the minimum
         # for a control's boundary, since it is the only thing that says so.
@@ -132,6 +137,9 @@ DRAWN_PAIRS = (
     ("running_ink", ("bg",), TEXT_MIN),
     ("running_edge", ("bg",), GLYPH_MIN),
     ("pipe_edge", ("bg",), GLYPH_MIN),
+    ("step_fg", ("out_bg",), TEXT_MIN),
+    ("step_fail_fg", ("out_bg",), TEXT_MIN),
+    ("step_ok_fg", ("out_bg",), TEXT_MIN),
     ("header_edge", ("header_bg",), GLYPH_MIN),
     ("pill_fg", ("name_fg",), TEXT_MIN),
     ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
@@ -397,6 +405,24 @@ QPlainTextEdit#output, QTextEdit#output {{
     font-family: Consolas, "Courier New", monospace;
 }}
 /* The output header's buttons are words, like the header bar's. */
+/* The chips over a tab whose pipeline ran steps side by side. */
+QWidget#stepBar {{ background: {c['out_bg']}; border-bottom: 1px solid {c['border']}; }}
+QPushButton#stepChip {{
+    background: transparent;
+    color: {d['step_fg']};
+    border: 1px solid {c['border']};
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-weight: 600;
+    min-height: 0;
+}}
+QPushButton#stepChip[state="error"] {{ color: {d['step_fail_fg']}; }}
+QPushButton#stepChip[state="ok"] {{ color: {d['step_ok_fg']}; }}
+QPushButton#stepChip:hover {{ background: {_mix(c['out_bg'], c['out_stdout'], 0.12)}; }}
+QPushButton#stepChip:checked {{
+    background: {_mix(c['out_bg'], c['out_stdout'], 0.22)};
+    font-weight: 700;
+}}
 QFrame#outputHeader QPushButton {{
     background: transparent;
     border: none;

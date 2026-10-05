@@ -46,7 +46,9 @@ class JobBridge(QObject):
     the bridge testable without one.
     """
 
-    output = Signal(str, str, object)      # (tab_key, text, tag)
+    output = Signal(str, str, object, object)  # (tab_key, text, tag, step or None)
+    #: (tab_key, token, label, state): a step running beside others changed.
+    step_state = Signal(str, int, str, str)
     status = Signal(str)
     notify = Signal(str, str)              # (title, body)
     started = Signal(object)
@@ -62,14 +64,15 @@ class JobBridge(QObject):
         self.queue: "queue.Queue" = queue.Queue()
         self.controller = JobController(
             self.registry, self.queue, self.db,
-            on_output=lambda tab_key, text, tag=None:
-                self.output.emit(tab_key, text, tag),
+            on_output=lambda tab_key, text, tag=None, step=None:
+                self.output.emit(tab_key, text, tag, step),
             on_status=self.status.emit,
             on_notify=lambda title, body: self.notify.emit(title, body),
             on_started=self.started.emit,
             on_finish=self._on_finish,
             on_rename=self.renamed.emit,
             launch=self._launch,
+            on_step=self.step_state.emit,
         )
         self._timer = QTimer(self)
         self._timer.setInterval(PUMP_MS)

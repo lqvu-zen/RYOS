@@ -797,6 +797,18 @@ def _readable_on(color: str, surfaces: tuple[str, ...]) -> str:
     return cur
 
 
+#: Hues for the steps of a pipeline running side by side, one per step, so
+#: their interleaved lines can be told apart. Shaded per theme by step_colour.
+STEP_HUES = ("#4FC3F7", "#FFB74D", "#CE93D8", "#81C784", "#F48FB1", "#FFF176",
+             "#80CBC4", "#BCAAA4")
+
+
+def step_colour(token: int, surface: str) -> str:
+    """The colour of step ``token``'s output prefix, readable on ``surface``
+    (the output background) in every theme."""
+    return _readable_on(STEP_HUES[(token - 1) % len(STEP_HUES)], (surface,))
+
+
 def readable_highlight(key: str | None, *surfaces: str) -> str | None:
     """Readable text colour for a highlight key on ``surfaces``, or None.
 

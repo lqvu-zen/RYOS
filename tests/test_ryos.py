@@ -2445,7 +2445,7 @@ class TestJobController(unittest.TestCase):
         self.db = _FakeDB()
         self.ctl = JobController(
             self.reg, self.q, self.db,
-            on_output=lambda tab, text, tag=None: self.rec["output"].append((tab, text, tag)),
+            on_output=lambda tab, text, tag=None, step=None: self.rec["output"].append((tab, text, tag)),
             on_status=lambda text: self.rec["status"].append(text),
             on_notify=lambda title, body: self.rec["notify"].append((title, body)),
             on_started=lambda job: self.rec["started"].append(job.job_id),
@@ -2609,6 +2609,41 @@ class TestJobController(unittest.TestCase):
         self.assertFalse(self.ctl.at_capacity(3))
 
     # --- concurrent ("with previous") groups ---
+
+    def test_parallel_steps_report_their_state_and_tag_their_lines(self):
+        # Steps running side by side: each one's chip goes running -> its own
+        # result, and its output lines carry the step, so the tab can colour
+        # and filter them.
+        steps = []
+        self.ctl._on_step = lambda *a: steps.append(a)
+        outputs = []
+        self.ctl._on_output = lambda *a: outputs.append(a)
+        queue = [self._step(1, "build"), self._step(2, "test", trigger_mode=TRIGGER_WITH)]
+        job = self._job("pipeline", queue=queue, total=2)
+        self.reg.add(job)
+        self.ctl.run_next_pipeline_step(job)
+        self.assertEqual(steps, [("job:1", 1, "build", "running"),
+                                 ("job:1", 2, "test", "running")])
+        self.q.put(("stdout", job.job_id, "compiling\n", 1))
+        self.ctl.pump()
+        self.assertEqual(outputs[-1], ("job:1", "[build] compiling\n", None, (1, "build")))
+        self.ctl.handle_step_done(job, 2, "error", token=2)
+        self.ctl.handle_step_done(job, 1, "ok", token=1)
+        self.assertIn(("job:1", 2, "test", "error"), steps)
+        self.assertIn(("job:1", 1, "build", "ok"), steps)
+
+    def test_a_single_step_has_no_chip_and_untagged_lines(self):
+        steps = []
+        self.ctl._on_step = lambda *a: steps.append(a)
+        outputs = []
+        self.ctl._on_output = lambda *a: outputs.append(a)
+        job = self._job("pipeline", queue=[self._step(1, "build")], total=1)
+        self.reg.add(job)
+        self.ctl.run_next_pipeline_step(job)
+        self.q.put(("stdout", job.job_id, "compiling\n", 1))
+        self.ctl.pump()
+        self.assertEqual(steps, [])
+        self.assertEqual(outputs[-1], ("job:1", "compiling\n", None))
 
     def test_group_detection_absorbs_consecutive_with_steps(self):
         # Leader (a, its own mode irrelevant) + b,c marked "with" form one
@@ -6331,6 +6366,17 @@ class TestQtStylesheet(unittest.TestCase):
         self.assertEqual(running_heading(1), "● RUNNING  ·  1")
         self.assertEqual(running_heading(3), "● RUNNING  ·  3")
 
+    def test_step_colours_read_on_the_output(self):
+        # Parallel steps' prefixes, and their chips' words, on the output
+        # background of every theme.
+        from ryos.themes import STEP_HUES, step_colour
+        for name, seed in self._all_seeds().items():
+            pal = build_palette(seed)
+            for token in range(1, len(STEP_HUES) + 2):
+                with self.subTest(theme=name, step=token):
+                    self.assertGreaterEqual(
+                        contrast_ratio(step_colour(token, pal["out_bg"]), pal["out_bg"]), 4.5)
+
     def test_every_image_it_names_exists(self):
         # Qt draws nothing for a url() it cannot open -- a ticked box with no
         # tick -- and says nothing either.
@@ -8480,3 +8526,28 @@ class TestStopAndLiveStatus(unittest.TestCase):
         proc.alive = False
         terminate_tree(proc, platform="win32", run=fake_run)   # already gone
         self.assertEqual(len(calls), 1)
+
+
+class TestParallelStepOutput(unittest.TestCase):
+    """The chips and filter for a pipeline's steps running side by side."""
+
+    def test_chip_text_names_the_step_and_its_state(self):
+        from ryos import outputpanel as op
+        self.assertEqual(op.step_chip_text(2, "build", op.STEP_RUNNING), "2. build ●")
+        self.assertEqual(op.step_chip_text(3, "test", op.STEP_FAILED), "3. test ✗")
+        self.assertEqual(op.step_chip_text(3, "test", op.STEP_OK), "3. test ✓")
+        self.assertIn("failed", op.step_chip_tip(3, "test", op.STEP_FAILED))
+
+    def test_the_prefix_is_the_one_lines_carry(self):
+        from ryos import outputpanel as op
+        from ryos.job_controller import _tag_lines
+        self.assertEqual(_tag_lines("x\n", "a-very-long-step-name"),
+                         op.step_prefix("a-very-long-step-name") + "x\n")
+
+    def test_filtering_to_a_step(self):
+        from ryos.outputpanel import shown_for_step
+        self.assertTrue(shown_for_step(None, None))
+        self.assertTrue(shown_for_step(2, None))
+        self.assertTrue(shown_for_step(2, 2))
+        self.assertFalse(shown_for_step(3, 2))
+        self.assertFalse(shown_for_step(None, 2))      # headers belong to no step

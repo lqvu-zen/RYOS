@@ -118,3 +118,41 @@ def closable(keys, running) -> list:
     """The tabs Close All closes: every one but All and those still running."""
     running = set(running)
     return [k for k in keys if k != ALL and k not in running]
+
+
+# --- steps running side by side: their chips, prefix and filter ------------------
+
+#: A parallel step's state, as its chip shows it.
+STEP_RUNNING = "running"
+STEP_RETRYING = "retrying"
+STEP_OK = "ok"
+STEP_FAILED = "error"
+_STEP_MARK = {STEP_RUNNING: "●", STEP_RETRYING: "↻", STEP_OK: "✓", STEP_FAILED: "✗"}
+_STEP_WORD = {STEP_RUNNING: "running", STEP_RETRYING: "retrying",
+              STEP_OK: "passed", STEP_FAILED: "failed"}
+#: The chip that shows every step again.
+ALL_STEPS = "All steps"
+#: How much of a step's name its output lines carry, so they stay aligned.
+PREFIX_WIDTH = 12
+
+
+def step_prefix(label: str) -> str:
+    """What each output line of a parallel step starts with: "[build] "."""
+    return f"[{label[:PREFIX_WIDTH]}] "
+
+
+def step_chip_text(number: int, label: str, state: str) -> str:
+    """A step's chip: its number (two steps can run the same script), name
+    and state -- "2. build ✓"."""
+    return f"{number}. {label} {_STEP_MARK.get(state, '')}".rstrip()
+
+
+def step_chip_tip(number: int, label: str, state: str) -> str:
+    return f"Step {number}: {label} -- {_STEP_WORD.get(state, state)}. " \
+           "Click to show only its output."
+
+
+def shown_for_step(step, step_filter) -> bool:
+    """Whether a line belongs on screen under the step filter: every line
+    with no filter, only that step's lines with one."""
+    return step_filter is None or step == step_filter
