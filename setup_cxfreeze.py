@@ -25,7 +25,10 @@ def _unused_qt_binaries() -> list:
     qt = [p.name for p in folder.glob("Qt6*.dll") if p.name not in keep]
     ffmpeg = [p.name for p in folder.glob("*.dll")
               if p.name.startswith(("av", "sw"))]
-    return sorted(qt + ffmpeg)
+    # Newer cx_Freeze hooks also copy Qt's software OpenGL (20 MB; RYOS draws
+    # no OpenGL) and the QML plugins (useless without Qt6Quick, left out above).
+    qml = [p.name for p in (folder / "qml").rglob("*.dll")]
+    return sorted(set(qt + ffmpeg + qml + ["opengl32sw.dll"]))
 
 
 build_options = {
@@ -57,7 +60,7 @@ build_options = {
 
 setup(
     name="RYOS",
-    version="2.1.0",
+    version="2.1.1",
     description="RYOS - Run Your Own Scripts",
     options={"build_exe": build_options},
     executables=[
