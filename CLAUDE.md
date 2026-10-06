@@ -29,6 +29,12 @@ To check the Qt app against your own data without changing it: `uv run python te
 
 To run a whole working session in the Qt app: `uv run python tests/session_smoke.py` (a throwaway folder; makes a group and scripts through their dialogs, runs, fails, retries, stops, builds and runs a pipeline, fires a schedule, uses Quick Run, search, select mode, export/import, options and themes, then restarts and checks what persisted; `--visible` as above).
 
+## Versions
+
+`__version__` in `ryos/__init__.py` (and `version=` in `setup_cxfreeze.py`) changes **only when a release is cut** — the `release-ryos` skill does it. A feature or fix commit, or a PR, never bumps it: between releases the tree holds the last released version, with no `-dev` suffix. (PR #14 bumped it to 2.0.1 on its own; no 2.0.1 was ever released.)
+
+The maintainer chooses the version number. Before a release, ask for it and wait for the answer — even if one was suggested earlier, a bare "release" or "go ahead" doesn't pick it.
+
 ## Architecture
 
 Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules and data in the top-level modules, the interface in `ryos/qtui/`. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script via `pyproject.toml`.
