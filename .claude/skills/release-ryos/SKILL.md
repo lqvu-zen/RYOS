@@ -41,7 +41,7 @@ cd D:/Projects/RYOS && git status --porcelain && gh run list -L 3 --json conclus
 
 The tree must be clean and `HEAD` must have a **successful** run. CI has sat red for several commits without anyone noticing, so treat a failure — or a run still in progress — as a stop: fix it or wait, don't release on top of it. (A long build can run while CI finishes, but don't *publish* until it's green.)
 
-Then check the latest published tag (`gh release list -R lqvu-zen/RYOS -L 5` or the releases page) and confirm the next version with the user — patch for fixes, minor for notable features, based on the last released version. Gather release notes; if the user didn't give any, draft them from `git log <last-tag>..HEAD --oneline` and show them for approval. Don't invent a version or notes silently.
+Then check the latest published tag (`gh release list -R lqvu-zen/RYOS -L 5` or the releases page) and **ask the user for the version number, and wait for the answer** before building — you may suggest one (patch for fixes, minor for notable features, based on the last released version), but the maintainer names it. A bare "release" or "go ahead" is not approval of a version suggested earlier in the conversation: 2.1.0 shipped that way, and the maintainer asked never to repeat it. Gather release notes; if the user didn't give any, draft them from `git log <last-tag>..HEAD --oneline` and show them for approval. Don't invent a version or notes silently.
 
 Notes are for users, not for the changelog: say what changed for someone using the app, and flag anything that will behave differently than it did before.
 
