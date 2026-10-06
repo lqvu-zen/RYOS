@@ -70,19 +70,18 @@ icons on Run and Retry, the focus outline, the outlined header buttons.
 
 ## Where the shipped palettes miss
 
-Three cells, all the themes' own values — kept exact; the note is the
-deliverable, not a re-tint.
+Nowhere: every audited pair clears its floor in every theme.
 
-| Pair | Worst | Where | Why |
-| --- | --- | --- | --- |
-| `name_fg` on `card_hover` | **3.63:1** | solarized-dark | A name under the pointer. Solarized's `text` is `#93a1a1`, already low on `card_bg` at 4.86:1; the +10% hover shade pushes it under. |
-| `name_fg` on `accent_wash` | **4.19:1** | solarized-dark | The chosen row's name, maximised. Same root. |
-| `pipe_accent` on `card_bg` | **2.40:1** | nord | A pipeline row's 3px rail. Nord's pipeline colour is pale on its pale surface; the PIPELINE word beside it is shaded and reads. |
+The last three were the gallery themes' own colours, now tuned:
 
-Solarized Dark is built for a terminal, where low-contrast foreground text is
-the point; porting it faithfully means porting that.
+- **Solarized Dark**'s `text` was `#93a1a1` (Solarized's base1): 4.86:1 on a
+  row, but 3.63:1 under the pointer and 4.19:1 on the chosen row's wash. It is
+  now `#aab4b4` — the same hue, lightened just to the floor (4.57:1 hovered).
+- **Nord** had no pipeline colour of its own, so it took Dark's `#7c6bdd`, 2.40:1
+  on Nord's pale surface. It now carries Nord's own aurora purple, `#b48ead`
+  (3.55:1), as its `pipe_accent`.
 
-Fixed since the last edition of this page: a menu's highlighted entry drew
+Fixed earlier: a menu's highlighted entry drew
 `fg_on_dark` on `accent` (2.00:1 on Nord, under 4.5:1 in five themes); it now
 draws `primary_fg`. The filled SCHEDULED badge, the gutter glyphs and the
 create buttons it listed no longer exist.

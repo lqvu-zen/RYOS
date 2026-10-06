@@ -93,5 +93,5 @@ knows.
   file, but they are recreations and will drift if nobody looks.
 - Eight of thirteen themes ship; the format caps a system at eight. The other
   five are documented as seeds in `themes.md`.
-- Three colour cells are below their contrast floor. They are the themes' own
-  values, recorded rather than corrected — see `accessibility.md`.
+- None: every audited colour pair clears its floor in every theme (the last
+  three, in Solarized Dark and Nord, were tuned — see `accessibility.md`).

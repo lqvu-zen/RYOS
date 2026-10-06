@@ -91,10 +91,10 @@ list at the top of `design-system/build.py`, and rebuild.
 | Golden Hour | light | `#efe3d2` | `#f8f1e6` | `#ddcbb1` | `#b3545a` | `#4a403a` | `#6e6056` | `#4a403a` | seed only |
 | High Contrast | dark | `#000000` | `#121212` | `#5a5a5a` | `#4aa3ff` | `#ffffff` | `#d0d0d0` | `#000000` | yes |
 | Midnight Galaxy | dark | `#2b1e3e` | `#382a4f` | `#473a5f` | `#9a82d8` | `#e6e6fa` | `#bcaed8` | `#1f1530` | seed only |
-| Nord | dark | `#2e3440` | `#3b4252` | `#434c5e` | `#88c0d0` | `#eceff4` | `#aab1c0` | `#272c36` | yes |
+| Nord | dark | `#2e3440` | `#3b4252` | `#434c5e` | `#88c0d0` | `#eceff4` | `#aab1c0` | `#272c36` | yes — and `pipe_accent` `#b48ead` |
 | Ocean Depths | dark | `#1a2332` | `#243047` | `#33415c` | `#2c8f8f` | `#f1faee` | `#a8dadc` | `#121a26` | yes |
 | Sepia | light | `#f4ecd8` | `#fbf5e6` | `#e3d9bf` | `#9a5b2e` | `#4b3a2a` | `#6f5b45` | `#3a2c1d` | yes |
-| Solarized Dark | dark | `#002b36` | `#073642` | `#0f4a59` | `#268bd2` | `#93a1a1` | `#839496` | `#001f27` | yes |
+| Solarized Dark | dark | `#002b36` | `#073642` | `#0f4a59` | `#268bd2` | `#aab4b4` | `#839496` | `#001f27` | yes |
 | Solarized Light | light | `#eee8d5` | `#fdf6e3` | `#ddd6c1` | `#1f7ac0` | `#4d646b` | `#5d7077` | `#073642` | seed only |
 | Sunset Boulevard | dark | `#264653` | `#2f5563` | `#3c6675` | `#e76f51` | `#f6ede2` | `#e9c46a` | `#1c333d` | seed only |
 | Tech Innovation | dark | `#1e1e1e` | `#2a2a2a` | `#3a3a3a` | `#0a84ff` | `#ffffff` | `#b0b0b0` | `#141414` | seed only |

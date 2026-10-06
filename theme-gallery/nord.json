@@ -10,6 +10,7 @@
     "accent": "#88c0d0",
     "text": "#eceff4",
     "text_muted": "#aab1c0",
-    "header_bg": "#272c36"
+    "header_bg": "#272c36",
+    "pipe_accent": "#b48ead"
   }
 }

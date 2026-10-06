@@ -144,7 +144,5 @@ accessible name; every field is linked to its label; Tab reaches every control
 and shows where it is. `.claude/skills/review-ryos-ui/scripts/audit.py`
 measures all of it.
 
-A few raw palette pairs in the shipped themes miss the floor before
-`drawn_colors()` adjusts them. They are listed, with what the app draws
-instead, in `accessibility.md` — they are the source's values and they stay
-exact.
+Every raw palette pair the audit measures clears its floor in every shipped
+theme; `accessibility.md` records how the last ones were tuned.
