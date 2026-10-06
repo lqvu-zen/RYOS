@@ -112,6 +112,9 @@ def drawn_colors(c: dict) -> dict:
         # the window colour for ink; the others are muted words on the window.
         "pill_fg": _legible(c["bg"], c["name_fg"]),
         "pill_idle_fg": _legible(c["path_fg"], c["bg"], c["tab_inactive_hover"]),
+        # An unchosen pill's outline: the only thing that says it is a button,
+        # so held to 3:1, like the header's outlined buttons.
+        "pill_edge": _edge(c["border"], c["bg"], c["tab_inactive_hover"], floor=GLYPH_MIN),
         # A neutral button's outline. In Light its fill is 1.01:1 against the
         # window, so without an edge Save and Cancel read as plain text.
         "control_edge": _edge(c["border"], c["bg"], c["card_bg"]),
@@ -145,6 +148,7 @@ DRAWN_PAIRS = (
     ("header_edge", ("header_bg",), GLYPH_MIN),
     ("pill_fg", ("name_fg",), TEXT_MIN),
     ("pill_idle_fg", ("bg", "tab_inactive_hover"), TEXT_MIN),
+    ("pill_edge", ("bg", "tab_inactive_hover"), GLYPH_MIN),
     ("control_edge", ("bg", "card_bg"), EDGE_MIN),
     ("focus_edge", ("accent_wash", "card_bg"), GLYPH_MIN),
     ("badge_fg", ("running",), TEXT_MIN),
@@ -349,9 +353,9 @@ QTabWidget::tab-bar {{ left: 0; }}
 QTabBar::tab {{
     background: transparent;
     color: {d['pill_idle_fg']};
-    border: none;
+    border: 1px solid {d['pill_edge']};
     border-radius: 14px;
-    padding: 5px 14px;
+    padding: 4px 13px;
     /* Qt draws square corners, not clamped ones, when the radius is more
        than half the pill's height (issue #11): 18 + 2 x 5 padding = 28. */
     min-height: 18px;
@@ -363,6 +367,7 @@ QTabBar::tab:selected {{
     background: {c['name_fg']};
     color: {d['pill_fg']};
     font-weight: 700;
+    border: 1px solid {c['name_fg']};
 }}
 
 /* --- group tabs ----------------------------------------------------- */
@@ -373,9 +378,9 @@ QTabWidget#groupTabs::tab-bar {{ left: 0; }}
 QTabBar#groupTabBar::tab {{
     background: transparent;
     color: {d['pill_idle_fg']};
-    border: none;
+    border: 1px solid {d['pill_edge']};
     border-radius: 14px;
-    padding: 5px 14px;
+    padding: 4px 13px;
     /* Qt draws square corners, not clamped ones, when the radius is more
        than half the pill's height (issue #11): 18 + 2 x 5 padding = 28. */
     min-height: 18px;
@@ -390,12 +395,12 @@ QTabBar#groupTabBar::tab:selected {{
     background: {c['name_fg']};
     color: {d['pill_fg']};
     font-weight: 700;
-    border: none;
+    border: 1px solid {c['name_fg']};
 }}
 QPushButton#newGroupPill {{
     background: transparent;
     color: {d['pill_idle_fg']};
-    border: 1px dashed {d['control_edge']};
+    border: 1px dashed {d['pill_edge']};
     border-radius: 13px;
     padding: 0;
     font-size: 13pt;
@@ -442,9 +447,9 @@ QTabWidget#outputTabs::pane {{ border: none; }}
 QTabWidget#outputTabs QTabBar::tab {{
     background: transparent;
     color: {d['pill_idle_fg']};
-    border: none;
+    border: 1px solid {d['pill_edge']};
     border-radius: 11px;
-    padding: 3px 10px;
+    padding: 2px 9px;
     min-height: 16px;   /* 16 + 2 x 3 = 22: room for the 11 px radius */
     margin: 4px 2px 6px 0;
     font-weight: 600;
@@ -458,7 +463,7 @@ QPushButton#tabClose:hover {{ background: {c['tab_inactive_hover']}; }}
 QTabWidget#outputTabs QTabBar::tab:selected {{
     background: {c['name_fg']};
     color: {d['pill_fg']};
-    border: none;
+    border: 1px solid {c['name_fg']};
 }}
 /* Typed into, so it looks like the other fields -- not like the terminal. */
 QPlainTextEdit#envEdit {{

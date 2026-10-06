@@ -191,6 +191,7 @@ DRAWN_USAGE: list[tuple[str, str]] = [
     ("header_edge", "The outline of + Pipeline and + Group on the header: the only thing that says they are buttons, so held to 3:1."),
     ("pill_fg", "The chosen pill's words (group, output, detail and Options tabs): the window colour on a name_fg fill."),
     ("pill_idle_fg", "An unchosen pill's words, on the window and on its hover fill."),
+    ("pill_edge", "An unchosen pill's 1px outline (group, detail, Options and output tabs): the only thing that says it is a button, so held to 3:1 on the window and the hover fill. The chosen pill's edge is its own fill."),
     ("control_edge", "The 1px outline of fields, neutral buttons, the group picker and preset pills -- in Light the fills alone are 1.01:1 to the window."),
     ("focus_edge", "The 2px outline round the row the keyboard is on (and a focused chip's edge): the accent, shaded to 3:1 against the row's wash and the rows around it."),
     ("badge_fg", "The running count on the rail's Activity button, on the running fill."),
