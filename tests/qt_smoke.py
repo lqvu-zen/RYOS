@@ -4117,6 +4117,82 @@ def check_focus_starts_in_search(app):
     print("  [ok] focus: starts in the search box; clicks leave no button focused; Tab reaches them")
 
 
+def check_tray_round_trip(app):
+    """Issues #21 and #22: minimising can stay on the taskbar, and a window
+    hidden to the tray comes back as it went -- maximised if it was, at its
+    own place -- whether from the tray icon or a second launch."""
+    from types import SimpleNamespace
+
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def window(**settings):
+        win = MainWindow(REFERENCE["light"], settings={
+            "quick_run_enabled": False, "close_to_tray": True,
+            "prompt_close_to_tray": False, "open_on_cursor_monitor": True, **settings})
+        win._tray = SimpleNamespace(available=True)
+        win.raise_ = lambda: None
+        win.activateWindow = lambda: None
+        win.set_geometry_string("600x500+40+40")
+        win.show()
+        app.processEvents()
+        return win
+
+    def settle():
+        for _ in range(5):
+            app.processEvents()
+
+    # Maximised, closed to the tray, back from the tray icon: maximised.
+    win = window()
+    win.showMaximized()
+    settle()
+    win.close()
+    settle()
+    if not win.isHidden():
+        PROBLEMS.append("close-to-tray did not hide the window")
+    win.restore_from_tray()
+    settle()
+    if not win.isMaximized():
+        PROBLEMS.append("a window maximised when hidden to the tray came back un-maximised (#22)")
+    win._quitting = True
+    win.close()
+
+    # Normal, relaunched with the cursor on its own monitor: not moved at all.
+    win = window()
+    here = (0, 0, 1920, 1040)
+    win.cursor_area = lambda: here
+    win.area_at = lambda _x, _y: here
+    moved: list = []
+    win.set_geometry_string = lambda g: moved.append(g)
+    win.close()
+    settle()
+    win.restore_from_tray(follow_cursor=True)
+    settle()
+    if moved or win.geometry_string() != "600x500+40+40":
+        PROBLEMS.append(f"a relaunch on the same monitor moved the window: {moved}, "
+                        f"now {win.geometry_string()} (#22)")
+    win._quitting = True
+    win.close()
+
+    # Minimising: to the tray with the option on (the control), and left on
+    # the taskbar with it off.
+    import time as _time
+    for on in (True, False):
+        win = window(minimize_to_tray=on)
+        win.showMinimized()
+        end = _time.time() + 3
+        while _time.time() < end and not win.hidden_to_tray:
+            app.processEvents()
+            _time.sleep(0.02)
+        if win.hidden_to_tray != on:
+            PROBLEMS.append(f"with Minimise to tray {'on' if on else 'off'}, minimising "
+                            f"{'did not hide' if on else 'hid'} the window (#21)")
+        win._quitting = True
+        win.close()
+    print("  [ok] tray: comes back maximised, not moved on its own monitor; "
+          "minimise can stay on the taskbar")
+
+
 def check_keyboard_through_the_list(app):
     """The list works from the keyboard: Down from the search box, arrows
     between rows (favourites, pipelines, scripts), Enter runs, F2 edits, the
@@ -4877,6 +4953,7 @@ def main() -> int:
     check_search_empty_state(app)
     check_focus_starts_in_search(app)
     check_keyboard_through_the_list(app)
+    check_tray_round_trip(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

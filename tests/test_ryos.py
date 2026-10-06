@@ -7915,14 +7915,39 @@ class TestTrayPolicy(unittest.TestCase):
         self.assertFalse(s["prompt_close_to_tray"])
 
     def test_minimize_and_start(self):
-        self.assertEqual(traypolicy.on_minimize(True, False), traypolicy.HIDE)
-        self.assertEqual(traypolicy.on_minimize(True, True), traypolicy.NOTHING)
-        self.assertEqual(traypolicy.on_minimize(False, False), traypolicy.NOTHING)
+        self.assertEqual(traypolicy.on_minimize({}, True, False), traypolicy.HIDE)
+        self.assertEqual(traypolicy.on_minimize({}, True, True), traypolicy.NOTHING)
+        self.assertEqual(traypolicy.on_minimize({}, False, False), traypolicy.NOTHING)
         self.assertEqual(traypolicy.on_start({}, True), traypolicy.NOTHING)
         self.assertEqual(traypolicy.on_start({"start_minimized": True}, True),
                          traypolicy.HIDE)
         self.assertEqual(traypolicy.on_start({"start_minimized": True}, False),
                          traypolicy.MINIMIZE)
+
+    def test_minimising_can_stay_on_the_taskbar(self):
+        # Issue #21: minimise without hiding to the tray.
+        off = {"minimize_to_tray": False}
+        self.assertEqual(traypolicy.on_minimize(off, True, False), traypolicy.NOTHING)
+        self.assertEqual(traypolicy.on_minimize({"minimize_to_tray": True}, True, False),
+                         traypolicy.HIDE)
+
+    def test_the_window_comes_back_as_it_went(self):
+        # Issue #22: a maximised window hidden to the tray came back
+        # un-maximised, at a wrong size.
+        here, there = (0, 0, 1920, 1040), (1920, 0, 1536, 816)
+        self.assertEqual(traypolicy.restore_plan(True, None, None),
+                         (False, traypolicy.SHOW_MAXIMIZED))
+        self.assertEqual(traypolicy.restore_plan(False, None, None),
+                         (False, traypolicy.SHOW_NORMAL))
+        # Relaunched with the cursor on the window's own monitor: nothing to
+        # move -- re-applying the same geometry to the hidden window broke it.
+        self.assertEqual(traypolicy.restore_plan(True, here, here),
+                         (False, traypolicy.SHOW_MAXIMIZED))
+        # On another monitor: moved there, and still maximised.
+        self.assertEqual(traypolicy.restore_plan(True, there, here),
+                         (True, traypolicy.SHOW_MAXIMIZED))
+        self.assertEqual(traypolicy.restore_plan(False, there, here),
+                         (True, traypolicy.SHOW_NORMAL))
 
     def test_quit_prompt_and_verbs(self):
         self.assertIsNone(traypolicy.quit_prompt(0))

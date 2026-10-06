@@ -1728,18 +1728,29 @@ class MainWindow(QMainWindow):
         return self._hidden_to_tray
 
     def hide_to_tray(self) -> None:
+        # Maximised (minimised from there or not): it comes back maximised.
+        self._restore_maximized = bool(self.windowState() & Qt.WindowState.WindowMaximized)
         self._hidden_to_tray = True
         self.hide()
 
     def restore_from_tray(self, follow_cursor: bool = False) -> None:
-        if follow_cursor and self._settings.get("open_on_cursor_monitor"):
-            target = self.cursor_area()
-            if target is not None:
-                saved = self._last_normal_geometry or self.geometry_string()
-                src = self.area_at(*screens.geometry_origin(saved)) or target
-                self.set_geometry_string(
-                    screens.relocate_geometry(saved, src, target))
-        self.showNormal()
+        target = (self.cursor_area()
+                  if follow_cursor and self._settings.get("open_on_cursor_monitor")
+                  else None)
+        saved = self._last_normal_geometry or self.geometry_string()
+        src = (self.area_at(*screens.geometry_origin(saved)) or target
+               if target is not None else None)
+        move, show = traypolicy.restore_plan(
+            getattr(self, "_restore_maximized", False), src, target)
+        if move:
+            if show == traypolicy.SHOW_MAXIMIZED:
+                # Normal first, so it maximises on the monitor it moves to.
+                self.setWindowState(Qt.WindowState.WindowNoState)
+            self.set_geometry_string(screens.relocate_geometry(saved, src, target))
+        if show == traypolicy.SHOW_MAXIMIZED:
+            self.showMaximized()
+        else:
+            self.showNormal()
         self.raise_()
         self.activateWindow()
         self._hidden_to_tray = False
@@ -1778,7 +1789,7 @@ class MainWindow(QMainWindow):
             # Maximised or back: after the state settles, like the tray hide.
             QTimer.singleShot(0, self.sync_layout)
         if (event.type() == QEvent.Type.WindowStateChange and self.isMinimized()
-                and traypolicy.on_minimize(self.tray_available(),
+                and traypolicy.on_minimize(self._settings, self.tray_available(),
                                            self._hidden_to_tray) == traypolicy.HIDE):
             # Hiding from inside the state change fights the window manager;
             # do it on the next turn.

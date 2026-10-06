@@ -27,9 +27,9 @@ Settings are grouped in tabs. Change what you like and click **Save**.
 
 **Startup & Window**
 
-![The Startup & Window tab: keep on top, snap to corner, window width and height, reopen the last group, remember the position, open on the monitor under the cursor, start minimised, close to tray, and ask before closing to tray](images/11-options-startup-window.png)
+![The Startup & Window tab: keep on top, snap to corner, window width and height, reopen the last group, remember the position, open on the monitor under the cursor, start minimised, close to tray, minimise to tray, and ask before closing to tray](images/11-options-startup-window.png)
 
-Where the window opens and how big, whether it stays on top, whether it reopens the last group, and whether closing it keeps RYOS running in the system tray (so schedules keep firing).
+Where the window opens and how big, whether it stays on top, whether it reopens the last group, and whether closing it keeps RYOS running in the system tray (so schedules keep firing). **Minimise to tray instead of the taskbar** is on by default; turn it off and minimising leaves RYOS on the taskbar like any other window. Either way, RYOS comes back from the tray the way it went — maximised if it was.
 
 **Output**
 

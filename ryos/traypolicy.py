@@ -125,9 +125,31 @@ def after_prompt(settings: dict, answer: str, dont_ask: bool) -> tuple[str, bool
     return NOTHING, False
 
 
-def on_minimize(tray_available: bool, hidden: bool) -> str:
-    """Minimising goes to the tray when there is one."""
+def on_minimize(settings: dict, tray_available: bool, hidden: bool) -> str:
+    """Minimising goes to the tray when there is one -- unless the user would
+    rather keep it on the taskbar like any other window (issue #21)."""
+    if not settings.get("minimize_to_tray", True):
+        return NOTHING
     return HIDE if tray_available and not hidden else NOTHING
+
+
+#: How a window hidden to the tray comes back.
+SHOW_NORMAL, SHOW_MAXIMIZED = "normal", "maximized"
+
+
+def restore_plan(was_maximized: bool, window_area, cursor_area) -> tuple[bool, str]:
+    """(move it to the cursor's monitor first, how to show it).
+
+    It comes back as it went: maximised if it was -- shown "normal", a window
+    hidden while maximised came back un-maximised at a wrong size (issue #22).
+    It moves only when the cursor is on another monitor: re-applying its own
+    geometry to the hidden window was what broke the size on a relaunch.
+    ``window_area`` and ``cursor_area`` are work areas, or None when there is
+    nothing to follow.
+    """
+    move = (cursor_area is not None and window_area is not None
+            and tuple(window_area) != tuple(cursor_area))
+    return move, SHOW_MAXIMIZED if was_maximized else SHOW_NORMAL
 
 
 def on_start(settings: dict, tray_available: bool) -> str:

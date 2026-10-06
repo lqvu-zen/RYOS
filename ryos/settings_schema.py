@@ -114,6 +114,8 @@ FIELDS: tuple[Field, ...] = (
           STARTUP),
     Field("start_minimized", BOOL, "Start minimised", STARTUP),
     Field("close_to_tray", BOOL, "Close to tray instead of exiting", STARTUP),
+    Field("minimize_to_tray", BOOL, "Minimise to tray instead of the taskbar", STARTUP,
+          help="Off: minimising keeps RYOS on the taskbar like any other window."),
     Field("prompt_close_to_tray", BOOL, "Ask before closing to tray", STARTUP),
     # -- Output ------------------------------------------------------------
     Field("max_output_lines", INT, "Maximum output lines", OUTPUT, minimum=100,
