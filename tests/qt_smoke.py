@@ -4382,6 +4382,81 @@ def check_one_icon_set(app):
     print("  [ok] one icon set: no emoji or symbol glyphs in button or menu text")
 
 
+def check_run_becomes_stop(app):
+    """While a row's own run is going, its Run is Stop -- pressed again it
+    only started a second copy. A script running only as a pipeline's step
+    keeps Run: stopping it from its row would stop the pipeline."""
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    slow = tmp / "slow.py"
+    slow.write_text("import time\nprint('working', flush=True)\ntime.sleep(20)\n",
+                    encoding="utf-8")
+    db = ScriptDB(tmp / "stop.db")
+    db.create_group("G")
+    sid = db.add("slow", str(slow), "", _sys.executable, "G")
+    other = db.add("step", str(slow), "", _sys.executable, "G")
+    pid = db.create_pipeline("P", "G")
+    db.add_pipeline_step(pid, other)
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.load_from_db(db)
+    win.show_group("G")
+
+    def pump_until(predicate, timeout=10.0):
+        end = _time.time() + timeout
+        while _time.time() < end and not predicate():
+            app.processEvents()
+            _time.sleep(0.02)
+        return predicate()
+
+    def row(kind, item_id):
+        page = win.card_lists["G"]
+        cards = page.section("pipelines" if kind == "pipeline" else "scripts").cards
+        return next(c for c in cards if getattr(c, f"{kind}_id") == item_id)
+
+    try:
+        row("script", sid).run_button.click()
+        if not pump_until(lambda: row("script", sid).run_button.property("runState") == "stop"):
+            PROBLEMS.append("a running script's Run did not become Stop")
+        row("pipeline", pid).run_button.click()
+        pump_until(lambda: row("pipeline", pid).run_button.property("runState") == "stop")
+        step_row = row("script", other)
+        if step_row.run_button.property("runState") == "stop":
+            PROBLEMS.append("a script running only as a pipeline's step showed Stop")
+        # Pressing Stop stops that run -- and starts no second copy.
+        jobs_before = len(bridge.registry)
+        row("script", sid).run_button.click()
+        if len(bridge.registry) > jobs_before:
+            PROBLEMS.append("Stop on a row started another copy")
+        if not pump_until(lambda: not any(
+                j.script_id == sid and j.kind == "script" for j in bridge.registry.all())):
+            PROBLEMS.append("Stop on a row did not stop its run")
+        if not pump_until(lambda: row("script", sid).run_button.property("runState") != "stop"):
+            PROBLEMS.append("after its run stopped, the row still showed Stop")
+        if row("pipeline", pid).run_button.property("runState") != "stop":
+            PROBLEMS.append("stopping one row's run touched the pipeline's")
+    finally:
+        for job in list(bridge.registry.all()):
+            win._stop_job(job)
+        pump_until(lambda: len(bridge.registry) == 0, 10)
+        bridge.stop()
+        win.close()
+        win.deleteLater()
+    print("  [ok] run becomes stop: a row's own run shows Stop and stops just it; "
+          "a pipeline's step keeps Run")
+
+
 def check_maximised_layout(app):
     """Maximised: the list beside the chosen item, acting through its row.
 
@@ -4954,6 +5029,7 @@ def main() -> int:
     check_focus_starts_in_search(app)
     check_keyboard_through_the_list(app)
     check_tray_round_trip(app)
+    check_run_becomes_stop(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

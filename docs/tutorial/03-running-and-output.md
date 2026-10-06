@@ -6,7 +6,7 @@ Click the green play button on a row. While it runs, it appears in the **Running
 
 ![The window while "Count a minute" runs: a Running row at the bottom shows its name, start time, elapsed seconds and a Stop button](images/03-running.png)
 
-Several scripts can run at once. **Stop** ends one early.
+Several scripts can run at once. **Stop** ends one early. While a script or pipeline is running, its own play button turns into a dark red **Stop** too — pressing it again stops that run rather than starting a second copy. (To run a second copy on purpose, use **Run with parameters…** from its right-click menu.) A script that is only running as one step of a pipeline keeps its play button: stopping it there would stop the pipeline.
 
 ## See how it went
 

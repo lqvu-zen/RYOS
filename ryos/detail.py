@@ -80,9 +80,10 @@ def use_workspace(maximized: bool, full_screen: bool, enabled: bool = True) -> b
     return enabled and (maximized or full_screen)
 
 
-def run_label(last_status: str | None) -> str:
+def run_label(last_status: str | None, own_run: bool = False) -> str:
     """The pane's Run button's word; the button draws the row's icon beside it."""
-    return "Retry" if cardstyle.run_button(last_status).is_retry else "Run"
+    spec = cardstyle.run_button(last_status, own_run)
+    return "Stop" if spec.is_stop else "Retry" if spec.is_retry else "Run"
 
 
 def _or_dash(value) -> str:

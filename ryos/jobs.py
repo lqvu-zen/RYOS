@@ -74,6 +74,22 @@ RETRYING = "retrying"
 STOPPED = "stopped"
 
 
+def own_runs(jobs) -> set:
+    """The ``(kind, id)`` of each item with a run of its OWN in flight.
+
+    A script that is only running as a pipeline's step is not one: stopping
+    it from its row would stop somebody else's pipeline. Its row says
+    Running (`live_statuses`) but keeps Run.
+    """
+    out = set()
+    for job in jobs:
+        if job.kind == "pipeline":
+            out.add(("pipeline", job.pipeline_id))
+        else:
+            out.add(("script", job.script_id))
+    return out
+
+
 def live_statuses(jobs) -> dict:
     """What each card should say while jobs are in flight (issue #13).
 

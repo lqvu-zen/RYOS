@@ -328,6 +328,19 @@ class _CardBase(QFrame):
             self._row.addWidget(w)
         self._row.addWidget(run)
 
+    def set_own_run(self, on: bool) -> None:
+        """Run becomes Stop while this item's own run is going."""
+        if on == getattr(self, "_own_run", False):
+            return
+        self._own_run = on
+        self._style_run_button(self.run_button, self._last_status)
+
+    def _press_run(self, item_id: int) -> None:
+        if getattr(self, "_own_run", False):
+            self.stop_requested.emit(item_id)
+        else:
+            self.run_requested.emit(item_id)
+
     def set_last_status(self, status: str | None) -> None:
         """Show a run's outcome as it lands: Retry after a failure, and the
         chip, without rebuilding the card (which a reload would do, losing
@@ -369,16 +382,17 @@ class _CardBase(QFrame):
              else self._result_slot.layout()).addWidget(self.status_chip)
 
     def _style_run_button(self, b: QPushButton, last_status: str | None) -> None:
-        spec = cardstyle.run_button(last_status)
+        spec = cardstyle.run_button(last_status, getattr(self, "_own_run", False))
         c = self._palette
         b.set_shape(spec.icon)
         # The icon in the fill's own ink, and in the hover fill's under the
         # pointer -- the retry red and its dark hover need different inks.
-        b.set_colors(c[spec.fg_key], ink_on(c[spec.hover_fg_key]))
+        fg = ink_on(c[spec.fg_key]) if spec.is_stop else c[spec.fg_key]
+        b.set_colors(fg, ink_on(c[spec.hover_fg_key]))
         set_tooltip(b, spec.tooltip)
         # The tooltip explains; the name is the action.
-        b.setAccessibleName(f"Retry {self._name}" if spec.is_retry
-                            else f"Run {self._name}")
+        verb = "Stop" if spec.is_stop else "Retry" if spec.is_retry else "Run"
+        b.setAccessibleName(f"{verb} {self._name}")
         c = self._palette
         # Per-button colours, because the state is per-card rather than
         # per-class; everything else is left to the stylesheet. The radius
@@ -388,7 +402,7 @@ class _CardBase(QFrame):
         side = b.width()
         b.setStyleSheet(
             f"QPushButton#run {{ background: {c[spec.bg_key]};"
-            f" color: {c[spec.fg_key]}; border-radius: {side // 2}px;"
+            f" color: {fg}; border-radius: {side // 2}px;"
             f" min-width: {side}px; max-width: {side}px;"
             f" min-height: {side}px; max-height: {side}px; }}"
             f"QPushButton#run:hover {{ background: {c[spec.hover_key]};"
@@ -433,6 +447,8 @@ class ScriptCard(_CardBase):
     """One script: name, path, the preset Run passes, and the button strip."""
 
     run_requested = Signal(int)
+    #: Run pressed while its own run is going: stop it.
+    stop_requested = Signal(int)
     run_with_param_requested = Signal(int)
     edit_requested = Signal(int)
     favorite_toggled = Signal(int, bool)
@@ -552,8 +568,7 @@ class ScriptCard(_CardBase):
                               (self.edit_button, self.param_button),
                               self.run_button, is_favorite)
 
-        self.run_button.clicked.connect(
-            lambda: self.run_requested.emit(self.script_id))
+        self.run_button.clicked.connect(lambda: self._press_run(self.script_id))
         self.edit_button.clicked.connect(
             lambda: self.edit_requested.emit(self.script_id))
         self.param_button.clicked.connect(
@@ -599,6 +614,8 @@ class PipelineCard(_CardBase):
     """One pipeline: name, its steps, and the same button columns."""
 
     run_requested = Signal(int)
+    #: Run pressed while its own run is going: stop it.
+    stop_requested = Signal(int)
     edit_requested = Signal(int)
     favorite_toggled = Signal(int, bool)
     steps_clicked = Signal(int)
@@ -664,8 +681,7 @@ class PipelineCard(_CardBase):
         self._lay_out_buttons(self.fav_button, (self.edit_button, self.spacer),
                               self.run_button, is_favorite)
 
-        self.run_button.clicked.connect(
-            lambda: self.run_requested.emit(self.pipeline_id))
+        self.run_button.clicked.connect(lambda: self._press_run(self.pipeline_id))
         self.edit_button.clicked.connect(
             lambda: self.edit_requested.emit(self.pipeline_id))
         self.fav_button.clicked.connect(

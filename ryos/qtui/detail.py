@@ -326,16 +326,18 @@ class DetailPane(QWidget):
             self.show_empty()
             return
         status = getattr(self.card, "_last_status", None)
-        spec = cardstyle.run_button(status)
+        own = getattr(self.card, "_own_run", False)
+        spec = cardstyle.run_button(status, own)
         c = self._palette
-        self.run.setText(detail.run_label(status))
+        self.run.setText(detail.run_label(status, own))
         self.run.set_shape(spec.icon)
-        self.run.set_colors(c[spec.fg_key], ink_on(c[spec.hover_fg_key]))
+        fg = ink_on(c[spec.fg_key]) if spec.is_stop else c[spec.fg_key]
+        self.run.set_colors(fg, ink_on(c[spec.hover_fg_key]))
         set_tooltip(self.run, spec.tooltip)
         self.run.setProperty("runState", spec.state)
         self.run.setStyleSheet(
             f"QPushButton#detailRun {{ background: {c[spec.bg_key]};"
-            f" color: {c[spec.fg_key]}; border: none; border-radius: 19px;"
+            f" color: {fg}; border: none; border-radius: 19px;"
             f" padding: 0 22px 0 18px; font-size: 11pt; font-weight: 700; }}"
             f"QPushButton#detailRun:hover {{ background: {c[spec.hover_key]};"
             f" color: {ink_on(c[spec.hover_fg_key])}; }}")

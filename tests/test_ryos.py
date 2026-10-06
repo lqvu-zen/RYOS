@@ -8556,6 +8556,25 @@ class TestStopAndLiveStatus(unittest.TestCase):
         self.assertEqual(live_statuses([pipe]),
                          {("pipeline", 3): RUNNING, ("script", 1): RUNNING})
 
+    def test_run_becomes_stop_only_for_an_items_own_run(self):
+        from ryos.jobs import own_runs
+        script = Job(1, "script", 5, None, "s", "job:1", "g")
+        pipe = Job(2, "pipeline", None, 3, "p", "job:2", "g")
+        pipe.group_pending = {1}
+        pipe.step_rows = {1: _policy_step("x")}          # step 1 runs script 1
+        self.assertEqual(own_runs([script, pipe]), {("script", 5), ("pipeline", 3)})
+        # Script 1 is running -- as the pipeline's step only: not its own.
+        self.assertIn(("script", 1), live_statuses([pipe]))
+        self.assertNotIn(("script", 1), own_runs([pipe]))
+        spec = cardstyle.run_button("ok", own_run=True)
+        self.assertTrue(spec.is_stop)
+        self.assertEqual(spec.icon, "stop")
+        self.assertTrue(cardstyle.run_button("error", own_run=True).is_stop,
+                        "its own run going beats the last failure")
+        self.assertFalse(cardstyle.run_button("running").is_stop)
+        self.assertEqual(detail.run_label("ok", own_run=True), "Stop")
+        self.assertEqual(detail.run_label("error"), "Retry")
+
     def test_badges_for_live_states(self):
         self.assertEqual(cardstyle.status_badge("running").text, "● Running")
         self.assertEqual(cardstyle.status_badge("retrying").text, "● Retrying")

@@ -18,8 +18,8 @@ run-with, star -- and Run.
 - *Under the pointer* -- `card_hover`, and the quiet cells appear in space kept
   for them, so nothing moves.
 - *Failed* -- Run becomes Retry; the word says `● Failed`.
-- *Running / Retrying / Stopped* -- said by the word; Stopped is muted and
-  keeps Run.
+- *Running / Retrying / Stopped* -- said by the word; while the row's own
+  run is going, Run is Stop. Stopped is muted and keeps Run.
 - *Chosen* (maximised) -- `accent_wash`; the detail pane shows it.
 - *Keyboard* -- the wash and a 2px `focus_edge` outline, only when the
   keyboard put it there (a click focuses a row too, and leaves no mark).

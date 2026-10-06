@@ -49,7 +49,7 @@ from .sections import GroupPage
 from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
-from ..jobs import live_statuses
+from ..jobs import live_statuses, own_runs
 from ..runner import terminate_tree
 from .stylesheet import stylesheet
 from . import icons
@@ -1084,6 +1084,9 @@ class MainWindow(QMainWindow):
                 lambda _id, c=card, r=rec: self.run_with_param(c, r))
         elif "run" in rec:
             card.run_requested.connect(lambda _id, go=rec["run"]: go())
+        card.stop_requested.connect(lambda item_id, k=kind: self._stop_item(k, item_id))
+        if getattr(self, "_bridge", None) is not None:
+            card.set_own_run((kind, rec["id"]) in own_runs(self._bridge.registry.all()))
         self._records[(kind, rec["id"])] = (rec, group)
         card.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         card.customContextMenuRequested.connect(
@@ -2535,6 +2538,8 @@ class MainWindow(QMainWindow):
         last_runs = {row[0]: row[6] for row in rows}
         pipelines = self._db.last_pipeline_status()
         live = self._live_statuses()
+        own = (own_runs(self._bridge.registry.all())
+               if getattr(self, "_bridge", None) is not None else set())
         for (kind, item_id), (rec, _group) in self._records.items():
             rec["status"] = (pipelines if kind == cardmenu.PIPELINE
                              else scripts).get(item_id)
@@ -2545,10 +2550,12 @@ class MainWindow(QMainWindow):
             # favourite's top card kept showing its old outcome.
             for card in [*page.cards, *page.favorite_cards]:
                 if isinstance(card, PipelineCard):
+                    card.set_own_run((cardmenu.PIPELINE, card.pipeline_id) in own)
                     card.set_last_status(
                         live.get((cardmenu.PIPELINE, card.pipeline_id))
                         or pipelines.get(card.pipeline_id))
                 else:
+                    card.set_own_run((cardmenu.SCRIPT, card.script_id) in own)
                     card.set_last_status(
                         live.get((cardmenu.SCRIPT, card.script_id))
                         or scripts.get(card.script_id))
@@ -2562,6 +2569,14 @@ class MainWindow(QMainWindow):
         if getattr(self, "_bridge", None) is None:
             return {}
         return live_statuses(self._bridge.registry.all())
+
+    def _stop_item(self, kind: str, item_id: int) -> None:
+        """Stop the runs of this item's own: a row's Run pressed as Stop."""
+        if self._bridge is None:
+            return
+        for job in list(self._bridge.registry.all()):
+            if (kind, item_id) in own_runs([job]):
+                self._stop_job(job)
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""

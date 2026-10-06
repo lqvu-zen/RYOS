@@ -63,6 +63,7 @@ def row_metrics(compact: bool, size: str) -> tuple[int, int, int, int]:
 # --- the Run button -----------------------------------------------------------
 RUN = "run"
 RETRY = "retry"
+STOP = "stop"
 
 
 @dataclass(frozen=True)
@@ -87,19 +88,31 @@ class RunButton:
         return self.state == RETRY
 
     @property
+    def is_stop(self) -> bool:
+        return self.state == STOP
+
+    @property
     def icon(self) -> str:
         """The drawn icon (`qtui/icons.py`) the button shows."""
-        return "retry" if self.is_retry else "play"
+        return {RETRY: "retry", STOP: "stop"}.get(self.state, "play")
 
 
-def run_button(last_status: str | None) -> RunButton:
+def run_button(last_status: str | None, own_run: bool = False) -> RunButton:
     """What the Run button becomes, given the last run's outcome.
 
     After a failure the Run button *is* the retry: same action, so it needs no
     second control, and unlike a status badge the button strip is present in
     every card mode and size. A circular arrow (the "retry" icon) rather than
     a cross keeps it from reading as a stop button while it is red.
+
+    While the item's own run is going, it is Stop: pressed again it would
+    only have started a second copy. Its icon is the fill's own ink
+    (`ink_on` of `bg_key`), so `fg_key` names the fill.
     """
+    if own_run:
+        return RunButton(STOP, "btn_stop_active", "btn_stop_active",
+                         "btn_stop_active_hover", "btn_stop_active_hover",
+                         "Running — click to stop it")
     if last_status == "error":
         return RunButton(RETRY, "error_fg", "error", "btn_stop_active",
                          "btn_stop_active",

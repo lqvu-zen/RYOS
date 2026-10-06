@@ -16,4 +16,8 @@ grows words: a 38px round-ended **Run** / **Retry**.
   the recovery is on the control that fixes it, not a second one. Its tooltip
   says why: `Last run failed — click to run it again`.
 - *Stopped* -- not a failure: it stays Run.
+- *Stop* -- while the item's OWN run is going: `btn_stop_active` with the
+  stop icon in its ink (`Running — click to stop it`). Pressed again, Run only
+  started a second copy. A script running only as a pipeline's step keeps
+  Run -- stopping it there would stop the pipeline (`jobs.own_runs`).
 - *Focus* -- a 2px `name_fg` ring outside it.
