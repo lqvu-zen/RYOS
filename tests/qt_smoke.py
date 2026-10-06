@@ -4752,6 +4752,24 @@ def check_parallel_step_output(app):
     bridge.stop()
     win.hide()
     win.deleteLater()
+    # Compact: a short, narrow output panel squeezed the chip row to a
+    # sliver; the chips must keep their height and must not widen the tab.
+    from ryos.qtui.shell import OutputPane
+    small = OutputPane(pal)
+    for token, name in ((1, "build"), (2, "test-integration"), (3, "lint"),
+                        (4, "package-installer")):
+        small.set_step_state(token, name, op.STEP_RUNNING)
+    small.resize(300, 90)
+    small.show()
+    app.processEvents()
+    chip = small.step_chips[1]
+    if chip.height() < chip.sizeHint().height():
+        PROBLEMS.append(f"in a short panel the step chips are {chip.height()} px "
+                        f"tall, not {chip.sizeHint().height()}")
+    if small.minimumSizeHint().width() > 300 or small.width() > 300:
+        PROBLEMS.append("a row of step chips widened a narrow output tab")
+    small.hide()
+    small.deleteLater()
     print("  [ok] parallel steps: a chip per step with its result, coloured "
           "prefixes, and a click shows one step's lines")
 
