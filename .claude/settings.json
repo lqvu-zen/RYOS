@@ -95,7 +95,12 @@
       "Bash(PYTHONIOENCODING=utf-8 uv run python C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/repro22.py)",
       "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/trace22.py\")",
       "Bash(PYTHONIOENCODING=utf-8 uv run python C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/trials22.py)",
-      "Bash(PYTHONIOENCODING=utf-8 uv run python __TRACKED_VAR__/trials22.py)"
+      "Bash(PYTHONIOENCODING=utf-8 uv run python __TRACKED_VAR__/trials22.py)",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python theme-gallery/make_previews.py)",
+      "Bash(xargs ls -lS)",
+      "Read(//d/Projects/RYOS/dist/cxfreeze/**)",
+      "Bash(RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe)",
+      "Bash(rm -rf dist/* build && ls dist | wc -l && git status --short)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
