@@ -87,7 +87,10 @@
       "Bash(xargs -r git checkout --)",
       "Bash(export RYOS_NO_REGISTRY=1 RYOS_NO_TOASTS=1 PYTHONIOENCODING=utf-8)",
       "Bash(awk '{print $6, $7}')",
-      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/theme_sweep.py\")"
+      "Bash(PYTHONIOENCODING=utf-8 uv run python \"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/theme_sweep.py\")",
+      "Bash(PYTHONIOENCODING=utf-8 uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe)",
+      "Bash(PYTHONIOENCODING=utf-8 RYOS_NO_REGISTRY=1 RYOS_NO_TOASTS=1 uv run python tests/real_data_smoke.py)",
+      "Bash(rm -rf dist/* build && ls -A dist | wc -l; git status --short)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
