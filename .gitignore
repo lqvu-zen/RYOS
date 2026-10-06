@@ -46,3 +46,4 @@ __pycache__/
 /eval_tmp
 /.mypy_cache
 /.claude/worktrees
+.claude/settings.json
