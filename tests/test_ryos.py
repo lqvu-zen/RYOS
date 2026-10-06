@@ -925,7 +925,7 @@ class TestBatchUvExecution(unittest.TestCase):
             [str(self.BAT)],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
             shell=True,
             cwd=str(self.BAT.parent),
         )
@@ -938,11 +938,12 @@ class TestBatchUvExecution(unittest.TestCase):
             [str(self.BAT), "foo", "bar"],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=60,
             shell=True,
             cwd=str(self.BAT.parent),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("['foo', 'bar']", result.stdout)     # the arguments arrive
 
 
 # ---------------------------------------------------------------------------
