@@ -31,7 +31,7 @@ from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QMainWindow, QPlainTextEdit, QPushButton,
-                               QScrollArea,
+                               QScrollArea, QSizePolicy,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
 from .. import activity
@@ -92,14 +92,26 @@ class OutputPane(QWidget):
         col.setSpacing(0)
         # One chip per parallel step, shown once a group has run here: the
         # step's state at a glance, and a click to read its lines alone.
-        self.step_bar = QWidget()
-        self.step_bar.setObjectName("stepBar")
-        self._step_row = QHBoxLayout(self.step_bar)
+        chips = QWidget()
+        chips.setObjectName("stepBar")
+        self._step_row = QHBoxLayout(chips)
         self._step_row.setContentsMargins(6, 4, 6, 4)
         self._step_row.setSpacing(4)
         self.step_chips: dict[int | None, QPushButton] = {}
         self._add_step_chip(None, outputpanel.ALL_STEPS, "")
         self._step_row.addStretch(1)
+        # A strip that scrolls sideways and never gives up its height: in a
+        # short output panel the row was squeezed to a sliver, and in a
+        # narrow window a long row of chips would have widened the panel.
+        self.step_bar = QScrollArea()
+        self.step_bar.setObjectName("stepBar")
+        self.step_bar.setWidget(chips)
+        self.step_bar.setWidgetResizable(True)
+        self.step_bar.setFrameShape(QFrame.Shape.NoFrame)
+        self.step_bar.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.step_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.step_bar.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self._fit_step_bar()
         self.step_bar.hide()
         col.addWidget(self.step_bar)
         self.text = QPlainTextEdit()
@@ -230,7 +242,22 @@ class OutputPane(QWidget):
         # A chip's own colour: the same hue as its step's lines.
         chip.setStyleSheet(f"QPushButton#stepChip {{ border-left: 3px solid "
                            f"{step_colour(token, self._palette['out_bg'])}; }}")
+        self._fit_step_bar()
         self.step_bar.show()
+
+    def _fit_step_bar(self) -> None:
+        """The strip's height: its chips', plus room for its scroll bar."""
+        inner = self.step_bar.widget()
+        # Room for the scroll bar only when the chips overflow, so a row that
+        # fits has no empty band under it.
+        overflow = inner.sizeHint().width() > max(self.width(), 1)
+        bar = self.step_bar.horizontalScrollBar().sizeHint().height() if overflow else 0
+        self.step_bar.setFixedHeight(inner.sizeHint().height() + bar)
+
+    def resizeEvent(self, event) -> None:                   # noqa: N802
+        super().resizeEvent(event)
+        if not self.step_bar.isHidden():
+            self._fit_step_bar()
 
     def set_step_filter(self, token: int | None) -> None:
         """Show only step ``token``'s lines, or every line for None."""

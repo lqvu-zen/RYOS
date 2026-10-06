@@ -547,6 +547,9 @@ QToolTip {{
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px 0; }}
 QScrollBar::handle:vertical {{ background: {d['control_edge']}; border-radius: 4px; min-height: 24px; }}
 QScrollBar::handle:vertical:hover {{ background: {c['path_fg']}; }}
+QScrollBar:horizontal {{ background: transparent; height: 8px; margin: 0 2px; }}
+QScrollBar::handle:horizontal {{ background: {d['control_edge']}; border-radius: 4px; min-width: 24px; }}
+QScrollBar::handle:horizontal:hover {{ background: {c['path_fg']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 /* The track either side of the handle: left unstyled, Qt fills it with a
    dotted hatch. */
