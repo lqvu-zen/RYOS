@@ -542,6 +542,13 @@ QRadioButton::indicator:checked {{
 /* --- chrome --------------------------------------------------------- */
 QHeaderView::section {{ background: {c['header_bg']}; color: {c['name_fg']}; border: none; padding: 4px; }}
 QStatusBar {{ background: {c['status_bg']}; color: {d['status_fg']}; }}
+/* The bug-report button at the status bar's end: an icon, quiet until the
+   pointer or the keyboard is on it. */
+QPushButton#statusBug {{
+    background: transparent; border: none; border-radius: 4px; padding: 0;
+    min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px;
+}}
+QPushButton#statusBug:hover, QPushButton#statusBug:focus {{ background: {c['accent_wash']}; }}
 QToolTip {{
     background: {c['tooltip_bg']};
     color: {d['tooltip_fg']};

@@ -10,6 +10,10 @@ On the left, what just happened, briefly: `Ready`, `Done.`, `Failed.`,
 `ryos/activity.py` `summary()`: `1 running  ·  next: Morning report,
 Tomorrow 08:00`.
 
+At the very end, the **bug** icon: a quiet 24px button that opens a new GitHub
+issue filled in with the versions, theme and layout (`ryos/bugreport.py`) --
+nothing is sent until the person submits it. Also Help → Report a bug….
+
 ## Rules
 
 - A report, not a log: one short line, replaced by the next.

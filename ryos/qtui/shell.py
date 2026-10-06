@@ -24,6 +24,8 @@ still lacks is listed in docs/plans/qt-migration.md under "Parity".
 
 from __future__ import annotations
 
+import sys
+
 from pathlib import Path
 from typing import Callable
 
@@ -34,7 +36,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QScrollArea, QSizePolicy,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import activity
+from .. import activity, bugreport
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
@@ -458,6 +460,14 @@ class MainWindow(QMainWindow):
         self.activity_status.setObjectName("statusSummary")
         self.activity_status.hide()
         self.statusBar().addPermanentWidget(self.activity_status)
+        # Always there, and quiet: one click to a filled-in bug report.
+        self.bug_button = IconButton("bug", role="muted", hover_role="text", size=14,
+                                     palette=self._palette)
+        self.bug_button.setObjectName("statusBug")
+        set_tooltip(self.bug_button, bugreport.TOOLTIP)
+        self.bug_button.setAccessibleName("Report a bug")
+        self.bug_button.clicked.connect(self.report_bug)
+        self.statusBar().addPermanentWidget(self.bug_button)
         self.running.changed.connect(lambda _n: self.refresh_activity())
         self._build_menu()
         # Files dropped anywhere on the window become scripts, as in Tk.
@@ -897,6 +907,10 @@ class MainWindow(QMainWindow):
             lambda: self.check_for_updates(manual=True))
         self._menu_icon(self.update_action, "import")
         help_menu.addAction(self.update_action)
+        self.report_bug_action = QAction(bugreport.MENU_LABEL, self)
+        self.report_bug_action.triggered.connect(self.report_bug)
+        self._menu_icon(self.report_bug_action, "bug")
+        help_menu.addAction(self.report_bug_action)
 
     def _menu_icon(self, action, shape: str, *, danger: bool = False) -> None:
         """Give a menu action an icon from the set, re-tinted on a theme change."""
@@ -1672,6 +1686,27 @@ class MainWindow(QMainWindow):
         if self.update_banner is not None:
             self.update_banner.deleteLater()
             self.update_banner = None
+
+    def report_bug(self) -> None:
+        """Open a new GitHub issue, filled in with this machine's versions.
+        Nothing is sent: the person reviews and submits it on GitHub."""
+        import platform
+
+        from PySide6 import __version__ as pyside_version
+        from PySide6.QtCore import qVersion
+        if self.workspace:
+            layout = "maximised"
+        elif self._settings.get("compact_mode", False):
+            layout = "compact"
+        else:
+            layout = "normal"
+        env = bugreport.environment(
+            __version__, frozen=bool(getattr(sys, "frozen", False)),
+            os_name=platform.platform(), python=platform.python_version(),
+            qt=f"{qVersion()} (PySide6 {pyside_version})",
+            theme=str(self._settings.get("theme", "light")), layout=layout)
+        self.open_url(bugreport.issue_url(env))
+        self.statusBar().showMessage(bugreport.OPENED, 8000)
 
     def _open_url(self, url: str) -> None:
         from PySide6.QtCore import QUrl

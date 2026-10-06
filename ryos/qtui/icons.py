@@ -71,6 +71,13 @@ SHAPES: dict[str, str] = {
              '<circle cx="4.5" cy="18" r="1.2" fill="{c}"/>'),
     "search": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
     "activity": '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+    # Report a bug (the status bar, Help).
+    "bug": ('<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/>'
+            '<path d="M9 7.13v-1a3 3 0 1 1 6 0v1"/>'
+            '<path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/>'
+            '<path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/>'
+            '<path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/>'
+            '<path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>'),
     # Between a pipeline's step cards: then the next one.
     "arrow-right": '<path d="M5 12h14M13 6l6 6-6 6"/>',
     "settings": ('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/>'

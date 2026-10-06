@@ -4382,6 +4382,43 @@ def check_one_icon_set(app):
     print("  [ok] one icon set: no emoji or symbol glyphs in button or menu text")
 
 
+def check_bug_report(app):
+    """The status bar's bug button and Help -> Report a bug both open a new
+    GitHub issue filled in with the versions -- and send nothing."""
+    from urllib.parse import parse_qs, urlparse
+
+    from ryos import __version__, bugreport
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False,
+                                                   "theme": "dark"})
+    opened: list = []
+    win.open_url = opened.append
+    win.show()
+    app.processEvents()
+    try:
+        if not win.bug_button.isVisible() or win.bug_button.width() < 24 \
+                or not win.bug_button.accessibleName():
+            PROBLEMS.append("the bug button is missing, too small or unnamed")
+        win.bug_button.click()
+        win.report_bug_action.trigger()
+        if len(opened) != 2:
+            PROBLEMS.append(f"the bug button and menu opened {len(opened)} links, not 2")
+        else:
+            parts = urlparse(opened[0])
+            body = parse_qs(parts.query).get("body", [""])[0]
+            if not opened[0].startswith(bugreport.NEW_ISSUE) \
+                    or f"- RYOS: {__version__}" not in body or "- Theme: dark" not in body:
+                PROBLEMS.append(f"the bug report link is not filled in: {opened[0][:120]}")
+        if bugreport.OPENED not in win.statusBar().currentMessage():
+            PROBLEMS.append("reporting a bug did not say what happened")
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] bug report: status-bar button and Help menu open a filled-in issue")
+
+
 def check_run_becomes_stop(app):
     """While a row's own run is going, its Run is Stop -- pressed again it
     only started a second copy. A script running only as a pipeline's step
@@ -5030,6 +5067,7 @@ def main() -> int:
     check_keyboard_through_the_list(app)
     check_tray_round_trip(app)
     check_run_becomes_stop(app)
+    check_bug_report(app)
     check_maximised_layout(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:

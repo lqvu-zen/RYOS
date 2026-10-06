@@ -24,6 +24,7 @@
 - **Let RYOS pick the interpreter.** Leave **Interpreter** blank: `.py` runs with Python, `.ps1` with PowerShell, and so on. Fill it in only to override.
 - **Keyboard.** RYOS starts in the search box: type to filter, **Esc** to clear, **↓** to go into the list. There the arrow keys (and **Home**, **End**, **Page Up/Down**) move between rows, **Enter** runs the row, **F2** edits it and the **Menu** key (or **Shift+F10**) opens its right-click menu, which holds everything its hover buttons do. In select mode, **Space** ticks a row. **Tab** moves between the header, the list and the output; in a dialog **Enter** presses the highlighted button and **Esc** closes it.
 - **Keep it running in the tray.** **Options… → Startup & Window → Close to tray instead of exiting** keeps RYOS (and your schedules) running when you close the window.
+- **Report a bug.** Click the bug icon at the right end of the status bar (or **Help → Report a bug…**). It opens a new issue on GitHub already filled in with your RYOS, Windows, Python and Qt versions, your theme and layout — write what happened and submit it. Nothing is sent until you do; if the log would help, attach `%APPDATA%\RYOS\logs\ryos.log` after a look at what is in it.
 - **Back up.** **File → Export all groups…** now and then, and your setup is one import away.
 
 ---

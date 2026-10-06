@@ -8878,3 +8878,36 @@ class TestAStoppedRunIsStopped(unittest.TestCase):
                          "2 steps  ·  last run stopped")
         self.assertEqual(history.summarize([row, row[:7] + ("ok",) + row[8:]]),
                          "2 runs · 1 passed · 0 failed · 1 stopped")
+
+
+class TestBugReport(unittest.TestCase):
+    """Help -> Report a bug: a filled-in GitHub issue, nothing sent."""
+
+    def _env(self, **kw):
+        from ryos import bugreport
+        args = dict(frozen=True, os_name="Windows-11-10.0.26200", python="3.13.1",
+                    qt="6.9.0", theme="nord", layout="maximised")
+        args.update(kw)
+        return bugreport.environment("2.1.0", **args)
+
+    def test_the_issue_says_what_the_maintainer_needs(self):
+        from ryos import bugreport
+        body = bugreport.issue_body(self._env())
+        for want in ("**What happened?**", "**Steps to reproduce**",
+                     "- RYOS: 2.1.0 (Windows build)", "- OS: Windows-11-10.0.26200",
+                     "- Qt: 6.9.0", "- Theme: nord", "- Layout: maximised",
+                     bugreport.LOG_HINT):
+            self.assertIn(want, body)
+        self.assertIn("from source", bugreport.issue_body(self._env(frozen=False)))
+
+    def test_the_link_opens_a_new_issue_with_it_and_carries_no_user_name(self):
+        from urllib.parse import parse_qs, urlparse
+        from ryos import bugreport
+        url = bugreport.issue_url(self._env())
+        parts = urlparse(url)
+        self.assertEqual(f"{parts.scheme}://{parts.netloc}{parts.path}", bugreport.NEW_ISSUE)
+        query = parse_qs(parts.query)
+        self.assertEqual(query["labels"], ["bug"])
+        self.assertIn("- Theme: nord", query["body"][0])
+        self.assertLess(len(url), bugreport.MAX_URL)
+        self.assertNotIn(os.environ.get("USERNAME", "\0"), url)
