@@ -49,6 +49,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Subprocess worker + output-queue protocol      | `ryos/runner.py`        |
 | `Job` state, `JobRegistry`, capacity split     | `ryos/jobs.py`          |
 | Pipeline sequencing, step policies             | `ryos/job_controller.py`|
+| Launching runs, shared by window and headless  | `ryos/jobhost.py`       |
 | Recurring schedules (pure, naive local time)   | `ryos/scheduling.py`    |
 | Firing due schedules (shared sweep)            | `ryos/schedule_runner.py` |
 | Run-history formatting                         | `ryos/history.py`       |
@@ -72,7 +73,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 Fuller detail, including which modules are unit-tested and why each was
 extracted, lives in `docs/ARCHITECTURE.md`.
 
-Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained on the UI thread every 80 ms by a `QTimer` (`qtui/jobs.py`).
+Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained every 80 ms by `JobHost.pump()` (`ryos/jobhost.py`) — on the UI thread by a `QTimer` in the window (`qtui/jobs.py`).
 
 ## Key Design Choices
 
