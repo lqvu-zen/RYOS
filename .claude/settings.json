@@ -101,7 +101,16 @@
       "Read(//d/Projects/RYOS/dist/cxfreeze/**)",
       "Bash(RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe)",
       "Bash(rm -rf dist/* build && ls dist | wc -l && git status --short)",
-      "Bash(export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen)"
+      "Bash(export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen)",
+      "Bash(RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py --out C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/tut)",
+      "Bash(RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 uv run python .claude/skills/ryos-tutorial-generator/scripts/capture.py --out C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/tut)",
+      "Bash(export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1)",
+      "Bash(export RYOS_NO_TOASTS=1)",
+      "Bash(printf 'import sys\\\\nprint\\(\"hello from\", *sys.argv[1:]\\)\\\\nsys.exit\\(7\\)\\\\n')",
+      "Bash(export APPDATA=\"$T\" RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1)",
+      "Bash(cp /c/Users/Admin/AppData/Roaming/RYOS/scripts.db C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/clitry/RYOS/scripts.db)",
+      "Bash(break)",
+      "Bash(uv lock *)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
