@@ -44,6 +44,7 @@ class ScriptDialog(QDialog):
         self._path_exists = path_exists or os.path.exists
         self._base_dirs = dict(db.list_groups_with_meta())
         self._base = ""
+        self._relative = False       # the path box in use (scriptform.shows_relative)
         self.setWindowTitle("Edit Script" if script_id else "Add Script")
 
         self.warn: Callable[[str, str], None] = \
@@ -178,25 +179,28 @@ class ScriptDialog(QDialog):
     def current_path(self) -> str:
         return scriptform.resolve_path(
             base_dir=self._base, relative=self.e_relpath.text(),
-            absolute=self.e_path.text(), use_relative=bool(self._base))
+            absolute=self.e_path.text(), use_relative=self._relative)
 
     def refresh_path_inputs(self) -> None:
         """Show the relative box when the group has a base folder, else the
         absolute one, carrying the path across either way."""
         path = self.current_path()
         base = self._base_dirs.get(self.e_group.currentText().strip(), "")
-        if base:
+        relative = scriptform.shows_relative(path, base)
+        if relative:
             self.e_relpath.setText(scriptform.relative_field(path, base))
             self.e_path.clear()
         else:
             self.e_path.setText(path)
             self.e_relpath.clear()
-        self._base = base
+        self._base, self._relative = base, relative
         self.base_label.setText(base)
         for w in (self.abs_row, self._abs_label):
-            w.setVisible(not base)
-        for w in (self.base_label, self._base_caption, self.rel_row, self._rel_label):
+            w.setVisible(not relative)
+        for w in (self.base_label, self._base_caption):
             w.setVisible(bool(base))
+        for w in (self.rel_row, self._rel_label):
+            w.setVisible(relative)
 
     def browse(self) -> None:
         path = self.ask_file(self._base)
@@ -207,7 +211,13 @@ class ScriptDialog(QDialog):
             if refusal is not None:
                 self.warn(refusal.title, refusal.message)
                 return
-            self.e_relpath.setText(scriptform.relative_under_base(path, self._base) or "")
+            if self._relative:
+                self.e_relpath.setText(scriptform.relative_under_base(path, self._base) or "")
+            else:
+                # A script kept outside, browsed back inside its folder:
+                # the relative box takes over.
+                self.e_path.setText(path)
+                self.refresh_path_inputs()
         else:
             self.e_path.setText(path)
         if not self.e_name.text().strip():

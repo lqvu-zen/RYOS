@@ -75,9 +75,13 @@ def validate(*, name: str, path: str, interpreter: str, base_dir: str = "",
             "Missing Info", "Path is required when no interpreter is set.",
             verdict.WARNING)
     if path and base_dir and not _is_inside(path, base_dir):
-        return Check(REFUSE, "Path outside group directory",
+        # A question, not a refusal: a script can live outside its group's
+        # folder (a copy or move that found no matching file keeps its own),
+        # and it is warned about, never stopped. Refusing made such a script
+        # impossible to edit at all.
+        return Check(CONFIRM, "Outside the base folder",
                      f"The path\n{path}\nis outside the base folder for "
-                     f"group '{group_name}':\n{base_dir}")
+                     f"group '{group_name}':\n{base_dir}\n\nSave it anyway?")
     if path and not interpreter and not path_exists:
         # A question, not a refusal: the file may not be written yet, or may
         # live on a share that is currently offline.
@@ -143,6 +147,17 @@ def relative_under_base(path: str, base: str) -> str | None:
     if norm_path == norm_base or not norm_path.startswith(norm_base + os.sep):
         return None
     return os.path.normpath(path)[len(os.path.normpath(base)):].lstrip(os.sep)
+
+
+def shows_relative(path: str, base_dir: str) -> bool:
+    """Whether the form shows the path relative to the group's base folder.
+
+    Only when there is one and the path is in it, or not chosen yet. A path
+    kept outside has no relative form: the relative box would show just its
+    file name, and an unchanged Save would re-point the script to
+    <base>/<name> -- usually a file that is not there.
+    """
+    return bool(base_dir) and (not path or _is_inside(path, base_dir))
 
 
 def relative_field(path: str, base_dir: str) -> str:

@@ -657,6 +657,23 @@ def check_script_dialog(app):
     if dlg.current_path() != str(outside) or dlg.e_path.text() != str(outside):
         PROBLEMS.append(f"loading a script lost its path: {dlg.current_path()!r}")
 
+    # -- a script kept outside its group's folder opens, and saves, as stored ----------
+    # The relative box would show only its file name, and an unchanged Save
+    # re-pointed it to <base>/<name> (caught by the 2.2.0 release check).
+    kept = db.add("kept", str(outside), "--x", _sys.executable, "Based")
+    dlg = ScriptDialog(db=db, script_id=kept, path_exists=lambda p: True)
+    if dlg.current_path() != str(outside) or not dlg.abs_row.isVisibleTo(dlg) \
+            or dlg.rel_row.isVisibleTo(dlg):
+        PROBLEMS.append(f"a script outside its base opened as {dlg.current_path()!r}")
+    asked = []
+    dlg.ask_yes_no = lambda title, text: asked.append(title) or False
+    if dlg.save() or asked != ["Outside the base folder"]:
+        PROBLEMS.append(f"saving outside the base did not ask first: {asked}")
+    dlg.ask_yes_no = lambda title, text: True
+    dlg.e_params.setText("--y")
+    if not dlg.save() or db.get(kept)[2:4] != (str(outside), "--y"):
+        PROBLEMS.append(f"saving a script outside its base changed its path: {db.get(kept)[2]!r}")
+
     # -- delete asks first ------------------------------------------------------------
     dlg = ScriptDialog(db=db, script_id=sid)
     dlg.ask_yes_no = lambda title, text: False

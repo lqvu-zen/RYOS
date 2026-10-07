@@ -6599,13 +6599,22 @@ class TestScriptFormValidation(unittest.TestCase):
         self.assertTrue(scriptform.validate(
             name="x", path="", interpreter="python").ok)
 
-    def test_a_path_outside_the_group_base_dir_is_refused(self):
+    def test_a_path_outside_the_group_base_dir_asks(self):
+        # Outside is warned about, not forbidden: refusing made a script kept
+        # outside (a copy or move that found no matching file) impossible to edit.
         check = scriptform.validate(
             name="x", path="/elsewhere/a.py", interpreter="",
             base_dir="/base", group_name="G")
-        self.assertEqual(check.kind, scriptform.REFUSE)
+        self.assertEqual(check.kind, scriptform.CONFIRM)
         self.assertIn("outside", check.title.lower())
         self.assertIn("G", check.message)
+
+    def test_the_relative_box_only_for_a_path_inside(self):
+        base = os.path.join(os.sep, "base")
+        self.assertTrue(scriptform.shows_relative(os.path.join(base, "a.py"), base))
+        self.assertTrue(scriptform.shows_relative("", base))
+        self.assertFalse(scriptform.shows_relative(os.path.join(os.sep, "x", "a.py"), base))
+        self.assertFalse(scriptform.shows_relative(os.path.join(base, "a.py"), ""))
 
     def test_a_path_inside_the_base_dir_is_fine(self):
         self.assertTrue(scriptform.validate(
@@ -6626,13 +6635,13 @@ class TestScriptFormValidation(unittest.TestCase):
             name="x", path="/x/a.py", interpreter="python",
             path_exists=False).ok)
 
-    def test_the_base_dir_rule_beats_the_existence_question(self):
-        # A path in the wrong place is wrong whether or not it exists; asking
-        # "save anyway?" about it would be the wrong question.
+    def test_the_base_dir_question_comes_before_the_existence_question(self):
+        # Where it is matters more than whether it is there yet: one question.
         check = scriptform.validate(
             name="x", path="/elsewhere/a.py", interpreter="",
             base_dir="/base", group_name="G", path_exists=False)
-        self.assertEqual(check.kind, scriptform.REFUSE)
+        self.assertEqual(check.kind, scriptform.CONFIRM)
+        self.assertIn("outside", check.title.lower())
 
     def test_required_fields_are_checked_before_the_path_location(self):
         check = scriptform.validate(name="", path="/elsewhere/a.py",
