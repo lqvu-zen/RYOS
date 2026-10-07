@@ -100,7 +100,8 @@
       "Bash(xargs ls -lS)",
       "Read(//d/Projects/RYOS/dist/cxfreeze/**)",
       "Bash(RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe)",
-      "Bash(rm -rf dist/* build && ls dist | wc -l && git status --short)"
+      "Bash(rm -rf dist/* build && ls dist | wc -l && git status --short)",
+      "Bash(export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
