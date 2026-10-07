@@ -5,7 +5,7 @@ description: 'Cut a new GitHub release of the RYOS desktop app — bump the vers
 
 # Releasing RYOS
 
-RYOS ships as a GitHub release with two downloadable assets: **`RYOS-windows.zip`** (the frozen `RYOS.exe` plus its DLLs, for users who just want to run it) and **`RYOS-portable.zip`** (the source, for users who run it from Python via `run.bat`). The release is tagged in the repo `lqvu-zen/RYOS`, and the app's built-in update check (`ryos/notifications.py`) compares the running `__version__` against the latest GitHub tag — so the tag, the assets, and `__version__` must all line up.
+RYOS ships as a GitHub release with two downloadable assets: **`RYOS-windows.zip`** (the frozen `RYOS.exe`, the console `ryos-cli.exe` for the command line, and their DLLs, for users who just want to run it) and **`RYOS-portable.zip`** (the source, for users who run it from Python via `run.bat`). The release is tagged in the repo `lqvu-zen/RYOS`, and the app's built-in update check (`ryos/notifications.py`) compares the running `__version__` against the latest GitHub tag — so the tag, the assets, and `__version__` must all line up.
 
 Releasing is **not a design problem** — it's a deterministic runbook, so unlike `add-ryos-feature` and `fix-ryos-bug` there are no design/review subagents here. You run it inline. The safety comes from **hard gates**: CI must be green on the commit you're shipping, the build must succeed, the exe must survive a smoke test *showing the version you just built*, and both zips must contain the expected files — stop and report at any gate that fails rather than publishing a broken release. A gate that fails for an unexpected reason is worth a minute's diagnosis before you either abort or work around it; the smoke test in particular has a known false failure, documented in step 4. (Drafting release notes from the commit log is the one step you may hand to a cheap Haiku/Sonnet subagent if you like; everything else is yours.)
 
@@ -61,10 +61,10 @@ Clear the old build first, so nothing stale can be packaged or smoke-tested by m
 cd D:/Projects/RYOS && rm -rf dist/cxfreeze build && uv run --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1 | tail -3
 ```
 
-This writes `dist/cxfreeze/` with `RYOS.exe` and its DLLs. Confirm it exists and stop if it doesn't:
+This writes `dist/cxfreeze/` with `RYOS.exe`, `ryos-cli.exe` and their DLLs (about 65 MB). Confirm both exist and stop if either doesn't:
 
 ```bash
-ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe
+ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe D:/Projects/RYOS/dist/cxfreeze/ryos-cli.exe
 ```
 
 > `build.bat` and `build_cxfreeze.bat` run the same command — cx_Freeze is the only packager and the sole release path.
@@ -131,7 +131,7 @@ Verify the Windows zip carries the exe, and stop if either check fails:
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead("D:\Projects\RYOS\dist\RYOS-windows.zip")
 $entries = $zip.Entries.Name; $zip.Dispose()
-if ($entries -notcontains "RYOS.exe") { Write-Error "RYOS-windows.zip has no RYOS.exe — aborting"; exit 1 }
+foreach ($exe in "RYOS.exe", "ryos-cli.exe") { if ($entries -notcontains $exe) { Write-Error "RYOS-windows.zip has no $exe — aborting"; exit 1 } }
 Write-Output "RYOS-windows.zip verified ($($entries.Count) entries)"
 ```
 
@@ -159,7 +159,7 @@ Include the download guidance in the notes so users know which asset to grab:
 <user-approved notes>
 
 ## Downloads
-- **RYOS-windows.zip** — Windows build; extract and run `RYOS.exe` inside.
+- **RYOS-windows.zip** — Windows build; extract and run `RYOS.exe` inside (`ryos-cli.exe` beside it is the command line).
 - **RYOS-portable.zip** — run from source; extract and double-click `run.bat` (needs uv; run `install_uv.bat` first if needed).
 ```
 

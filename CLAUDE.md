@@ -21,9 +21,9 @@ uv run --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 
-Output: `dist/cxfreeze/` folder containing `RYOS.exe` and required DLLs (about 70 MB; `setup_cxfreeze.py` leaves out the Qt libraries RYOS does not use, and Tcl/Tk). Distribute the whole folder (or zip it). cx_Freeze is the only supported packager.
+Output: `dist/cxfreeze/` folder containing `RYOS.exe` (the window), `ryos-cli.exe` (the command line, built with the console base -- `RYOS.exe` has no stdout) and required DLLs (about 65 MB; `setup_cxfreeze.py` leaves out the Qt libraries and plugin folders RYOS does not use, Qt's translations, and Tcl/Tk). Distribute the whole folder (or zip it). cx_Freeze is the only supported packager. The MCP server is not in the build (`ryos-cli mcp` says to run it from source).
 
-To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no toasts, no window; `--visible` shows it on a second screen).
+To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no toasts, no window; `--visible` shows it on a second screen). It then runs the command line in the same folder -- `ryos-cli.exe` beside a built `RYOS.exe`, which must be there, or `python -m ryos` -- with `--version`, `list` and a real `run`.
 
 To check the Qt app against your own data without changing it: `uv run python tests/real_data_smoke.py` (copies `%APPDATA%\RYOS` to a throwaway folder, opens every dialog and editor on the copy, prints counts only, and checks the real folder is unchanged; `--visible` as above; `--db PATH` opens a copy of another database file instead, e.g. an older backup, to check an upgrade).
 

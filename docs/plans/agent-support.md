@@ -102,7 +102,7 @@ Steps 3–4 are independent of 2 and can go first or in between. 5 needs 2b; 7 n
 | 3 DB flag | done |
 | 4 UI flag | done (card badge left for later) |
 | 5 CLI | done |
-| 6 Console build | — |
+| 6 Console build | done (`ryos-cli.exe`; build 65 MB) |
 | 7 MCP | done (SDK 2.x `MCPServer`) |
 | 8 Docs | — |
 | 9 Release | — |

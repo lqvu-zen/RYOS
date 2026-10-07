@@ -21,6 +21,10 @@ It waits for the app's "Window shown" log line, closes it, and fails if any
 file in the user's real %APPDATA%/RYOS changed, or if the app does not log the
 version in ryos/__init__.py -- a stale RYOS.exe left in dist/ would otherwise
 pass.
+
+Then the command line, in the same throwaway folder: `--version`, `list
+--json` and a real `run --json` of a one-line script -- through ryos-cli.exe
+beside a built RYOS.exe (a build without one fails), or `python -m ryos`.
 """
 
 import argparse
@@ -54,6 +58,45 @@ def _second_screen_geometry():
     from smoke_screen import smoke_screen    # the same screen choice as the smokes
     area = smoke_screen()
     return f"540x640+{area[0] + 40}+{area[1] + 40}" if area else None
+
+
+def _check_cli(cli: list, env: dict, data: Path, problems: list) -> str:
+    """The command line against the throwaway folder; a line for the report."""
+    def ryos(*args):
+        return subprocess.run([*cli, *args], cwd=str(ROOT), env=env, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=120)
+
+    version = _source_version()
+    got = ryos("--version")
+    if f"RYOS {version}" not in got.stdout:
+        problems.append(f"the CLI's --version said {got.stdout.strip()!r} "
+                        f"(exit {got.returncode}), not RYOS {version}")
+        return ""
+    sys.path.insert(0, str(ROOT))
+    from ryos.db import ScriptDB
+    hello = data / "hello.py"
+    hello.write_text("print('hello from the CLI')\n", encoding="utf-8")
+    db = ScriptDB(data / "scripts.db")
+    db.create_group("Smoke")
+    db.add("hello", str(hello), "", sys.executable, "Smoke")
+    listed = ryos("list", "--json")
+    try:
+        refs = [s["ref"] for s in json.loads(listed.stdout)["scripts"]]
+    except (ValueError, KeyError):
+        refs = None
+    if refs != ["Smoke/hello"]:
+        problems.append(f"the CLI's list said {listed.stdout[:200]!r} {listed.stderr[-300:]!r}")
+    ran = ryos("run", "Smoke/hello", "--json", "--timeout", "60")
+    try:
+        result = json.loads(ran.stdout)
+    except ValueError:
+        result = {}
+    if (ran.returncode != 0 or result.get("status") != "ok"
+            or "hello from the CLI" not in result.get("output", [])):
+        problems.append(f"the CLI's run gave exit {ran.returncode}: "
+                        f"{ran.stdout[:300]!r} {ran.stderr[-300:]!r}")
+    shown = Path(cli[0]).name if len(cli) == 1 else "python -m ryos"
+    return f"  [ok] the command line ({shown}): --version, list, run"
 
 
 def main() -> int:
@@ -127,6 +170,16 @@ def main() -> int:
             proc.wait(timeout=15)
         output = proc.stdout.read().decode("utf-8", errors="replace") if proc.stdout else ""
 
+    cli_report = ""
+    if args.exe:
+        cli_exe = Path(args.exe).resolve().parent / "ryos-cli.exe"
+        if cli_exe.exists():
+            cli_report = _check_cli([str(cli_exe)], env, data, problems)
+        else:
+            problems.append(f"the build has no {cli_exe.name} beside RYOS.exe")
+    else:
+        cli_report = _check_cli([sys.executable, "-m", "ryos"], env, data, problems)
+
     after = _snapshot(real)
     if after != before:
         changed = sorted(set(after.items()) ^ set(before.items()))
@@ -140,6 +193,8 @@ def main() -> int:
         return 1
     print(f"  [ok] RYOS {_source_version()} started on Qt, showed its window, "
           "stayed up; the real RYOS folder is unchanged")
+    if cli_report:
+        print(cli_report)
     print("\nRYOS launch smoke PASSED")
     return 0
 

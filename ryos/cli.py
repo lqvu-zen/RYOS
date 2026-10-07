@@ -63,7 +63,7 @@ def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ryos",
         description="Run your scripts and pipelines without the window. "
-                    "Plain `ryos` opens the window.",
+                    "Plain `ryos` (or RYOS.exe) opens the window.",
         epilog="Name a script or pipeline by its name, group/name or #id. "
                f"Exit codes: the script's own; {EXIT_FAILED} failed; "
                f"{EXIT_TIMEOUT} timed out; {EXIT_REFUSED} refused by RYOS; "

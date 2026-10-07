@@ -111,8 +111,13 @@ def serve() -> int:
     try:
         import mcp  # noqa: F401
     except ImportError:
-        print("ryos mcp needs the MCP SDK: run it as `uv run --extra mcp ryos mcp`.",
-              file=sys.stderr)
+        if getattr(sys, "frozen", False):
+            # The Windows build leaves the SDK out (plan decision D12).
+            print("The MCP server is not in the Windows build: run it from RYOS's "
+                  "source as `uv run --extra mcp ryos mcp`.", file=sys.stderr)
+        else:
+            print("ryos mcp needs the MCP SDK: run it as `uv run --extra mcp ryos mcp`.",
+                  file=sys.stderr)
         return EXIT_NO_SDK
     from .db import ScriptDB
     from .logger import setup_logging

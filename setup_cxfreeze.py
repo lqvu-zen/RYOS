@@ -5,9 +5,22 @@ Usage (via build_cxfreeze.bat):
 
 Output: dist/cxfreeze/RYOS.exe  (plus supporting DLLs in the same folder)
 """
+import shutil
 from pathlib import Path
 
 from cx_Freeze import Executable, setup
+
+BUILD_DIR = Path("dist/cxfreeze")
+
+#: The Qt plugin folders RYOS loads: the platform (windows, offscreen), the
+#: widget style, image formats and the SVG icon engine for its icons, and
+#: input (IMEs, input devices). cx_Freeze's hook copies a different set of the
+#: rest -- Designer, QML tooling, SQL drivers, 3D, multimedia, sensors, web
+#: view... -- on different runs, which made the build swing between 71 and
+#: 80 MB; every other folder in the wheel is left out, so it is the same each
+#: time, and a new Qt's new folders are left out too.
+KEEP_PLUGIN_DIRS = {"platforms", "styles", "imageformats", "iconengines",
+                    "platforminputcontexts", "generic"}
 
 
 def _unused_qt_binaries() -> list:
@@ -28,7 +41,10 @@ def _unused_qt_binaries() -> list:
     # Newer cx_Freeze hooks also copy Qt's software OpenGL (20 MB; RYOS draws
     # no OpenGL) and the QML plugins (useless without Qt6Quick, left out above).
     qml = [p.name for p in (folder / "qml").rglob("*.dll")]
-    return sorted(set(qt + ffmpeg + qml + ["opengl32sw.dll"]))
+    plugins = [p.name for d in (folder / "plugins").iterdir()
+               if d.is_dir() and d.name not in KEEP_PLUGIN_DIRS
+               for p in d.glob("*.dll")]
+    return sorted(set(qt + ffmpeg + qml + plugins + ["opengl32sw.dll"]))
 
 
 build_options = {
@@ -55,7 +71,7 @@ build_options = {
         "ftplib", "imaplib", "mailbox", "nntplib", "poplib",
         "smtplib", "telnetlib",
     ],
-    "build_exe": "dist/cxfreeze",
+    "build_exe": str(BUILD_DIR),
 }
 
 setup(
@@ -69,6 +85,18 @@ setup(
             base="gui",               # suppresses the console window (cx_Freeze 7+)
             target_name="RYOS.exe",
             icon="icon.ico",
-        )
+        ),
+        # The command line (ryos list / run / pipeline): the console base, so
+        # it has a stdout -- RYOS.exe's GUI base has none.
+        Executable(
+            script="_packed_cli.py",
+            base="console",
+            target_name="ryos-cli.exe",
+            icon="icon.ico",
+        ),
     ],
 )
+
+# Qt's own translations: data files, so bin_excludes cannot leave them out,
+# and RYOS installs no QTranslator, so nothing reads them (6 MB).
+shutil.rmtree(BUILD_DIR / "lib" / "PySide6" / "translations", ignore_errors=True)
