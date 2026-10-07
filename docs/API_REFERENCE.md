@@ -98,7 +98,7 @@ Module-level constants:
 | --- | --- | --- |
 | `create_pipeline(name, group_name)` | `int` (new id) | |
 | `clone_pipeline(pipeline_id)` | `int` (new id) | Copies the steps and everything that defines them — including each step’s `params_override`. Names it `"… (copy)"`. Raises `ValueError` if not found. |
-| `copy_pipeline_to_group(pipeline_id, group_name, script_map, name)` | `int` (new id) | Copy / Paste into another group: a copy named `name` in `group_name`, each step pointed at `script_map[old script id]` (unmapped scripts kept). Every step field comes along, as in `clone_pipeline`. Raises `ValueError` if not found. |
+| `copy_pipeline_to_group(pipeline_id, group_name, script_map, name)` | `int` (new id) | Copy / Paste into another group: a copy named `name` in `group_name`, each step pointed at `script_map[old script id]` (unmapped scripts kept). Every step field comes along, and the star and highlight, as in `clone_pipeline`. Raises `ValueError` if not found. |
 | `pipeline_identity(pipeline_id)` | `(name, group_name)` or `None` | |
 | `rename_pipeline(pipeline_id, name)` | — | |
 | `delete_pipeline(pipeline_id)` | — | Also deletes its steps and its schedule. |

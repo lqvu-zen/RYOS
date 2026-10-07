@@ -8991,6 +8991,30 @@ class TestCopyBetweenGroups(unittest.TestCase):
                 self.assertEqual(self.db.get(step_script)[6:9], (0, "X=1", "/w"))
                 self.assertTrue(self.db.is_detached(step_script))
 
+    def test_copies_and_clones_keep_the_star_and_highlight(self):
+        # A copy differs from its source in name, id and group only (the rule
+        # clone_group and export/import already follow); scripts and
+        # pipelines, cloned or copied, all behave the same.
+        pid = self.db.create_pipeline("ship", "A")
+        for kind, item_id in ((cardmenu.SCRIPT, self.build), (cardmenu.PIPELINE, pid)):
+            cardmenu.set_favorite(self.db, kind, item_id, True)
+            cardmenu.set_highlight(self.db, kind, item_id, "red")
+            for how, new_id in (
+                    ("clone", cardmenu.clone(self.db, kind, item_id)),
+                    ("copy", cardmenu.copy_to_group(self.db, kind, item_id, "B"))):
+                with self.subTest(kind=kind, how=how):
+                    if kind == cardmenu.PIPELINE:
+                        row = next(r for g in ("A", "B")
+                                   for r in self.db.list_pipelines(g) if r[0] == new_id)
+                        fav, color = row[2], row[3]
+                    else:
+                        row = next(r for r in self.db.list_all() if r[0] == new_id)
+                        fav, color = row[10], row[11]
+                        self.assertEqual([p[1:] for p in self.db.list_param_presets(new_id)],
+                                         [("quick", "--quick")])
+                    self.assertTrue(fav)
+                    self.assertEqual(color, "red")
+
     def test_an_exact_twin_is_reused(self):
         twin = self.db.add("build", "/w/build.py", "--fast", "python", "B",
                            0, 1, env_vars="X=1", work_dir="/w")

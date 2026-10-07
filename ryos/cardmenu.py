@@ -265,25 +265,22 @@ def move(db, key: str, item_id: int, *, up_id=None, down_id=None) -> bool:
 def clone(db, kind: str, item_id: int) -> int | None:
     """Copy one card next to the original. The new id, or None if it is gone.
 
-    A script copy keeps everything that defines how it runs -- including
-    ``detached``, ``env_vars`` and ``work_dir``, the same set `clone_group`
-    keeps. A launcher cloned without ``detached`` would block its pipeline
+    A clone differs from its source in name and id only, as `clone_group`'s
+    do: a script keeps everything that defines how it runs -- including
+    ``detached``, ``env_vars`` and ``work_dir`` -- its presets, star and
+    highlight. A launcher cloned without ``detached`` would block its pipeline
     again, which is the behaviour issue #5 removed.
     """
     if kind == PIPELINE:
         return db.clone_pipeline(item_id)
     rec = db.get(item_id)
-    if not rec:
-        return None
-    _id, name, path, params, interp, group, temp_param, env_vars, work_dir = rec[:9]
-    return db.add(f"{name} (copy)", path, params, interp, group or "",
-                  temp_param, int(db.is_detached(item_id)),
-                  env_vars=env_vars, work_dir=work_dir or "")
+    return _copy_script(db, item_id, rec[5] or "") if rec else None
 
 
 def _copy_script(db, script_id: int, group: str) -> int | None:
-    """One script into ``group``, with everything that defines how it runs and
-    its presets. Its own name in another group; "(copy)" beside itself."""
+    """One script into ``group``, with everything that defines how it runs,
+    its presets, star and highlight. Its own name in another group; "(copy)"
+    beside itself."""
     rec = db.get(script_id)
     if not rec:
         return None
@@ -295,6 +292,12 @@ def _copy_script(db, script_id: int, group: str) -> int | None:
     presets = [(label, p) for _pid, label, p in db.list_param_presets(script_id)]
     if presets:
         db.replace_param_presets(new_id, presets)
+    source = next((r for r in db.list_all() if r[0] == script_id), None)
+    if source is not None:
+        if source[10]:
+            db.set_favorite_script(new_id, True)
+        if source[11]:
+            db.set_script_color(new_id, source[11])
     return new_id
 
 
