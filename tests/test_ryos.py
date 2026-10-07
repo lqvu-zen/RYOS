@@ -8967,6 +8967,38 @@ class TestCopyBetweenGroups(unittest.TestCase):
         self.assertEqual([r[1] for r in self.db.list_pipeline_steps(pid)],
                          [self.build, self.test, self.build])
 
+    def test_a_script_that_runs_differently_is_copied_not_reused(self):
+        # B's "build" runs the same file with the same parameters, but each one
+        # differs from A's in something else that changes how it runs; reusing
+        # it would make the copied pipeline run differently from its source.
+        twins = {
+            "environment": dict(env_vars="", work_dir="/w", detached=1),
+            "working folder": dict(env_vars="X=1", work_dir="/elsewhere", detached=1),
+            "launcher": dict(env_vars="X=1", work_dir="/w", detached=0),
+            "temp parameter": dict(env_vars="X=1", work_dir="/w", detached=1, temp=1),
+        }
+        for what, t in twins.items():
+            with self.subTest(what):
+                self.setUp()
+                b_build = self.db.add("build", "/w/build.py", "--fast", "python", "B",
+                                      t.get("temp", 0), t["detached"],
+                                      env_vars=t["env_vars"], work_dir=t["work_dir"])
+                pid = self.db.create_pipeline("ship", "A")
+                self.db.add_pipeline_step(pid, self.build)
+                new_pid = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "B")
+                step_script = self.db.list_pipeline_steps(new_pid)[0][1]
+                self.assertNotEqual(step_script, b_build)
+                self.assertEqual(self.db.get(step_script)[6:9], (0, "X=1", "/w"))
+                self.assertTrue(self.db.is_detached(step_script))
+
+    def test_an_exact_twin_is_reused(self):
+        twin = self.db.add("build", "/w/build.py", "--fast", "python", "B",
+                           0, 1, env_vars="X=1", work_dir="/w")
+        pid = self.db.create_pipeline("ship", "A")
+        self.db.add_pipeline_step(pid, self.build)
+        new_pid = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "B")
+        self.assertEqual([r[1] for r in self.db.list_pipeline_steps(new_pid)], [twin])
+
     def test_a_pipeline_pasted_into_its_own_group_reuses_its_scripts(self):
         pid = self.db.create_pipeline("ship", "A")
         self.db.add_pipeline_step(pid, self.build)

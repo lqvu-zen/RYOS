@@ -298,15 +298,29 @@ def _copy_script(db, script_id: int, group: str) -> int | None:
     return new_id
 
 
+def _how_it_runs(db, rec) -> tuple:
+    """Everything that defines how a script runs -- what _copy_script keeps."""
+    script_id, _name, path, params, interp, _group, temp_param, env_vars, work_dir = rec[:9]
+    return (path, params or "", interp or "", int(temp_param or 0), env_vars or "",
+            work_dir or "", bool(db.is_detached(script_id)))
+
+
 def _same_script_in(db, script_id: int, group: str) -> int | None:
-    """A script already in ``group`` that runs the same file the same way."""
+    """A script already in ``group`` that runs the same file the same way.
+
+    Matching on the file alone is not enough: a step reusing a script with
+    another environment, folder or launcher flag would run differently from
+    its source -- a lost launcher flag blocks the pipeline again (issue #5).
+    """
     rec = db.get(script_id)
     if not rec:
         return None
-    path, params, interp = rec[2], rec[3], rec[4]
+    wanted = _how_it_runs(db, rec)
     for row in db.list_all():
-        if ((row[8] or "") == group and row[2] == path and (row[3] or "") == (params or "")
-                and (row[4] or "") == (interp or "")):
+        if (row[8] or "") != group or row[2] != wanted[0]:
+            continue
+        other = db.get(row[0])
+        if other and _how_it_runs(db, other) == wanted:
             return row[0]
     return None
 
