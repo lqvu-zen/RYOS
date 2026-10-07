@@ -35,7 +35,7 @@ from .headless import (PIPELINE, SCRIPT, TIMEOUT, HeadlessError, HeadlessRunner,
                        Run, Target, resolve)
 from .jobs import STOPPED
 
-COMMANDS = ("list", "run", "pipeline")
+COMMANDS = ("list", "run", "pipeline", "mcp")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -94,6 +94,9 @@ def _parser() -> argparse.ArgumentParser:
     pipe = sub.add_parser("pipeline", help="Run a pipeline and wait for it.")
     pipe.add_argument("ref", metavar="PIPELINE")
     common(pipe)
+
+    sub.add_parser("mcp", help="Serve the scripts and pipelines made available to "
+                               "agents over MCP (stdio). Needs the mcp extra.")
     return p
 
 
@@ -228,6 +231,10 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         args = _parser().parse_args(argv)
     except SystemExit as e:             # --help, --version, or a bad line
         return e.code if isinstance(e.code, int) else EXIT_OK
+    if args.command == "mcp":
+        # Its own start-up: it logs to ryos-mcp.log, and it is long-lived.
+        from .mcpserver import serve
+        return serve()
     if settings is None or db is None:
         from .logger import setup_logging
         from .settings import LOG_DIR, _load_settings

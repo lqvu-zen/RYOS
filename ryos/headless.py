@@ -69,21 +69,28 @@ def _targets(db: ScriptDB, kind: str) -> list[Target]:
             for group in groups for pid, name, *_ in db.list_pipelines(group)]
 
 
-def resolve(db: ScriptDB, kind: str, ref: str) -> Target:
+def resolve(db: ScriptDB, kind: str, ref: str, allowed: set[int] | None = None) -> Target:
     """The script or pipeline ``ref`` names.
 
     ``#12`` is an id; otherwise ``ref`` matches an item's name, or its
     ``group/name``. Names repeat across groups, so a bare name that matches
     more than one is refused with the ones it could mean.
+
+    ``allowed`` limits the search to those ids -- for an agent, the items
+    made available to it. Anything else is not there at all: not found, and
+    never named among the candidates of an ambiguous name.
     """
     ref = ref.strip()
     items = _targets(db, kind)
+    if allowed is not None:
+        items = [t for t in items if t.item_id in allowed]
     if ref.startswith("#") and ref[1:].isdigit():
         found = [t for t in items if t.item_id == int(ref[1:])]
     else:
         found = [t for t in items if ref in (t.name, t.ref)]
     if not found:
-        raise HeadlessError(f"No {kind} named {ref!r}.")
+        where = " is available to agents" if allowed is not None else ""
+        raise HeadlessError(f"No {kind} named {ref!r}{where}.")
     if len(found) > 1:
         names = ", ".join(f"{t.ref!r} (#{t.item_id})" for t in found)
         raise HeadlessError(f"{ref!r} could be any of {len(found)} {kind}s: {names}. "
@@ -148,11 +155,13 @@ class HeadlessRunner:
     def __init__(self, db: ScriptDB, settings: dict | None = None, *,
                  trigger: str = SOURCE_CLI,
                  on_output: Callable[[Run, str, str | None], None] | None = None,
+                 on_finished: Callable[[Run], None] | None = None,
                  sleep: Callable[[float], None] = time.sleep,
                  clock: Callable[[], float] = time.monotonic) -> None:
         self.db = db
         self._trigger = trigger
         self._on_output_cb = on_output
+        self._on_finished_cb = on_finished
         self._sleep = sleep
         self._clock = clock
         self._later: list = []                  # heap of (due, seq, fn)
@@ -194,6 +203,8 @@ class HeadlessRunner:
         outcome = job.outcome or "error"
         # A run that finished OK just as its time ran out still passed.
         run.status = TIMEOUT if run.timed_out and outcome != "ok" else outcome
+        if self._on_finished_cb is not None:
+            self._on_finished_cb(run)
 
     # -- starting and stopping -----------------------------------------------
     def _refuse_if_running(self, target: Target) -> None:
@@ -251,6 +262,13 @@ class HeadlessRunner:
 
     def stop_all(self) -> None:
         self.host.stop_all()
+
+    def forget(self, run: Run) -> None:
+        """Drop a finished run's record and output (a long-lived host keeps
+        only so many)."""
+        if run.done:
+            self.runs.pop(run.job_id, None)
+            self._by_tab = {k: r for k, r in self._by_tab.items() if r is not run}
 
     # -- waiting -------------------------------------------------------------
     def wait(self, run: Run, timeout: float | None = None) -> Run:

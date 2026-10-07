@@ -11,6 +11,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "ruff>=0.5", "mypy>=1.11"]
+# `ryos mcp`: the MCP server for AI agents (docs/plans/agent-support.md).
+mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
 ryos = "ryos.__main__:main"
@@ -29,7 +31,8 @@ packages = ["ryos"]
 testpaths = ["tests"]
 # Only collect the real test modules; everything else in tests/ is a runnable
 # sample script used as a subprocess fixture, not a test.
-python_files = ["test_ryos.py", "test_headless.py", "test_cli.py"]
+python_files = ["test_ryos.py", "test_headless.py", "test_cli.py",
+                "test_agenttools.py", "test_mcpserver.py"]
 
 [tool.ruff]
 target-version = "py310"
@@ -73,6 +76,8 @@ files = [
     "ryos/jobhost.py",
     "ryos/headless.py",
     "ryos/cli.py",
+    "ryos/agenttools.py",
+    "ryos/mcpserver.py",
     "ryos/notifications.py",
     "ryos/logger.py",
     "ryos/search.py",

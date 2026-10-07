@@ -27,8 +27,9 @@ jobs:
 
       - name: Run tests
         # The unit tests need no display and no Qt, and manage sys.path
-        # themselves, so no project sync is required to run them.
-        run: uv run --no-project --with pytest pytest -q
+        # themselves, so no project sync is required to run them. The MCP SDK
+        # is there for tests/test_mcpserver.py (a real client and server).
+        run: uv run --no-project --with pytest --with "mcp>=2.3,<3" pytest -q
 
   qt-smoke:
     name: qt-smoke (ubuntu, offscreen)
