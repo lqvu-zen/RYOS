@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import Callable
 
 from PySide6.QtCore import Property, QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel,
                                QMenu, QPushButton, QSizePolicy, QVBoxLayout,
                                QWidget)
@@ -58,6 +58,9 @@ class _CardBase(QFrame):
 
     #: A click on the card itself, not on one of its buttons.
     activated = Signal()
+    #: Ctrl+C / Ctrl+V on the focused row: copy it, or paste into its group.
+    copy_requested = Signal()
+    paste_requested = Signal()
 
     def __init__(self, palette: dict, compact: bool, size: str,
                  parent: QWidget | None = None, *, chip: bool = False):
@@ -160,6 +163,12 @@ class _CardBase(QFrame):
             return
         if key == Qt.Key.Key_F2:
             self.edit_button.click()
+            return
+        if event.matches(QKeySequence.StandardKey.Copy):
+            self.copy_requested.emit()
+            return
+        if event.matches(QKeySequence.StandardKey.Paste):
+            self.paste_requested.emit()
             return
         tick = getattr(self, "checkbox", None)
         if key == Qt.Key.Key_Space and tick is not None and tick.isVisible():

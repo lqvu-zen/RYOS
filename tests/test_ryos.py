@@ -8047,7 +8047,8 @@ class TestCardMenu(unittest.TestCase):
             cardmenu.EDIT, cardmenu.RUN_WITH, None,
             cardmenu.FAVORITE, cardmenu.HIGHLIGHT, None, cardmenu.MOVE_TOP,
             cardmenu.MOVE_UP, cardmenu.MOVE_DOWN, None, cardmenu.SCHEDULE,
-            cardmenu.HISTORY, cardmenu.CLONE, None, cardmenu.DELETE])
+            cardmenu.HISTORY, cardmenu.CLONE, cardmenu.COPY, cardmenu.COPY_TO,
+            None, cardmenu.DELETE])
         self.assertTrue(items[-1].danger)
 
     def test_pipeline_menu_leads_with_edit(self):
@@ -8911,3 +8912,87 @@ class TestBugReport(unittest.TestCase):
         self.assertIn("- Theme: nord", query["body"][0])
         self.assertLess(len(url), bugreport.MAX_URL)
         self.assertNotIn(os.environ.get("USERNAME", "\0"), url)
+
+
+class TestCopyBetweenGroups(unittest.TestCase):
+    """Copy / Paste and Copy to: a script or pipeline from one group into
+    another, beside Clone (which copies within its own group)."""
+
+    def setUp(self):
+        self.db = _make_db()
+        for g in ("A", "B"):
+            self.db.create_group(g)
+        self.build = self.db.add("build", "/w/build.py", "--fast", "python", "A",
+                                 0, 1, env_vars="X=1", work_dir="/w")
+        self.db.replace_param_presets(self.build, [("quick", "--quick")])
+        self.test = self.db.add("test", "/w/test.py", "", "python", "A")
+
+    def _scripts(self, group):
+        return {r[1]: r for r in self.db.list_all() if (r[8] or "") == group}
+
+    def test_a_script_copies_with_how_it_runs_and_its_presets(self):
+        new_id = cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, self.build, "B")
+        rec = self.db.get(new_id)
+        self.assertEqual(rec[1:9], ("build", "/w/build.py", "--fast", "python", "B",
+                                    0, "X=1", "/w"))
+        self.assertTrue(self.db.is_detached(new_id))
+        self.assertEqual([p[1:] for p in self.db.list_param_presets(new_id)],
+                         [("quick", "--quick")])
+        self.assertIn("build", self._scripts("A"))         # the original stays
+
+    def test_pasting_into_its_own_group_is_a_copy_beside_it(self):
+        new_id = cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, self.build, "A")
+        self.assertEqual(self.db.get(new_id)[1], "build (copy)")
+
+    def test_a_pipeline_brings_its_scripts_and_keeps_its_steps(self):
+        pid = self.db.create_pipeline("ship", "A")
+        s1 = self.db.add_pipeline_step(pid, self.build)
+        s2 = self.db.add_pipeline_step(pid, self.test)
+        self.db.add_pipeline_step(pid, self.build)        # used twice
+        self.db.update_pipeline_step_params(s1, "--x")
+        self.db.set_step_trigger_mode(s2, TRIGGER_WITH)
+        self.db.set_step_policy(s2, retries=2)
+        # B already has the same test script: it is used, not duplicated.
+        b_test = self.db.add("test", "/w/test.py", "", "python", "B")
+        new_pid = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "B")
+        self.assertEqual(self.db.pipeline_identity(new_pid), ("ship", "B"))
+        steps = self.db.list_pipeline_steps(new_pid)
+        b = self._scripts("B")
+        self.assertEqual([r[1] for r in steps], [b["build"][0], b_test, b["build"][0]])
+        self.assertEqual(sorted(b), ["build", "test"])    # build copied once
+        self.assertEqual(steps[0][6], "--x")
+        self.assertEqual(steps[1][7], TRIGGER_WITH)
+        self.assertEqual(steps[1][11], 2)
+        # The source pipeline still runs group A's scripts.
+        self.assertEqual([r[1] for r in self.db.list_pipeline_steps(pid)],
+                         [self.build, self.test, self.build])
+
+    def test_a_pipeline_pasted_into_its_own_group_reuses_its_scripts(self):
+        pid = self.db.create_pipeline("ship", "A")
+        self.db.add_pipeline_step(pid, self.build)
+        new_pid = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "A")
+        self.assertEqual(self.db.pipeline_identity(new_pid), ("ship (copy)", "A"))
+        self.assertEqual([r[1] for r in self.db.list_pipeline_steps(new_pid)], [self.build])
+        self.assertEqual(len(self._scripts("A")), 2)
+
+    def test_a_deleted_item_copies_nothing(self):
+        self.db.delete(self.test)
+        self.assertIsNone(cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, self.test, "B"))
+        self.assertIsNone(cardmenu.item_name(self.db, cardmenu.SCRIPT, self.test))
+        self.assertIsNone(cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, 999, "B"))
+
+    def test_the_menus(self):
+        self.assertEqual(cardmenu.copy_targets(["A", "B", "C"], "A"), ["B", "C"])
+        items = cardmenu.pipeline_menu(favorite=False, color=None, copy_targets=["B"])
+        copy_to = next(i for i in items if i.key == cardmenu.COPY_TO)
+        self.assertTrue(copy_to.enabled)
+        self.assertEqual(cardmenu.picked_copy_target(copy_to.children[0].key), "B")
+        self.assertIsNone(cardmenu.picked_copy_target(cardmenu.CLONE))
+        lonely = cardmenu.script_menu(favorite=False, color=None, can_move_up=False,
+                                      can_move_down=False)
+        self.assertFalse(next(i for i in lonely if i.key == cardmenu.COPY_TO).enabled)
+        paste = next(i for i in cardmenu.group_menu() if i.key == cardmenu.PASTE)
+        self.assertFalse(paste.enabled)
+        paste = next(i for i in cardmenu.group_menu("ship") if i.key == cardmenu.PASTE)
+        self.assertTrue(paste.enabled)
+        self.assertIn('"ship"', paste.label)

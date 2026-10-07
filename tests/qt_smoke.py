@@ -5013,6 +5013,91 @@ def check_launcher_leaves_running(app):
     print("  [ok] launcher: run on its own, it leaves Running while what it opened runs on")
 
 
+def check_copy_paste_between_groups(app):
+    """Copy a script with Ctrl+C on its row and paste it from another group's
+    tab menu; copy a pipeline with Copy to; both through the real window."""
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    from ryos import cardmenu
+    from ryos.db import ScriptDB
+    from ryos.qtui.menus import actions_by_key
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "copy.db")
+    db.create_group("A")
+    db.create_group("B")
+    build = db.add("build", str(tmp / "build.py"), "--fast", _sys.executable, "A")
+    pid = db.create_pipeline("ship", "A")
+    db.add_pipeline_step(pid, build)
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.resize(700, 600)
+    win.show()
+    win.load_from_db(db)
+    shown: list = []
+    win.popup = lambda menu, pos: shown.append(menu)
+
+    def settle():
+        for _ in range(3):
+            app.processEvents()
+
+    def card(kind, item_id):
+        for page in win.card_lists.values():
+            for c in page.cards:
+                if (c.drag_payload.kind, c.drag_payload.item_id) == (kind, item_id):
+                    return c
+        return None
+
+    def in_group(group):
+        return sorted(r[1] for r in db.list_all() if (r[8] or "") == group)
+
+    settle()
+    row = card("script", build)
+    row.setFocus()
+    app.sendEvent(row, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_C,
+                                 Qt.KeyboardModifier.ControlModifier))
+    if win.copied_name() != "build":
+        PROBLEMS.append(f"Ctrl+C on a row held {win.copied_name()!r}, not 'build'")
+    win._show_group_menu("B", QPoint(0, 0))
+    acts = actions_by_key(shown[-1]) if shown else {}
+    paste = acts.get(cardmenu.PASTE)
+    if paste is None or not paste.isEnabled() or "build" not in paste.text():
+        PROBLEMS.append("B's tab menu had no enabled Paste \"build\"")
+    else:
+        paste.trigger()
+        settle()
+    if in_group("B") != ["build"]:
+        PROBLEMS.append(f"after Paste, group B holds {in_group('B')}")
+    # Copy to: the pipeline, with its script found already in B.
+    shown.clear()
+    win._show_card_menu("pipeline", pid, QPoint(0, 0))
+    acts = actions_by_key(shown[-1]) if shown else {}
+    target = acts.get(cardmenu.copy_to_key("B"))
+    if target is None:
+        PROBLEMS.append(f"the pipeline menu offered no Copy to \u25b8 B: {sorted(acts)}")
+    else:
+        target.trigger()
+        settle()
+    pipes = [r[1] for r in db.list_pipelines("B")]
+    b_build = [r[0] for r in db.list_all() if (r[8] or "") == "B"]
+    if pipes != ["ship"] or len(b_build) != 1:
+        PROBLEMS.append(f"Copy to B made pipelines {pipes} and scripts {in_group('B')}")
+    else:
+        new_pid = db.list_pipelines("B")[0][0]
+        steps = [r[1] for r in db.list_pipeline_steps(new_pid)]
+        if steps != b_build:
+            PROBLEMS.append(f"the copied pipeline runs {steps}, not B's build {b_build}")
+    win.hide()
+    win.deleteLater()
+    print("  [ok] copy / paste: Ctrl+C on a row, Paste on another group's tab, "
+          "Copy to for a pipeline that reuses the script already there")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     real_log = _real_log_state()
@@ -5044,6 +5129,7 @@ def main() -> int:
     check_drag_and_drop(app)
     check_schedules(app)
     check_context_menus(app)
+    check_copy_paste_between_groups(app)
     check_select_mode(app)
     check_group_management(app)
     check_tray_and_close(app)

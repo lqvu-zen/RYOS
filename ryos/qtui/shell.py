@@ -1108,6 +1108,10 @@ class MainWindow(QMainWindow):
                 self._show_card_menu(k, i, c.mapToGlobal(pos), s))
         card.favorite_toggled.connect(
             lambda item_id, fav, k=kind: self._set_favorite(k, item_id, fav))
+        card.copy_requested.connect(
+            lambda k=kind, i=rec["id"]: self.copy_item(k, i))
+        # On All, a row's own group is the one it belongs to.
+        card.paste_requested.connect(lambda g=group: self.paste_into(g))
         if kind == cardmenu.PIPELINE:
             card.edit_requested.connect(
                 lambda item_id, n=rec["name"]: self._edit_pipeline(item_id, n))
@@ -2160,14 +2164,18 @@ class MainWindow(QMainWindow):
                         section: str = sections.SCRIPTS) -> list:
         """The menu for one card, by the shared definition."""
         rec, group = self._records[(kind, item_id)]
+        targets = cardmenu.copy_targets(
+            self._db.list_groups() if self._db is not None else [], group)
         if kind == cardmenu.PIPELINE:
             return cardmenu.pipeline_menu(favorite=bool(rec.get("favorite")),
-                                          color=rec.get("color"))
+                                          color=rec.get("color"),
+                                          copy_targets=targets)
         up, down = self._script_neighbours(item_id, group, section)
         return cardmenu.script_menu(favorite=bool(rec.get("favorite")),
                                     color=rec.get("color"),
                                     can_move_up=up is not None,
-                                    can_move_down=down is not None)
+                                    can_move_down=down is not None,
+                                    copy_targets=targets)
 
     def _script_neighbours(self, item_id: int, group: str,
                            section: str = sections.SCRIPTS) -> tuple:
@@ -2195,6 +2203,13 @@ class MainWindow(QMainWindow):
         rec, group = self._records[(kind, item_id)]
         name = rec.get("name", "")
         is_pick, color = cardmenu.picked_highlight(key)
+        target = cardmenu.picked_copy_target(key)
+        if key == cardmenu.COPY:
+            self.copy_item(kind, item_id)
+            return
+        if target is not None:
+            self._copy_into(kind, item_id, target)
+            return
         if is_pick:
             cardmenu.set_highlight(db, kind, item_id, color)
         elif key == cardmenu.FAVORITE:
@@ -2281,11 +2296,49 @@ class MainWindow(QMainWindow):
         # the reload is about to replace; rebuilding on the next turn is safe.
         QTimer.singleShot(0, self.reload)
 
+    # -- copy and paste between groups ----------------------------------------------
+    def copy_item(self, kind: str, item_id: int) -> None:
+        """Hold a script or pipeline for Paste. Only the id is held: Paste
+        copies it as it is then, and says so if it was deleted meanwhile."""
+        self._copied = (kind, item_id)
+        name = self._records.get((kind, item_id), ({}, ""))[0].get("name", "")
+        self.statusBar().showMessage(
+            f"Copied \u201c{name}\u201d \u2014 right-click a group tab, or press "
+            "Ctrl+V on a row, to paste it there.")
+
+    def copied_name(self) -> str | None:
+        """The name of what Paste would paste, or None."""
+        held = getattr(self, "_copied", None)
+        if held is None or self._db is None:
+            return None
+        return cardmenu.item_name(self._db, *held)
+
+    def paste_into(self, group: str | None) -> None:
+        """Paste what Copy holds into ``group``."""
+        held = getattr(self, "_copied", None)
+        if held is None or group is None:
+            return
+        self._copy_into(*held, group)
+
+    def _copy_into(self, kind: str, item_id: int, group: str) -> None:
+        if self._db is None:
+            return
+        name = cardmenu.item_name(self._db, kind, item_id)
+        if name is None:
+            self._copied = None
+            self.statusBar().showMessage("Nothing to paste: it was deleted.")
+            return
+        cardmenu.copy_to_group(self._db, kind, item_id, group)
+        what = "pipeline" if kind == cardmenu.PIPELINE else "script"
+        self.statusBar().showMessage(
+            f"Copied {what} \u201c{name}\u201d to \u201c{group or 'Ungrouped'}\u201d.")
+        self._defer_reload()
+
     # -- the group-tab menu --------------------------------------------------------
     def _show_group_menu(self, group: str, pos: QPoint) -> None:
         if not group:
             return                  # "Ungrouped" is not a group to rename
-        menu = build_menu(self, cardmenu.group_menu(),
+        menu = build_menu(self, cardmenu.group_menu(self.copied_name()),
                           lambda key: self.on_group_menu(group, key),
                           self._palette)
         self.popup(menu, pos)
@@ -2297,6 +2350,9 @@ class MainWindow(QMainWindow):
         db = self._db
         status = None
         show = self.current_group()
+        if key == cardmenu.PASTE:
+            self.paste_into(group)
+            return
         if key == cardmenu.RENAME_GROUP:
             new, problem = grouping.rename_target(
                 group, self.ask_text("Rename Group", f"New name for '{group}':",

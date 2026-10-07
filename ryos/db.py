@@ -1117,6 +1117,58 @@ class ScriptDB:
             conn.commit()
             return len(source_scripts), len(source_pipelines)
 
+    def pipeline_identity(self, pipeline_id: int) -> tuple[str, str] | None:
+        """(name, group) of a pipeline, or None if it is gone."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT name, COALESCE(group_name, '') FROM pipelines WHERE id=?",
+                (pipeline_id,),
+            ).fetchone()
+        return (row[0], row[1]) if row else None
+
+    def copy_pipeline_to_group(self, pipeline_id: int, group_name: str,
+                               script_map: dict, name: str) -> int:
+        """Copy a pipeline into ``group_name`` as ``name``, its steps pointed at
+        ``script_map[old script id]`` (unmapped scripts are kept as they are).
+
+        Every step field comes along, as in clone_pipeline: a step that lost
+        its params_override or policy would run differently from its source.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(is_favorite, 0), label_color FROM pipelines WHERE id=?",
+                (pipeline_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Pipeline {pipeline_id} not found")
+            is_favorite, label_color = row
+            max_order = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM pipelines WHERE group_name=?",
+                (group_name,),
+            ).fetchone()[0]
+            new_id = conn.execute(
+                "INSERT INTO pipelines (name, group_name, sort_order, is_favorite, "
+                "label_color) VALUES (?, ?, ?, ?, ?)",
+                (name, group_name, max_order + 1, is_favorite, label_color),
+            ).lastrowid
+            steps = conn.execute(
+                "SELECT script_id, step_order, params_override, trigger_mode, "
+                "on_failure, retries, run_when FROM pipeline_steps "
+                "WHERE pipeline_id=? ORDER BY step_order ASC, id ASC",
+                (pipeline_id,),
+            ).fetchall()
+            for (script_id, step_order, params_override, trigger_mode,
+                 on_failure, retries, run_when) in steps:
+                conn.execute(
+                    "INSERT INTO pipeline_steps (pipeline_id, script_id, step_order, "
+                    "params_override, trigger_mode, on_failure, retries, run_when) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (new_id, script_map.get(script_id, script_id), step_order,
+                     params_override, trigger_mode, on_failure, retries, run_when),
+                )
+            conn.commit()
+            return new_id
+
     def list_param_presets(self, script_id: int) -> list:
         with self._connect() as conn:
             return conn.execute(
