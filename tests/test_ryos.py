@@ -8287,6 +8287,79 @@ class TestGroupMenuRules(unittest.TestCase):
         self.assertEqual(db.get_group_base_dir("G"), "")
 
 
+class TestBaseDirMovesWorkDir(unittest.TestCase):
+    """Moving a group's base folder takes working folders along, apart from paths."""
+
+    def setUp(self):
+        self.old = tempfile.mkdtemp()
+        self.new = tempfile.mkdtemp()
+        self.other = tempfile.mkdtemp()
+        self.db = _make_db()
+        self.db.create_group("G", base_dir=self.old)
+
+    def add(self, path, work_dir=""):
+        return self.db.add("s", path, "", "", "G", work_dir=work_dir)
+
+    def work_dir(self, sid):
+        return self.db.get(sid)[8]
+
+    def path(self, sid):
+        return self.db.get(sid)[2]
+
+    def test_subfolder_follows(self):
+        sub = os.path.join(self.old, "sub", "deep")
+        sid = self.add(os.path.join(self.old, "x.py"), sub)
+        self.db.set_group_base_dir("G", self.new)
+        self.assertEqual(self.work_dir(sid), os.path.join(self.new, "sub", "deep"))
+
+    def test_equal_to_base_becomes_new_base(self):
+        sid = self.add(os.path.join(self.old, "x.py"), self.old)
+        self.db.set_group_base_dir("G", self.new)
+        self.assertEqual(self.work_dir(sid), self.new)
+
+    def test_outside_stays(self):
+        sid = self.add(os.path.join(self.old, "x.py"), self.other)
+        self.db.set_group_base_dir("G", self.new)
+        self.assertEqual(self.work_dir(sid), self.other)
+
+    def test_empty_stays_empty(self):
+        sid = self.add(os.path.join(self.old, "x.py"))
+        self.db.set_group_base_dir("G", self.new)
+        self.assertEqual(self.work_dir(sid), "")
+
+    def test_path_and_work_dir_decided_independently(self):
+        a = self.add(os.path.join(self.old, "x.py"), self.other)
+        b = self.add(os.path.join(self.other, "y.py"), os.path.join(self.old, "w"))
+        remapped, untouched = self.db.set_group_base_dir("G", self.new)
+        self.assertEqual(self.path(a), os.path.join(self.new, "x.py"))
+        self.assertEqual(self.work_dir(a), self.other)
+        self.assertEqual(self.path(b), os.path.join(self.other, "y.py"))
+        self.assertEqual(self.work_dir(b), os.path.join(self.new, "w"))
+        self.assertEqual((remapped, untouched), (2, [os.path.join(self.other, "y.py")]))
+
+    def test_already_inside_new_dir_unchanged(self):
+        new = os.path.join(self.old, "inner")
+        wd = os.path.join(new, "w")
+        sid = self.add(os.path.join(self.old, "x.py"), wd)
+        self.db.set_group_base_dir("G", new)
+        self.assertEqual(self.work_dir(sid), wd)
+
+    def test_clearing_changes_no_work_dir(self):
+        wd = os.path.join(self.old, "w")
+        sid = self.add(os.path.join(self.old, "x.py"), wd)
+        self.db.set_group_base_dir("G", "")
+        self.assertEqual(self.work_dir(sid), wd)
+
+    def test_count_includes_working_folders(self):
+        self.add(os.path.join(self.old, "x.py"), os.path.join(self.old, "w"))
+        remapped, untouched = self.db.set_group_base_dir("G", self.new)
+        self.assertEqual((remapped, untouched), (2, []))
+
+    def test_confirm_mentions_working_folders(self):
+        change = grouping.base_dir_change("G", "/a", "/b")
+        self.assertIn("working folders", change.confirm[1])
+
+
 class TestReadableHighlight(unittest.TestCase):
     def test_needs_a_surface_and_a_known_key(self):
         self.assertIsNone(themes.readable_highlight("red"))

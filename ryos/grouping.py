@@ -127,7 +127,8 @@ def base_dir_change(group: str, current: str,
     """The change a base-directory dialog answer asks for, or None for none.
 
     Clearing always confirms. Moving an existing folder confirms, because it
-    rewrites stored script paths; setting a first folder does not.
+    rewrites stored script paths and working folders; setting a first folder
+    does not.
     """
     if answer is None or answer == current:
         return None
@@ -139,7 +140,7 @@ def base_dir_change(group: str, current: str,
     confirm = None
     if current:
         confirm = ("Re-map paths",
-                   f"Re-map script paths from\n{current}\nto\n{answer}?\n\n"
+                   f"Re-map script paths and working folders from\n{current}\nto\n{answer}?\n\n"
                    "Paths already outside the old base will be left unchanged.")
     return BaseDirChange(BASE_DIR_SET, answer, confirm)
 
