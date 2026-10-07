@@ -114,7 +114,13 @@
       "Bash(grep -n \"elsewhere\\\\|tmp /\\\\|base_dir\\\\|create_group\\\\|write_text\\\\|mkdir\")",
       "Bash(git fetch *)",
       "Read(//c/Users/Admin/Downloads/**)",
-      "Bash(grep -v '^\\\\s*$')"
+      "Bash(grep -v '^\\\\s*$')",
+      "PowerShell(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^\\(RYOS|ryos|python|pythonw\\)\\\\.exe$' -and \\($_.CommandLine -match 'ryos|RYOS'\\) } | Select-Object ProcessId, Name, @{n='Started';e={$_.CreationDate}}, CommandLine | Format-List; $log = \"$env:APPDATA\\\\RYOS\\\\logs\\\\ryos.log\"; Select-String -Path $log -Pattern 'starting|already running|shutting down' | Select-Object -Last 12 | ForEach-Object { $_.Line })",
+      "Bash(awk -F: '$1>3670 && $1<3820')",
+      "Bash(grep -n \"u201c\\\\|\\\\\\\\\\\\\\\\n\" ryos/basefolder.py)",
+      "Bash(sed -i 's/^from .icons import IconButton, IconLabel$/from . import icons\\\\nfrom .icons import IconButton, IconLabel/' ryos/qtui/cards.py)",
+      "Bash(grep -n 'return \\(f\"\\\\\\\\\\\\\\\\u201c\\\\|f\"In \\\\\\\\\\\\\\\\u201c\\\\|\\\\\\\\\\\\\\\\n\\\\\\\\\\\\\\\\n' ryos/basefolder.py)",
+      "Bash(grep -n \"^FIELDS\\\\|^SCHEMA\\\\|^[A-Z_]* = \\\\[$\\\\|^[A-Z_]*: .* = \\(\" ryos/settings_schema.py)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
