@@ -16,11 +16,12 @@ A group is a set of scripts and pipelines that belong together — *Work* and *H
 
 Right-click a group's pill:
 
-![The menu on a group pill: Rename, Clone Group, Base folder…, Export group and Delete Group](images/04-group-menu.png)
+![The menu on the Tools pill with a script copied: Rename…, Paste "Say hello" (Ctrl+V), Clone group, Base folder…, Export group… and Delete group](images/04-group-menu.png)
 
 | Entry | What it does |
 | --- | --- |
 | **Rename…** | Give the group a new name. |
+| **Paste** | Copy what you copied into this group (see below). Greyed until you copy something. |
 | **Clone group** | Copy the group with all its scripts and pipelines. |
 | **Base folder…** | Set or change the group's folder (clicking the folder line under the pills does the same). |
 | **Export group…** | Save just this group to a file. See [Import and export](10-import-export.md). |
@@ -31,6 +32,17 @@ Drag a pill left or right to change the order of your groups.
 ## Moving things between groups
 
 Drag a row onto another group's pill to move it there. Drag it up or down within its panel to change its place; a line shows where it will land.
+
+## Copying to another group
+
+To keep the original where it is and put a copy in another group:
+
+- **Copy to.** Right-click the row → **Copy to** → pick the group. Done in one step.
+- **Copy and Paste.** Right-click the row → **Copy** (or select the row and press **Ctrl+C**). Then right-click another group's pill → **Paste**, or press **Ctrl+V** on any row in that group. Paste names what it will paste, and you can paste the same thing into several groups.
+
+A copied script keeps everything that defines how it runs — parameters, interpreter, environment, working folder — and its saved presets. A copied pipeline brings the scripts its steps run, so it works and can be edited in its new group. If that group already has a script that runs exactly the same way, the copy uses it instead of adding a second one.
+
+A copy keeps the star and highlight colour too, but not a schedule or run history: those stay with the original. (**Clone** makes the same kind of copy in the same group, named "… (copy)".)
 
 ---
 [← Running a script](03-running-and-output.md) · [Contents](README.md) · [Next: Parameters and presets →](05-parameters-and-presets.md)

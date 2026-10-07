@@ -48,9 +48,9 @@ A row shows only its play button (and a gold star if it's a favorite) until you 
 | Star | Add to or remove from Favorites (gold when it is one). |
 | Play (green) | Run it. After a failed run it turns red with a circular arrow: press it to try again. |
 
-**Right-click** a row for everything else: edit, run with parameters, favorites, a highlight colour for the name, moving it up or down, schedule, run history, clone and delete.
+**Right-click** a row for everything else: edit, run with parameters, favorites, a highlight colour for the name, moving it up or down, schedule, run history, clone, copy to another group and delete.
 
-![The right-click menu of a script: Edit…, Run with parameters…, Remove from favorites, Highlight, Move to top, Move up, Move down, Schedule…, Run history…, Clone and Delete](images/01-row-menu.png)
+![The right-click menu of a script: Edit…, Run with parameters…, Remove from favorites, Highlight, Move to top, Move up, Move down, Schedule…, Run history…, Clone, Copy (Ctrl+C), Copy to and Delete](images/01-row-menu.png)
 
 ## The Output bar
 

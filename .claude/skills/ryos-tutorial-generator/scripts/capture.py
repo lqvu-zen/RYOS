@@ -120,8 +120,12 @@ def main() -> int:
 
     # -- 04 groups ------------------------------------------------------------------------
     save(win, "04-group-pills", top(win, 150))
+    # With a row copied, so Paste names what it will paste.
+    win.copy_item("script", driver.script_id("Say hello"))
     win.popup = popup_capture("04-group-menu")
-    win._show_group_menu("Samples", QPoint(0, 0))
+    win._show_group_menu("Tools", QPoint(0, 0))
+    win._copied = None
+    win.statusBar().clearMessage()
     win.run_dialog = dialog_capture("04-new-group-dialog")
     win.new_group()
 
