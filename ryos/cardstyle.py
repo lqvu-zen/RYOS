@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from . import basefolder
 from .db import TRIGGER_WITH
 
 SIZES = ("small", "medium", "large")
@@ -181,14 +182,31 @@ SCRIPT_SCHEDULED_BADGE = TagBadge("SCHEDULED", "pipe_accent", SCHEDULE_TIP)
 PIPELINE_SCHEDULED_BADGE = TagBadge("SCHEDULED", "accent", SCHEDULE_TIP)
 
 
-def script_badges(*, temp_param: bool, scheduled: bool) -> list[TagBadge]:
-    """A script card's badges, in the order Tk draws them."""
-    return ([TEMP_PARAM_BADGE] if temp_param else []) + (
+OUTSIDE_BADGE_TEXT = "OUTSIDE FOLDER"
+OUTSIDE_BADGE_KEY = "warn_fg"
+
+
+def script_badges(*, temp_param: bool, scheduled: bool,
+                  outside: tuple[str, ...] = (),
+                  base_dir: str = "") -> list[TagBadge]:
+    """A script card's badges, in the order Tk draws them. The outside-folder
+    warning comes last: the others are settings, this is a possible slip."""
+    badges = ([TEMP_PARAM_BADGE] if temp_param else []) + (
         [SCRIPT_SCHEDULED_BADGE] if scheduled else [])
+    if outside:
+        badges.append(TagBadge(OUTSIDE_BADGE_TEXT, OUTSIDE_BADGE_KEY,
+                               basefolder.badge_tooltip(outside, base_dir)))
+    return badges
 
 
-def pipeline_badges(*, scheduled: bool) -> list[TagBadge]:
-    return [PIPELINE_SCHEDULED_BADGE] if scheduled else []
+def pipeline_badges(*, scheduled: bool, outside_steps: tuple[int, ...] = (),
+                    base_dir: str = "") -> list[TagBadge]:
+    badges = [PIPELINE_SCHEDULED_BADGE] if scheduled else []
+    if outside_steps:
+        badges.append(TagBadge(
+            OUTSIDE_BADGE_TEXT, OUTSIDE_BADGE_KEY,
+            basefolder.pipeline_badge_tooltip(outside_steps, base_dir)))
+    return badges
 
 
 # --- the text under a card's name ------------------------------------------------

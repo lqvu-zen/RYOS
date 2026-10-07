@@ -299,6 +299,27 @@ def step_run_and_output(s: Session) -> None:
         problem(f"run history shows {seen.get('text')!r} after two runs")
     ok("run: output, the script's environment, a preset from the drop-down, "
        "and both runs in the history")
+    step_outside_note(s)
+
+
+def step_outside_note(s: Session) -> None:
+    """A script outside the group's base folder says so at the top of its run."""
+    away = s.work / "away.py"
+    away.write_text("print('from away')\n", encoding="utf-8")
+    sid = s.db.add("Away", str(away), "", sys.executable, "Project")
+    s.win.reload()
+    s.win.show_group("Project")
+    s.card("Project", "Away").run_button.click()
+    s.wait_for(lambda: "from away" in s.output("Away"), "the outside script's output")
+    s.idle("away")
+    first = s.output("Away").split("\n")[0]
+    if not first.startswith("Note: runs outside the group's base folder"):
+        problem(f"an outside script's output began {first!r}")
+    # Gone again, so the steps after this one see the scripts they expect.
+    s.db.delete(sid)
+    s.win.reload()
+    s.win.show_group("Project")
+    ok("run: a script outside the group's base folder opens its output with a note")
 
 
 def step_failure_and_retry(s: Session) -> None:

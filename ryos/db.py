@@ -998,6 +998,14 @@ class ScriptDB:
             )
             return cur.fetchall()
 
+    def script_work_dirs(self) -> dict[int, str]:
+        """script id -> working folder, for the scripts that set one. Apart
+        from `list_all` so that row's pinned width does not grow."""
+        with self._connect() as conn:
+            return {r[0]: r[1] for r in conn.execute(
+                "SELECT id, work_dir FROM scripts "
+                "WHERE COALESCE(TRIM(work_dir),'') <> ''")}
+
     def list_groups(self) -> list[str]:
         with self._connect() as conn:
             cur = conn.execute("SELECT name FROM groups ORDER BY sort_order ASC, id ASC")

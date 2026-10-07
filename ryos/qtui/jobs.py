@@ -59,6 +59,7 @@ class JobBridge(QObject):
             on_finished=self.finished.emit,
             on_renamed=self.renamed.emit,
             on_step=self.step_state.emit,
+            base_notes=True,
         )
         self.db = db
         self.registry = self._host.registry

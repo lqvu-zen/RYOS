@@ -3678,6 +3678,10 @@ def check_badges_banner_previews(app):
     asks = db.add("asks", str(tmp / "a.py"), "--p", _sys.executable, "G", 1)
     db.add("plain", str(tmp / "b.py"), "", _sys.executable, "G")
     db.add("loose", str(tmp / "c.py"), "", _sys.executable, "")
+    away = db.add("away", str(tmp.parent / "x.py"), "", _sys.executable, "G")
+    pid_away = db.create_pipeline("pipeaway", "G")
+    db.add_pipeline_step(pid_away, asks)
+    db.add_pipeline_step(pid_away, away)
     pid = db.create_pipeline("pipe", "G")
     db.add_pipeline_step(pid, asks)
     second = db.add_pipeline_step(pid, asks)
@@ -3717,6 +3721,17 @@ def check_badges_banner_previews(app):
         PROBLEMS.append(f"the script badges were {got}")
     if card(win, "plain").badges:
         PROBLEMS.append("a plain script carried badges")
+    away_card = card(win, "away")
+    got = [b.text() for b in away_card.badges]
+    if got != [cardstyle.OUTSIDE_BADGE_TEXT]:
+        PROBLEMS.append(f"the outside-folder script's badges were {got}")
+    elif str(tmp) not in away_card.badges[0].toolTip():
+        PROBLEMS.append("the outside-folder badge did not name the base folder")
+    got = [b.text() for b in card(win, "pipeaway", "pipelines").badges]
+    if got != [cardstyle.OUTSIDE_BADGE_TEXT]:
+        PROBLEMS.append(f"the pipeline with an outside step had badges {got}")
+    elif "Step 2" not in card(win, "pipeaway", "pipelines").badges[0].toolTip():
+        PROBLEMS.append("the pipeline badge did not name the step")
     got = [b.text() for b in card(win, "pipe", "pipelines").badges]
     if got != [cardstyle.PIPELINE_SCHEDULED_BADGE.text]:
         PROBLEMS.append(f"the pipeline badges were {got}")
@@ -3773,6 +3788,7 @@ def check_badges_banner_previews(app):
     win.deleteLater()
 
     print("  [ok] badges, banner, previews: temp-param and scheduled badges, "
+          "outside-folder badge on a script and on a pipeline step, "
           "pipeline badge, banners with the folder or the hint and a click to set "
           "it, steps popup with ∥ and overrides, hover preview on compact cards "
           "only and only when on")

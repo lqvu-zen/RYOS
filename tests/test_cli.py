@@ -125,6 +125,19 @@ class TestRun(_Base):
         self.assertGreaterEqual(result["duration_seconds"], 0)
         self.assertEqual(self.db.list_runs(script_id=sid)[0][10], SOURCE_CLI)
 
+    def test_outside_the_base_folder_adds_nothing_to_the_output(self):
+        base = self.tmp / "base"
+        base.mkdir()
+        self.db.set_group_base_dir("A", str(base))
+        self.script("away", "print('hi')\n")
+        code, out, _ = self.ryos("run", "away")
+        self.assertEqual((code, out.strip().splitlines()[0]), (0, "hi"))
+        self.assertNotIn("Note:", out)
+        _, out, _ = self.ryos("run", "away", "--json")
+        result = json.loads(out)
+        self.assertEqual(result["output"][0], "hi")
+        self.assertNotIn("Note:", out)
+
     def test_params(self):
         self.script("args", "import sys\nprint('got', *sys.argv[1:])\n", params="--own")
         # Parameters usually start with a dash, so they are given with "=".

@@ -77,6 +77,17 @@ class TestRunningAScript(_Base):
         self.assertIn("exit code 0", run.tail(1)[0])
         self.assertIsNotNone(run.finished_at)
 
+    def test_a_script_outside_its_base_folder_gets_no_note(self):
+        # The note is for a person at the window; a program reads this output.
+        base = self.tmp / "base"
+        base.mkdir()
+        self.db.set_group_base_dir("A", str(base))
+        sid = self.script("away", "print('one')\n")
+        run = self.runner.wait(self.runner.start_script(self.target(SCRIPT, sid)), 30)
+        self.assertEqual(run.status, "ok")
+        self.assertFalse([ln for ln in run.lines if "Note:" in ln])
+        self.assertEqual(list(run.lines)[0], "one")
+
     def test_a_failure_keeps_its_exit_code(self):
         sid = self.script("boom", "import sys\nprint('bad', file=sys.stderr)\nsys.exit(3)\n")
         run = self.runner.wait(self.runner.start_script(self.target(SCRIPT, sid)), 30)

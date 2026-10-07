@@ -86,6 +86,7 @@ Module-level constants:
 | `create_group(name, base_dir="")` | — | |
 | `list_groups()` | `list[str]` | Names in sort order. |
 | `list_groups_with_meta()` | `list[tuple[str, str]]` | `(name, base_dir)`. |
+| `script_work_dirs()` | `dict[int, str]` | script id to working folder, only for scripts that set one. |
 | `get_group_base_dir(name)` | `str` | `""` if unset. |
 | `set_group_base_dir(name, new_dir)` | `tuple[int, list[str]]` | `(remapped_count, untouched_paths)` — rewrites script paths and working folders that lived under the old base dir; `remapped_count` counts each one, `untouched_paths` lists only script paths. |
 | `rename_group(old, new)` | — | |

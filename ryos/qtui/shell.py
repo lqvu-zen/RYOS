@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QScrollArea, QSizePolicy,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import activity, bugreport
+from .. import activity, basefolder, bugreport
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
@@ -1055,7 +1055,9 @@ class MainWindow(QMainWindow):
                                 is_favorite=bool(rec.get("favorite")),
                                 label_color=shade, last_status=last_status,
                                 badges=cardstyle.pipeline_badges(
-                                    scheduled=bool(rec.get("scheduled"))),
+                                    scheduled=bool(rec.get("scheduled")),
+                                    outside_steps=rec.get("outside_steps", ()),
+                                    base_dir=rec.get("base_dir", "")),
                                 step_names=rec.get("step_names"))
         else:
             card = ScriptCard(script_id=rec["id"], name=rec["name"],
@@ -1067,7 +1069,9 @@ class MainWindow(QMainWindow):
                                   rec.get("params", ""), rec.get("presets") or []),
                               badges=cardstyle.script_badges(
                                   temp_param=bool(rec.get("temp_param")),
-                                  scheduled=bool(rec.get("scheduled"))),
+                                  scheduled=bool(rec.get("scheduled")),
+                                  outside=rec.get("outside", ()),
+                                  base_dir=rec.get("base_dir", "")),
                               base_dir=rec.get("base_dir", ""),
                               last_run=rec.get("last_run"))
         card.section = section
@@ -1286,6 +1290,7 @@ class MainWindow(QMainWindow):
         statuses = db.last_pipeline_status()
         scheduled_scripts, scheduled_pipes = db.scheduled_ids()
         scripts = db.list_all()
+        work_dirs = db.script_work_dirs()
         groups = [(name, base) for name, base in db.list_groups_with_meta()]
         has_ungrouped = (any((rec[8] or "") == "" for rec in scripts)
                          or bool(db.list_pipelines("")))
@@ -1298,8 +1303,11 @@ class MainWindow(QMainWindow):
                 if (rec[8] or "") != name:
                     continue
                 sid, sname, path, params, interp = rec[0], rec[1], rec[2], rec[3], rec[4]
+                wd = work_dirs.get(sid, "")
                 records.append({
                     "id": sid, "name": sname, "path": path, "status": rec[7],
+                    "work_dir": wd,
+                    "outside": basefolder.outside_parts(path, wd, base or ""),
                     "base_dir": base or "", "last_run": rec[6],
                     "favorite": bool(rec[10]), "color": rec[11],
                     "params": params or "", "temp_param": bool(rec[9]),
@@ -1310,11 +1318,17 @@ class MainWindow(QMainWindow):
                                      s, n, pth, prm, i or "", g)),
                 })
             for pid, pname, fav, color in db.list_pipelines(name):
+                steps = db.list_pipeline_steps(pid)
                 records.append({
                     "id": pid, "kind": "pipeline", "name": pname,
                     "favorite": bool(fav), "color": color,
                     "scheduled": pid in scheduled_pipes,
-                    "steps": len(steps := db.list_pipeline_steps(pid)),
+                    "base_dir": base or "",
+                    "outside_steps": tuple(
+                        i for i, r in enumerate(steps, 1)
+                        if basefolder.outside_parts(
+                            r[3], r[9] if len(r) > 9 else "", base or "")),
+                    "steps": len(steps),
                     "step_names": [row[2] for row in steps],
                     "status": statuses.get(pid),
                     "run": (lambda p=pid, n=pname, g=name:

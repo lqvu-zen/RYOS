@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from . import activity, cardstyle, history, pipelinesteps
+from . import activity, basefolder, cardstyle, history, pipelinesteps
 
 #: What the pane shows before anything is chosen.
 EMPTY = "Choose a script or pipeline on the left to see it here."
@@ -124,20 +124,28 @@ def subtitle(kind: str, rec: dict, step_count: int = 0, now=None) -> str:
 
 def script_facts(rec: dict) -> list[tuple[str, str]]:
     """(label, value) rows for a script: where it is and how it runs."""
-    return [
+    rows = [
         ("Path", _or_dash(rec.get("path"))),
         ("Base folder", _or_dash(rec.get("base_dir"))),
         ("Parameters", _or_dash(rec.get("params"))),
         ("Asks each run", "Yes" if rec.get("temp_param") else "No"),
         ("Schedule", "Runs on a schedule" if rec.get("scheduled") else "None"),
     ]
+    if rec.get("outside"):
+        rows.insert(2, ("Outside base folder",
+                        basefolder.facts_value(tuple(rec["outside"]))))
+    return rows
 
 
 def pipeline_facts(rec: dict) -> list[tuple[str, str]]:
     """(label, value) rows for a pipeline; its steps are listed apart."""
-    return [
+    rows = [
         ("Schedule", "Runs on a schedule" if rec.get("scheduled") else "None"),
     ]
+    if rec.get("outside_steps"):
+        rows.append(("Outside base folder",
+                     basefolder.step_label(tuple(rec["outside_steps"]))))
+    return rows
 
 
 # -- the Overview: steps as cards, the last run -------------------------------------

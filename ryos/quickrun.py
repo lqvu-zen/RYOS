@@ -28,7 +28,10 @@ def _is_inside(path: str, base: str) -> bool:
         return False
     norm_path = os.path.normcase(os.path.normpath(path))
     norm_base = os.path.normcase(os.path.normpath(base))
-    return norm_path == norm_base or norm_path.startswith(norm_base + os.sep)
+    # A root ("/", "C:\\") already ends in the separator; adding another
+    # would match nothing.
+    prefix = norm_base if norm_base.endswith(os.sep) else norm_base + os.sep
+    return norm_path == norm_base or norm_path.startswith(prefix)
 
 
 def build_entry(rel_str: str, filename: str) -> Entry:

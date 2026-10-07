@@ -76,6 +76,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Group ordering and collapse state              | `ryos/grouping.py`      |
 | Card and tab right-click menus (as data)       | `ryos/cardmenu.py`      |
 | Select mode: bar text, run-selected plan       | `ryos/selection.py`     |
+| Outside-base-folder check and its wording      | `ryos/basefolder.py`    |
 | Card sections, favourites, collapse state      | `ryos/sections.py`      |
 | Maximised list + detail layout: rules, wording | `ryos/detail.py`        |
 | Activity bar: up next, recent, summary       | `ryos/activity.py`      |

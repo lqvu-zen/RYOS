@@ -49,7 +49,8 @@ class JobHost:
                  on_started: Callable[[Job], None] = _ignore,
                  on_finished: Callable[[Job], None] = _ignore,
                  on_renamed: Callable[[Job], None] = _ignore,
-                 on_step: Callable[..., None] = _ignore) -> None:
+                 on_step: Callable[..., None] = _ignore,
+                 base_notes: bool = False) -> None:
         self.db = db
         #: Live settings: the window updates this dict in place when the
         #: Options dialog saves, so a new cap applies to the next run.
@@ -58,12 +59,14 @@ class JobHost:
         self.queue: "queue.Queue" = queue.Queue()
         self._call_later = call_later
         self._on_status = on_status
+        self._on_output = on_output
         self._on_finished = on_finished
         self.controller = JobController(
             self.registry, self.queue, self.db,
             on_output=on_output, on_status=on_status, on_notify=on_notify,
             on_started=on_started, on_finish=self._finish, on_rename=on_renamed,
             launch=self._launch, on_step=on_step,
+            base_notes=base_notes,
         )
 
     # -- lifecycle ---------------------------------------------------------
@@ -148,6 +151,8 @@ class JobHost:
                                       pipeline_id=None, name=name,
                                       group=plan.group, trigger=trigger)
         job.start_time = datetime.now()
+        if plan.note:
+            self._on_output(job.tab_key, plan.note, "info")
         self._launch(job, plan.spec, name, script_id)
         return job
 

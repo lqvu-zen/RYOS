@@ -1272,6 +1272,11 @@ class TestIsInside(unittest.TestCase):
         # "/baseball" must not count as inside "/base".
         self.assertFalse(_is_inside("/baseball/x.py", "/base"))
 
+    def test_a_root_base_holds_everything_under_it(self):
+        root = os.path.abspath(os.sep)
+        self.assertTrue(_is_inside(os.path.join(root, "x", "a.py"), root))
+        self.assertTrue(_is_inside(root, root))
+
     def test_empty_args_are_outside(self):
         self.assertFalse(_is_inside("", "/base"))
         self.assertFalse(_is_inside("/base/x", ""))
@@ -9404,3 +9409,223 @@ class TestCopyBetweenGroups(unittest.TestCase):
                          os.path.join(inner, "x.py"))
         self.assertEqual(cardmenu._repointed(os.path.join(w, "x.py"), w, inner),
                          os.path.join(inner, "x.py"))
+
+
+# --- scripts outside their group's base folder -------------------------------------------
+class TestBaseFolder(unittest.TestCase):
+    B = os.path.join(os.sep, "base")
+
+    def test_no_base_means_nothing_is_outside(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.outside_parts("/x/a.py", "/y", ""), ())
+
+    def test_inside_and_the_base_itself(self):
+        from ryos import basefolder
+        b = self.B
+        self.assertEqual(basefolder.outside_parts(os.path.join(b, "s", "a.py"), "", b), ())
+        self.assertEqual(basefolder.outside_parts(b, b, b), ())
+
+    def test_a_sibling_sharing_the_prefix_is_outside(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.outside_parts(
+            os.path.join(os.sep, "base2", "a.py"), "", self.B), ("file",))
+
+    def test_each_part_alone_and_both(self):
+        from ryos import basefolder
+        inside = os.path.join(self.B, "a.py")
+        away = os.path.join(os.sep, "elsewhere")
+        self.assertEqual(basefolder.outside_parts(inside, away, self.B), ("working folder",))
+        self.assertEqual(basefolder.outside_parts(os.path.join(away, "a.py"), self.B, self.B),
+                         ("file",))
+        self.assertEqual(basefolder.outside_parts(os.path.join(away, "a.py"), away, self.B),
+                         ("file", "working folder"))
+
+    def test_empty_path_and_blank_working_folder_are_not_checked(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.outside_parts("", "   ", self.B), ())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows paths ignore case")
+    def test_windows_ignores_case(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.outside_parts(r"c:\BASE\a.py", r"C:\Base", r"C:\base"), ())
+
+    def test_a_relative_working_folder_is_outside(self):
+        from ryos import basefolder
+        base = os.path.abspath("base")
+        self.assertEqual(basefolder.outside_parts(os.path.join(base, "a.py"), "sub", base),
+                         ("working folder",))
+
+    def test_run_note_wording(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.run_note((), "/p", "/w", "/b"), "")
+        self.assertEqual(
+            basefolder.run_note(("file",), "/p/a.py", "/b/w", "/b"),
+            "Note: runs outside the group's base folder /b (file: /p/a.py)\n")
+        self.assertEqual(
+            basefolder.run_note(("file", "working folder"), "/p/a.py", " /w ", "/b"),
+            "Note: runs outside the group's base folder /b "
+            "(file: /p/a.py; working folder: /w)\n")
+        self.assertEqual(
+            basefolder.run_note(("working folder",), "/b/a.py", "/w", "/b"),
+            "Note: runs outside the group's base folder /b (working folder: /w)\n")
+
+    def test_tooltips_name_the_base(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.badge_tooltip(("file",), "/b"),
+                         "Script file is outside the group's base folder:\n/b")
+        self.assertEqual(basefolder.badge_tooltip(("working folder",), "/b"),
+                         "Working folder is outside the group's base folder:\n/b")
+        self.assertEqual(basefolder.badge_tooltip(("file", "working folder"), "/b"),
+                         "Script file and working folder are outside the group's base folder:\n/b")
+        self.assertEqual(basefolder.pipeline_badge_tooltip((2,), "/b"),
+                         "Step 2 runs a script outside the group's base folder:\n/b")
+        self.assertEqual(basefolder.pipeline_badge_tooltip((2, 4), "/b"),
+                         "Steps 2, 4 run scripts outside the group's base folder:\n/b")
+
+    def test_facts_value(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.facts_value(("file",)), "File")
+        self.assertEqual(basefolder.facts_value(("working folder",)), "Working folder")
+        self.assertEqual(basefolder.facts_value(("file", "working folder")),
+                         "File, working folder")
+
+    def test_badges_come_last_and_carry_the_base(self):
+        from ryos import cardstyle
+        got = cardstyle.script_badges(temp_param=True, scheduled=True,
+                                      outside=("file",), base_dir="/B")
+        self.assertEqual([b.text for b in got],
+                         ["ASKS EACH RUN", "SCHEDULED", cardstyle.OUTSIDE_BADGE_TEXT])
+        self.assertIn("/B", got[-1].tooltip)
+        self.assertIn(got[-1].bg_key, themes.BUILTIN_THEMES["light"])
+        self.assertIn(got[-1].bg_key, themes.BUILTIN_THEMES["dark"])
+        pipe = cardstyle.pipeline_badges(scheduled=False, outside_steps=(2,), base_dir="/B")
+        self.assertEqual([b.text for b in pipe], [cardstyle.OUTSIDE_BADGE_TEXT])
+        self.assertIn("Step 2", pipe[0].tooltip)
+        self.assertEqual(cardstyle.pipeline_badges(scheduled=False), [])
+
+    def test_the_detail_row_appears_only_when_outside(self):
+        from ryos import detail
+        self.assertNotIn("Outside base folder", dict(detail.script_facts({"outside": ()})))
+        self.assertEqual(dict(detail.script_facts({"outside": ("file",)}))["Outside base folder"],
+                         "File")
+        self.assertNotIn("Outside base folder", dict(detail.pipeline_facts({})))
+        self.assertEqual(
+            dict(detail.pipeline_facts({"outside_steps": (2, 4)}))["Outside base folder"],
+            "Steps 2, 4")
+        self.assertEqual(
+            dict(detail.pipeline_facts({"outside_steps": (2,)}))["Outside base folder"],
+            "Step 2")
+
+    def test_script_work_dirs_lists_only_set_ones(self):
+        tmp = tempfile.mkdtemp()
+        db = ScriptDB(Path(tmp) / "t.db")
+        a = db.add("a", "/a.py", "", "", "", work_dir="/w")
+        db.add("b", "/b.py", "", "")
+        db.add("c", "/c.py", "", "", work_dir="   ")
+        self.assertEqual(db.script_work_dirs(), {a: "/w"})
+
+
+class TestBaseFolderNotes(unittest.TestCase):
+    """The note is the window's: JobHost / JobController say it only when asked."""
+
+    def setUp(self):
+        from ryos.jobhost import JobHost
+        self._JobHost = JobHost
+        self.tmp = Path(tempfile.mkdtemp())
+        self.base = self.tmp / "base"
+        self.base.mkdir()
+        self.away = self.tmp / "away"
+        self.away.mkdir()
+        self.db = ScriptDB(self.tmp / "t.db")
+        self.db.create_group("G", base_dir=str(self.base))
+        self.db.create_group("Free")
+        self.out: list = []
+
+    def host(self, **kw):
+        host = self._JobHost(
+            self.db, {"launcher_release_seconds": 0}, call_later=lambda s, fn: None,
+            on_output=lambda tab, text, tag=None, step=None: self.out.append((tab, text, tag, step)),
+            **kw)
+        self.addCleanup(host.stop_all)
+        return host
+
+    def script(self, folder, group="G", work_dir=""):
+        p = folder / "s.py"
+        p.write_text("print('out')\n", encoding="utf-8")
+        sid = self.db.add("s", str(p), "", sys.executable, group, work_dir=work_dir)
+        return sid, str(p)
+
+    def drain(self, host):
+        end = time.time() + 20
+        while host.registry.all() and time.time() < end:
+            host.pump()
+            time.sleep(0.02)
+
+    def test_an_outside_script_gets_the_note_first(self):
+        host = self.host(base_notes=True)
+        sid, path = self.script(self.away)
+        job = host.run_script(sid, "s", path, "", sys.executable)
+        self.assertEqual(self.out[0][0], job.tab_key)
+        self.assertTrue(self.out[0][1].startswith(
+            "Note: runs outside the group's base folder"))
+        self.assertEqual(self.out[0][2], "info")
+        self.drain(host)
+        self.assertIn("out", "".join(o[1] for o in self.out))
+
+    def test_inside_ungrouped_and_default_get_no_note(self):
+        host = self.host(base_notes=True)
+        sid, path = self.script(self.base)
+        host.run_script(sid, "s", path, "", sys.executable)
+        self.drain(host)
+        free, fpath = self.script(self.away, group="Free")
+        host.run_script(free, "s", fpath, "", sys.executable)
+        self.drain(host)
+        self.assertFalse([o for o in self.out if o[1].startswith("Note:")])
+        plain = self.host()
+        aid, apath = self.script(self.away)
+        plain.run_script(aid, "s", apath, "", sys.executable)
+        self.drain(plain)
+        self.assertFalse([o for o in self.out if o[1].startswith("Note:")])
+
+    def test_only_the_working_folder_outside(self):
+        host = self.host(base_notes=True)
+        sid, path = self.script(self.base, work_dir=str(self.away))
+        host.run_script(sid, "s", path, "", sys.executable)
+        self.assertIn(f"(working folder: {self.away})", self.out[0][1])
+        self.drain(host)
+
+    def _pipeline(self, host, *, together=False):
+        inside, ipath = self.script(self.base)
+        outside = self.db.add("o", str(self.away / "o.py"), "", sys.executable, "G")
+        (self.away / "o.py").write_text("print('o')\n", encoding="utf-8")
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, inside)
+        s2 = self.db.add_pipeline_step(pid, outside)
+        if together:
+            self.db.set_step_trigger_mode(s2, TRIGGER_WITH)
+        return host.run_pipeline(pid, "P", active_group="G")
+
+    def test_a_pipeline_notes_only_the_outside_step(self):
+        host = self.host(base_notes=True)
+        self._pipeline(host)
+        self.drain(host)
+        heads = [o[1] for o in self.out if o[1].startswith("─")]
+        self.assertEqual(len(heads), 2)
+        self.assertNotIn("Note:", heads[0])
+        self.assertIn("Note: runs outside the group's base folder", heads[1])
+        self.assertEqual(sum("Note:" in o[1] for o in self.out), 1)
+
+    def test_concurrent_steps_note_with_their_step(self):
+        host = self.host(base_notes=True)
+        self._pipeline(host, together=True)
+        self.drain(host)
+        notes = [o for o in self.out if "Note:" in o[1]]
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0][3], (2, "o"))
+        self.assertTrue(notes[0][1].startswith("[o] Note: runs outside the group's base folder"))
+
+    def test_a_pipeline_by_default_has_no_note(self):
+        host = self.host()
+        self._pipeline(host)
+        self.drain(host)
+        self.assertFalse([o for o in self.out if "Note:" in o[1]])

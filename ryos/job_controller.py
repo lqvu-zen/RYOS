@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from . import basefolder
 from .db import (FAIL_CONTINUE, RUN_PIPELINE, RUN_SCRIPT, RUN_STEP,
                  SOURCE_MANUAL, SOURCE_PIPELINE, TRIGGER_WITH,
                  WHEN_ON_FAILURE, WHEN_ON_SUCCESS)
@@ -112,6 +113,8 @@ class LaunchPlan:
     steps: list | None = None    # step rows, for a pipeline
     group: str = ""
     cmd: list | None = None
+    #: Top-of-output line when the script is outside its group's base folder.
+    note: str = ""
 
     @property
     def ok(self) -> bool:
@@ -151,6 +154,7 @@ class JobController:
         launch: Callable[[Job, object, str, int, object], None],
         now: Callable[[], datetime] = datetime.now,
         on_step: Callable[[str, int, str, str], None] = lambda *a: None,
+        base_notes: bool = False,
     ) -> None:
         self._registry = registry
         self._queue = output_queue
@@ -166,6 +170,9 @@ class JobController:
         # started, retried or finished, for that step's chip in the output tab.
         self._on_step = on_step
         self._now = now
+        # Say so when a run is outside its group's base folder. Only the window
+        # asks: a CLI or agent run's output is read by a program.
+        self._base_notes = base_notes
         # Launcher scripts released while their process still runs: id -> job.
         # Their output keeps reaching their tab; their eventual exit is not a
         # second verdict on a run already counted done.
@@ -200,7 +207,14 @@ class JobController:
         spec = build_run_spec(cmd,
                               work_dir=(rec[8] if rec else "") or "",
                               env_vars=rec[7] if rec else None)
-        return LaunchPlan(spec=spec, group=group, cmd=cmd)
+        note = ""
+        if self._base_notes:
+            base = self._db.get_group_base_dir(group)
+            work_dir = (rec[8] if rec else "") or ""
+            note = basefolder.run_note(
+                basefolder.outside_parts(path, work_dir, base),
+                path, work_dir, base)
+        return LaunchPlan(spec=spec, group=group, cmd=cmd, note=note)
 
     def plan_pipeline(self, pipeline_id: int, *, max_jobs: int,
                       active_group: str | None,
@@ -359,7 +373,15 @@ class JobController:
                       f"{names}\n{'─' * 40}\n")
             status_line = f"Pipeline steps {first}-{last}/{total}: {job.group_size} running"
             job.name = f"{job.pipeline_name}  —  Steps {first}-{last}/{total}"
+        notes = self._step_notes(job, prepared)
+        if job.group_size == 1:
+            header += notes[0][1] if notes else ""
         self._on_output(job.tab_key, header, "info")
+        if job.group_size > 1:
+            for token, note in notes:
+                label = job.group_labels[token]
+                self._on_output(job.tab_key, _tag_lines(note, label), "info",
+                                (token, label))
         self._on_status(status_line)
         self._on_rename(job)
 
@@ -368,6 +390,23 @@ class JobController:
                 self._on_step(job.tab_key, token, job.group_labels[token], STEP_RUNNING)
         for token, step in prepared:
             self._launch_step(job, token, step)
+
+    def _step_notes(self, job: Job, prepared) -> list[tuple[int, str]]:
+        """(token, note) for each step of a group that is outside the base
+        folder. Said once, as the group starts: a retry does not repeat it."""
+        if not self._base_notes:
+            return []
+        base = self._db.get_group_base_dir(job.group)
+        out = []
+        for token, step in prepared:
+            path = step[3]
+            work_dir = step[9] if len(step) > 9 else ""
+            note = basefolder.run_note(
+                basefolder.outside_parts(path, work_dir or "", base),
+                path, work_dir or "", base)
+            if note:
+                out.append((token, note))
+        return out
 
     def _launch_step(self, job: Job, token, step) -> None:
         """Launch one step under `token`. Also the retry path, so an attempt is
