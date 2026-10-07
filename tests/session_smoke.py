@@ -309,6 +309,8 @@ def step_outside_note(s: Session) -> None:
     sid = s.db.add("Away", str(away), "", sys.executable, "Project")
     s.win.reload()
     s.win.show_group("Project")
+    # It asks first: a run from the window outside the base folder.
+    s.expect_dialog("OutsideBaseWarningDialog", lambda dlg: dlg.choose_run())
     s.card("Project", "Away").run_button.click()
     s.wait_for(lambda: "from away" in s.output("Away"), "the outside script's output")
     s.idle("away")
@@ -319,7 +321,8 @@ def step_outside_note(s: Session) -> None:
     s.db.delete(sid)
     s.win.reload()
     s.win.show_group("Project")
-    ok("run: a script outside the group's base folder opens its output with a note")
+    ok("run: a script outside the group's base folder asks first, then opens its "
+       "output with a note")
 
 
 def step_failure_and_retry(s: Session) -> None:

@@ -63,6 +63,10 @@ SHAPES: dict[str, str] = {
     "save": ('<path d="M5.5 3.5h10l3 3v12a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-13'
              'a2 2 0 0 1 2-2z"/><path d="M8 3.5v4.5h7V3.5M7.5 20.5v-6h9v6"/>'),
     "select": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+    # A warning: a script outside its group's base folder, on a compact row.
+    "alert": ('<path d="M10.3 4.2 2.6 17.5a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.2'
+              'a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4"/>'
+              '<circle cx="12" cy="17" r="1" fill="{c}"/>'),
     "chevron-up": '<path d="m6 15 6-6 6 6"/>',
     "chevron-down": '<path d="m6 9 6 6 6-6"/>',
     # The rail's places: the list, and the search box.

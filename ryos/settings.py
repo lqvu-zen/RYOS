@@ -63,6 +63,9 @@ _SETTINGS_DEFAULTS: dict = {
     "auto_scroll_output":     True,
     "auto_check_update":      True,
     "notify_on_complete":     True,
+    # Ask before a run from the window whose script is outside its group's
+    # base folder (ryos/basefolder.py); the box in that warning turns it off.
+    "warn_outside_base":      True,
     "quick_run_enabled":      True,
     "quick_run_autocomplete":    True,
     "quick_run_max_suggestions": 10,

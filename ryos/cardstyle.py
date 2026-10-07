@@ -174,6 +174,10 @@ class TagBadge:
     tooltip: str
     #: A possible slip rather than a setting: shown on compact rows too.
     warning: bool = False
+    #: On a compact row, this drawn icon (``qtui/icons.py``) stands in for the
+    #: words, which keep to its tooltip and accessible name: one line has no
+    #: room for "OUTSIDE FOLDER".
+    compact_icon: str = ""
 
 
 def badges_for(badges, *, compact: bool, chip: bool = False) -> list[TagBadge]:
@@ -196,6 +200,7 @@ PIPELINE_SCHEDULED_BADGE = TagBadge("SCHEDULED", "accent", SCHEDULE_TIP)
 
 OUTSIDE_BADGE_TEXT = "OUTSIDE FOLDER"
 OUTSIDE_BADGE_KEY = "warn_fg"
+OUTSIDE_ICON = "alert"
 
 
 def script_badges(*, temp_param: bool, scheduled: bool,
@@ -207,7 +212,8 @@ def script_badges(*, temp_param: bool, scheduled: bool,
         [SCRIPT_SCHEDULED_BADGE] if scheduled else [])
     if outside:
         badges.append(TagBadge(OUTSIDE_BADGE_TEXT, OUTSIDE_BADGE_KEY,
-                               basefolder.badge_tooltip(outside, base_dir), warning=True))
+                               basefolder.badge_tooltip(outside, base_dir), warning=True,
+                               compact_icon=OUTSIDE_ICON))
     return badges
 
 
@@ -217,7 +223,8 @@ def pipeline_badges(*, scheduled: bool, outside_steps: tuple[int, ...] = (),
     if outside_steps:
         badges.append(TagBadge(
             OUTSIDE_BADGE_TEXT, OUTSIDE_BADGE_KEY,
-            basefolder.pipeline_badge_tooltip(outside_steps, base_dir), warning=True))
+            basefolder.pipeline_badge_tooltip(outside_steps, base_dir), warning=True,
+            compact_icon=OUTSIDE_ICON))
     return badges
 
 

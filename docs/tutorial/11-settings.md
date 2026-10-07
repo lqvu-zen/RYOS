@@ -33,7 +33,7 @@ Where the window opens and how big, whether it stays on top, whether it reopens 
 
 **Output**
 
-![The Output tab: maximum output lines, maximum parallel jobs, launcher release delay, open the output panel on run, clear output between runs, scroll to the newest output, notify when a run finishes, and keep run history for (days)](images/11-options-output.png)
+![The Output tab: maximum output lines, maximum parallel jobs, launcher release delay, open the output panel on run, clear output between runs, scroll to the newest output, notify when a run finishes, warn before running a script outside its group's base folder, and keep run history for (days)](images/11-options-output.png)
 
 How much output to keep, how many scripts may run at once, whether the panel opens and clears by itself, notifications, and how long run history is kept.
 

@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel
 from .. import cardstyle, scriptform
 from ..interpreter import _script_tag
 from ..themes import _readable_on, ink_on
+from . import icons
 from .icons import IconButton, IconLabel
 from .widgets import ElidedLabel, ScrollingLabel, literal, set_tooltip
 
@@ -420,15 +421,22 @@ class _CardBase(QFrame):
             f"QPushButton#run:focus {{ border: 2px solid {c['name_fg']}; }}")
         b.setProperty("runState", spec.state)
 
-    def _tag_badges(self, header: QHBoxLayout, badges) -> None:
-        """`cardstyle.TagBadge`s beside the name, as coloured words."""
+    def _tag_badges(self, header: QHBoxLayout, badges, compact: bool = False) -> None:
+        """`cardstyle.TagBadge`s beside the name, as coloured words -- or, on a
+        compact row, as the badge's drawn icon when it has one."""
         self.badges: list[QLabel] = []
         for spec in badges or ():
-            badge = QLabel(spec.text)
-            badge.setObjectName("tagBadge")
-            badge.setStyleSheet(
-                f"color: {self._ink(self._palette[spec.bg_key])};"
-                f" font-size: 8pt; font-weight: 700;")
+            colour = self._ink(self._palette[spec.bg_key])
+            if compact and spec.compact_icon:
+                badge = QLabel()
+                badge.setObjectName("tagBadgeIcon")
+                badge.setPixmap(icons.pixmap(spec.compact_icon, colour, 14))
+                badge.setFixedSize(16, 16)
+                badge.setAccessibleName(spec.text)
+            else:
+                badge = QLabel(spec.text)
+                badge.setObjectName("tagBadge")
+                badge.setStyleSheet(f"color: {colour}; font-size: 8pt; font-weight: 700;")
             set_tooltip(badge, spec.tooltip)
             header.addWidget(badge)
             self.badges.append(badge)
@@ -521,7 +529,7 @@ class ScriptCard(_CardBase):
         if compact:
             # On one line the warning follows the name and kind, where the
             # eye already is.
-            self._tag_badges(header, shown)
+            self._tag_badges(header, shown, compact=True)
         self._header = header
         self._last_status = last_status
         self._add_status(header, last_status)
@@ -669,7 +677,7 @@ class PipelineCard(_CardBase):
         if compact and not chip:
             header.addWidget(tag)
         if compact:
-            self._tag_badges(header, shown)
+            self._tag_badges(header, shown, compact=True)
         self._header = header
         self._last_status = last_status
         self._add_status(header, last_status)

@@ -131,6 +131,8 @@ FIELDS: tuple[Field, ...] = (
     Field("auto_clear_output", BOOL, "Clear output between runs", OUTPUT),
     Field("auto_scroll_output", BOOL, "Scroll to the newest output", OUTPUT),
     Field("notify_on_complete", BOOL, "Notify when a run finishes", OUTPUT),
+    Field("warn_outside_base", BOOL,
+          "Warn before running a script outside its group's base folder", OUTPUT),
     Field("history_retention_days", INT, "Keep run history for (days)", OUTPUT,
           minimum=0, help="0 disables pruning; history is kept forever."),
     # -- Quick Run ---------------------------------------------------------

@@ -9537,6 +9537,72 @@ class TestBaseFolder(unittest.TestCase):
         self.assertEqual(db.script_work_dirs(), {a: "/w"})
 
 
+class TestOutsideWarning(unittest.TestCase):
+    """The warning before a run from the window, and its setting."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.base = self.tmp / "base"
+        self.base.mkdir()
+        self.db = ScriptDB(self.tmp / "t.db")
+        self.db.create_group("G", base_dir=str(self.base))
+        self.inside = self.db.add("in", str(self.base / "a.py"), "", "", "G")
+        self.away = self.db.add("away", str(self.tmp / "x.py"), "", "", "G",
+                                work_dir=str(self.tmp))
+
+    def test_on_by_default_with_a_field_in_options(self):
+        from ryos import basefolder, settings_schema
+        from ryos.settings import _SETTINGS_DEFAULTS
+        self.assertTrue(_SETTINGS_DEFAULTS[basefolder.SETTING])
+        self.assertIn(basefolder.SETTING, [f.key for f in settings_schema.FIELDS])
+
+    def test_what_is_outside(self):
+        from ryos import basefolder
+        self.assertEqual(basefolder.script_outside(self.db, self.inside)[0], ())
+        parts, path, work_dir, base = basefolder.script_outside(self.db, self.away)
+        self.assertEqual((parts, path, base),
+                         (("file", "working folder"), str(self.tmp / "x.py"), str(self.base)))
+        self.assertEqual(basefolder.script_outside(self.db, 999)[0], ())
+        pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(pid, self.inside)
+        self.db.add_pipeline_step(pid, self.away)
+        self.assertEqual(basefolder.pipeline_outside(self.db, pid, "G"), ((2,), str(self.base)))
+
+    def test_when_to_warn(self):
+        from ryos import basefolder
+        self.assertFalse(basefolder.should_warn({}, ()))
+        self.assertTrue(basefolder.should_warn({}, ("file",)))
+        self.assertFalse(basefolder.should_warn({basefolder.SETTING: False}, (2,)))
+
+    def test_an_answer(self):
+        from ryos import basefolder
+        s = {basefolder.SETTING: True}
+        self.assertEqual(basefolder.after_warning(s, False, True), (False, False))
+        self.assertTrue(s[basefolder.SETTING])          # Cancel ignores the box
+        self.assertEqual(basefolder.after_warning(s, True, False), (True, False))
+        self.assertEqual(basefolder.after_warning(s, True, True), (True, True))
+        self.assertFalse(s[basefolder.SETTING])
+
+    def test_wording(self):
+        from ryos import basefolder
+        text = basefolder.warning_text("away", ("file", "working folder"), "/p/x.py",
+                                       " /w ", "/b")
+        for part in ("“away”", "/b", "File: /p/x.py", "Working folder: /w",
+                     "Run it anyway?"):
+            self.assertIn(part, text)
+        self.assertIn("Steps 1, 3 run scripts",
+                      basefolder.pipeline_warning_text("P", (1, 3), "/b"))
+        self.assertIn("Step 2 runs a script",
+                      basefolder.pipeline_warning_text("P", (2,), "/b"))
+
+    def test_the_compact_icon(self):
+        from ryos import cardstyle
+        badge = cardstyle.script_badges(temp_param=False, scheduled=False,
+                                        outside=("file",), base_dir="/B")[0]
+        self.assertEqual(badge.compact_icon, cardstyle.OUTSIDE_ICON)
+        self.assertEqual(cardstyle.TEMP_PARAM_BADGE.compact_icon, "")
+
+
 class TestBaseFolderNotes(unittest.TestCase):
     """The note is the window's: JobHost / JobController say it only when asked."""
 

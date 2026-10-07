@@ -1385,16 +1385,39 @@ class MainWindow(QMainWindow):
                 return
 
     def _run_script_record(self, sid, name, path, params, interp, group) -> None:
-        if self._bridge is not None:
-            self._bridge.run_script(sid, name, path, params, interp,
-                                    active_group=group,
-                                    on_refusal=self._show_refusal)
+        if self._bridge is None:
+            return
+        if self._db is not None:
+            parts, spath, work_dir, base = basefolder.script_outside(self._db, sid)
+            if basefolder.should_warn(self._settings, parts) and not self._go_outside(
+                    basefolder.warning_text(name, parts, spath, work_dir, base)):
+                return
+        self._bridge.run_script(sid, name, path, params, interp,
+                                active_group=group,
+                                on_refusal=self._show_refusal)
 
     def _run_pipeline_record(self, pid, name, group) -> None:
-        if self._bridge is not None:
-            self._bridge.run_pipeline(pid, name, active_group=group,
-                                      candidate_groups=list(self.card_lists),
-                                      on_refusal=self._show_refusal)
+        if self._bridge is None:
+            return
+        if self._db is not None:
+            steps, base = basefolder.pipeline_outside(self._db, pid, group)
+            if basefolder.should_warn(self._settings, steps) and not self._go_outside(
+                    basefolder.pipeline_warning_text(name, steps, base)):
+                return
+        self._bridge.run_pipeline(pid, name, active_group=group,
+                                  candidate_groups=list(self.card_lists),
+                                  on_refusal=self._show_refusal)
+
+    def _go_outside(self, text: str) -> bool:
+        """Ask before a run outside its group's base folder; True to run.
+        Through run_dialog, so a test answers it without a box on screen."""
+        from .smalldialogs import OutsideBaseWarningDialog
+        dlg = OutsideBaseWarningDialog(text, self)
+        self.run_dialog(dlg)
+        run, save = basefolder.after_warning(self._settings, dlg.run, dlg.dont_warn)
+        if save:
+            self._save_settings(self._settings)
+        return run
 
     def _show_refusal(self, refusal) -> None:
         """Say why a run did not start, in the register it asked for.

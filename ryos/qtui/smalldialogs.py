@@ -263,6 +263,53 @@ class TempParamDialog(QDialog):
 
 # --- the tray prompt -----------------------------------------------------------
 
+class OutsideBaseWarningDialog(QDialog):
+    """Asked before a run from the window whose script is outside its group's
+    base folder (``ryos.basefolder``).
+
+    ``run`` and ``dont_warn`` carry the answer. Esc, the close box, anything
+    but Run anyway is Cancel, and then the box counts for nothing.
+    """
+
+    def __init__(self, text: str, parent: QWidget | None = None):
+        from .. import basefolder
+        super().__init__(parent)
+        self.setWindowTitle(basefolder.WARN_TITLE)
+        self.run = False
+        self.dont_warn = False
+
+        col = QVBoxLayout(self)
+        body = QLabel(text)
+        body.setWordWrap(True)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        col.addWidget(body)
+        self.remember = QCheckBox(basefolder.DONT_WARN)
+        col.addWidget(self.remember)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.cancel_button = QPushButton("Cancel")
+        self.run_button = QPushButton(basefolder.RUN_ANYWAY)
+        self.run_button.setObjectName("primary")
+        self.run_button.setDefault(True)
+        row.addWidget(self.cancel_button)
+        row.addWidget(self.run_button)
+        col.addLayout(row)
+
+        self.run_button.clicked.connect(self.choose_run)
+        self.cancel_button.clicked.connect(self.reject)
+
+    def choose_run(self) -> None:
+        self.run = True
+        self.dont_warn = self.remember.isChecked()
+        self.accept()
+
+    def reject(self) -> None:          # Cancel, Esc, the close box
+        self.run = False
+        self.dont_warn = False
+        super().reject()
+
+
 class CloseToTrayPromptDialog(QDialog):
     """Asked on close when the tray is available: minimise, quit, or stay.
 

@@ -3654,6 +3654,107 @@ def check_file_drop(app):
           "refused, All goes to ungrouped, no groups asks first")
 
 
+def check_outside_warning(app):
+    """A run from the window outside its group's base folder asks first: Cancel
+    runs nothing, Run anyway runs it, and the box in the warning stops it --
+    saved, as the Options field would. A pipeline names its outside steps.
+    On a compact row the tag is a small drawn icon that keeps its words."""
+    import sys as _sys
+    import tempfile
+
+    from ryos import basefolder, cardstyle
+    from ryos.db import ScriptDB
+    from PySide6.QtWidgets import QLabel
+
+    from ryos.jobs import JobRegistry
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "base").mkdir()
+    db = ScriptDB(tmp / "warn.db")
+    db.create_group("G", base_dir=str(tmp / "base"))
+    away = db.add("away", str(tmp / "x.py"), "", _sys.executable, "G")
+    inside = db.add("in", str(tmp / "base" / "a.py"), "", _sys.executable, "G")
+    pid = db.create_pipeline("pipe", "G")
+    db.add_pipeline_step(pid, inside)
+    db.add_pipeline_step(pid, away)
+
+    class Bridge:                       # records what would have started
+        def __init__(self):
+            self.registry, self.db, self.started = JobRegistry(), db, []
+
+        def run_script(self, sid, *a, **k):
+            self.started.append(("script", sid))
+            return True
+
+        def run_pipeline(self, pid, *a, **k):
+            self.started.append(("pipeline", pid))
+            return True
+
+        def stop(self):
+            pass
+
+    saved: list = []
+    win = MainWindow(REFERENCE["light"],
+                     settings={"quick_run_enabled": False, "compact_mode": True},
+                     save_settings=lambda s: saved.append(dict(s)))
+    win._bridge = Bridge()
+    win.load_from_db(db)
+    win.show_group("G")
+    app.processEvents()
+
+    asked: list = []
+
+    def answer(run, dont_warn=False):
+        def run_dialog(dlg):
+            asked.append(dlg.findChild(QLabel).text())
+            dlg.remember.setChecked(dont_warn)
+            dlg.choose_run() if run else dlg.reject()
+        return run_dialog
+
+    def row(name, section="scripts"):
+        return next(c for c in win.card_lists["G"].section(section).cards
+                    if c.name_label.text() == name)
+
+    try:
+        win.run_dialog = answer(False, dont_warn=True)
+        row("away").run_button.click()
+        if win._bridge.started or len(asked) != 1:
+            PROBLEMS.append("Cancel on the outside warning still ran, or it never asked")
+        if win._settings.get(basefolder.SETTING) is False or saved:
+            PROBLEMS.append("Cancel with the box ticked still turned the warning off")
+        win.run_dialog = answer(True)
+        row("pipe", "pipelines").run_button.click()
+        if ("pipeline", pid) not in win._bridge.started or "Step 2 runs" not in asked[-1]:
+            PROBLEMS.append(f"the pipeline warning was {asked[-1:]!r}")
+        row("in").run_button.click()
+        if len(asked) != 2 or ("script", inside) not in win._bridge.started:
+            PROBLEMS.append("a script inside the base folder was warned about")
+        win.run_dialog = answer(True, dont_warn=True)
+        row("away").run_button.click()
+        if ("script", away) not in win._bridge.started \
+                or win._settings.get(basefolder.SETTING) is not False \
+                or not saved or saved[-1].get(basefolder.SETTING) is not False:
+            PROBLEMS.append("Run anyway with the box ticked did not run and stop the warning")
+        before = len(asked)
+        row("away").run_button.click()
+        if len(asked) != before:
+            PROBLEMS.append("the warning came back after it was turned off")
+        # The compact tag: a small icon, its words kept for tooltips and readers.
+        badge = row("away").badges[0]
+        if badge.objectName() != "tagBadgeIcon" or badge.width() > 16 \
+                or badge.accessibleName() != cardstyle.OUTSIDE_BADGE_TEXT \
+                or "outside" not in badge.toolTip():
+            PROBLEMS.append("the compact outside tag is not the small named icon")
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] outside warning: asks before a run from the window, Cancel runs "
+          "nothing, Run anyway runs, the box turns it off and is saved, pipelines "
+          "name their steps; the compact tag is a small named icon")
+
+
 def check_badges_banner_previews(app):
     """Card badges, the group banner, the steps popup and the hover preview."""
     import json
@@ -3776,7 +3877,7 @@ def check_badges_banner_previews(app):
     if card(win, "asks").badges:
         PROBLEMS.append("a compact row still showed its settings badges")
     for name, section in (("away", "scripts"), ("pipeaway", "pipelines")):
-        got = [b.text() for b in card(win, name, section).badges]
+        got = [b.accessibleName() for b in card(win, name, section).badges]
         if got != [cardstyle.OUTSIDE_BADGE_TEXT]:
             PROBLEMS.append(f"the compact {name!r} row showed {got}, not the outside warning")
     target = card(win, "asks")
@@ -5256,6 +5357,7 @@ def main() -> int:
     check_output_panel(app)
     check_file_drop(app)
     check_badges_banner_previews(app)
+    check_outside_warning(app)
     check_long_text_fits(app)
     check_ticks_are_drawn(app)
     check_strip_and_preset(app)
