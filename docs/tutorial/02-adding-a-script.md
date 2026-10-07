@@ -10,7 +10,7 @@ Drag one or more script files from File Explorer onto the RYOS window. Each beco
 
 Click **+ Script** in the header (or **File → New Script…**). Fill in the dialog and click **Save**.
 
-![The script dialog filled in: Name "Backup notes", the group's base folder, Path "backup.py" with Browse…, Parameters "--full" with + Preset, an empty Presets list, Interpreter, Group, two options, Working folder, Environment, and Save and Cancel](images/02-add-script-dialog.png)
+![The script dialog filled in: Name "Backup notes", the group's base folder, Path "backup.py" with Browse…, Parameters "--full" with + Preset, an empty Presets list, Interpreter, Group, three options, Working folder, Environment, and Save and Cancel](images/02-add-script-dialog.png)
 
 | Field | What to enter |
 | --- | --- |
@@ -23,6 +23,7 @@ Click **+ Script** in the header (or **File → New Script…**). Fill in the di
 | **Group** | Which group the script belongs to. |
 | **Ask for a temporary parameter on each run** | RYOS asks for extra arguments every time you run it. |
 | **Launcher** | For a script that opens an app or project and leaves it running: RYOS doesn't keep it in the Running list. |
+| **Available to agents** | Lets an AI agent connected to RYOS run it. Off unless you tick it. See [The command line and AI agents](13-command-line-and-agents.md). |
 | **Working folder** | *(optional)* The folder it runs in. Blank means the script's own folder. |
 | **Environment** | *(optional)* Extra variables, one `KEY=value` per line. |
 

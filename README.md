@@ -28,6 +28,8 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 - **Maximised layout** — maximise the window and the list moves left while the chosen script or pipeline, its presets, steps and output fill the right.
 - **Tabbed output** — live output per run, **errors in red**, find, errors-only, copy or save any tab.
 - **Drag & drop** — drop script files on the window to add them; drag rows to reorder or onto a group to move them.
+- **Command line** — `ryos-cli list`, `run` and `pipeline` run any script or pipeline from a terminal, Task Scheduler or a git hook, with JSON output and meaningful exit codes.
+- **AI agents (MCP)** — let Claude Code, Claude Desktop or another MCP client run the scripts you tick **Available to agents**, with their own parameters or a saved preset, and read the output.
 - **Tray, notifications, updates** — keep running in the tray, a Windows toast when a run finishes, and a check for new releases.
 - **Themes** — one set of drawn icons that follows the theme; Light and Dark built in, a theme creator (7 colours + live preview), import/export, and more in the [theme gallery](theme-gallery/GALLERY.md). Every colour follows the theme and is checked for contrast.
 - **Multi-monitor aware** — opens on the monitor under the cursor; at login, on the last screen you used.
@@ -41,6 +43,8 @@ Download the latest release, unzip, and run:
 ```
 RYOS.exe
 ```
+
+`ryos-cli.exe` in the same folder is the command line (`ryos-cli list`, `ryos-cli run <script>`).
 
 Your scripts and settings live in `%APPDATA%\RYOS` (`scripts.db`, `settings.json`, logs), so replacing the exe with a newer one keeps them.
 
@@ -68,6 +72,8 @@ The **[illustrated user guide](docs/tutorial/README.md)** walks through every sc
 | Run a file by name | **Quick Run** (groups with a base folder) | [Quick Run](docs/tutorial/08-quick-run.md) |
 | Back up / move | **File → Export all groups…** / **Import config…** | [Import and export](docs/tutorial/10-import-export.md) |
 | Change settings and look | **Options → Options…** and **Appearance…** | [Settings](docs/tutorial/11-settings.md) |
+| Run from a terminal | `ryos-cli run <script>` (from source: `uv run ryos run <script>`) | [The command line and AI agents](docs/tutorial/13-command-line-and-agents.md) |
+| Let an AI agent run scripts | Tick **Available to agents**, then connect Claude to `ryos mcp` | [The command line and AI agents](docs/tutorial/13-command-line-and-agents.md) |
 
 ## Supported Script Types
 
@@ -114,7 +120,7 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 
 ## Documentation
 
-- [Illustrated user guide](docs/tutorial/README.md) — a 12-page walkthrough with real screenshots of every screen.
+- [Illustrated user guide](docs/tutorial/README.md) — a 13-page walkthrough with real screenshots of every screen.
 - [Theme gallery](theme-gallery/GALLERY.md) — preview and download extra themes.
 - [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
 - [Module reference](docs/API_REFERENCE.md) — public API of the core modules.

@@ -9,7 +9,7 @@ The full guide, with real screenshots of every screen, is the **[illustrated use
 ## Installation
 
 ### Option A — Standalone executable
-Download `RYOS.exe` and double-click it. No installation required.
+Download `RYOS-windows.zip` from the latest release, extract it, and double-click `RYOS.exe`. No installation required. `ryos-cli.exe` beside it is the command line.
 
 ### Option B — Portable (run from source)
 1. Download and extract `RYOS-portable.zip`.
@@ -34,3 +34,4 @@ Download `RYOS.exe` and double-click it. No installation required.
 10. [Import and export](docs/tutorial/10-import-export.md) — backing up and moving your setup.
 11. [Settings and appearance](docs/tutorial/11-settings.md) — Options, themes and the accent colour.
 12. [Tips](docs/tutorial/12-tips.md) — compact rows, select mode, and small time-savers.
+13. [The command line and AI agents](docs/tutorial/13-command-line-and-agents.md) — running scripts from a terminal, and letting Claude run the ones you choose.

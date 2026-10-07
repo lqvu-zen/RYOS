@@ -28,4 +28,4 @@
 - **Back up.** **File → Export all groups…** now and then, and your setup is one import away.
 
 ---
-[← Settings and appearance](11-settings.md) · [Contents](README.md)
+[← Settings and appearance](11-settings.md) · [Contents](README.md) · [Next: The command line and AI agents →](13-command-line-and-agents.md)

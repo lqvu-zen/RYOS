@@ -6,7 +6,7 @@ A **pipeline** runs several scripts one after another: *build, then test, then p
 
 Click **+ Pipeline** in the header (or **File → New Pipeline…**), name it, and the editor opens. To change it later, point at its row and click the pencil, or right-click → **Edit…**.
 
-![The pipeline editor for "Resilient": Name; four steps reading "Flaky · keeps going · 3 retries", "Always fails · keeps going", "Cleanup · only if something has failed" and "Say hello"; Up, Down, Remove and With Prev; the step settings; Add step; and Save and Cancel](images/06-pipeline-editor.png)
+![The pipeline editor for "Resilient": Name and Available to agents; four steps reading "Flaky · keeps going · 3 retries", "Always fails · keeps going", "Cleanup · only if something has failed" and "Say hello"; Up, Down, Remove and With Prev; the step settings; Add step; and Save and Cancel](images/06-pipeline-editor.png)
 
 - **Add a step**: pick a script under **Add step** and click **Add**.
 - **Order**: select a step and use **Up** / **Down**. **Remove** takes it out.
@@ -21,7 +21,7 @@ Select a step to set how it behaves; the list says in words what you've changed:
 | **Run this step** | *Always*, *Only if nothing has failed*, or *Only if something has failed* — the last is handy for a clean-up step. |
 | **Step preset** | Which of the script's presets this step uses. |
 
-Click **Save** when you're done.
+Click **Save** when you're done. **Available to agents**, under the name, lets an AI agent run the pipeline (all its steps); see [The command line and AI agents](13-command-line-and-agents.md).
 
 ## Run it
 

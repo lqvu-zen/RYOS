@@ -2,6 +2,8 @@
 
 A group is a set of scripts and pipelines that belong together — *Work* and *Home*, or one per project. Each group can also have a **base folder**: the folder its scripts live in, which paths are relative to and which [Quick Run](08-quick-run.md) searches.
 
+A script whose file, or working folder, is somewhere else gets an **OUTSIDE FOLDER** tag (point at it to see which part), and its run starts with a one-line note saying so. That's usually a slip, but nothing stops it from running. A pipeline gets the tag when one of its steps is outside.
+
 ![The group pills under the search box: Samples (chosen, filled dark), Tools, a dashed + for a new group, and All](images/04-group-pills.png)
 
 ## Making and switching groups
@@ -33,6 +35,8 @@ Drag a pill left or right to change the order of your groups.
 
 Drag a row onto another group's pill to move it there. Drag it up or down within its panel to change its place; a line shows where it will land.
 
+When both groups have a base folder, a moved script follows into the new one: `<old folder>\tools\x.py` becomes `<new folder>\tools\x.py`, and its working folder the same way — but only when that file (or folder) is there. Otherwise it keeps running the file it had, and RYOS says it is outside the new group's folder.
+
 ## Copying to another group
 
 To keep the original where it is and put a copy in another group:
@@ -40,7 +44,7 @@ To keep the original where it is and put a copy in another group:
 - **Copy to.** Right-click the row → **Copy to** → pick the group. Done in one step.
 - **Copy and Paste.** Right-click the row → **Copy** (or select the row and press **Ctrl+C**). Then right-click another group's pill → **Paste**, or press **Ctrl+V** on any row in that group. Paste names what it will paste, and you can paste the same thing into several groups.
 
-A copied script keeps everything that defines how it runs — parameters, interpreter, environment, working folder — and its saved presets. A copied pipeline brings the scripts its steps run, so it works and can be edited in its new group. If that group already has a script that runs exactly the same way, the copy uses it instead of adding a second one.
+A copied script keeps everything that defines how it runs — parameters, interpreter, environment, working folder — and its saved presets. Into another group with a base folder, its path and working folder follow into that folder, as a move does. A copied pipeline brings the scripts its steps run, so it works and can be edited in its new group. If that group already has a script that runs exactly the same way, the copy uses it instead of adding a second one.
 
 A copy keeps the star and highlight colour too, but not a schedule or run history: those stay with the original. (**Clone** makes the same kind of copy in the same group, named "… (copy)".)
 
