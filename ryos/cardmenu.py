@@ -26,9 +26,12 @@ RUN_WITH = "run_with"
 SCHEDULE = "schedule"
 HISTORY = "history"
 CLONE = "clone"
+COPY = "copy"
+COPY_TO = "copy_to"              # the submenu; entries are "copy_to:<group>"
 DELETE = "delete"
 
 RENAME_GROUP = "rename_group"
+PASTE = "paste"
 CLONE_GROUP = "clone_group"
 BASE_DIR = "base_dir"
 EXPORT_GROUP = "export_group"
@@ -44,6 +47,7 @@ HIGHLIGHTS: dict[str, str] = {
     "teal": "Teal", "blue": "Blue", "purple": "Purple",
 }
 _HIGHLIGHT_PREFIX = HIGHLIGHT + ":"
+_COPY_TO_PREFIX = COPY_TO + ":"
 
 
 @dataclass(frozen=True)
@@ -93,13 +97,44 @@ def _favorite_item(favorite: bool) -> MenuItem:
                     icon="star" if favorite else "star-filled")
 
 
+def copy_to_key(group: str) -> str:
+    """The action key for copying into ``group``."""
+    return _COPY_TO_PREFIX + group
+
+
+def picked_copy_target(key: str) -> str | None:
+    """The group a "Copy to" entry names, or None for any other key."""
+    return key[len(_COPY_TO_PREFIX):] if key.startswith(_COPY_TO_PREFIX) else None
+
+
+def copy_targets(groups, own_group: str) -> list[str]:
+    """The groups "Copy to" offers: every group but the item's own, where
+    Clone already does the job."""
+    return [g for g in groups if g and g != own_group]
+
+
+def _copy_items(targets) -> list[MenuItem]:
+    """Copy, for Paste in any group (Ctrl+C on the row), and Copy to, for
+    one step into another group. Copy to is greyed with nowhere to go."""
+    children = tuple(MenuItem(copy_to_key(g), g) for g in targets)
+    return [MenuItem(COPY, "Copy\tCtrl+C", icon="copy"),
+            MenuItem(COPY_TO, "Copy to", enabled=bool(children), children=children,
+                     icon="arrow-right")]
+
+
+def paste_label(name: str | None) -> str:
+    """The group menu's Paste: what it will paste, or that nothing is copied."""
+    return f'Paste "{name}"\tCtrl+V' if name else "Paste\tCtrl+V"
+
+
 #: Opens the item's dialog. First on both menus: a row shows its pencil only
 #: under the pointer, so the menu is the way in that is always there.
 EDIT_ITEM = MenuItem(EDIT, "Edit…", icon="edit")
 
 
 def script_menu(*, favorite: bool, color: str | None,
-                can_move_up: bool, can_move_down: bool) -> list[MenuItem]:
+                can_move_up: bool, can_move_down: bool,
+                copy_targets=()) -> list[MenuItem]:
     """The script card's menu. Moves are disabled at the ends of the list.
 
     Edit and Run with parameters come first: the row keeps their buttons for
@@ -120,12 +155,14 @@ def script_menu(*, favorite: bool, color: str | None,
         MenuItem(SCHEDULE, "Schedule…", icon="clock"),
         MenuItem(HISTORY, "Run history…", icon="history"),
         MenuItem(CLONE, "Clone", icon="copy"),
+        *_copy_items(copy_targets),
         SEPARATOR,
         MenuItem(DELETE, "Delete", danger=True, icon="trash"),
     ]
 
 
-def pipeline_menu(*, favorite: bool, color: str | None) -> list[MenuItem]:
+def pipeline_menu(*, favorite: bool, color: str | None,
+                  copy_targets=()) -> list[MenuItem]:
     return [
         EDIT_ITEM,
         SEPARATOR,
@@ -135,14 +172,18 @@ def pipeline_menu(*, favorite: bool, color: str | None) -> list[MenuItem]:
         MenuItem(SCHEDULE, "Schedule…", icon="clock"),
         MenuItem(HISTORY, "Run history…", icon="history"),
         MenuItem(CLONE, "Clone", icon="copy"),
+        *_copy_items(copy_targets),
         SEPARATOR,
         MenuItem(DELETE, "Delete", danger=True, icon="trash"),
     ]
 
 
-def group_menu() -> list[MenuItem]:
+def group_menu(copied: str | None = None) -> list[MenuItem]:
+    """The group tab's menu. ``copied`` names what Copy holds, if anything:
+    Paste is there either way, greyed until something is copied."""
     return [
         MenuItem(RENAME_GROUP, "Rename…", icon="edit"),
+        MenuItem(PASTE, paste_label(copied), enabled=bool(copied), icon="import"),
         MenuItem(CLONE_GROUP, "Clone group", icon="copy"),
         MenuItem(BASE_DIR, "Base folder…", icon="folder"),
         MenuItem(EXPORT_GROUP, "Export group…", icon="export"),
@@ -238,6 +279,76 @@ def clone(db, kind: str, item_id: int) -> int | None:
     return db.add(f"{name} (copy)", path, params, interp, group or "",
                   temp_param, int(db.is_detached(item_id)),
                   env_vars=env_vars, work_dir=work_dir or "")
+
+
+def _copy_script(db, script_id: int, group: str) -> int | None:
+    """One script into ``group``, with everything that defines how it runs and
+    its presets. Its own name in another group; "(copy)" beside itself."""
+    rec = db.get(script_id)
+    if not rec:
+        return None
+    _id, name, path, params, interp, own_group, temp_param, env_vars, work_dir = rec[:9]
+    new_id = db.add(name if (own_group or "") != group else f"{name} (copy)",
+                    path, params, interp, group, temp_param,
+                    int(db.is_detached(script_id)),
+                    env_vars=env_vars, work_dir=work_dir or "")
+    presets = [(label, p) for _pid, label, p in db.list_param_presets(script_id)]
+    if presets:
+        db.replace_param_presets(new_id, presets)
+    return new_id
+
+
+def _same_script_in(db, script_id: int, group: str) -> int | None:
+    """A script already in ``group`` that runs the same file the same way."""
+    rec = db.get(script_id)
+    if not rec:
+        return None
+    path, params, interp = rec[2], rec[3], rec[4]
+    for row in db.list_all():
+        if ((row[8] or "") == group and row[2] == path and (row[3] or "") == (params or "")
+                and (row[4] or "") == (interp or "")):
+            return row[0]
+    return None
+
+
+def copy_to_group(db, kind: str, item_id: int, group: str) -> int | None:
+    """Copy one script or pipeline into ``group``. The new id, or None if the
+    item is gone.
+
+    A pipeline brings the scripts its steps run: the pipeline editor offers
+    only its own group's scripts, so a copy still pointing at another group's
+    would not be editable there, and would break when those were deleted. A
+    script the group already has -- same file, parameters and interpreter --
+    is used rather than duplicated, and one script used by several steps is
+    copied once.
+    """
+    if kind != PIPELINE:
+        return _copy_script(db, item_id, group)
+    ident = db.pipeline_identity(item_id)
+    if ident is None:
+        return None
+    name, own_group = ident
+    script_map: dict = {}
+    for row in db.list_pipeline_steps(item_id):
+        sid = row[1]
+        if sid in script_map:
+            continue
+        found = _same_script_in(db, sid, group)
+        new_sid = found if found is not None else _copy_script(db, sid, group)
+        if new_sid is not None:
+            script_map[sid] = new_sid
+    return db.copy_pipeline_to_group(
+        item_id, group, script_map,
+        name if own_group != group else f"{name} (copy)")
+
+
+def item_name(db, kind: str, item_id: int) -> str | None:
+    """What Paste will say it is pasting; None once the item is gone."""
+    if kind == PIPELINE:
+        ident = db.pipeline_identity(item_id)
+        return ident[0] if ident else None
+    rec = db.get(item_id)
+    return rec[1] if rec else None
 
 
 def delete(db, kind: str, item_id: int) -> None:
