@@ -40,11 +40,18 @@ class _Base(unittest.TestCase):
         return sid
 
     def finish(self, run_id):
-        """Wait (through get_run's own wait) until the run is done."""
+        """Wait (through get_run's own wait) until the run is done.
+
+        Each wait is past the lines already read: get_run counts any line
+        past ``offset`` as news, so waiting from 0 returns at once after the
+        first line and the tries ran out before a slow runner's script exited.
+        """
+        offset = 0
         for _ in range(60):
-            got = self.tools.get_run(run_id, wait_seconds=1)
+            got = self.tools.get_run(run_id, offset=offset, wait_seconds=1)
             if got["done"]:
-                return got
+                return self.tools.get_run(run_id)
+            offset = got["next_offset"]
         self.fail("the run did not finish")
 
 
