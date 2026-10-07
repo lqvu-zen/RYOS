@@ -234,10 +234,31 @@ def _migrate_drop_orphans(conn):
                  "(SELECT id FROM pipelines)")
 
 
+def _migrate_agent_exposed(conn):
+    """Whether an agent may run a script or pipeline (over MCP). Off for every
+    existing row: running code on this machine is something its owner grants
+    item by item, never something an upgrade turns on."""
+    for table in ("scripts", "pipelines"):
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        if "agent_exposed" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN "
+                         "agent_exposed INTEGER NOT NULL DEFAULT 0")
+
+
+def _carry_exposure(conn, table: str, src_id: int, dst_id: int) -> None:
+    """Give a copy its source's agent_exposed. Copies within this database
+    keep it, as they keep everything else; an import never sets it."""
+    conn.execute(f"UPDATE {table} SET agent_exposed=(SELECT agent_exposed FROM "
+                 f"{table} WHERE id=?) WHERE id=?", (src_id, dst_id))
+
+
 _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
                      4: _migrate_script_env, 5: _migrate_run_history,
                      6: _migrate_schedules, 7: _migrate_step_failure_policy,
-                     8: _migrate_drop_orphans}
+                     8: _migrate_drop_orphans, 9: _migrate_agent_exposed}
+
+#: kind -> table, for the methods that take either.
+_KIND_TABLE = {"script": "scripts", "pipeline": "pipelines"}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
 
 
@@ -719,6 +740,27 @@ class ScriptDB:
         with self._connect() as conn:
             conn.execute("UPDATE scripts SET is_favorite=? WHERE id=?", (1 if fav else 0, script_id))
 
+    def set_agent_exposed(self, kind: str, item_id: int, exposed: bool) -> None:
+        """Let agents run this script or pipeline (``kind`` "script" or
+        "pipeline"), or stop letting them."""
+        with self._connect() as conn:
+            conn.execute(f"UPDATE {_KIND_TABLE[kind]} SET agent_exposed=? WHERE id=?",
+                         (1 if exposed else 0, item_id))
+            conn.commit()
+
+    def is_agent_exposed(self, kind: str, item_id: int) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(f"SELECT agent_exposed FROM {_KIND_TABLE[kind]} WHERE id=?",
+                               (item_id,)).fetchone()
+        return bool(row and row[0])
+
+    def agent_exposed_ids(self, kind: str) -> set[int]:
+        """The ids of every script (or pipeline) agents may run."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT id FROM {_KIND_TABLE[kind]} WHERE agent_exposed=1").fetchall()
+        return {r[0] for r in rows}
+
     def set_favorite_pipeline(self, pipeline_id: int, fav: bool) -> None:
         with self._connect() as conn:
             conn.execute("UPDATE pipelines SET is_favorite=? WHERE id=?", (1 if fav else 0, pipeline_id))
@@ -1078,6 +1120,7 @@ class ScriptDB:
                 )
                 new_id = cur.lastrowid
                 id_map[old_id] = new_id
+                _carry_exposure(conn, "scripts", old_id, new_id)
                 presets = conn.execute(
                     "SELECT label, params, sort_order FROM script_param_presets "
                     "WHERE script_id=? ORDER BY sort_order ASC, id ASC",
@@ -1101,6 +1144,7 @@ class ScriptDB:
                     (p_name, new_name, sort_order, p_fav, p_color),
                 )
                 new_pipe_id = cur.lastrowid
+                _carry_exposure(conn, "pipelines", old_pipe_id, new_pipe_id)
                 steps = conn.execute(
                     "SELECT script_id, step_order, params_override, trigger_mode, "
                     "on_failure, retries, run_when FROM pipeline_steps "
@@ -1154,6 +1198,7 @@ class ScriptDB:
                 "label_color) VALUES (?, ?, ?, ?, ?)",
                 (name, group_name, max_order + 1, is_favorite, label_color),
             ).lastrowid
+            _carry_exposure(conn, "pipelines", pipeline_id, new_id)
             steps = conn.execute(
                 "SELECT script_id, step_order, params_override, trigger_mode, "
                 "on_failure, retries, run_when FROM pipeline_steps "
@@ -1230,6 +1275,7 @@ class ScriptDB:
                  is_favorite, label_color),
             )
             new_id = cur.lastrowid
+            _carry_exposure(conn, "pipelines", pipeline_id, new_id)
             steps = conn.execute(
                 "SELECT script_id, step_order, params_override, trigger_mode, "
                 "on_failure, retries, run_when FROM pipeline_steps "

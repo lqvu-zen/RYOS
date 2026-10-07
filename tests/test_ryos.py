@@ -1869,6 +1869,80 @@ class TestOrphanMigration(unittest.TestCase):
                 self.assertEqual(self._count(db, table), 1)
 
 
+class TestAgentExposure(unittest.TestCase):
+    """Whether an agent may run a script or pipeline (schema v9). Off unless
+    its owner turns it on; copies within the database keep it; an import
+    never grants it."""
+
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("G")
+        self.db.create_group("H")
+        self.sid = self.db.add("S", "/s.py", "", "", "G")
+        self.pid = self.db.create_pipeline("P", "G")
+        self.db.add_pipeline_step(self.pid, self.sid)
+
+    def test_the_migration_turns_nothing_on_and_is_safe_twice(self):
+        from ryos.db import _migrate_agent_exposed
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE scripts (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("CREATE TABLE pipelines (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("INSERT INTO scripts (name) VALUES ('old')")
+        conn.execute("INSERT INTO pipelines (name) VALUES ('old')")
+        _migrate_agent_exposed(conn)
+        _migrate_agent_exposed(conn)
+        for table in ("scripts", "pipelines"):
+            with self.subTest(table=table):
+                self.assertEqual(conn.execute(f"SELECT agent_exposed FROM {table}").fetchall(),
+                                 [(0,)])
+        conn.close()
+
+    def test_off_until_turned_on(self):
+        for kind, item_id in (("script", self.sid), ("pipeline", self.pid)):
+            with self.subTest(kind=kind):
+                self.assertFalse(self.db.is_agent_exposed(kind, item_id))
+                self.assertEqual(self.db.agent_exposed_ids(kind), set())
+                self.db.set_agent_exposed(kind, item_id, True)
+                self.assertTrue(self.db.is_agent_exposed(kind, item_id))
+                self.assertEqual(self.db.agent_exposed_ids(kind), {item_id})
+                self.db.set_agent_exposed(kind, item_id, False)
+                self.assertEqual(self.db.agent_exposed_ids(kind), set())
+
+    def test_clones_and_copies_keep_it(self):
+        self.db.set_agent_exposed("script", self.sid, True)
+        self.db.set_agent_exposed("pipeline", self.pid, True)
+        made = {
+            "script clone": ("script", cardmenu.clone(self.db, "script", self.sid)),
+            "script copy": ("script", cardmenu.copy_to_group(self.db, "script", self.sid, "H")),
+            "pipeline clone": ("pipeline", cardmenu.clone(self.db, "pipeline", self.pid)),
+            "pipeline copy": ("pipeline",
+                              cardmenu.copy_to_group(self.db, "pipeline", self.pid, "H")),
+        }
+        for what, (kind, new_id) in made.items():
+            with self.subTest(what):
+                self.assertTrue(self.db.is_agent_exposed(kind, new_id))
+        self.db.clone_group("G", "G2")
+        self.assertTrue(all(self.db.is_agent_exposed("script", r[0])
+                            for r in self.db.list_all() if r[8] == "G2"))
+        self.assertTrue(all(self.db.is_agent_exposed("pipeline", p[0])
+                            for p in self.db.list_pipelines("G2")))
+
+    def test_an_unexposed_item_stays_unexposed_when_copied(self):
+        new_id = cardmenu.copy_to_group(self.db, "script", self.sid, "H")
+        self.assertFalse(self.db.is_agent_exposed("script", new_id))
+
+    def test_an_import_never_grants_it(self):
+        self.db.set_agent_exposed("script", self.sid, True)
+        self.db.set_agent_exposed("pipeline", self.pid, True)
+        path = Path(tempfile.mkdtemp()) / "g.json"
+        self.db.export_to_file(str(path), "G")
+        self.assertNotIn("agent_exposed", path.read_text(encoding="utf-8"))
+        other = _make_db()
+        other.import_from_file(str(path))
+        self.assertEqual(other.agent_exposed_ids("script"), set())
+        self.assertEqual(other.agent_exposed_ids("pipeline"), set())
+
+
 class TestDeletePromptsNamePipelines(unittest.TestCase):
     """A delete that removes pipeline steps says so, naming the pipelines."""
 

@@ -64,6 +64,9 @@ Module-level constants:
 | `mark_run_status(script_id, status)` | — | Records `"ok"` / `"error"` after completion. |
 | `set_favorite_script(script_id, fav)` | — | |
 | `set_favorite_pipeline(pipeline_id, fav)` | — | |
+| `set_agent_exposed(kind, item_id, exposed)` | — | Lets agents run a script or pipeline (`kind` is `"script"` or `"pipeline"`) over MCP, or stops letting them. Off for every item until set (schema v9). Clone, Copy and Clone group keep it; export leaves it out, so an import never sets it. |
+| `is_agent_exposed(kind, item_id)` | `bool` | |
+| `agent_exposed_ids(kind)` | `set[int]` | Every script (or pipeline) agents may run. |
 | `set_script_color(script_id, color)` | — | Card-label highlight key (see `ui.theme.HIGHLIGHT_SEEDS`); `None` clears it. |
 | `set_pipeline_color(pipeline_id, color)` | — | As above, for a pipeline card. |
 

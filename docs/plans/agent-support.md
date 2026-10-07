@@ -41,6 +41,7 @@ So the remaining engine work is to take the toolkit-free logic out of `JobBridge
 | D10 | History | `trigger_source` = `cli` or `agent` | History already records every run; the column was made for this. |
 | D11 | The window's cards after a CLI run | The CLI signals a running window to reload (new `RELOAD` verb on the single-instance socket) | Otherwise a card shows a stale last status until the next reload. |
 | D12 | MCP in the Windows build | From source only in v1 (`uv run --extra mcp ryos mcp`); revisit at step 8 | Bundling the MCP SDK grows the download for a feature most users won't use. |
+| D13 | Does Clone / Copy / import keep it? | Clone, Copy and Clone group keep it; **export leaves it out, so an import never grants it** | A copy within this database differs only in name, id and group. A file from elsewhere -- a colleague's group -- must not make scripts agent-runnable without its new owner deciding. |
 
 ## Rules for every step
 
@@ -61,7 +62,7 @@ Confirm or change D1–D12. **Done:** defaults taken (2026-10-07); revisit any o
 - **Done when:** tests green, `qt_smoke` and `session_smoke` unchanged.
 
 ### Step 3 — Exposure flag in the database
-`_MIGRATIONS` v9: `agent_exposed INTEGER NOT NULL DEFAULT 0` on `scripts` and `pipelines`. `ScriptDB` methods to set it and to list exposed items (their own query; no row widening). Carried by Clone, Copy, Clone group and export/import. Test the upgrade with `tests/real_data_smoke.py --db` on an older backup.
+`_MIGRATIONS` v9: `agent_exposed INTEGER NOT NULL DEFAULT 0` on `scripts` and `pipelines`. `ScriptDB` methods to set it and to list exposed items (their own query; no row widening). Carried by Clone, Copy and Clone group; not exported, so never set by an import (D13). Test the upgrade with `tests/real_data_smoke.py --db` on an older backup.
 
 ### Step 4 — "Available to agents" in the window
 A checkbox in the script dialog (rule in `scriptform.py`) and the pipeline editor; optionally a small badge on the card. **Done when** it survives a restart.
@@ -98,7 +99,7 @@ Steps 3–4 are independent of 2 and can go first or in between. 5 needs 2b; 7 n
 | 1 Decisions | defaults taken |
 | 2a Job host | done (`42fb549`) |
 | 2b Headless runner | done |
-| 3 DB flag | — |
+| 3 DB flag | done |
 | 4 UI flag | — |
 | 5 CLI | done |
 | 6 Console build | — |

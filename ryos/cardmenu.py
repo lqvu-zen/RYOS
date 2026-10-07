@@ -279,7 +279,7 @@ def clone(db, kind: str, item_id: int) -> int | None:
 
 def _copy_script(db, script_id: int, group: str) -> int | None:
     """One script into ``group``, with everything that defines how it runs,
-    its presets, star and highlight. Its own name in another group; "(copy)"
+    its presets, star, highlight and whether agents may run it. Its own name in another group; "(copy)"
     beside itself."""
     rec = db.get(script_id)
     if not rec:
@@ -292,6 +292,8 @@ def _copy_script(db, script_id: int, group: str) -> int | None:
     presets = [(label, p) for _pid, label, p in db.list_param_presets(script_id)]
     if presets:
         db.replace_param_presets(new_id, presets)
+    if db.is_agent_exposed(SCRIPT, script_id):
+        db.set_agent_exposed(SCRIPT, new_id, True)
     source = next((r for r in db.list_all() if r[0] == script_id), None)
     if source is not None:
         if source[10]:
