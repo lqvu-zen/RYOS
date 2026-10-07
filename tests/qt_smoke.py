@@ -1490,6 +1490,9 @@ def check_drag_and_drop(app):
     db = ScriptDB(tmp / "dnd.db")
     db.create_group("G", base_dir=str(inside))
     db.create_group("H", base_dir=str(tmp / "elsewhere"))
+    # H's folder has its own b.py, so moving "b" there follows into it.
+    (tmp / "elsewhere").mkdir()
+    (tmp / "elsewhere" / "b.py").write_text("", encoding="utf-8")
     ids = [db.add(n, str(inside / f"{n}.py"), "", "", "G")
            for n in ("a", "b", "c")]
     loose = db.add("loose", str(tmp / "loose.py"), "", "", "")

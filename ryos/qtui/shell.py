@@ -2330,10 +2330,11 @@ class MainWindow(QMainWindow):
             self._copied = None
             self.statusBar().showMessage("Nothing to paste: it was deleted.")
             return
-        cardmenu.copy_to_group(self._db, kind, item_id, group)
-        what = "pipeline" if kind == cardmenu.PIPELINE else "script"
-        self.statusBar().showMessage(
-            f"Copied {what} \u201c{name}\u201d to \u201c{group or 'Ungrouped'}\u201d.")
+        new_id = cardmenu.copy_to_group(self._db, kind, item_id, group)
+        withdrawn = ([name] if new_id is not None
+                     and self._db.is_agent_exposed(kind, item_id)
+                     and not self._db.is_agent_exposed(kind, new_id) else [])
+        self.statusBar().showMessage(cardmenu.copied_status(kind, name, group, withdrawn))
         self._defer_reload()
 
     # -- the group-tab menu --------------------------------------------------------

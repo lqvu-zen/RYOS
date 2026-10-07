@@ -8418,6 +8418,8 @@ class TestApplyDrop(unittest.TestCase):
 
     def test_move_into_another_base_follows_the_path_and_does_not_warn(self):
         other = tempfile.mkdtemp()
+        os.makedirs(os.path.join(other, "sub"))
+        Path(other, "sub", "s.py").write_text("", encoding="utf-8")
         self.db.create_group("V", base_dir=other)
         sid = self.db.add("s", os.path.join(self.base, "sub", "s.py"), "--x", "python",
                           "G", 1, 1, env_vars="X=1", work_dir=self.base)
@@ -8436,6 +8438,36 @@ class TestApplyDrop(unittest.TestCase):
         sid = self.db.add("s", elsewhere, "", "", "G")
         self.assertIn("outside", apply_move(self.db, SCRIPT, sid, "V") or "")
         self.assertEqual(self.db.get(sid)[2], elsewhere)
+
+    def test_move_into_a_base_without_the_file_keeps_it_and_warns(self):
+        other = tempfile.mkdtemp()
+        self.db.create_group("V", base_dir=other)
+        path = os.path.join(self.base, "a.py")
+        self.assertIn("outside", apply_move(self.db, SCRIPT, self.ids[0], "V") or "")
+        self.assertEqual(self.db.get(self.ids[0])[2], path)
+
+    def test_a_move_that_changes_the_file_withdraws_it_from_agents(self):
+        other = tempfile.mkdtemp()
+        Path(other, "a.py").write_text("", encoding="utf-8")
+        self.db.create_group("V", base_dir=other)
+        sid = self.ids[0]
+        pid = self.db.create_pipeline("ship", "G")
+        self.db.add_pipeline_step(pid, sid)
+        self.db.set_agent_exposed(SCRIPT, sid, True)
+        self.db.set_agent_exposed(PIPELINE, pid, True)
+        note = apply_move(self.db, SCRIPT, sid, "V") or ""
+        self.assertEqual(self.db.get(sid)[2], os.path.join(other, "a.py"))
+        self.assertFalse(self.db.is_agent_exposed(SCRIPT, sid))
+        self.assertFalse(self.db.is_agent_exposed(PIPELINE, pid))
+        self.assertIn("No longer available to agents", note)
+        self.assertIn("“a”", note)
+        self.assertIn("“ship”", note)
+
+    def test_a_move_that_keeps_the_file_keeps_it_for_agents(self):
+        self.db.create_group("Plain")
+        self.db.set_agent_exposed(SCRIPT, self.ids[0], True)
+        self.assertIsNone(apply_move(self.db, SCRIPT, self.ids[0], "Plain"))
+        self.assertTrue(self.db.is_agent_exposed(SCRIPT, self.ids[0]))
 
     def test_move_to_ungrouped_keeps_the_path(self):
         apply_move(self.db, SCRIPT, self.ids[0], "")
@@ -9238,12 +9270,22 @@ class TestCopyBetweenGroups(unittest.TestCase):
         self.assertIn('"ship"', paste.label)
 
     def _bases(self, a="A", b="B"):
-        self.src, self.dst = os.path.join(os.sep, "w"), os.path.join(os.sep, "v")
+        # Real folders: a path follows into the other base folder only when
+        # what it would point at is there.
+        self.src, self.dst = tempfile.mkdtemp(), tempfile.mkdtemp()
         self.db.set_group_base_dir(a, self.src)
         self.db.set_group_base_dir(b, self.dst)
 
+    @staticmethod
+    def _touch(*parts) -> str:
+        path = os.path.join(*parts)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Path(path).write_text("", encoding="utf-8")
+        return path
+
     def test_path_and_work_dir_follow_into_the_other_groups_folder(self):
         self._bases()
+        self._touch(self.dst, "sub", "build.py")
         sid = self.db.add("p", os.path.join(self.src, "sub", "build.py"), "", "python",
                           "A", work_dir=self.src)
         new = self.db.get(cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, sid, "B"))
@@ -9254,6 +9296,7 @@ class TestCopyBetweenGroups(unittest.TestCase):
 
     def test_path_and_work_dir_are_decided_independently(self):
         self._bases()
+        self._touch(self.dst, "x.py")
         out = os.path.join(os.sep, "elsewhere")
         s1 = self.db.add("p1", os.path.join(self.src, "x.py"), "", "python", "A",
                          work_dir=out)
@@ -9290,6 +9333,8 @@ class TestCopyBetweenGroups(unittest.TestCase):
 
     def test_a_pipeline_reuses_a_script_at_the_repointed_path_only(self):
         self._bases()
+        self._touch(self.dst, "x.py")
+        self._touch(self.dst, "y.py")
         sid = self.db.add("p", os.path.join(self.src, "x.py"), "", "python", "A")
         pid = self.db.create_pipeline("ship", "A")
         self.db.add_pipeline_step(pid, sid)
@@ -9304,6 +9349,46 @@ class TestCopyBetweenGroups(unittest.TestCase):
         self.db.add_pipeline_step(pid2, sid2)
         new2 = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid2, "B")
         self.assertEqual(self.db.list_pipeline_steps(new2)[0][1], right)
+
+    def test_a_missing_target_keeps_the_original(self):
+        # B's folder has no build.py: re-pointing would leave a copy that runs
+        # nothing, so it keeps running A's file (and folder).
+        self._bases()
+        path = self._touch(self.src, "build.py")
+        sid = self.db.add("p", path, "", "python", "A",
+                          work_dir=os.path.join(self.src, "gone"))
+        new = self.db.get(cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, sid, "B"))
+        self.assertEqual((new[2], new[8]), (path, os.path.join(self.src, "gone")))
+
+    def test_agents_lose_a_copy_that_runs_another_file(self):
+        self._bases()
+        self._touch(self.dst, "x.py")
+        moved = self.db.add("moved", os.path.join(self.src, "x.py"), "", "python", "A")
+        kept = self.db.add("kept", os.path.join(self.src, "y.py"), "", "python", "A")
+        for sid in (moved, kept):
+            self.db.set_agent_exposed("script", sid, True)
+        # x.py follows into B's folder: a file nobody made available.
+        new = cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, moved, "B")
+        self.assertFalse(self.db.is_agent_exposed("script", new))
+        # y.py has no twin in B, so the copy runs the same file: still available.
+        new = cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, kept, "B")
+        self.assertTrue(self.db.is_agent_exposed("script", new))
+        self.assertIn("No longer available to agents",
+                      cardmenu.copied_status("script", "moved", "B", ["moved"]))
+        self.assertNotIn("agents", cardmenu.copied_status("script", "kept", "B"))
+
+    def test_agents_lose_a_pipeline_copy_whose_steps_run_other_files(self):
+        self._bases()
+        self._touch(self.dst, "x.py")
+        sid = self.db.add("x", os.path.join(self.src, "x.py"), "", "python", "A")
+        pid = self.db.create_pipeline("ship", "A")
+        self.db.add_pipeline_step(pid, sid)
+        self.db.set_agent_exposed("pipeline", pid, True)
+        new_pid = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "B")
+        self.assertFalse(self.db.is_agent_exposed("pipeline", new_pid))
+        # Into its own group nothing changes, so it stays available.
+        same = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "A")
+        self.assertTrue(self.db.is_agent_exposed("pipeline", same))
 
     def test_repointed_edges(self):
         w, v = os.path.join(os.sep, "w"), os.path.join(os.sep, "v")

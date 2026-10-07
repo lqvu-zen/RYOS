@@ -295,25 +295,35 @@ def _repointed(path: str, src_base: str, dest_base: str) -> str:
     return dest_base if rel == "." else os.path.join(dest_base, rel)
 
 
-def repointed_paths(db, rec, group: str) -> tuple[str, str]:
+def repointed_paths(db, rec, group: str, exists=os.path.exists) -> tuple[str, str]:
     """The ``(path, work_dir)`` a script has once it is in ``group``.
 
     Each follows from its own group's base folder to ``group``'s, decided
-    independently. Ungrouped has no base folder, so nothing moves to or from it.
+    independently -- but only to something that is there. A path re-pointed
+    at a missing file would leave a script that worked quietly broken; it
+    keeps the original instead, and a drag says it is outside the new folder.
+    Ungrouped has no base folder, so nothing moves to or from it.
     """
     path, work_dir, own_group = rec[2], rec[8] or "", rec[5] or ""
     if own_group == group:
         return path, work_dir
     src_base = db.get_group_base_dir(own_group)
     dest_base = db.get_group_base_dir(group)
-    return (_repointed(path, src_base, dest_base),
-            _repointed(work_dir, src_base, dest_base))
+
+    def follow(p: str) -> str:
+        moved = _repointed(p, src_base, dest_base)
+        return moved if moved == p or exists(moved) else p
+    return follow(path), follow(work_dir)
 
 
 def _copy_script(db, script_id: int, group: str) -> int | None:
     """One script into ``group``, with everything that defines how it runs,
-    its presets, star, highlight and whether agents may run it. Its own name in another group; "(copy)"
-    beside itself. Its path and folder follow the group's base folder."""
+    its presets, star and highlight. Its own name in another group; "(copy)"
+    beside itself. Its path and folder follow the group's base folder.
+
+    "Available to agents" comes along only while the copy runs the same file
+    from the same folder: the grant was for that file, not whatever a base
+    folder re-points it to."""
     rec = db.get(script_id)
     if not rec:
         return None
@@ -326,7 +336,7 @@ def _copy_script(db, script_id: int, group: str) -> int | None:
     presets = [(label, p) for _pid, label, p in db.list_param_presets(script_id)]
     if presets:
         db.replace_param_presets(new_id, presets)
-    if db.is_agent_exposed(SCRIPT, script_id):
+    if (path, work_dir) == (rec[2], rec[8] or "") and db.is_agent_exposed(SCRIPT, script_id):
         db.set_agent_exposed(SCRIPT, new_id, True)
     source = next((r for r in db.list_all() if r[0] == script_id), None)
     if source is not None:
@@ -392,9 +402,49 @@ def copy_to_group(db, kind: str, item_id: int, group: str) -> int | None:
         new_sid = found if found is not None else _copy_script(db, sid, group)
         if new_sid is not None:
             script_map[sid] = new_sid
-    return db.copy_pipeline_to_group(
+    new_pid = db.copy_pipeline_to_group(
         item_id, group, script_map,
         name if own_group != group else f"{name} (copy)")
+    # An agent-available pipeline whose steps now run other files is not what
+    # was granted: the copy starts unavailable.
+    if any(_runs(db, old) != _runs(db, new) for old, new in script_map.items()):
+        db.set_agent_exposed(PIPELINE, new_pid, False)
+    return new_pid
+
+
+def _runs(db, script_id: int) -> tuple:
+    """The file a script runs and the folder it runs from."""
+    rec = db.get(script_id)
+    return (rec[2], rec[8] or "") if rec else ("", "")
+
+
+def withdraw_from_agents(db, script_id: int) -> list[str]:
+    """Stop letting agents run a script whose file just changed under it, and
+    every agent-available pipeline that runs it. The names withdrawn."""
+    names = []
+    if db.is_agent_exposed(SCRIPT, script_id):
+        db.set_agent_exposed(SCRIPT, script_id, False)
+        names.append(item_name(db, SCRIPT, script_id) or "")
+    for pid in sorted(db.agent_exposed_ids(PIPELINE)):
+        if any(step[1] == script_id for step in db.list_pipeline_steps(pid)):
+            db.set_agent_exposed(PIPELINE, pid, False)
+            names.append(item_name(db, PIPELINE, pid) or "")
+    return names
+
+
+def agents_withdrawn_note(names) -> str:
+    """Said after a copy or move that took something away from agents."""
+    if not names:
+        return ""
+    listed = ", ".join(f"“{n}”" for n in names)
+    return f" No longer available to agents, as it now runs another file: {listed}."
+
+
+def copied_status(kind: str, name: str, group: str, withdrawn=()) -> str:
+    """The status line after Copy to / Paste."""
+    what = "pipeline" if kind == PIPELINE else "script"
+    return (f"Copied {what} “{name}” to “{group or 'Ungrouped'}”."
+            + agents_withdrawn_note(withdrawn))
 
 
 def item_name(db, kind: str, item_id: int) -> str | None:

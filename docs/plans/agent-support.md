@@ -41,7 +41,7 @@ So the remaining engine work is to take the toolkit-free logic out of `JobBridge
 | D10 | History | `trigger_source` = `cli` or `agent` | History already records every run; the column was made for this. |
 | D11 | The window's cards after a CLI run | The CLI signals a running window to reload (new `RELOAD` verb on the single-instance socket) | Otherwise a card shows a stale last status until the next reload. |
 | D12 | MCP in the Windows build | From source only in v1 (`uv run --extra mcp ryos mcp`); revisit at step 8 | Bundling the MCP SDK grows the download for a feature most users won't use. |
-| D13 | Does Clone / Copy / import keep it? | Clone, Copy and Clone group keep it; **export leaves it out, so an import never grants it** | A copy within this database differs only in name, id and group. A file from elsewhere -- a colleague's group -- must not make scripts agent-runnable without its new owner deciding. |
+| D13 | Does Clone / Copy / import keep it? | Clone, Copy and Clone group keep it -- **only while the item runs the same file**: a Copy or drag that re-points a script into another base folder (#24) leaves the result unavailable, and a drag also withdraws the agent-available pipelines that run it, saying so. **Export leaves it out, so an import never grants it** | A copy within this database differs only in name, id and group. A file from elsewhere -- a colleague's group -- must not make scripts agent-runnable without its new owner deciding. |
 
 ## Rules for every step
 
