@@ -141,7 +141,15 @@ def apply_move(db, kind: str, item_id: int, group: str) -> "str | None":
     if kind == PIPELINE:
         db.move_pipeline_to_group(item_id, group)
         return None
+    from .cardmenu import repointed_paths
+
+    before = db.get(item_id)
     db.move_to_group(item_id, group)
+    if before:
+        path, work_dir = repointed_paths(db, before, group)
+        if (path, work_dir) != (before[2], before[8] or ""):
+            db.update(item_id, before[1], path, before[3], before[4], group,
+                      work_dir=work_dir)
     rec = db.get(item_id)
     return outside_base_warning(rec[2] if rec else "", group,
                                 db.get_group_base_dir(group))
