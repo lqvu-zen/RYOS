@@ -4419,6 +4419,63 @@ def check_bug_report(app):
     print("  [ok] bug report: status-bar button and Help menu open a filled-in issue")
 
 
+def check_cli_run_reaches_the_window(app):
+    """A run from the command line reaches a running window's row (RELOAD on
+    the instance socket) -- without bringing the window forward."""
+    import io
+    import queue
+    import sys as _sys
+    import tempfile
+
+    from ryos import cli
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.single_instance import RELOAD
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    bad = tmp / "bad.py"
+    bad.write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
+    db = ScriptDB(tmp / "cli.db")
+    db.create_group("G")
+    sid = db.add("bad", str(bad), "", _sys.executable, "G")
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    win.load_from_db(db)
+    win.show_group("G")
+
+    class Lock:                     # stands in for the instance lock
+        signals: "queue.Queue" = queue.Queue()
+
+        def release(self):
+            pass
+    win.attach_instance(Lock(), interval_ms=60_000)    # drained by hand below
+    restored: list = []
+    win.restore_from_tray = lambda **kw: restored.append(kw)
+
+    def row():
+        cards = win.card_lists["G"].section("scripts").cards
+        return next(c for c in cards if c.script_id == sid)
+
+    try:
+        before = row().run_button.property("runState")
+        code = cli.main(["run", "bad"], db=db, settings={}, out=io.StringIO(),
+                        err=io.StringIO(),
+                        notify_window=lambda: Lock.signals.put(RELOAD))
+        win._poll_instance()
+        app.processEvents()
+        if code != 2:
+            PROBLEMS.append(f"the CLI run exited {code}, not the script's 2")
+        if before == "retry" or row().run_button.property("runState") != "retry":
+            PROBLEMS.append("a failed CLI run did not turn the window's row to Retry")
+        if restored:
+            PROBLEMS.append("RELOAD brought the window forward")
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] CLI run: a running window's row shows how it went, and stays put")
+
+
 def check_run_becomes_stop(app):
     """While a row's own run is going, its Run is Stop -- pressed again it
     only started a second copy. A script running only as a pipeline's step
@@ -5153,6 +5210,7 @@ def main() -> int:
     check_keyboard_through_the_list(app)
     check_tray_round_trip(app)
     check_run_becomes_stop(app)
+    check_cli_run_reaches_the_window(app)
     check_bug_report(app)
     check_maximised_layout(app)
     check_ampersands_show(app)

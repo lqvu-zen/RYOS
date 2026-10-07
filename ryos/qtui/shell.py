@@ -1743,6 +1743,9 @@ class MainWindow(QMainWindow):
         try:
             while True:
                 verb = self._instance.signals.get_nowait()
+                if traypolicy.is_reload(verb):
+                    self._refresh_card_statuses()
+                    continue
                 self.restore_from_tray(
                     follow_cursor=traypolicy.restore_follows_cursor(verb))
         except queue.Empty:

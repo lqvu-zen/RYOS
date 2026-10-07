@@ -159,6 +159,12 @@ def on_start(settings: dict, tray_available: bool) -> str:
     return HIDE if tray_available else MINIMIZE
 
 
+def is_reload(verb: str) -> bool:
+    """The command line finished a run: bring the cards up to date, and leave
+    the window where it is."""
+    return verb == "RELOAD"
+
+
 def restore_follows_cursor(verb: str) -> bool:
     """A second launch asked to restore the window on the cursor's monitor."""
     return verb == "RESTORE_CURSOR"

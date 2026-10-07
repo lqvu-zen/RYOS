@@ -29,6 +29,18 @@ To check the Qt app against your own data without changing it: `uv run python te
 
 To run a whole working session in the Qt app: `uv run python tests/session_smoke.py` (a throwaway folder; makes a group and scripts through their dialogs, runs, fails, retries, stops, builds and runs a pipeline, fires a schedule, uses Quick Run, search, select mode, export/import, options and themes, then restarts and checks what persisted; `--visible` as above).
 
+## Command line
+
+`ryos` alone opens the window. Given a command it runs headless, beside a running window and without touching its lock or run-at-login entry:
+
+```bash
+uv run ryos list [--json]
+uv run ryos run <script> [--preset LABEL | --params="--flag value"] [--timeout S] [--json]
+uv run ryos pipeline <pipeline> [--timeout S] [--json]
+```
+
+Name an item by its name, `group/name` or `#id` (an ambiguous name is refused with the candidates). Exit codes: the script's own; 1 failed; 124 timed out; 125 refused by RYOS; 130 interrupted. Runs are recorded in History as `cli`. Its tests (`tests/test_cli.py`, `tests/test_headless.py`) run real tiny scripts against throwaway databases.
+
 ## Versions
 
 `__version__` in `ryos/__init__.py` (and `version=` in `setup_cxfreeze.py`) changes **only when a release is cut** — the `release-ryos` skill does it. A feature or fix commit, or a PR, never bumps it: between releases the tree holds the last released version, with no `-dev` suffix. (PR #14 bumped it to 2.0.1 on its own; no 2.0.1 was ever released.)
@@ -51,6 +63,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Pipeline sequencing, step policies             | `ryos/job_controller.py`|
 | Launching runs, shared by window and headless  | `ryos/jobhost.py`       |
 | Runs with no window (CLI / MCP engine)         | `ryos/headless.py`      |
+| Command line: `ryos list / run / pipeline`     | `ryos/cli.py`           |
 | Recurring schedules (pure, naive local time)   | `ryos/scheduling.py`    |
 | Firing due schedules (shared sweep)            | `ryos/schedule_runner.py` |
 | Run-history formatting                         | `ryos/history.py`       |

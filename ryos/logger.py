@@ -10,8 +10,12 @@ _LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 _ryos_logger = logging.getLogger("ryos")
 
 
-def setup_logging(enabled: bool, level: str) -> None:
-    """Configure the root ryos logger; idempotent — clears existing handlers on re-call."""
+def setup_logging(enabled: bool, level: str, path=LOG_PATH) -> None:
+    """Configure the root ryos logger; idempotent — clears existing handlers on re-call.
+
+    ``path`` is the log file: the command line writes its own, so two
+    processes never rotate the same file.
+    """
     _ryos_logger.handlers.clear()
     _ryos_logger.propagate = False
 
@@ -23,7 +27,7 @@ def setup_logging(enabled: bool, level: str) -> None:
     _ryos_logger.setLevel(getattr(logging, effective_level))
 
     handler = logging.handlers.RotatingFileHandler(
-        LOG_PATH, maxBytes=1_048_576, backupCount=3, encoding="utf-8"
+        path, maxBytes=1_048_576, backupCount=3, encoding="utf-8"
     )
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s",

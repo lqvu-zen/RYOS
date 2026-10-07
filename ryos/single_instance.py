@@ -162,6 +162,20 @@ def _close_gracefully(conn) -> None:
             pass
 
 
+#: Sent by the command line after a run, so a running window brings its
+#: cards up to date. Unlike RESTORE it does not bring the window forward.
+RELOAD = "RELOAD"
+
+
+def signal_running(verb: str) -> bool:
+    """Tell a running RYOS window ``verb``, if one is running. True when it
+    answered. Never takes the lock or starts a listener: for a process that
+    is not the app, like the command line."""
+    if not _LOCK_PATH.exists():
+        return False
+    return _signal_existing(verb)
+
+
 def _signal_existing(verb: str) -> bool:
     # The lock-file read is inside the retry loop, not just the connect: a
     # racing launch can see the mutex before the primary has finished

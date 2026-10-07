@@ -85,9 +85,9 @@ def resolve(db: ScriptDB, kind: str, ref: str) -> Target:
     if not found:
         raise HeadlessError(f"No {kind} named {ref!r}.")
     if len(found) > 1:
-        names = ", ".join(f"{t.ref!r}" for t in found)
+        names = ", ".join(f"{t.ref!r} (#{t.item_id})" for t in found)
         raise HeadlessError(f"{ref!r} could be any of {len(found)} {kind}s: {names}. "
-                            "Name it as group/name.")
+                            "Name it as group/name, or by #id.")
     return found[0]
 
 

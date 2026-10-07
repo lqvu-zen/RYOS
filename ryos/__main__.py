@@ -1,5 +1,6 @@
 """Entry point — `uv run ryos` or `python -m ryos`. Runs the Qt app
-(`ryos.qtui.main`)."""
+(`ryos.qtui.main`), or, given a command (`ryos run build`), the command line
+(`ryos.cli`)."""
 import logging
 import sys
 
@@ -23,6 +24,13 @@ def _qt_available(log) -> bool:
 
 
 def main():
+    # `ryos list` / `ryos run ...`: the command line, decided before anything
+    # else -- it takes no instance lock, writes no run-at-login entry and
+    # never imports Qt, so it works beside a running window.
+    from . import cli
+    if cli.is_cli(sys.argv[1:]):
+        return cli.main(sys.argv[1:])
+
     # Launched at login? The startup registry entry passes --startup, which
     # tells the app to restore the last-used screen instead of following the
     # cursor's monitor.

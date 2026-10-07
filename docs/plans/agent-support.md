@@ -100,7 +100,7 @@ Steps 3–4 are independent of 2 and can go first or in between. 5 needs 2b; 7 n
 | 2b Headless runner | done |
 | 3 DB flag | — |
 | 4 UI flag | — |
-| 5 CLI | — |
+| 5 CLI | done |
 | 6 Console build | — |
 | 7 MCP | — |
 | 8 Docs | — |

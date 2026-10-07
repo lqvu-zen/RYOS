@@ -29,7 +29,7 @@ packages = ["ryos"]
 testpaths = ["tests"]
 # Only collect the real test modules; everything else in tests/ is a runnable
 # sample script used as a subprocess fixture, not a test.
-python_files = ["test_ryos.py", "test_headless.py"]
+python_files = ["test_ryos.py", "test_headless.py", "test_cli.py"]
 
 [tool.ruff]
 target-version = "py310"
@@ -72,6 +72,7 @@ files = [
     "ryos/job_controller.py",
     "ryos/jobhost.py",
     "ryos/headless.py",
+    "ryos/cli.py",
     "ryos/notifications.py",
     "ryos/logger.py",
     "ryos/search.py",
