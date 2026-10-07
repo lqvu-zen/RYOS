@@ -115,6 +115,12 @@ INTERPRETER_CHOICES = ("cmd /c", POWERSHELL_RUN, "pwsh -File", "python",
 INTERPRETER_HINT = "Leave blank for auto-detection, or pick a preset"
 TEMP_PARAM_LABEL = "Ask for a temporary parameter on each run (not saved)"
 LAUNCHER_LABEL = "Launcher — opens an app/project; don't keep in Running"
+#: Shared by the script dialog and the pipeline editor.
+AGENT_LABEL = "Available to agents — an AI agent connected to RYOS may run it"
+AGENT_HELP = ("An AI agent connected through RYOS's MCP server may run this, with "
+              "its own parameters or a saved preset, and read its output. Off "
+              "unless you turn it on; turn it on only for what you would let the "
+              "agent run unasked.")
 ENV_HINT = "One KEY=value per line; blank to inherit only the system environment"
 DELETE_PROMPT = ("Delete", "Delete this script?")
 
@@ -187,6 +193,7 @@ class ScriptForm:
     work_dir: str = ""
     env_text: str = ""
     presets: list = field(default_factory=list)     # [(label, params)]
+    agent_exposed: bool = False
 
 
 def load_form(db, script_id: "int | None", default_group: str = "") -> ScriptForm:
@@ -202,7 +209,8 @@ def load_form(db, script_id: "int | None", default_group: str = "") -> ScriptFor
         interpreter=interp or "", group=grp or "",
         temp_param=bool(temp_param), detached=bool(db.is_detached(script_id)),
         work_dir=work_dir or "", env_text=format_env_text(env_vars),
-        presets=[(label, p) for _pid, label, p in db.list_param_presets(script_id)])
+        presets=[(label, p) for _pid, label, p in db.list_param_presets(script_id)],
+        agent_exposed=db.is_agent_exposed("script", script_id))
 
 
 def save_form(db, script_id: "int | None", form: ScriptForm) -> int:
@@ -223,6 +231,7 @@ def save_form(db, script_id: "int | None", form: ScriptForm) -> int:
         script_id = db.add(*args, env_vars=env_vars or None,
                            work_dir=form.work_dir.strip())
     db.replace_param_presets(script_id, [(label, p) for label, p in form.presets])
+    db.set_agent_exposed("script", script_id, form.agent_exposed)
     return script_id
 
 

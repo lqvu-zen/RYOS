@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QVBoxLayout, QWidget)
 
 from .. import scriptform
-from .widgets import button_row
+from .widgets import button_row, set_tooltip
 
 
 class ScriptDialog(QDialog):
@@ -116,8 +116,11 @@ class ScriptDialog(QDialog):
 
         self.temp_param = QCheckBox(scriptform.TEMP_PARAM_LABEL)
         self.launcher = QCheckBox(scriptform.LAUNCHER_LABEL)
+        self.agent = QCheckBox(scriptform.AGENT_LABEL)
+        set_tooltip(self.agent, scriptform.AGENT_HELP)
         form.addRow(QLabel(""), self.temp_param)
         form.addRow(QLabel(""), self.launcher)
+        form.addRow(QLabel(""), self.agent)
 
         self.e_workdir = QLineEdit()
         form.addRow(QLabel("Working folder:"),
@@ -162,6 +165,7 @@ class ScriptDialog(QDialog):
         self.e_interp.setCurrentText(form.interpreter)
         self.temp_param.setChecked(form.temp_param)
         self.launcher.setChecked(form.detached)
+        self.agent.setChecked(form.agent_exposed)
         self.e_workdir.setText(form.work_dir)
         self.t_env.setPlainText(form.env_text)
         self._presets = list(form.presets)
@@ -274,7 +278,8 @@ class ScriptDialog(QDialog):
             group=self.e_group.currentText(),
             temp_param=self.temp_param.isChecked(),
             detached=self.launcher.isChecked(), work_dir=self.e_workdir.text(),
-            env_text=self.t_env.toPlainText(), presets=list(self._presets))
+            env_text=self.t_env.toPlainText(), presets=list(self._presets),
+            agent_exposed=self.agent.isChecked())
 
     def save(self) -> bool:
         verdict = self.check()

@@ -100,7 +100,7 @@ Steps 3–4 are independent of 2 and can go first or in between. 5 needs 2b; 7 n
 | 2a Job host | done (`42fb549`) |
 | 2b Headless runner | done |
 | 3 DB flag | done |
-| 4 UI flag | — |
+| 4 UI flag | done (card badge left for later) |
 | 5 CLI | done |
 | 6 Console build | — |
 | 7 MCP | — |

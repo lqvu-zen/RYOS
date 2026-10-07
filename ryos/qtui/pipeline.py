@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit,
                                QListWidget, QMessageBox, QPushButton,
                                QVBoxLayout, QWidget)
 
-from .. import pipelinesteps
+from .. import pipelinesteps, scriptform
 from .icons import IconButton
+from .widgets import set_tooltip
 
 LEGEND = pipelinesteps.LEGEND
 
@@ -43,6 +44,12 @@ class PipelineEditorDialog(QDialog):
         form = QFormLayout()
         self.name_edit = QLineEdit(name)
         form.addRow(QLabel("Name:"), self.name_edit)
+        # Saved with the name, on Save. An agent runs every step, whatever the
+        # steps' own setting: they are part of what was made available.
+        self.agent = QCheckBox(scriptform.AGENT_LABEL)
+        set_tooltip(self.agent, scriptform.AGENT_HELP)
+        self.agent.setChecked(db.is_agent_exposed("pipeline", pipeline_id))
+        form.addRow(QLabel(""), self.agent)
         col.addLayout(form)
 
         steps_label = QLabel("Steps")
@@ -224,6 +231,7 @@ class PipelineEditorDialog(QDialog):
             self.warn(*pipelinesteps.NAME_REQUIRED)
             return False
         self.db.rename_pipeline(self.pipeline_id, name)
+        self.db.set_agent_exposed("pipeline", self.pipeline_id, self.agent.isChecked())
         if self._on_save is not None:
             self._on_save()
         self.accept()

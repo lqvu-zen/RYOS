@@ -622,6 +622,16 @@ def check_script_dialog(app):
     if db.get(sid)[7] or scriptform.load_form(db, sid).env_text:
         PROBLEMS.append(f"clearing the environment left {db.get(sid)[7]!r}")
 
+    # Available to agents: off until ticked, saved on Save, shown on reopening.
+    dlg = ScriptDialog(db=db, script_id=sid)
+    if dlg.agent.isChecked():
+        PROBLEMS.append("a script was available to agents before anyone said so")
+    dlg.agent.setChecked(True)
+    dlg.save()
+    if not db.is_agent_exposed("script", sid) \
+            or not ScriptDialog(db=db, script_id=sid).agent.isChecked():
+        PROBLEMS.append("Available to agents was not saved, or not shown again")
+
     # -- verdicts: refuse, and ask about a missing file ---------------------------------
     dlg = ScriptDialog(db=db, default_group="First", path_exists=lambda p: False)
     warned.clear()
@@ -776,13 +786,20 @@ def check_pipeline_editor(app):
     dlg.name_edit.setText("   ")
     if dlg.save() or warned != [pipelinesteps.NAME_REQUIRED[0]]:
         PROBLEMS.append("an empty pipeline name was accepted")
+    if dlg.agent.isChecked():
+        PROBLEMS.append("a pipeline was available to agents before anyone said so")
+    dlg.agent.setChecked(True)
     dlg.name_edit.setText(" Renamed ")
     dlg.save()
     if db.list_pipelines("G")[0][1] != "Renamed" or saved != [True]:
         PROBLEMS.append("Save did not rename, or did not report back")
+    reopened = PipelineEditorDialog(db=db, pipeline_id=pid, name="Renamed", group="G")
+    if not db.is_agent_exposed("pipeline", pid) or not reopened.agent.isChecked():
+        PROBLEMS.append("Available to agents was not saved, or not shown again")
+    reopened.deleteLater()
 
     print("  [ok] pipeline editor: labels, Add Step choices, move, with-prev, "
-          "policy combos, step presets, add/remove and rename, all stored")
+          "policy combos, step presets, add/remove, rename and agents, all stored")
     dlg.deleteLater()
 
 

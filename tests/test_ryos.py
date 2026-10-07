@@ -7598,7 +7598,8 @@ class TestScriptFormLoadSave(unittest.TestCase):
         form = scriptform.ScriptForm(
             name="n", path="/p.py", params="--x", interpreter="python",
             group="G", temp_param=True, detached=True, work_dir="/w",
-            env_text="A=1\nB=x=y", presets=[("--x", "--x"), ("fast", "--f")])
+            env_text="A=1\nB=x=y", presets=[("--x", "--x"), ("fast", "--f")],
+            agent_exposed=True)
         sid = scriptform.save_form(db, None, form)
         self.assertEqual(scriptform.load_form(db, sid), form)
         self.assertEqual(scriptform.save_form(db, sid, form), sid)
@@ -7612,6 +7613,16 @@ class TestScriptFormLoadSave(unittest.TestCase):
         scriptform.save_form(db, sid, scriptform.ScriptForm(name="n", path="/p.py"))
         self.assertFalse(db.get(sid)[7])
         self.assertEqual(scriptform.load_form(db, sid).env_text, "")
+
+    def test_agents_off_unless_ticked_and_untickable(self):
+        db = _make_db()
+        sid = scriptform.save_form(db, None, scriptform.ScriptForm(name="n", path="/p.py"))
+        self.assertFalse(db.is_agent_exposed("script", sid))
+        scriptform.save_form(db, sid, scriptform.ScriptForm(name="n", path="/p.py",
+                                                            agent_exposed=True))
+        self.assertTrue(db.is_agent_exposed("script", sid))
+        scriptform.save_form(db, sid, scriptform.ScriptForm(name="n", path="/p.py"))
+        self.assertFalse(db.is_agent_exposed("script", sid))
 
     def test_relative_field(self):
         base = os.path.join(os.sep, "base")
