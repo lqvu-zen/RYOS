@@ -111,7 +111,10 @@
       "Bash(cp /c/Users/Admin/AppData/Roaming/RYOS/scripts.db C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/clitry/RYOS/scripts.db)",
       "Bash(break)",
       "Bash(uv lock *)",
-      "Bash(grep -n \"elsewhere\\\\|tmp /\\\\|base_dir\\\\|create_group\\\\|write_text\\\\|mkdir\")"
+      "Bash(grep -n \"elsewhere\\\\|tmp /\\\\|base_dir\\\\|create_group\\\\|write_text\\\\|mkdir\")",
+      "Bash(git fetch *)",
+      "Read(//c/Users/Admin/Downloads/**)",
+      "Bash(grep -v '^\\\\s*$')"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
