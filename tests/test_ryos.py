@@ -8333,14 +8333,40 @@ class TestApplyDrop(unittest.TestCase):
         self.assertIn(self.ids[0], self.order("Inner"))
 
     def test_move_outside_the_folder_warns_but_still_moves(self):
-        warning = apply_move(self.db, SCRIPT, self.ids[0], "H")
+        sid = self.db.add("far", os.path.join(tempfile.mkdtemp(), "far.py"), "", "", "G")
+        warning = apply_move(self.db, SCRIPT, sid, "H")
         self.assertIn("outside", warning or "")
         self.assertIn("'H'", warning or "")
-        self.assertEqual(self.order("H"), [self.ids[0]])
+        self.assertEqual(self.order("H"), [sid])
 
     def test_move_to_ungrouped_has_no_folder_to_warn_about(self):
         self.assertIsNone(apply_move(self.db, SCRIPT, self.ids[0], ""))
         self.assertEqual(self.order(""), [self.ids[0]])
+
+    def test_move_into_another_base_follows_the_path_and_does_not_warn(self):
+        other = tempfile.mkdtemp()
+        self.db.create_group("V", base_dir=other)
+        sid = self.db.add("s", os.path.join(self.base, "sub", "s.py"), "--x", "python",
+                          "G", 1, 1, env_vars="X=1", work_dir=self.base)
+        self.assertIsNone(apply_move(self.db, SCRIPT, sid, "V"))
+        rec = self.db.get(sid)
+        self.assertEqual(rec[2], os.path.join(other, "sub", "s.py"))
+        self.assertEqual(rec[8], other)
+        # The rest of how it runs is untouched by the re-point.
+        self.assertEqual(rec[3:8], ("--x", "python", "V", 1, "X=1"))
+        self.assertTrue(self.db.is_detached(sid))
+
+    def test_move_keeps_a_path_outside_the_old_folder_and_still_warns(self):
+        other = tempfile.mkdtemp()
+        self.db.create_group("V", base_dir=other)
+        elsewhere = os.path.join(tempfile.mkdtemp(), "s.py")
+        sid = self.db.add("s", elsewhere, "", "", "G")
+        self.assertIn("outside", apply_move(self.db, SCRIPT, sid, "V") or "")
+        self.assertEqual(self.db.get(sid)[2], elsewhere)
+
+    def test_move_to_ungrouped_keeps_the_path(self):
+        apply_move(self.db, SCRIPT, self.ids[0], "")
+        self.assertEqual(self.db.get(self.ids[0])[2], os.path.join(self.base, "a.py"))
 
     def test_pipeline_move_never_warns(self):
         pid = self.db.create_pipeline("p", "G")
@@ -9137,3 +9163,86 @@ class TestCopyBetweenGroups(unittest.TestCase):
         paste = next(i for i in cardmenu.group_menu("ship") if i.key == cardmenu.PASTE)
         self.assertTrue(paste.enabled)
         self.assertIn('"ship"', paste.label)
+
+    def _bases(self, a="A", b="B"):
+        self.src, self.dst = os.path.join(os.sep, "w"), os.path.join(os.sep, "v")
+        self.db.set_group_base_dir(a, self.src)
+        self.db.set_group_base_dir(b, self.dst)
+
+    def test_path_and_work_dir_follow_into_the_other_groups_folder(self):
+        self._bases()
+        sid = self.db.add("p", os.path.join(self.src, "sub", "build.py"), "", "python",
+                          "A", work_dir=self.src)
+        new = self.db.get(cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, sid, "B"))
+        self.assertEqual(new[2], os.path.join(self.dst, "sub", "build.py"))
+        self.assertEqual(new[8], self.dst)
+        self.assertEqual(self.db.get(sid)[2], os.path.join(self.src, "sub", "build.py"))
+        self.assertEqual(self.db.get(sid)[8], self.src)
+
+    def test_path_and_work_dir_are_decided_independently(self):
+        self._bases()
+        out = os.path.join(os.sep, "elsewhere")
+        s1 = self.db.add("p1", os.path.join(self.src, "x.py"), "", "python", "A",
+                         work_dir=out)
+        s2 = self.db.add("p2", os.path.join(out, "x.py"), "", "python", "A",
+                         work_dir=self.src)
+        n1 = self.db.get(cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, s1, "B"))
+        n2 = self.db.get(cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, s2, "B"))
+        self.assertEqual((n1[2], n1[8]), (os.path.join(self.dst, "x.py"), out))
+        self.assertEqual((n2[2], n2[8]), (os.path.join(out, "x.py"), self.dst))
+
+    def test_nothing_is_repointed_without_both_folders(self):
+        src = os.path.join(os.sep, "w")
+        dst = os.path.join(os.sep, "v")
+        cases = {"only A": (src, "", "A", "B"), "only B": ("", dst, "A", "B"),
+                 "from Ungrouped": ("", dst, "", "B"), "to Ungrouped": (src, dst, "A", "")}
+        for label, (abase, bbase, from_g, to_g) in cases.items():
+            with self.subTest(label):
+                self.db.set_group_base_dir("A", abase)
+                self.db.set_group_base_dir("B", bbase)
+                path = os.path.join(src, "x.py")
+                sid = self.db.add("q" + label, path, "", "python", from_g, work_dir=src)
+                new = self.db.get(cardmenu.copy_to_group(
+                    self.db, cardmenu.SCRIPT, sid, to_g))
+                self.assertEqual((new[2], new[8]), (path, src))
+
+    def test_clone_and_own_group_paste_keep_the_path(self):
+        self._bases()
+        sid = self.db.add("p", os.path.join(self.src, "x.py"), "", "python", "A",
+                          work_dir=self.src)
+        for new_id in (cardmenu.clone(self.db, cardmenu.SCRIPT, sid),
+                       cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, sid, "A")):
+            rec = self.db.get(new_id)
+            self.assertEqual((rec[2], rec[8]), (os.path.join(self.src, "x.py"), self.src))
+
+    def test_a_pipeline_reuses_a_script_at_the_repointed_path_only(self):
+        self._bases()
+        sid = self.db.add("p", os.path.join(self.src, "x.py"), "", "python", "A")
+        pid = self.db.create_pipeline("ship", "A")
+        self.db.add_pipeline_step(pid, sid)
+        old = self.db.add("p", os.path.join(self.src, "x.py"), "", "python", "B")
+        new_pid = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid, "B")
+        used = self.db.list_pipeline_steps(new_pid)[0][1]
+        self.assertNotEqual(used, old)
+        self.assertEqual(self.db.get(used)[2], os.path.join(self.dst, "x.py"))
+        right = self.db.add("p", os.path.join(self.dst, "y.py"), "", "python", "B")
+        sid2 = self.db.add("p", os.path.join(self.src, "y.py"), "", "python", "A")
+        pid2 = self.db.create_pipeline("ship2", "A")
+        self.db.add_pipeline_step(pid2, sid2)
+        new2 = cardmenu.copy_to_group(self.db, cardmenu.PIPELINE, pid2, "B")
+        self.assertEqual(self.db.list_pipeline_steps(new2)[0][1], right)
+
+    def test_repointed_edges(self):
+        w, v = os.path.join(os.sep, "w"), os.path.join(os.sep, "v")
+        self.assertEqual(cardmenu._repointed(w, w, v), v)
+        sibling = os.path.join(os.sep, "w2", "x.py")
+        self.assertEqual(cardmenu._repointed(sibling, w, v), sibling)
+        self.assertEqual(cardmenu._repointed(os.path.join(w, "x.py"), w, w),
+                         os.path.join(w, "x.py"))
+        self.assertEqual(cardmenu._repointed("", w, v), "")
+        # One folder inside the other: a path already in the new one stays.
+        inner = os.path.join(w, "sub")
+        self.assertEqual(cardmenu._repointed(os.path.join(inner, "x.py"), w, inner),
+                         os.path.join(inner, "x.py"))
+        self.assertEqual(cardmenu._repointed(os.path.join(w, "x.py"), w, inner),
+                         os.path.join(inner, "x.py"))
