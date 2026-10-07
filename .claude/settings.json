@@ -110,7 +110,8 @@
       "Bash(export APPDATA=\"$T\" RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1)",
       "Bash(cp /c/Users/Admin/AppData/Roaming/RYOS/scripts.db C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/clitry/RYOS/scripts.db)",
       "Bash(break)",
-      "Bash(uv lock *)"
+      "Bash(uv lock *)",
+      "Bash(grep -n \"elsewhere\\\\|tmp /\\\\|base_dir\\\\|create_group\\\\|write_text\\\\|mkdir\")"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
