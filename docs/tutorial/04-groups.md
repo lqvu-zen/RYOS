@@ -2,7 +2,7 @@
 
 A group is a set of scripts and pipelines that belong together — *Work* and *Home*, or one per project. Each group can also have a **base folder**: the folder its scripts live in, which paths are relative to and which [Quick Run](08-quick-run.md) searches.
 
-A script whose file, or working folder, is somewhere else gets an **OUTSIDE FOLDER** tag (point at it to see which part), and its run starts with a one-line note saying so. That's usually a slip, but nothing stops it from running. A pipeline gets the tag when one of its steps is outside.
+A script whose file, or working folder, is somewhere else gets an **OUTSIDE FOLDER** tag, compact rows included (point at it to see which part), and its run starts with a one-line note saying so. That's usually a slip, but nothing stops it from running. A pipeline gets the tag when one of its steps is outside.
 
 ![The group pills under the search box: Samples (chosen, filled dark), Tools, a dashed + for a new group, and All](images/04-group-pills.png)
 

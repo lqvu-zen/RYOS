@@ -9503,6 +9503,18 @@ class TestBaseFolder(unittest.TestCase):
         self.assertIn("Step 2", pipe[0].tooltip)
         self.assertEqual(cardstyle.pipeline_badges(scheduled=False), [])
 
+    def test_compact_rows_keep_the_warning_and_chips_show_none(self):
+        from ryos import cardstyle
+        both = cardstyle.script_badges(temp_param=True, scheduled=True,
+                                       outside=("file",), base_dir="/B")
+        self.assertEqual(len(cardstyle.badges_for(both, compact=False)), 3)
+        self.assertEqual([b.text for b in cardstyle.badges_for(both, compact=True)],
+                         [cardstyle.OUTSIDE_BADGE_TEXT])
+        self.assertEqual(cardstyle.badges_for(both, compact=True, chip=True), [])
+        pipe = cardstyle.pipeline_badges(scheduled=True, outside_steps=(1,), base_dir="/B")
+        self.assertEqual([b.text for b in cardstyle.badges_for(pipe, compact=True)],
+                         [cardstyle.OUTSIDE_BADGE_TEXT])
+
     def test_the_detail_row_appears_only_when_outside(self):
         from ryos import detail
         self.assertNotIn("Outside base folder", dict(detail.script_facts({"outside": ()})))

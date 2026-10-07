@@ -3771,6 +3771,14 @@ def check_badges_banner_previews(app):
         PROBLEMS.append("a full-size card had a hover preview")
     win.deleteLater()
     win = window({"compact_mode": True})
+    # One line has no room for settings badges, but the outside-folder
+    # warning stays: a warning a view setting hides is no warning.
+    if card(win, "asks").badges:
+        PROBLEMS.append("a compact row still showed its settings badges")
+    for name, section in (("away", "scripts"), ("pipeaway", "pipelines")):
+        got = [b.text() for b in card(win, name, section).badges]
+        if got != [cardstyle.OUTSIDE_BADGE_TEXT]:
+            PROBLEMS.append(f"the compact {name!r} row showed {got}, not the outside warning")
     target = card(win, "asks")
     preview = getattr(target, "preview", None)
     if preview is None:
@@ -3788,7 +3796,7 @@ def check_badges_banner_previews(app):
     win.deleteLater()
 
     print("  [ok] badges, banner, previews: temp-param and scheduled badges, "
-          "outside-folder badge on a script and on a pipeline step, "
+          "outside-folder badge on a script and on a pipeline step, kept on compact rows, "
           "pipeline badge, banners with the folder or the hint and a click to set "
           "it, steps popup with ∥ and overrides, hover preview on compact cards "
           "only and only when on")

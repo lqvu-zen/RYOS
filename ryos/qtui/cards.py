@@ -509,13 +509,19 @@ class ScriptCard(_CardBase):
         tag = self._tag(tag_text, tag_bg, "scriptTag")
         if not compact:
             header.addWidget(tag)
-        self._tag_badges(header, () if compact else badges)
+        shown = cardstyle.badges_for(badges, compact=compact, chip=chip)
+        if not compact:
+            self._tag_badges(header, shown)
         self.name_label = self._name_label(name, label_color)
         header.addWidget(self.name_label, 0 if chip else 1)
         if compact and not chip:
             header.addWidget(tag)
         elif chip:
             tag.hide()
+        if compact:
+            # On one line the warning follows the name and kind, where the
+            # eye already is.
+            self._tag_badges(header, shown)
         self._header = header
         self._last_status = last_status
         self._add_status(header, last_status)
@@ -655,11 +661,15 @@ class PipelineCard(_CardBase):
             tag.hide()
         elif not compact:
             header.addWidget(tag)
-        self._tag_badges(header, () if compact else badges)
+        shown = cardstyle.badges_for(badges, compact=compact, chip=chip)
+        if not compact:
+            self._tag_badges(header, shown)
         self.name_label = self._name_label(name, label_color)
         header.addWidget(self.name_label, 0 if chip else 1)
         if compact and not chip:
             header.addWidget(tag)
+        if compact:
+            self._tag_badges(header, shown)
         self._header = header
         self._last_status = last_status
         self._add_status(header, last_status)

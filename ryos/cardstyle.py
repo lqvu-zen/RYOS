@@ -172,6 +172,18 @@ class TagBadge:
     text: str
     bg_key: str
     tooltip: str
+    #: A possible slip rather than a setting: shown on compact rows too.
+    warning: bool = False
+
+
+def badges_for(badges, *, compact: bool, chip: bool = False) -> list[TagBadge]:
+    """The badges a card shows. A full row shows them all. A compact row is
+    one line, so it drops the ones that describe settings -- but a warning
+    hidden by a view setting is no warning, so those stay. A favourite chip
+    has room for none."""
+    if chip:
+        return []
+    return [b for b in badges or () if b.warning or not compact]
 
 
 SCHEDULE_TIP = "Runs on a schedule — right-click to edit"
@@ -195,7 +207,7 @@ def script_badges(*, temp_param: bool, scheduled: bool,
         [SCRIPT_SCHEDULED_BADGE] if scheduled else [])
     if outside:
         badges.append(TagBadge(OUTSIDE_BADGE_TEXT, OUTSIDE_BADGE_KEY,
-                               basefolder.badge_tooltip(outside, base_dir)))
+                               basefolder.badge_tooltip(outside, base_dir), warning=True))
     return badges
 
 
@@ -205,7 +217,7 @@ def pipeline_badges(*, scheduled: bool, outside_steps: tuple[int, ...] = (),
     if outside_steps:
         badges.append(TagBadge(
             OUTSIDE_BADGE_TEXT, OUTSIDE_BADGE_KEY,
-            basefolder.pipeline_badge_tooltip(outside_steps, base_dir)))
+            basefolder.pipeline_badge_tooltip(outside_steps, base_dir), warning=True))
     return badges
 
 
