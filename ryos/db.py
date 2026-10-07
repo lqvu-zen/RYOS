@@ -1048,6 +1048,24 @@ class ScriptDB:
                     else:
                         untouched.append(spath)
 
+                if new_dir:
+                    # Decided apart from the path: a script outside the old
+                    # base can still run from inside it, and vice versa.
+                    wdirs = conn.execute(
+                        "SELECT id, work_dir FROM scripts "
+                        "WHERE COALESCE(group_name,'')=? AND COALESCE(work_dir,'')!=''",
+                        (name,)).fetchall()
+                    for sid, wdir in wdirs:
+                        norm_w = os.path.normcase(os.path.normpath(wdir))
+                        if not (norm_w == norm_old or norm_w.startswith(norm_old + os.sep)):
+                            continue
+                        if norm_w == norm_new or norm_w.startswith(norm_new + os.sep):
+                            continue
+                        rel = os.path.relpath(wdir, old_dir)
+                        new_w = new_dir if rel == "." else os.path.join(new_dir, rel)
+                        conn.execute("UPDATE scripts SET work_dir=? WHERE id=?", (new_w, sid))
+                        remapped += 1
+
             conn.execute("UPDATE groups SET base_dir=? WHERE name=?", (new_dir, name))
             conn.commit()
             return remapped, untouched
