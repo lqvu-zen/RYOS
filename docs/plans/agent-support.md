@@ -96,8 +96,8 @@ Steps 3–4 are independent of 2 and can go first or in between. 5 needs 2b; 7 n
 | Step | State |
 | --- | --- |
 | 1 Decisions | defaults taken |
-| 2a Job host | in progress |
-| 2b Headless runner | — |
+| 2a Job host | done (`42fb549`) |
+| 2b Headless runner | done |
 | 3 DB flag | — |
 | 4 UI flag | — |
 | 5 CLI | — |

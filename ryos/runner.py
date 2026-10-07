@@ -106,6 +106,11 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
         )
         job.current_process = proc
         job.processes[step_token] = proc
+        # Stop sets job.stopped, then terminates what is in job.processes. A
+        # Stop that came while Popen was starting found nothing to terminate,
+        # so this side looks too: one of the two always sees the other.
+        if job.stopped:
+            terminate_tree(proc)
     except FileNotFoundError as e:
         _log.error("Interpreter/file not found for %s: %s", name, e)
         _put(("stderr", job.job_id, f"[ERROR] {e}\n"))

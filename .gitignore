@@ -11,6 +11,7 @@ dist/
 # module and the fixture files that CI subprocess tests depend on.
 tests/*
 !tests/test_ryos.py
+!tests/test_headless.py
 !tests/echo_args.bat
 !tests/uv_runner.bat
 !tests/uv_hello.py

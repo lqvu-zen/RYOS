@@ -50,6 +50,11 @@ class Job:
         self.current_process = None
         self.processes: dict = {}          # step_token -> Popen; None key for non-pipeline scripts
         self.stopped: bool = False
+        # The run's verdict once it has finished -- "ok", "error" or STOPPED --
+        # and, for a script, its exit code (None for a launcher released while
+        # it still runs). Set just before the host is told it finished.
+        self.outcome: str | None = None
+        self.exit_code: int | None = None
         self.pipeline_name = pipeline_name
         self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
         self.pipeline_step_idx: int = 0

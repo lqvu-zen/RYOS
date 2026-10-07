@@ -52,7 +52,6 @@ from .menus import build_menu
 from .quickrun import MainThreadInvoker, QuickRunBar
 from .running import RunningSection
 from ..jobs import live_statuses, own_runs
-from ..runner import terminate_tree
 from .stylesheet import stylesheet
 from . import icons
 from .icons import IconButton, IconLabel
@@ -2671,11 +2670,8 @@ class MainWindow(QMainWindow):
 
     def _stop_job(self, job) -> None:
         """Stop one job. The row stays until the job actually finishes."""
-        job.stopped = True
-        if getattr(job, "pipeline_queue", None):
-            job.pipeline_queue.clear()
-        for proc in job.active_processes():
-            terminate_tree(proc)
+        if self._bridge is not None:
+            self._bridge.stop_job(job)
         self.statusBar().showMessage("Stopped.")
 
     # -- the maximised layout: list and detail ----------------------------------

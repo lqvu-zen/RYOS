@@ -78,9 +78,15 @@ class JobHost:
         worker thread and a subprocess alive with nowhere to report.
         """
         for job in self.registry.all():
-            job.stopped = True
-            for proc in job.active_processes():
-                terminate_tree(proc)
+            self.stop_job(job)
+
+    def stop_job(self, job: Job) -> None:
+        """Stop one job. It stays registered until it actually finishes, which
+        is when its verdict (STOPPED) is recorded."""
+        job.stopped = True
+        job.pipeline_queue.clear()
+        for proc in job.active_processes():
+            terminate_tree(proc)
 
     def _finish(self, job: Job) -> None:
         """Unregister a finished job, then tell the host.

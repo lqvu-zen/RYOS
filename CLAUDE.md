@@ -50,6 +50,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | `Job` state, `JobRegistry`, capacity split     | `ryos/jobs.py`          |
 | Pipeline sequencing, step policies             | `ryos/job_controller.py`|
 | Launching runs, shared by window and headless  | `ryos/jobhost.py`       |
+| Runs with no window (CLI / MCP engine)         | `ryos/headless.py`      |
 | Recurring schedules (pure, naive local time)   | `ryos/scheduling.py`    |
 | Firing due schedules (shared sweep)            | `ryos/schedule_runner.py` |
 | Run-history formatting                         | `ryos/history.py`       |

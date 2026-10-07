@@ -50,6 +50,9 @@ SOURCE_MANUAL = "manual"
 SOURCE_PIPELINE = "pipeline"
 SOURCE_SCHEDULE = "schedule"
 SOURCE_STARTUP = "startup"
+#: Runs started outside the window: the command line, and an agent over MCP.
+SOURCE_CLI = "cli"
+SOURCE_AGENT = "agent"
 
 
 # --- Schema versioning -------------------------------------------------------

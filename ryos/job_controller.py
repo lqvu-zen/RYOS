@@ -608,6 +608,7 @@ class JobController:
                     finished_at=finished_at, status=STOPPED,
                     step_index=job.pipeline_step_idx, trigger_source=job.trigger,
                 )
+                job.outcome = STOPPED
                 self._on_finish(job)
                 return
             # Terminal. The verdict is the run's, not the last step's: a
@@ -629,6 +630,7 @@ class JobController:
                     finished_at=finished_at, status="ok",
                     step_index=total, trigger_source=job.trigger,
                 )
+                job.outcome = "ok"
                 self._on_finish(job)
                 self._on_notify(
                     "RYOS — Pipeline passed",
@@ -647,6 +649,7 @@ class JobController:
                     finished_at=finished_at, status="error",
                     step_index=failed_at, trigger_source=job.trigger,
                 )
+                job.outcome = "error"
                 self._on_finish(job)
                 self._on_notify(
                     "RYOS — Pipeline failed",
@@ -666,4 +669,5 @@ class JobController:
             else:
                 self._on_status("Failed.")
                 self._on_notify("RYOS — Script failed", f"✗  {job.name}  ·  {elapsed}")
+            job.outcome, job.exit_code = status, exit_code
             self._on_finish(job)

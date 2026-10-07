@@ -29,7 +29,7 @@ flowchart TD
         db["db"]
         interpreter["interpreter"]
         settings["settings · settings_schema"]
-        run["runner · jobs · job_controller · jobhost"]
+        run["runner · jobs · job_controller · jobhost · headless"]
         sched["scheduling · schedule_runner"]
         rules["cardmenu · cardstyle · scriptform · pipelinesteps · sections · selection · outputpanel · configio · traypolicy"]
         quickrun["quickrun · quickrun_index · quickrun_actions"]
@@ -60,7 +60,8 @@ without a display, and that is still where new logic belongs.
 | `ryos/jobs.py` | `Job` state container, `JobRegistry` (storage + id allocation), `format_elapsed` time label. | yes |
 | `ryos/runner.py` | Subprocess execution worker (`run_subprocess`) and output-queue protocol decoding (`decode_output_item` / `OutputAction`). UI-free; talks to the app only via the queue. | yes |
 | `ryos/job_controller.py` | `JobController` — launch planning, pipeline sequencing (`run_next_pipeline_step`) and step completion (`handle_step_done`). UI-free; reaches the window only through injected callbacks. See `docs/adr/0001`. | yes |
-| `ryos/jobhost.py` | `JobHost` — the registry, the output queue and the controller, and how a run is launched (worker thread, launcher release, schedule sweep). Toolkit-free and shared: the window's `qtui/jobs.py` wraps it with a `QTimer` and signals, and the headless runner drives it on its own thread; what differs comes in as `call_later` and the controller's callbacks. | via the smokes |
+| `ryos/jobhost.py` | `JobHost` — the registry, the output queue and the controller, and how a run is launched (worker thread, launcher release, schedule sweep). Toolkit-free and shared: the window's `qtui/jobs.py` wraps it with a `QTimer` and signals, and the headless runner drives it on its own thread; what differs comes in as `call_later` and the controller's callbacks. | via the smokes and `tests/test_headless.py` |
+| `ryos/headless.py` | `HeadlessRunner` — runs with no window, on a `JobHost`: `resolve` finds a script or pipeline by name, `group/name` or `#id` (refusing an ambiguous name); each `Run` keeps its output in a bounded buffer with paging; `wait` pumps on the caller's thread and stops a run past its timeout. No toasts; history marks the run `cli` or `agent`. The engine behind the CLI and MCP server (`docs/plans/agent-support.md`). | yes (`tests/test_headless.py`) |
 | `ryos/interpreter.py` | Extension→interpreter detection, command building, working-directory selection, RYOS.exe self-relaunch guard. | yes |
 | `ryos/settings.py` | App-data paths, defaults, tolerant load/save. | yes |
 | `ryos/settings_schema.py` | Declarative description of the 31 settings the Options dialog shows — kind, label, tab, bounds, per-item tidying — plus `coerce()`, which turns a form's raw text into a usable value and never raises. The Options dialog is generated from it. | yes |

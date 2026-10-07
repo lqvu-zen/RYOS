@@ -84,6 +84,9 @@ class JobBridge(QObject):
         self._schedule_timer.stop()
         self._host.stop_all()
 
+    def stop_job(self, job) -> None:
+        self._host.stop_job(job)
+
     # -- starting work -----------------------------------------------------
     def run_script(self, script_id: int, name: str, path: str, params: str,
                    interpreter: str, *, trigger: str = SOURCE_MANUAL,
