@@ -1554,12 +1554,24 @@ def check_drag_and_drop(app):
     if order("G") != before or order("") != [loose]:
         PROBLEMS.append("a drop from another group was accepted by the list")
 
-    # -- move: drop "b" on tab H, whose folder does not hold it ----------------
+    # -- move: drop "b" on tab H; it follows from G's folder into H's ----------
     bar = win.group_tab_bar
     h_index = keys.index("H")
     drop_on(bar, bar.tabRect(h_index).center(), CardPayload("script", ids[1], "G"))
     if ids[1] not in order("H"):
         PROBLEMS.append("dropping on tab H did not move the script there")
+    if db.get(ids[1])[2] != str(tmp / "elsewhere" / "b.py"):
+        PROBLEMS.append(f"a moved script did not follow into H's folder: {db.get(ids[1])[2]!r}")
+    if "outside" in win.statusBar().currentMessage():
+        PROBLEMS.append("a script re-pointed into H's folder still warned")
+
+    # A script kept outside G's folder has nothing to follow, so it warns.
+    far = db.add("far", str(tmp / "far.py"), "", "", "G")
+    win.reload()
+    app.processEvents()
+    drop_on(bar, bar.tabRect(h_index).center(), CardPayload("script", far, "G"))
+    if far not in order("H") or db.get(far)[2] != str(tmp / "far.py"):
+        PROBLEMS.append("a script outside G's folder did not move to H as it was")
     if "outside" not in win.statusBar().currentMessage():
         PROBLEMS.append("moving a script outside the new group's folder did "
                         f"not warn: {win.statusBar().currentMessage()!r}")
@@ -1613,7 +1625,7 @@ def check_drag_and_drop(app):
     mouse(QEvent.Type.MouseButtonRelease, press, Qt.MouseButton.NoButton)
 
     print("  [ok] drag and drop: reorder (scripts and pipelines apart), move "
-          "to tab with folder warning, own tab no-op, Ungrouped maps to '', "
+          "to tab follows the folder or warns, own tab no-op, Ungrouped maps to '', "
           "threshold respected")
     win.hide()
     win.deleteLater()

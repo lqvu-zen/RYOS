@@ -13,7 +13,10 @@ from the toolkit.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+
+from .quickrun import _is_inside
 
 # --- action keys -------------------------------------------------------------
 FAVORITE = "favorite"
@@ -267,9 +270,10 @@ def clone(db, kind: str, item_id: int) -> int | None:
 
     A clone differs from its source in name and id only, as `clone_group`'s
     do: a script keeps everything that defines how it runs -- including
-    ``detached``, ``env_vars`` and ``work_dir`` -- its presets, star and
-    highlight. A launcher cloned without ``detached`` would block its pipeline
-    again, which is the behaviour issue #5 removed.
+    ``detached``, ``env_vars`` and ``work_dir``, never re-pointed, as it stays
+    in its own group -- its presets, star and highlight. A launcher cloned
+    without ``detached`` would block its pipeline again, which is the
+    behaviour issue #5 removed.
     """
     if kind == PIPELINE:
         return db.clone_pipeline(item_id)
@@ -277,18 +281,48 @@ def clone(db, kind: str, item_id: int) -> int | None:
     return _copy_script(db, item_id, rec[5] or "") if rec else None
 
 
+def _repointed(path: str, src_base: str, dest_base: str) -> str:
+    """``path`` moved from under ``src_base`` to the same place under ``dest_base``.
+
+    Unchanged when either folder is unknown, the path is not inside
+    ``src_base`` -- a script kept elsewhere stays there -- or it is already
+    inside ``dest_base``, as when one folder holds the other.
+    """
+    if (not path or not src_base or not dest_base
+            or not _is_inside(path, src_base) or _is_inside(path, dest_base)):
+        return path
+    rel = os.path.relpath(path, src_base)
+    return dest_base if rel == "." else os.path.join(dest_base, rel)
+
+
+def repointed_paths(db, rec, group: str) -> tuple[str, str]:
+    """The ``(path, work_dir)`` a script has once it is in ``group``.
+
+    Each follows from its own group's base folder to ``group``'s, decided
+    independently. Ungrouped has no base folder, so nothing moves to or from it.
+    """
+    path, work_dir, own_group = rec[2], rec[8] or "", rec[5] or ""
+    if own_group == group:
+        return path, work_dir
+    src_base = db.get_group_base_dir(own_group)
+    dest_base = db.get_group_base_dir(group)
+    return (_repointed(path, src_base, dest_base),
+            _repointed(work_dir, src_base, dest_base))
+
+
 def _copy_script(db, script_id: int, group: str) -> int | None:
     """One script into ``group``, with everything that defines how it runs,
     its presets, star, highlight and whether agents may run it. Its own name in another group; "(copy)"
-    beside itself."""
+    beside itself. Its path and folder follow the group's base folder."""
     rec = db.get(script_id)
     if not rec:
         return None
-    _id, name, path, params, interp, own_group, temp_param, env_vars, work_dir = rec[:9]
+    _id, name, _path, params, interp, own_group, temp_param, env_vars, _wd = rec[:9]
+    path, work_dir = repointed_paths(db, rec, group)
     new_id = db.add(name if (own_group or "") != group else f"{name} (copy)",
                     path, params, interp, group, temp_param,
                     int(db.is_detached(script_id)),
-                    env_vars=env_vars, work_dir=work_dir or "")
+                    env_vars=env_vars, work_dir=work_dir)
     presets = [(label, p) for _pid, label, p in db.list_param_presets(script_id)]
     if presets:
         db.replace_param_presets(new_id, presets)
@@ -303,11 +337,13 @@ def _copy_script(db, script_id: int, group: str) -> int | None:
     return new_id
 
 
-def _how_it_runs(db, rec) -> tuple:
-    """Everything that defines how a script runs -- what _copy_script keeps."""
-    script_id, _name, path, params, interp, _group, temp_param, env_vars, work_dir = rec[:9]
+def _how_it_runs(db, rec, group: str) -> tuple:
+    """Everything that defines how a script runs once in ``group`` -- what
+    _copy_script keeps."""
+    script_id, _name, _path, params, interp, _group, temp_param, env_vars, _wd = rec[:9]
+    path, work_dir = repointed_paths(db, rec, group)
     return (path, params or "", interp or "", int(temp_param or 0), env_vars or "",
-            work_dir or "", bool(db.is_detached(script_id)))
+            work_dir, bool(db.is_detached(script_id)))
 
 
 def _same_script_in(db, script_id: int, group: str) -> int | None:
@@ -320,12 +356,12 @@ def _same_script_in(db, script_id: int, group: str) -> int | None:
     rec = db.get(script_id)
     if not rec:
         return None
-    wanted = _how_it_runs(db, rec)
+    wanted = _how_it_runs(db, rec, group)
     for row in db.list_all():
         if (row[8] or "") != group or row[2] != wanted[0]:
             continue
         other = db.get(row[0])
-        if other and _how_it_runs(db, other) == wanted:
+        if other and _how_it_runs(db, other, group) == wanted:
             return row[0]
     return None
 
