@@ -7,7 +7,7 @@ description: 'Cut a new GitHub release of the RYOS desktop app — bump the vers
 
 RYOS ships as a GitHub release with three downloadable assets, built and checked by `build_release.py`: **`RYOS-windows.zip`** (`RYOS.exe` and the console `ryos-cli.exe`, MCP server inside, for most users), **`RYOS-agent.zip`** (`ryos-cli.exe` alone, no window and no Qt — RYOS Agent) and **`RYOS-portable.zip`** (the source, run with uv via `run.bat`), plus `SHA256SUMS.txt`. The release is tagged in the repo `lqvu-zen/RYOS`, and the app's built-in update check (`ryos/notifications.py`) compares the running `__version__` against the latest GitHub tag — so the tag, the assets, and `__version__` must all line up.
 
-Releasing is **not a design problem** — it's a deterministic runbook, so unlike `add-ryos-feature` and `fix-ryos-bug` there are no design/review subagents here. You run it inline. The safety comes from **hard gates**: CI must be green on the commit you're shipping, the build must succeed, the exe must survive a smoke test *showing the version you just built*, and both zips must contain the expected files — stop and report at any gate that fails rather than publishing a broken release. A gate that fails for an unexpected reason is worth a minute's diagnosis before you either abort or work around it; the smoke test in particular has a known false failure, documented in step 4. (Drafting release notes from the commit log is the one step you may hand to a cheap Haiku/Sonnet subagent if you like; everything else is yours.)
+Releasing is **not a design problem** — it's a deterministic runbook, so unlike `add-ryos-feature` and `fix-ryos-bug` there is no design subagent here, and you run the steps inline. There is one independent check: before anything is pushed or published, a fresh `ryos-reviewer` in release mode confirms this is the *right* release (step 5), because the build and smoke gates only prove each zip builds and starts. The safety comes from **hard gates**: CI must be green on the commit you're shipping, the build must succeed, the exe must survive a smoke test *showing the version you just built*, every zip must contain the expected files, and the release review must print `READY TO PUBLISH` — stop and report at any gate that fails rather than publishing a broken release. A gate that fails for an unexpected reason is worth a minute's diagnosis before you either abort or work around it; the smoke test in particular has a known false failure, documented in step 4. (Drafting release notes from the commit log is the one step you may hand to a cheap Haiku/Sonnet subagent if you like; everything else is yours.)
 
 ## Environment this needs
 
@@ -65,6 +65,8 @@ It ends with `build_release done`, a size per zip (2.3.0: windows about 37 MB, a
 
 > `build.bat` / `build_cxfreeze.bat` build only the Windows folder, for development; releases go through `build_release.py`.
 
+There is nothing to package by hand. Don't use `Compress-Archive` for the portable zip: it sweeps in every local `__pycache__` (95 stale bytecode files, tripling the zip, in 2.0.0's first attempt).
+
 ### 4. Smoke-test the builds — hard gate
 
 A release that crashes on launch is worse than no release, so prove both builds start before going further. `tests/launch_smoke.py` launches them the way the maintainer needs it launched:
@@ -95,9 +97,36 @@ cd D:/Projects/RYOS && uv run python tests/real_data_smoke.py
 
 It prints the schema step and what changed (`schema: v7 -> v10; pipeline steps 59 -> 0`). A count that drops is a stop until you know why: open another copy with `sqlite3` and confirm the rows were ones the migration is meant to remove (v8's `_migrate_drop_orphans` removes only steps, presets and schedules whose script or pipeline is gone) — and say so in the release notes. The current-data check also opens every script in the script dialog and fails if an unchanged save would change one (it caught 2.2.0's outside-folder bug).
 
-### 5. (Packaging is step 3)
+### 5. Release review — hard gate
 
-`build_release.py` zips and checks all three downloads; there is nothing to package by hand. Don't use `Compress-Archive` for the portable zip: it sweeps in every local `__pycache__` (95 stale bytecode files, tripling the zip, in 2.0.0's first attempt).
+The builds start; now confirm this is the *right* release before anything is pushed. Spawn a fresh reviewer, which hasn't seen this session:
+
+```
+Agent({ description: "Release review v<X.Y.Z>", subagent_type: "ryos-reviewer", prompt: <brief> })
+```
+
+(If `ryos-reviewer` isn't listed, use `subagent_type: "general-purpose"`, `model: "opus"`, `effort: "high"`, and paste `.claude/agents/ryos-reviewer.md` at the top of the brief.)
+
+The brief starts with **"Release mode."** and includes, verbatim:
+
+- the version being released and the last released tag (`gh release list -R lqvu-zen/RYOS -L 1`);
+- the approved release notes from step 1, including the "Which download?" section;
+- the **expected lineup** below;
+- the last lines of the `build_release.py` output (step 3) and every smoke-test result (step 4);
+- the release plan's final step with its "Done when" items (`docs/plans/release-<X.Y.Z>.md`), if there is one.
+
+Expected lineup (**update this table whenever the downloads change**, together with `problems_in()` in `build_release.py`):
+
+| Zip | Variant | Must contain | Must not contain |
+|---|---|---|---|
+| `RYOS-windows.zip` | `windows` | `RYOS.exe`, `ryos-cli.exe`, the `mcp` package (`lib/mcp/`) | — |
+| `RYOS-agent.zip` | `agent` | `ryos-cli.exe`, the `mcp` package (`lib/mcp/`) | `RYOS.exe`, `qtui`, Qt / PySide6 / shiboken6 |
+| `RYOS-portable.zip` | source | the source, `ryos/__init__.py`, `run.bat`, `install_uv.bat` | `__pycache__`, `_build_info.py` |
+| all | | | `scripts.db`, a settings file, `__pycache__` in the source |
+
+`SHA256SUMS.txt` lists exactly these three zips.
+
+If the reviewer reports BLOCKERS, fix them (rebuilding and re-smoking if any build changed) and review again. Go on to step 6 only on `READY TO PUBLISH`. Then show the user every **needs a human** item it listed, such as the clean-machine test of each MCP build, and **wait for them to confirm each one** before publishing.
 
 ### 6. Commit and push the version bump
 
@@ -140,4 +169,4 @@ cd D:/Projects/RYOS && rm -rf dist/* build
 
 ### 9. Report
 
-Give the user the release URL (`gh` prints it), the version shipped, the two assets attached, and a one-line confirmation that the smoke test and zip checks passed. Note anything you skipped or that needs follow-up.
+Give the user the release URL (`gh` prints it), the version shipped, the assets attached, and a one-line confirmation that the smoke test and zip checks passed and that the release review printed `READY TO PUBLISH`. Note anything you skipped or that needs follow-up.
