@@ -159,6 +159,12 @@ def on_start(settings: dict, tray_available: bool) -> str:
     return HIDE if tray_available else MINIMIZE
 
 
+def is_rebuild(verb: str) -> bool:
+    """The command line changed scripts: rebuild the rows, leave the window
+    where it is."""
+    return verb == "REBUILD"
+
+
 def is_reload(verb: str) -> bool:
     """The command line finished a run: bring the cards up to date, and leave
     the window where it is."""

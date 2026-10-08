@@ -165,6 +165,9 @@ def _close_gracefully(conn) -> None:
 #: Sent by the command line after a run, so a running window brings its
 #: cards up to date. Unlike RESTORE it does not bring the window forward.
 RELOAD = "RELOAD"
+#: Sent by the command line after it added, changed or removed something: the
+#: window rebuilds its rows (RELOAD only brings existing ones up to date).
+REBUILD = "REBUILD"
 
 
 def signal_running(verb: str) -> bool:

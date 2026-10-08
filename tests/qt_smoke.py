@@ -4654,10 +4654,26 @@ def check_cli_run_reaches_the_window(app):
             PROBLEMS.append("a failed CLI run did not turn the window's row to Retry")
         if restored:
             PROBLEMS.append("RELOAD brought the window forward")
+        # A script added from the command line appears in the open window.
+        from ryos.single_instance import REBUILD
+        added = tmp / "added.py"
+        added.write_text("print('added')\n", encoding="utf-8")
+        code = cli.main(["add", str(added), "--group", "G", "--name", "from the cli"],
+                        db=db, settings={}, out=io.StringIO(), err=io.StringIO(),
+                        rebuild_window=lambda: Lock.signals.put(REBUILD))
+        win._poll_instance()
+        for _ in range(10):
+            app.processEvents()
+        names = [c.name_label.text() for c in win.card_lists["G"].section("scripts").cards]
+        if code != 0 or "from the cli" not in names:
+            PROBLEMS.append(f"a script added from the CLI did not appear: {names}")
+        if restored:
+            PROBLEMS.append("REBUILD brought the window forward")
     finally:
         win.close()
         win.deleteLater()
-    print("  [ok] CLI run: a running window's row shows how it went, and stays put")
+    print("  [ok] CLI run: a running window's row shows how it went, and stays put; "
+          "a script added from the CLI appears")
 
 
 def check_run_becomes_stop(app):

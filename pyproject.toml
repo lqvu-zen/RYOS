@@ -76,6 +76,7 @@ files = [
     "ryos/jobhost.py",
     "ryos/headless.py",
     "ryos/cli.py",
+    "ryos/manage.py",
     "ryos/agenttools.py",
     "ryos/mcpserver.py",
     "ryos/notifications.py",

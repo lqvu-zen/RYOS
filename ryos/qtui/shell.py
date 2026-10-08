@@ -1783,6 +1783,9 @@ class MainWindow(QMainWindow):
                 if traypolicy.is_reload(verb):
                     self._refresh_card_statuses()
                     continue
+                if traypolicy.is_rebuild(verb):
+                    self._defer_reload()
+                    continue
                 self.restore_from_tray(
                     follow_cursor=traypolicy.restore_follows_cursor(verb))
         except queue.Empty:

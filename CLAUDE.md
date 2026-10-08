@@ -37,6 +37,9 @@ To run a whole working session in the Qt app: `uv run python tests/session_smoke
 uv run ryos list [--json]
 uv run ryos run <script> [--preset LABEL | --params="--flag value"] [--timeout S] [--json]
 uv run ryos pipeline <pipeline> [--timeout S] [--json]
+uv run ryos add <file> [--name N] [--group G] [--workdir DIR] [--params="..."] [--expose] [--yes]
+uv run ryos edit <script> ... | remove <script> | expose <script> on|off [--pipeline]
+uv run ryos preset add|remove <script> <label> [--params="..."] | history [<script>] [--json]
 uv run --extra mcp ryos mcp      # MCP server over stdio, for AI agents
 ```
 
@@ -67,6 +70,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Launching runs, shared by window and headless  | `ryos/jobhost.py`       |
 | Runs with no window (CLI / MCP engine)         | `ryos/headless.py`      |
 | Command line: `ryos list / run / pipeline`     | `ryos/cli.py`           |
+| `ryos-cli add/edit/remove/expose/preset` rules | `ryos/manage.py`        |
 | What an agent may do (MCP tools, no SDK)       | `ryos/agenttools.py`    |
 | `ryos mcp`: the MCP server (stdio)             | `ryos/mcpserver.py`     |
 | Recurring schedules (pure, naive local time)   | `ryos/scheduling.py`    |

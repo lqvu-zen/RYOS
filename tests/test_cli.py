@@ -87,9 +87,10 @@ class TestList(_Base):
         self.assertEqual(code, 0)
         listing = json.loads(out)
         self.assertEqual(listing["scripts"], [
-            {"id": sid, "name": "build", "group": "A", "ref": "A/build", "presets": ["quick"]}])
+            {"id": sid, "name": "build", "group": "A", "ref": "A/build", "presets": ["quick"],
+             "agents": False}])
         self.assertEqual(listing["pipelines"], [
-            {"id": pid, "name": "ship", "group": "B", "ref": "B/ship", "steps": 1}])
+            {"id": pid, "name": "ship", "group": "B", "ref": "B/ship", "steps": 1, "agents": False}])
         code, out, _ = self.ryos("list")
         self.assertIn("A/build", out)
         self.assertIn("presets: quick", out)
@@ -183,6 +184,184 @@ class TestPipeline(_Base):
         self.assertIn("step ok", out)
         code, out, _ = self.ryos("pipeline", "broken", "--json")
         self.assertEqual((code, json.loads(out)["status"]), (cli.EXIT_FAILED, "error"))
+
+
+class _Manage(_Base):
+    """The management commands, through cli.main as a person would type them.
+    ``answer`` is what the terminal says to a question: True, False, or None
+    for no terminal (an agent calling ryos-cli)."""
+
+    def setUp(self):
+        super().setUp()
+        self.answer = None
+        self.questions = []
+        self.rebuilt = 0
+
+    def ryos(self, *argv):
+        out, err = io.StringIO(), io.StringIO()
+
+        def ask(question):
+            self.questions.append(question)
+            return self.answer
+
+        def rebuild():
+            self.rebuilt += 1
+        code = cli.main(list(argv), db=self.db, settings={}, out=out, err=err,
+                        notify_window=lambda: None, rebuild_window=rebuild, ask=ask)
+        return code, out.getvalue(), err.getvalue()
+
+    def file(self, name="backup.py", folder=None):
+        folder = folder or self.tmp
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / name
+        path.write_text("print('ok')\n", encoding="utf-8")
+        return str(path)
+
+
+class TestAdd(_Manage):
+    def test_adds_as_the_dialog_would_and_makes_the_group(self):
+        code, out, _ = self.ryos("add", self.file(), "--group", "Tools", "--params=--fast")
+        self.assertEqual(code, 0)
+        self.assertIn("Added Tools/backup", out)
+        rec = self.db.get(next(r[0] for r in self.db.list_all() if r[1] == "backup"))
+        self.assertEqual((rec[1], rec[3], rec[4], rec[5]), ("backup", "--fast", "", "Tools"))
+        self.assertIn("Tools", self.db.list_groups())
+        self.assertEqual(self.rebuilt, 1)
+        self.assertFalse(self.db.agent_exposed_ids("script"))
+
+    def test_a_name_already_in_the_group_is_refused(self):
+        self.ryos("add", self.file(), "--group", "Tools")
+        code, _, err = self.ryos("add", self.file("other.py"), "--group", "Tools",
+                                 "--name", "backup")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("already has a script named 'backup'", err)
+        # In another group the same name is fine.
+        self.assertEqual(self.ryos("add", self.file(), "--group", "Home")[0], 0)
+
+    def test_questions_refuse_without_yes(self):
+        missing = str(self.tmp / "not-yet.py")
+        code, _, err = self.ryos("add", missing, "--group", "Tools")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("--yes", err)
+        self.assertEqual(self.ryos("add", missing, "--group", "Tools", "--yes")[0], 0)
+        base = self.tmp / "base"
+        base.mkdir()
+        self.db.create_group("Based", base_dir=str(base))
+        code, _, err = self.ryos("add", self.file("away.py"), "--group", "Based")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("outside the base folder", err)
+
+    def test_a_working_folder_must_exist(self):
+        code, _, err = self.ryos("add", self.file(), "--workdir", str(self.tmp / "nope"))
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("existing folder", err)
+
+    def test_expose_needs_a_person(self):
+        # No terminal (an agent): refused, and nothing added.
+        code, _, err = self.ryos("add", self.file(), "--group", "Tools", "--expose")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("terminal", err)
+        self.assertEqual(self.db.list_all(), [])
+        self.answer = True
+        self.assertEqual(self.ryos("add", self.file(), "--group", "Tools", "--expose")[0], 0)
+        self.assertEqual(len(self.db.agent_exposed_ids("script")), 1)
+        self.answer = None
+        self.assertEqual(self.ryos("add", self.file("b.py"), "--expose", "--yes")[0], 0)
+        self.assertEqual(len(self.db.agent_exposed_ids("script")), 2)
+
+
+class TestEditRemoveExpose(_Manage):
+    def setUp(self):
+        super().setUp()
+        self.ryos("add", self.file(), "--group", "Tools", "--params=--a")
+        self.sid = self.db.list_all()[0][0]
+        self.db.replace_param_presets(self.sid, [("full", "--full")])
+        self.rebuilt = 0
+
+    def test_edit_changes_what_was_given_only(self):
+        self.answer = True
+        self.ryos("expose", "Tools/backup", "on")
+        code, out, _ = self.ryos("edit", "Tools/backup", "--params=--b", "--name", "nightly")
+        self.assertEqual(code, 0)
+        rec = self.db.get(self.sid)
+        self.assertEqual((rec[1], rec[3]), ("nightly", "--b"))
+        self.assertEqual([p[1] for p in self.db.list_param_presets(self.sid)], ["full"])
+        self.assertTrue(self.db.is_agent_exposed("script", self.sid))
+
+    def test_edit_refuses_a_taken_name(self):
+        self.ryos("add", self.file("x.py"), "--group", "Tools")
+        code, _, err = self.ryos("edit", "Tools/x", "--name", "backup")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("already has", err)
+
+    def test_remove_asks_and_names_its_pipelines(self):
+        pid = self.db.create_pipeline("ship", "Tools")
+        self.db.add_pipeline_step(pid, self.sid)
+        code, _, err = self.ryos("remove", "Tools/backup")         # no terminal
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.answer = False
+        code, _, err = self.ryos("remove", "Tools/backup")
+        self.assertIn("Left as it was", err)
+        self.assertIn("'ship'", self.questions[-1])
+        self.assertIsNotNone(self.db.get(self.sid))
+        self.assertEqual(self.ryos("remove", "Tools/backup", "--yes")[0], 0)
+        self.assertIsNone(self.db.get(self.sid))
+        self.assertEqual(self.rebuilt, 1)
+
+    def test_expose_on_and_off(self):
+        code, _, err = self.ryos("expose", "Tools/backup", "on")        # no terminal
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertFalse(self.db.is_agent_exposed("script", self.sid))
+        self.assertEqual(self.ryos("expose", "Tools/backup", "on", "--yes")[0], 0)
+        self.assertTrue(self.db.is_agent_exposed("script", self.sid))
+        # Turning it off never asks.
+        code, out, _ = self.ryos("expose", "Tools/backup", "off")
+        self.assertEqual((code, self.db.is_agent_exposed("script", self.sid)), (0, False))
+        self.assertIn("not available to agents", out)
+        pid = self.db.create_pipeline("ship", "Tools")
+        self.assertEqual(self.ryos("expose", "Tools/ship", "on", "--pipeline", "--yes")[0], 0)
+        self.assertTrue(self.db.is_agent_exposed("pipeline", pid))
+
+    def test_presets(self):
+        self.assertEqual(self.ryos("preset", "add", "Tools/backup", "quick",
+                                   "--params=--fast")[0], 0)
+        self.assertEqual([p[1:] for p in self.db.list_param_presets(self.sid)],
+                         [("full", "--full"), ("quick", "--fast")])
+        code, _, err = self.ryos("preset", "add", "Tools/backup", "quick", "--params=--x")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertEqual(self.ryos("preset", "remove", "Tools/backup", "full")[0], 0)
+        code, _, err = self.ryos("preset", "remove", "Tools/backup", "full")
+        self.assertIn("has no preset 'full'", err)
+
+    def test_list_says_what_agents_may_run(self):
+        self.ryos("expose", "Tools/backup", "on", "--yes")
+        code, out, _ = self.ryos("list", "--json")
+        self.assertTrue(json.loads(out)["scripts"][0]["agents"])
+        self.assertIn("available to agents", self.ryos("list")[1])
+
+    def test_history(self):
+        self.assertIn("Nothing has run yet", self.ryos("history")[1])
+        cli.main(["run", "Tools/backup"], db=self.db, settings={}, out=io.StringIO(),
+                 err=io.StringIO(), notify_window=lambda: None)
+        code, out, _ = self.ryos("history", "Tools/backup")
+        self.assertEqual(code, 0)
+        self.assertIn("backup", out.splitlines()[1])
+        rows = json.loads(self.ryos("history", "--json")[1])
+        self.assertEqual((rows[0]["name"], rows[0]["status"], rows[0]["by"]),
+                         ("backup", "ok", SOURCE_CLI))
+        self.assertEqual(self.rebuilt, 0)          # reading changes nothing
+
+    def test_history_prints_on_a_windows_console(self):
+        # A console in cp1252 has no "✓": the mark is replaced, not a crash.
+        cli.main(["run", "Tools/backup"], db=self.db, settings={}, out=io.StringIO(),
+                 err=io.StringIO(), notify_window=lambda: None)
+        raw = io.BytesIO()
+        out = io.TextIOWrapper(raw, encoding="cp1252")
+        code = cli.main(["history"], db=self.db, settings={}, out=out, err=io.StringIO(),
+                        rebuild_window=lambda: None, ask=lambda q: None)
+        out.flush()
+        self.assertEqual(code, 0)
+        self.assertIn(b"backup", raw.getvalue())
 
 
 class TestMcpWithoutTheSdk(unittest.TestCase):
