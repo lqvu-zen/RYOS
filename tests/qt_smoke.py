@@ -2496,7 +2496,7 @@ def check_updates_and_notify(app):
     import threading
     import time as _time
 
-    from ryos import __version__, notifications
+    from ryos import __version__, buildinfo, notifications
     from ryos.db import ScriptDB
     from ryos.qtui.jobs import JobBridge
     from ryos.qtui.shell import MainWindow
@@ -2533,7 +2533,8 @@ def check_updates_and_notify(app):
         return
     if threads != [False]:
         PROBLEMS.append("the update fetch ran on the UI thread")
-    if win.update_label.text() != notifications.banner_text("v999.0.0", __version__):
+    if win.update_label.text() != notifications.banner_text(
+            "v999.0.0", __version__, buildinfo.download_name()):
         PROBLEMS.append(f"banner said {win.update_label.text()!r}")
     win.update_download.click()
     if opened != ["https://example.invalid/r"]:
