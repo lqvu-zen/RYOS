@@ -4603,6 +4603,35 @@ def check_bug_report(app):
     print("  [ok] bug report: status-bar button and Help menu open a filled-in issue")
 
 
+def check_newer_database_is_refused(app):
+    """Data a newer RYOS reshaped: the window says why and stops, before it
+    is built -- and the file is left as it was."""
+    import tempfile
+    from unittest import mock
+
+    from ryos import db as dbmod
+    from ryos.qtui import main as qtmain
+
+    path = Path(tempfile.mkdtemp()) / "newer.db"
+    dbmod.ScriptDB(path)
+    import sqlite3
+    with sqlite3.connect(path) as conn:
+        conn.execute("UPDATE meta SET value=? WHERE key='compatible_from'",
+                     (str(dbmod.COMPATIBLE_FROM + 1),))
+    before = path.read_bytes()
+    said: list = []
+    real = dbmod.ScriptDB
+    with mock.patch.object(dbmod, "ScriptDB", side_effect=lambda: real(path)), \
+            mock.patch("PySide6.QtWidgets.QMessageBox.critical",
+                       side_effect=lambda parent, title, text: said.append((title, text))):
+        code = qtmain.run(settings={"auto_check_update": False, "quick_run_enabled": False})
+    if code != 1 or not said or "newer RYOS" not in said[0][1]:
+        PROBLEMS.append(f"a newer database did not stop the window clearly: {code} {said}")
+    if path.read_bytes() != before:
+        PROBLEMS.append("the window changed a database a newer RYOS reshaped")
+    print("  [ok] newer data: the window says to update, stops, and leaves the file alone")
+
+
 def check_cli_run_reaches_the_window(app):
     """A run from the command line reaches a running window's row (RELOAD on
     the instance socket) -- without bringing the window forward."""
@@ -5412,6 +5441,7 @@ def main() -> int:
     check_tray_round_trip(app)
     check_run_becomes_stop(app)
     check_cli_run_reaches_the_window(app)
+    check_newer_database_is_refused(app)
     check_bug_report(app)
     check_maximised_layout(app)
     check_ampersands_show(app)

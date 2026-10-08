@@ -130,7 +130,13 @@ def serve() -> int:
     settings = _load_settings()
     setup_logging(settings.get("logging_enabled", True),
                   settings.get("log_level", "INFO"), LOG_DIR / "ryos-mcp.log")
-    tools = AgentTools(ScriptDB(), settings, notify_window=lambda: signal_running(RELOAD))
+    from .db import NewerDatabaseError
+    try:
+        db = ScriptDB()
+    except NewerDatabaseError as e:
+        print(f"ryos mcp: {e}", file=sys.stderr)
+        return EXIT_NO_SDK
+    tools = AgentTools(db, settings, notify_window=lambda: signal_running(RELOAD))
     try:
         build(tools).run("stdio")
     finally:

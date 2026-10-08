@@ -127,7 +127,7 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 1 Decisions | defaults taken |
 | 2 MCP in the build | done (full build 65 → 93 MB; `cryptography` is imported at start, so it stays) |
 | 3 Exit code | done |
-| 4 Compatible-from guard | — |
+| 4 Compatible-from guard | done (schema v10 adds `meta`) |
 | 5 CLI management | done |
 | 6 History source | done |
 | 7 Build variant | — |

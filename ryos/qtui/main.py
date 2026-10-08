@@ -45,8 +45,16 @@ def _tray_wanted() -> bool:
 def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None,
         argv=None) -> int:
     """Start RYOS and run until it quits."""
-    app, _win = build(settings=settings, launched_at_startup=launched_at_startup,
-                      instance_lock=instance_lock, argv=argv)
+    from ..db import NewerDatabaseError
+    try:
+        app, _win = build(settings=settings, launched_at_startup=launched_at_startup,
+                          instance_lock=instance_lock, argv=argv)
+    except NewerDatabaseError as e:
+        # No window without the data: say why, and stop. The application
+        # already exists (build made it before opening the database).
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.critical(None, "RYOS needs updating", str(e))
+        return 1
     return app.exec()
 
 
@@ -100,7 +108,7 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
     palette = palette_for(settings.get("theme", "light"),
                           settings.get("accent_color"), customs)
 
-    db = ScriptDB()
+    db = ScriptDB()             # NewerDatabaseError goes up to run()
     prune_run_history(db, settings)
 
     win = MainWindow(palette, settings=settings, save_settings=_save_settings,

@@ -43,7 +43,7 @@ from typing import Callable, TextIO
 
 from . import __version__, manage
 from . import history as runhistory
-from .db import SOURCE_CLI, ScriptDB
+from .db import SOURCE_CLI, NewerDatabaseError, ScriptDB
 from .headless import (PIPELINE, SCRIPT, TIMEOUT, HeadlessError, HeadlessRunner,
                        Run, Target, resolve)
 from .jobs import STOPPED
@@ -418,7 +418,11 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         settings = _load_settings() if settings is None else settings
         setup_logging(settings.get("logging_enabled", True),
                       settings.get("log_level", "INFO"), LOG_DIR / "ryos-cli.log")
-        db = ScriptDB() if db is None else db
+        try:
+            db = ScriptDB() if db is None else db
+        except NewerDatabaseError as e:
+            print(f"ryos: {e}", file=err)
+            return EXIT_REFUSED
     # Every command can print a mark the console's code page lacks: history's
     # "✓ OK", a name, a script's own output.
     for stream in (out, err):

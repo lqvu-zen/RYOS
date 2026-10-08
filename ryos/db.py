@@ -245,6 +245,14 @@ def _migrate_agent_exposed(conn):
                          "agent_exposed INTEGER NOT NULL DEFAULT 0")
 
 
+def _migrate_meta(conn):
+    """A small key/value table for facts about the database itself; first,
+    ``compatible_from`` (see COMPATIBLE_FROM)."""
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('compatible_from', ?)",
+                 (str(COMPATIBLE_FROM),))
+
+
 def _carry_exposure(conn, table: str, src_id: int, dst_id: int) -> None:
     """Give a copy its source's agent_exposed. Copies within this database
     keep it, as they keep everything else; an import never sets it."""
@@ -255,11 +263,47 @@ def _carry_exposure(conn, table: str, src_id: int, dst_id: int) -> None:
 _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
                      4: _migrate_script_env, 5: _migrate_run_history,
                      6: _migrate_schedules, 7: _migrate_step_failure_policy,
-                     8: _migrate_drop_orphans, 9: _migrate_agent_exposed}
+                     8: _migrate_drop_orphans, 9: _migrate_agent_exposed,
+                     10: _migrate_meta}
 
 #: kind -> table, for the methods that take either.
 _KIND_TABLE = {"script": "scripts", "pipeline": "pipelines"}
 SCHEMA_VERSION = max((_BASELINE_VERSION, *_MIGRATIONS))
+
+
+#: The oldest database layout this build can safely read and write -- not
+#: the schema version. Migrations only add, so an older RYOS works on a newer
+#: database (2.1.2 on v9) and nothing raises this. A migration that older
+#: builds could not live with -- a column repurposed, a table reshaped -- sets
+#: ``meta.compatible_from`` to a new number here and in the migration; a build
+#: whose number is lower then refuses the file instead of damaging it.
+#: (2.2.0 and earlier know nothing of it: the guard starts with 2.3.0.)
+COMPATIBLE_FROM = 1
+
+
+class NewerDatabaseError(Exception):
+    """The database was changed by a newer RYOS in a way this one cannot
+    safely read or write. Nothing was changed."""
+
+    def __init__(self, path, needs: int):
+        self.path, self.needs = path, needs
+        super().__init__(
+            f"Your RYOS data ({path}) was updated by a newer RYOS, and this one "
+            "cannot use it safely. Nothing was changed. Please update RYOS: "
+            "https://github.com/lqvu-zen/RYOS/releases/latest")
+
+
+def _compatible_from(conn) -> int:
+    """The database's ``meta.compatible_from``, or 1 before it existed."""
+    has_meta = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'").fetchone()
+    if not has_meta:
+        return 1
+    row = conn.execute("SELECT value FROM meta WHERE key='compatible_from'").fetchone()
+    try:
+        return int(row[0]) if row else 1
+    except (TypeError, ValueError):
+        return 1
 
 
 def _run_migrations(conn, migrations: dict, target_version: int) -> int:
@@ -291,6 +335,10 @@ class ScriptDB:
         try:
             yield conn
             conn.commit()
+        except NewerDatabaseError:
+            # A deliberate refusal, said to the person; not a fault to log.
+            conn.rollback()
+            raise
         except Exception:
             conn.rollback()
             _log.exception("DB error")
@@ -300,6 +348,11 @@ class ScriptDB:
 
     def _init_db(self):
         with self._connect() as conn:
+            # Before anything writes: a database a newer RYOS reshaped is
+            # refused whole, never half-migrated.
+            needs = _compatible_from(conn)
+            if needs > COMPATIBLE_FROM:
+                raise NewerDatabaseError(self.db_path, needs)
             self._ensure_baseline(conn)
             # Stamp pre-versioning databases (and brand-new ones) at the
             # baseline schema, then apply any later migrations exactly once.

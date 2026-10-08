@@ -1874,6 +1874,58 @@ class TestOrphanMigration(unittest.TestCase):
                 self.assertEqual(self._count(db, table), 1)
 
 
+class TestCompatibleFrom(unittest.TestCase):
+    """The guard against data a newer RYOS reshaped (release-2.3.0 plan, A3):
+    refused whole, before anything writes; additive upgrades never trip it."""
+
+    def _db_at(self, value):
+        db = _make_db()
+        with sqlite3.connect(db.db_path) as conn:
+            conn.execute("UPDATE meta SET value=? WHERE key='compatible_from'", (value,))
+        return db.db_path
+
+    def test_a_new_database_records_it(self):
+        from ryos.db import COMPATIBLE_FROM
+        db = _make_db()
+        with sqlite3.connect(db.db_path) as conn:
+            self.assertEqual(conn.execute(
+                "SELECT value FROM meta WHERE key='compatible_from'").fetchone(),
+                (str(COMPATIBLE_FROM),))
+
+    def test_equal_older_or_missing_opens(self):
+        from ryos.db import COMPATIBLE_FROM
+        for value in (str(COMPATIBLE_FROM), "0", "junk"):
+            with self.subTest(value=value):
+                ScriptDB(self._db_at(value))
+        # A database from before the table (2.2.0 and older) opens and gets it.
+        path = self._db_at(str(COMPATIBLE_FROM))
+        with sqlite3.connect(path) as conn:
+            conn.execute("DROP TABLE meta")
+            conn.execute("PRAGMA user_version = 9")
+        ScriptDB(path)
+
+    def test_newer_is_refused_and_left_alone(self):
+        from ryos.db import COMPATIBLE_FROM, NewerDatabaseError
+        path = self._db_at(str(COMPATIBLE_FROM + 1))
+        before = Path(path).read_bytes()
+        with self.assertRaises(NewerDatabaseError) as cm:
+            ScriptDB(path)
+        self.assertIn("newer RYOS", str(cm.exception))
+        self.assertIn("Nothing was changed", str(cm.exception))
+        self.assertEqual(Path(path).read_bytes(), before)
+
+    def test_the_cli_refuses_with_125(self):
+        import io as _io
+        from ryos import cli as _cli
+        from ryos.db import COMPATIBLE_FROM
+        path = self._db_at(str(COMPATIBLE_FROM + 1))
+        err = _io.StringIO()
+        with mock.patch("ryos.cli.ScriptDB", side_effect=lambda: ScriptDB(path)):
+            code = _cli.main(["list"], settings={}, out=_io.StringIO(), err=err)
+        self.assertEqual(code, _cli.EXIT_REFUSED)
+        self.assertIn("newer RYOS", err.getvalue())
+
+
 class TestAgentExposure(unittest.TestCase):
     """Whether an agent may run a script or pipeline (schema v9). Off unless
     its owner turns it on; copies within the database keep it; an import
