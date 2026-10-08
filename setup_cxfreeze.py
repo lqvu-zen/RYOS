@@ -140,7 +140,7 @@ BUILD_INFO.write_text(buildinfo.build_info_source(VARIANT), encoding="utf-8")
 try:
     setup(
         name="RYOS",
-        version="2.2.0",
+        version="2.3.0",
         description="RYOS - Run Your Own Scripts",
         options={"build_exe": build_options},
         executables=EXECUTABLES,
