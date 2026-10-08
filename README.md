@@ -96,7 +96,7 @@ Leave **Interpreter** blank for auto-detection, or type any custom command to ru
 The primary packager is **cx_Freeze** (produces a folder you distribute or zip):
 
 ```bash
-uv run --with cx_Freeze python setup_cxfreeze.py build_exe
+uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat
 ```
 

@@ -99,6 +99,63 @@ def _check_cli(cli: list, env: dict, data: Path, problems: list) -> str:
     return f"  [ok] the command line ({shown}): --version, list, run"
 
 
+def _check_mcp(exe: Path, env: dict, data: Path, problems: list) -> str:
+    """`ryos-cli.exe mcp` from a build: initialize, the tool list and
+    list_scripts, spoken as the protocol's newline-delimited JSON-RPC -- no
+    SDK needed here, and none on the machine but the one inside the exe."""
+    sys.path.insert(0, str(ROOT))
+    from ryos.db import ScriptDB
+    db = ScriptDB(data / "scripts.db")
+    hello = next((r[0] for r in db.list_all() if r[1] == "hello"), None)
+    if hello is not None:
+        db.set_agent_exposed("script", hello, True)
+    proc = subprocess.Popen([str(exe), "mcp"], cwd=str(ROOT), env=env, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            encoding="utf-8", errors="replace")
+    answers = {}
+
+    def send(message):
+        proc.stdin.write(json.dumps(message) + "\n")
+        proc.stdin.flush()
+
+    def answer(want_id):
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            got = json.loads(line)
+            if got.get("id") == want_id:
+                return got
+        return {}
+    try:
+        send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "launch-smoke", "version": "1"}}})
+        answers["init"] = answer(1)
+        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        answers["tools"] = answer(2)
+        send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+              "params": {"name": "list_scripts", "arguments": {}}})
+        answers["list"] = answer(3)
+    finally:
+        proc.stdin.close()
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    info = answers["init"].get("result", {}).get("serverInfo", {})
+    tools = sorted(t["name"] for t in answers["tools"].get("result", {}).get("tools", []))
+    listed = json.dumps(answers["list"].get("result", {}))
+    if info.get("name") != "RYOS" or info.get("version") != _source_version():
+        problems.append(f"ryos-cli mcp did not start as RYOS {_source_version()}: "
+                        f"{answers['init']!r} {proc.stderr.read()[-500:]!r}")
+    elif "run_script" not in tools or "Smoke/hello" not in listed:
+        problems.append(f"ryos-cli mcp tools {tools}, list_scripts {listed[:200]}")
+    return f"  [ok] MCP from {exe.name} mcp: initialize, {len(tools)} tools, list_scripts"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--exe", help="a built RYOS.exe to launch instead of source")
@@ -175,6 +232,8 @@ def main() -> int:
         cli_exe = Path(args.exe).resolve().parent / "ryos-cli.exe"
         if cli_exe.exists():
             cli_report = _check_cli([str(cli_exe)], env, data, problems)
+            if not problems:
+                cli_report += "\n" + _check_mcp(cli_exe, env, data, problems)
         else:
             problems.append(f"the build has no {cli_exe.name} beside RYOS.exe")
     else:

@@ -17,13 +17,13 @@ Apart from PySide6, everything is from the standard library (sqlite3, subprocess
 ## Building the Executable
 
 ```bash
-uv run --with cx_Freeze python setup_cxfreeze.py build_exe
+uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 
-Output: `dist/cxfreeze/` folder containing `RYOS.exe` (the window), `ryos-cli.exe` (the command line, built with the console base -- `RYOS.exe` has no stdout) and required DLLs (about 65 MB; `setup_cxfreeze.py` leaves out the Qt libraries and plugin folders RYOS does not use, Qt's translations, and Tcl/Tk). Distribute the whole folder (or zip it). cx_Freeze is the only supported packager. The MCP server is not in the build (`ryos-cli mcp` says to run it from source).
+Output: `dist/cxfreeze/` folder containing `RYOS.exe` (the window), `ryos-cli.exe` (the command line, built with the console base -- `RYOS.exe` has no stdout) and required DLLs (about 93 MB; `setup_cxfreeze.py` leaves out the Qt libraries and plugin folders RYOS does not use, Qt's translations, and Tcl/Tk). Distribute the whole folder (or zip it). cx_Freeze is the only supported packager. `ryos-cli.exe` carries the MCP server (`ryos-cli mcp`), so the build needs the `mcp` extra -- `setup_cxfreeze.py` refuses to build without it. The SDK adds about 28 MB, most of it `cryptography` and `pydantic_core`, both imported when the server starts.
 
-To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no toasts, no window; `--visible` shows it on a second screen). It then runs the command line in the same folder -- `ryos-cli.exe` beside a built `RYOS.exe`, which must be there, or `python -m ryos` -- with `--version`, `list` and a real `run`.
+To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no toasts, no window; `--visible` shows it on a second screen). It then runs the command line in the same folder -- `ryos-cli.exe` beside a built `RYOS.exe`, which must be there, or `python -m ryos` -- with `--version`, `list` and a real `run`, and, for a build, talks MCP to `ryos-cli.exe mcp` (initialize, the tool list, `list_scripts`) as plain JSON-RPC, so the smoke itself needs no SDK.
 
 To check the Qt app against your own data without changing it: `uv run python tests/real_data_smoke.py` (copies `%APPDATA%\RYOS` to a throwaway folder, opens every dialog and editor on the copy, prints counts only, and checks the real folder is unchanged; `--visible` as above; `--db PATH` opens a copy of another database file instead, e.g. an older backup, to check an upgrade).
 

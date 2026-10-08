@@ -120,7 +120,7 @@ the extension to `quick_run_index_extensions` in `settings.py`. Add a case to
 The primary packager is cx_Freeze (produces a folder you zip and distribute):
 
 ```bash
-uv run --with cx_Freeze python setup_cxfreeze.py build_exe
+uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 

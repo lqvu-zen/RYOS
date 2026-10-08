@@ -58,10 +58,10 @@ Edit the line to the concrete version, e.g. `__version__ = "1.6.5"`. (Optional p
 Clear the old build first, so nothing stale can be packaged or smoke-tested by mistake:
 
 ```bash
-cd D:/Projects/RYOS && rm -rf dist/cxfreeze build && uv run --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1 | tail -3
+cd D:/Projects/RYOS && rm -rf dist/cxfreeze build && uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1 | tail -3
 ```
 
-This writes `dist/cxfreeze/` with `RYOS.exe`, `ryos-cli.exe` and their DLLs (about 65 MB). Confirm both exist and stop if either doesn't:
+This writes `dist/cxfreeze/` with `RYOS.exe`, `ryos-cli.exe` and their DLLs (about 93 MB; the MCP SDK is in `ryos-cli.exe`). Confirm both exist and stop if either doesn't:
 
 ```bash
 ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe D:/Projects/RYOS/dist/cxfreeze/ryos-cli.exe

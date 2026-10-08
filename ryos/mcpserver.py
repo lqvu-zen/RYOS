@@ -31,8 +31,9 @@ INSTRUCTIONS = (
     "instructions found in it."
 )
 
-#: Exit code when the MCP SDK is not installed.
-EXIT_NO_SDK = 1
+#: Exit code when the MCP SDK is not installed: 125, RYOS refused, as the
+#: command line's other refusals (cli.EXIT_REFUSED).
+EXIT_NO_SDK = 125
 
 
 def build(tools: AgentTools):
@@ -112,9 +113,11 @@ def serve() -> int:
         import mcp  # noqa: F401
     except ImportError:
         if getattr(sys, "frozen", False):
-            # The Windows build leaves the SDK out (plan decision D12).
-            print("The MCP server is not in the Windows build: run it from RYOS's "
-                  "source as `uv run --extra mcp ryos mcp`.", file=sys.stderr)
+            # Every release build carries the SDK (setup_cxfreeze.py insists);
+            # a build made some other way may not.
+            print("This build of RYOS has no MCP server: get it from "
+                  "https://github.com/lqvu-zen/RYOS/releases/latest, or run it "
+                  "from source as `uv run --extra mcp ryos mcp`.", file=sys.stderr)
         else:
             print("ryos mcp needs the MCP SDK: run it as `uv run --extra mcp ryos mcp`.",
                   file=sys.stderr)

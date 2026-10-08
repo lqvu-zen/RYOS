@@ -6,9 +6,19 @@ Usage (via build_cxfreeze.bat):
 Output: dist/cxfreeze/RYOS.exe  (plus supporting DLLs in the same folder)
 """
 import shutil
+import sys
 from pathlib import Path
 
 from cx_Freeze import Executable, setup
+
+# ryos-cli.exe carries the MCP server (`ryos-cli mcp`), so the SDK must be
+# in the build environment: without it cx_Freeze would quietly build an exe
+# whose `mcp` says the SDK is missing. The extra installs it.
+try:
+    import mcp  # noqa: F401
+except ImportError:
+    sys.exit("The build needs the MCP SDK: run it as\n"
+             "  uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe")
 
 BUILD_DIR = Path("dist/cxfreeze")
 

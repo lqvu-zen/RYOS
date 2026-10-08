@@ -185,6 +185,16 @@ class TestPipeline(_Base):
         self.assertEqual((code, json.loads(out)["status"]), (cli.EXIT_FAILED, "error"))
 
 
+class TestMcpWithoutTheSdk(unittest.TestCase):
+    def test_says_how_to_get_it_and_exits_refused(self):
+        from unittest import mock
+        err = io.StringIO()
+        # None in sys.modules makes `import mcp` fail, as with no SDK installed.
+        with mock.patch.dict(sys.modules, {"mcp": None}), mock.patch.object(sys, "stderr", err):
+            self.assertEqual(cli.main(["mcp"]), cli.EXIT_REFUSED)
+        self.assertIn("--extra mcp", err.getvalue())
+
+
 class TestTheRealEntryPoint(unittest.TestCase):
     def test_takes_no_lock_writes_no_startup_entry_and_imports_no_qt(self):
         data = Path(tempfile.mkdtemp())

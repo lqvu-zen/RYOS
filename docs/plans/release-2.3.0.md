@@ -125,8 +125,8 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | Step | State |
 | --- | --- |
 | 1 Decisions | defaults taken |
-| 2 MCP in the build | — |
-| 3 Exit code | — |
+| 2 MCP in the build | done (full build 65 → 93 MB; `cryptography` is imported at start, so it stays) |
+| 3 Exit code | done |
 | 4 Compatible-from guard | — |
 | 5 CLI management | — |
 | 6 History source | — |
