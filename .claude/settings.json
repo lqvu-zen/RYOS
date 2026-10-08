@@ -120,7 +120,12 @@
       "Bash(grep -n \"u201c\\\\|\\\\\\\\\\\\\\\\n\" ryos/basefolder.py)",
       "Bash(sed -i 's/^from .icons import IconButton, IconLabel$/from . import icons\\\\nfrom .icons import IconButton, IconLabel/' ryos/qtui/cards.py)",
       "Bash(grep -n 'return \\(f\"\\\\\\\\\\\\\\\\u201c\\\\|f\"In \\\\\\\\\\\\\\\\u201c\\\\|\\\\\\\\\\\\\\\\n\\\\\\\\\\\\\\\\n' ryos/basefolder.py)",
-      "Bash(grep -n \"^FIELDS\\\\|^SCHEMA\\\\|^[A-Z_]* = \\\\[$\\\\|^[A-Z_]*: .* = \\(\" ryos/settings_schema.py)"
+      "Bash(grep -n \"^FIELDS\\\\|^SCHEMA\\\\|^[A-Z_]* = \\\\[$\\\\|^[A-Z_]*: .* = \\(\" ryos/settings_schema.py)",
+      "Bash(awk '{printf \"%6.1f MB  %s\\\\n\", $1/1024, $2}')",
+      "Bash(awk '{printf \"%6.1f MB  %s\\\\n\", $5/1048576, $9}')",
+      "Bash(awk -F'|' '{print $3}')",
+      "Bash(grep -v \"^\\\\s*$\")",
+      "Bash(uv run *)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
