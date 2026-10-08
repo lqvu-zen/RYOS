@@ -135,7 +135,9 @@
       "Bash(sed -i 's/    if win.update_label.text\\(\\) != notifications.banner_text\\(\"v999.0.0\", __version__\\):/    if win.update_label.text\\(\\) != notifications.banner_text\\(\\\\n            \"v999.0.0\", __version__, buildinfo.download_name\\(\\)\\):/' tests/qt_smoke.py)",
       "Bash(grep -n \"^| \\\\`ryos/buildinfo.py\\\\`\" docs/ARCHITECTURE.md)",
       "Bash(grep -c \"^mcp$\")",
-      "Bash(rm -rf dist/* build && export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen && uv run python tests/session_smoke.py 2>&1 | tail -1 && uvx ruff check . && uvx mypy --platform linux 2>&1 | tail -1 && git status --short)"
+      "Bash(rm -rf dist/* build && export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen && uv run python tests/session_smoke.py 2>&1 | tail -1 && uvx ruff check . && uvx mypy --platform linux 2>&1 | tail -1 && git status --short)",
+      "Bash(S=\"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/rel230\" && uv run --no-project python - \"$S/notes-2.3.0.md\" <<'EOF' *)",
+      "Read(//c/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/rel230/**)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
