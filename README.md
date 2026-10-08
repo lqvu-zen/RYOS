@@ -38,11 +38,12 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 
 | Download | What's in it | For |
 | --- | --- | --- |
-| **RYOS-windows.zip** | `RYOS.exe` (the app) and `ryos-cli.exe` (the command line and the MCP server for AI agents) | Most people |
+| **RYOS-windows.zip** | `RYOS.exe` (the app) and `ryos-cli.exe` (the command line). No AI agents | Most people |
+| **RYOS-windows-ai.zip** | The same, plus the MCP server so Claude can run the scripts you choose (`ryos-cli.exe mcp`) | The app with AI agents — see [The command line and AI agents](docs/tutorial/13-command-line-and-agents.md) |
 | **RYOS-agent.zip** | `ryos-cli.exe` alone, no window | Letting Claude run an allow-list of your scripts without the app — see [RYOS Agent](docs/tutorial/14-ryos-agent.md) |
 | **RYOS-portable.zip** | The source, run with `uv` | Running from source |
 
-Both Windows downloads keep your data in the same place, so you can start with one and move to the other.
+Every download keeps your data in the same place, so you can start with one and move to another; each one's update notice names its own zip.
 
 ## Getting Started
 

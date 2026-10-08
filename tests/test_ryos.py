@@ -8052,6 +8052,9 @@ class TestReleaseZipChecks(unittest.TestCase):
 
     def test_good_downloads_pass(self):
         self.assertEqual(self.check("RYOS-windows.zip",
+                                    ["RYOS.exe", "ryos-cli.exe",
+                                     "lib/PySide6/Qt6Core.dll"]), [])
+        self.assertEqual(self.check("RYOS-windows-ai.zip",
                                     ["RYOS.exe", "ryos-cli.exe", "lib/mcp/__init__.pyc",
                                      "lib/PySide6/Qt6Core.dll"]), [])
         self.assertEqual(self.check("RYOS-agent.zip",
@@ -8061,8 +8064,13 @@ class TestReleaseZipChecks(unittest.TestCase):
                                      "icon.ico", "ryos/__init__.py"]), [])
 
     def test_broken_downloads_fail(self):
-        self.assertTrue(self.check("RYOS-windows.zip", ["RYOS.exe", "lib/mcp/x.pyc"]))
-        self.assertTrue(self.check("RYOS-windows.zip", ["RYOS.exe", "ryos-cli.exe"]))
+        self.assertTrue(self.check("RYOS-windows.zip", ["RYOS.exe"]))
+        # The build without AI agents must not carry the SDK...
+        self.assertTrue(self.check("RYOS-windows.zip",
+                                   ["RYOS.exe", "ryos-cli.exe", "lib/mcp/x.pyc"]))
+        # ...and the one with them must.
+        self.assertTrue(self.check("RYOS-windows-ai.zip", ["RYOS.exe", "ryos-cli.exe"]))
+        self.assertTrue(self.check("RYOS-windows-ai.zip", ["RYOS.exe", "lib/mcp/x.pyc"]))
         self.assertTrue(self.check("RYOS-agent.zip", ["ryos-cli.exe", "lib/mcp/x.pyc",
                                                       "lib/PySide6/Qt6Core.dll"]))
         self.assertTrue(self.check("RYOS-agent.zip", ["ryos-cli.exe", "RYOS.exe",
@@ -8084,8 +8092,10 @@ class TestBuildInfo(unittest.TestCase):
 
     def test_a_builds_file_names_its_variant(self):
         from ryos import buildinfo
-        for which, word, zipname in ((buildinfo.WINDOWS, "Windows build", "RYOS-windows.zip"),
-                                     (buildinfo.AGENT, "RYOS Agent", "RYOS-agent.zip")):
+        for which, word, zipname in (
+                (buildinfo.WINDOWS, "Windows build", "RYOS-windows.zip"),
+                (buildinfo.WINDOWS_AI, "Windows build with AI agents", "RYOS-windows-ai.zip"),
+                (buildinfo.AGENT, "RYOS Agent", "RYOS-agent.zip")):
             fake = types.SimpleNamespace(VARIANT=which)
             with self.subTest(which=which), \
                     mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
@@ -8095,6 +8105,18 @@ class TestBuildInfo(unittest.TestCase):
         with mock.patch.dict(sys.modules,
                              {"ryos._build_info": types.SimpleNamespace(VARIANT="odd")}):
             self.assertEqual(buildinfo.variant(), buildinfo.PORTABLE)
+
+    def test_which_builds_carry_mcp_and_offer_agents(self):
+        from ryos import buildinfo
+        self.assertEqual({v for v in buildinfo.BUILD_FOLDERS if buildinfo.bundles_mcp(v)},
+                         {buildinfo.WINDOWS_AI, buildinfo.AGENT})
+        self.assertFalse(buildinfo.agents_offered(buildinfo.WINDOWS))
+        for which in (buildinfo.WINDOWS_AI, buildinfo.AGENT, buildinfo.PORTABLE):
+            self.assertTrue(buildinfo.agents_offered(which), which)
+        # Every frozen variant has its own folder, and every variant its zip.
+        self.assertEqual(len(set(buildinfo.BUILD_FOLDERS.values())), 3)
+        self.assertEqual(set(buildinfo.DOWNLOADS),
+                         {*buildinfo.BUILD_FOLDERS, buildinfo.PORTABLE})
 
     def test_the_file_a_build_writes(self):
         from ryos import buildinfo

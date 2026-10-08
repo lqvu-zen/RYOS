@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QMessageBox, QPlainTextEdit, QPushButton,
                                QVBoxLayout, QWidget)
 
-from .. import scriptform
+from .. import buildinfo, scriptform
 from .widgets import button_row, set_tooltip
 
 
@@ -119,6 +119,9 @@ class ScriptDialog(QDialog):
         self.launcher = QCheckBox(scriptform.LAUNCHER_LABEL)
         self.agent = QCheckBox(scriptform.AGENT_LABEL)
         set_tooltip(self.agent, scriptform.AGENT_HELP)
+        # Hidden in the download without AI agents; it still loads and saves
+        # the stored value, so moving between downloads never loses it.
+        self.agent.setVisible(buildinfo.agents_offered())
         form.addRow(QLabel(""), self.temp_param)
         form.addRow(QLabel(""), self.launcher)
         form.addRow(QLabel(""), self.agent)

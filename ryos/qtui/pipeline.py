@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QListWidget, QMessageBox, QPushButton,
                                QVBoxLayout, QWidget)
 
-from .. import pipelinesteps, scriptform
+from .. import buildinfo, pipelinesteps, scriptform
 from .icons import IconButton
 from .widgets import set_tooltip
 
@@ -50,6 +50,9 @@ class PipelineEditorDialog(QDialog):
         set_tooltip(self.agent, scriptform.AGENT_HELP)
         self.agent.setChecked(db.is_agent_exposed("pipeline", pipeline_id))
         form.addRow(QLabel(""), self.agent)
+        # Hidden in the download without AI agents; Save still writes the
+        # stored value back unchanged.
+        self.agent.setVisible(buildinfo.agents_offered())
         col.addLayout(form)
 
         steps_label = QLabel("Steps")

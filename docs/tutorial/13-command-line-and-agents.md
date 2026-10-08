@@ -55,7 +55,7 @@ An AI agent connected to RYOS can see and run the scripts and pipelines you choo
 
 ### Choose what it may run
 
-Nothing is available to an agent until you say so. Open a script (or a pipeline) and tick **Available to agents — an AI agent connected to RYOS may run it**, then **Save**. From the command line, `ryos-cli expose Tools/backup on` does the same (it asks you to confirm), and `off` takes it back.
+Nothing is available to an agent until you say so. In a download with AI agents (see [Connect Claude](#connect-claude)), open a script (or a pipeline) and tick **Available to agents — an AI agent connected to RYOS may run it**, then **Save**. From the command line, `ryos-cli expose Tools/backup on` does the same (it asks you to confirm), and `off` takes it back.
 
 ![The script dialog, with three options under Group: Ask for a temporary parameter on each run, Launcher, and Available to agents](images/02-add-script-dialog.png)
 
@@ -72,6 +72,8 @@ Only tick what you'd be happy for the agent to run without asking you first.
 > **What the list protects.** It is what Claude Desktop, and any other agent that talks to RYOS only through MCP, can reach. An agent that can also run commands on your PC, such as Claude Code, is not kept in by it: it can start programs itself, including your scripts. Only connect an agent like that if you trust it with your computer.
 
 ### Connect Claude
+
+Agents need a download with the MCP server in it: **RYOS-windows-ai.zip** (the app with AI agents) or **RYOS-agent.zip** ([RYOS Agent](14-ryos-agent.md), no window). **RYOS-windows.zip** has no MCP server — there `ryos-cli mcp` says so, and the **Available to agents** box is hidden (anything you ticked stays ticked, for when you switch). Your scripts and settings are shared by every download, so switching is just a matter of downloading the other zip.
 
 Point Claude at `ryos-cli.exe` in the folder you extracted RYOS to; nothing else needs installing. In the examples below that folder is `C:\Tools\RYOS`.
 

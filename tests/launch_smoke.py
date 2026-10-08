@@ -156,6 +156,21 @@ def _check_mcp(exe: Path, env: dict, data: Path, problems: list) -> str:
     return f"  [ok] MCP from {exe.name} mcp: initialize, {len(tools)} tools, list_scripts"
 
 
+def _check_mcp_or_its_absence(exe: Path, env: dict, data: Path, problems: list) -> str:
+    """The Windows build with AI agents talks MCP; the one without says it
+    has no MCP server and exits 125 (RYOS refused)."""
+    version = subprocess.run([str(exe), "--version"], env=env, capture_output=True,
+                             text=True, timeout=60).stdout
+    if "with AI agents" in version:
+        return _check_mcp(exe, env, data, problems)
+    got = subprocess.run([str(exe), "mcp"], env=env, capture_output=True, text=True,
+                         timeout=60, stdin=subprocess.DEVNULL)
+    if got.returncode != 125 or "isn't included in this download" not in got.stderr:
+        problems.append(f"ryos-cli mcp in the build without AI agents gave exit "
+                        f"{got.returncode}: {got.stderr[-300:]!r}")
+    return f"  [ok] {exe.name} mcp: not in this download, exit 125 (no MCP server here)"
+
+
 def _agent_smoke(exe: Path) -> int:
     """RYOS Agent: ryos-cli.exe on its own -- it says so, carries no Qt and no
     window, and its command line and MCP server work against a throwaway
@@ -274,7 +289,7 @@ def main() -> int:
         if cli_exe.exists():
             cli_report = _check_cli([str(cli_exe)], env, data, problems)
             if not problems:
-                cli_report += "\n" + _check_mcp(cli_exe, env, data, problems)
+                cli_report += "\n" + _check_mcp_or_its_absence(cli_exe, env, data, problems)
         else:
             problems.append(f"the build has no {cli_exe.name} beside RYOS.exe")
     else:

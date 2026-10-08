@@ -4,10 +4,11 @@
 
 Writes:
 
-* ``RYOS-windows.zip`` -- RYOS.exe and ryos-cli.exe (MCP inside), for most users;
-* ``RYOS-agent.zip``   -- ryos-cli.exe alone, no window and no Qt (RYOS Agent);
-* ``RYOS-portable.zip``-- the source, run with uv (``run.bat``);
-* ``SHA256SUMS.txt``   -- a checksum line per zip.
+* ``RYOS-windows.zip``    -- RYOS.exe and ryos-cli.exe, no MCP server;
+* ``RYOS-windows-ai.zip`` -- RYOS.exe and ryos-cli.exe with the MCP server;
+* ``RYOS-agent.zip``      -- ryos-cli.exe alone with MCP, no window and no Qt;
+* ``RYOS-portable.zip``   -- the source, run with uv (``run.bat``);
+* ``SHA256SUMS.txt``      -- a checksum line per zip.
 
 Each zip is checked for what it must hold and must not; a missing exe, Qt
 in the agent build or a ``__pycache__`` in the source stops the script with
@@ -27,7 +28,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
-BUILDS = {"windows": DIST / "cxfreeze", "agent": DIST / "cxfreeze-agent"}
+sys.path.insert(0, str(ROOT))
+from ryos import buildinfo  # noqa: E402
+
+#: Every frozen variant, in its own folder (buildinfo.BUILD_FOLDERS).
+BUILDS = {v: ROOT / folder for v, folder in buildinfo.BUILD_FOLDERS.items()}
 PORTABLE_FILES = ("pyproject.toml", "run.bat", "install_uv.bat", "icon.ico")
 
 
@@ -64,10 +69,15 @@ def zip_portable(target: Path) -> list[str]:
 def problems_in(name: str, entries: list[str]) -> list[str]:
     """What is missing from, or wrongly in, one download."""
     files = {e.rsplit("/", 1)[-1] for e in entries}
+    has_mcp = any(e.startswith("lib/mcp/") for e in entries)
     found = []
     if name == "RYOS-windows.zip":
         found += [f"no {exe}" for exe in ("RYOS.exe", "ryos-cli.exe") if exe not in files]
-        if not any(e.startswith("lib/mcp/") for e in entries):
+        if has_mcp:
+            found.append("the MCP SDK is in the build without AI agents")
+    elif name == "RYOS-windows-ai.zip":
+        found += [f"no {exe}" for exe in ("RYOS.exe", "ryos-cli.exe") if exe not in files]
+        if not has_mcp:
             found.append("no MCP SDK in ryos-cli.exe")
     elif name == "RYOS-agent.zip":
         if "ryos-cli.exe" not in files:
@@ -95,11 +105,9 @@ def main() -> int:
     DIST.mkdir(exist_ok=True)
     for variant in BUILDS:
         build(variant)
-    zips = {
-        "RYOS-windows.zip": zip_folder(BUILDS["windows"], DIST / "RYOS-windows.zip"),
-        "RYOS-agent.zip": zip_folder(BUILDS["agent"], DIST / "RYOS-agent.zip"),
-        "RYOS-portable.zip": zip_portable(DIST / "RYOS-portable.zip"),
-    }
+    zips = {buildinfo.download_name(v): zip_folder(folder, DIST / buildinfo.download_name(v))
+            for v, folder in BUILDS.items()}
+    zips["RYOS-portable.zip"] = zip_portable(DIST / "RYOS-portable.zip")
     failed = False
     sums = []
     for name, entries in zips.items():

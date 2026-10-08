@@ -14,13 +14,16 @@ _Created 2026-10-08 at v2.2.0 · replaces the first draft (`RELEASE_2.3.0_PLAN.m
 
 ## Downloads
 
-| Artifact | Contents | For |
-| --- | --- | --- |
-| `RYOS-windows.zip` | `RYOS.exe` + `ryos-cli.exe`, MCP built in | Most users |
-| `RYOS-agent.zip` | `ryos-cli.exe` only, MCP built in, **no Qt** | People who only want Claude to run their scripts |
-| `RYOS-portable.zip` | Source; MCP stays the optional extra | Run from source, developers |
+| Artifact | Variant | Contents | For |
+| --- | --- | --- | --- |
+| `RYOS-windows.zip` | `windows` | `RYOS.exe` + `ryos-cli.exe`, **no MCP** | Most users, and anyone who wants RYOS without AI |
+| `RYOS-windows-ai.zip` | `windows-ai` | `RYOS.exe` + `ryos-cli.exe`, MCP built in | The app with AI agents |
+| `RYOS-agent.zip` | `agent` | `ryos-cli.exe` only, MCP built in, **no Qt** | People who only want Claude to run their scripts |
+| `RYOS-portable.zip` | `portable` | Source; MCP stays the optional extra | Run from source, developers |
 
-No `RYOS-windows-noagent.zip` (decision A1). One portable zip: with or without AI it would be the same files, since the SDK is fetched only by `--extra mcp`.
+Four zips (decision A1). One portable zip: with or without AI it would be the same files, since the SDK is fetched only by `--extra mcp`. In `RYOS-windows.zip`, `ryos-cli mcp` says the MCP server isn't in this download and exits 125, and the "Available to agents" checkbox is hidden; its database column is untouched (and `ryos-cli expose` and `list` still handle it), so moving between downloads never loses exposure.
+
+The variant IDs and zip names are what each build's update notice names, so they are fixed from 2.3.0 on: `windows` was the MCP build until this change, which was safe only because no build carrying a variant had been released.
 
 ## What the first draft got wrong (and why it changes the steps)
 
@@ -37,7 +40,7 @@ No `RYOS-windows-noagent.zip` (decision A1). One portable zip: with or without A
 
 | # | Question | Default | Why |
 | --- | --- | --- | --- |
-| A1 | Ship a "no agent" Windows zip? | **No** | "Available to agents" is off by default; a fourth zip doubles the build and test matrix. Add it later if someone asks. |
+| A1 | Ship a "no agent" Windows zip? | **Yes** (decided by the maintainer, 2026-10-09): `RYOS-windows.zip` (`windows`) has no MCP; the MCP build is `RYOS-windows-ai.zip` (`windows-ai`) | Some people and organisations want RYOS with no AI agent able to reach it. The no-MCP build leaves the SDK out entirely, hides the checkbox, and refuses `ryos-cli mcp` with 125; the agent flag stays in the data, so switching downloads loses nothing. |
 | A2 | Can an agent manage the allow-list? | **Not over MCP**: no tool adds, edits, exposes or changes a preset. **`ryos-cli expose … on` and `add --expose` need an interactive terminal, or `--yes`.** | Claude Code has a shell, so MCP being read-only does not stop it typing `ryos-cli expose X on`. The terminal check stops it in passing, not a determined agent — and an agent with a shell can run the script directly anyway. The docs say plainly that the allow-list protects MCP-only clients (Claude Desktop), and is a convenience, not a boundary, for agents with a shell. |
 | A3 | An older build meets a newer database | A **"compatible from"** number, stored beside `user_version`, raised only by a migration older builds cannot live with. A build refuses to open a database whose number is past what it knows, with "created by a newer RYOS; please update". Additive migrations leave it alone. | Keeps today's working downgrades; protects against the one that would corrupt. It cannot protect 2.2.0 and earlier, which shipped without it — docs say "from 2.3.0 on". |
 | A4 | Exposure default | Off everywhere; `add` exposes only with `--expose` | As in 2.2.0. |
@@ -124,8 +127,8 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 
 | Step | State |
 | --- | --- |
-| 1 Decisions | defaults taken |
-| 2 MCP in the build | done (full build 65 → 93 MB; `cryptography` is imported at start, so it stays) |
+| 1 Decisions | defaults taken; A1 changed to yes (four zips) on 2026-10-09 |
+| 2 MCP in the build | done in `windows-ai` and `agent` (MCP adds about 28 MB; `cryptography` is imported at start, so it stays) |
 | 3 Exit code | done |
 | 4 Compatible-from guard | done (schema v10 adds `meta`) |
 | 5 CLI management | done |
@@ -133,7 +136,8 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 7 Build variant | done (no About dialog: `--version` and the bug report show it) |
 | 8 Update names the zip | done |
 | 9 Help polish | done (argparse lists every command) |
-| 10 Agent build | done (48 MB, against 93 MB for the full build) |
-| 11 Build matrix | done (`build_release.py`; zips: windows 37 MB, agent 19 MB) |
+| 10 Agent build | done (48 MB, against 93 MB for `windows-ai`) |
+| 10b No-MCP Windows build | done (A1: `windows`, no SDK, checkbox hidden, `mcp` refused with 125) |
+| 11 Build matrix | done (`build_release.py`: four zips and SHA256SUMS) |
 | 12 Docs | done (Claude Desktop / Code connection to the exe still to be tried by the maintainer) |
 | 13 Release check | — |

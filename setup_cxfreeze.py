@@ -1,9 +1,13 @@
 """cx_Freeze build configuration for RYOS.
 
 Usage (via build_cxfreeze.bat):
-    uv run --with cx_Freeze python setup_cxfreeze.py build_exe
+    uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 
-Output: dist/cxfreeze/RYOS.exe  (plus supporting DLLs in the same folder)
+RYOS_VARIANT picks the download (ryos/buildinfo.py):
+    windows     (default) RYOS.exe + ryos-cli.exe, no MCP   -> dist/cxfreeze/
+    windows-ai  RYOS.exe + ryos-cli.exe with MCP          -> dist/cxfreeze-ai/
+    agent       ryos-cli.exe alone with MCP, no Qt        -> dist/cxfreeze-agent/
+build_release.py builds them all.
 """
 import os
 import shutil
@@ -12,17 +16,6 @@ from pathlib import Path
 
 from cx_Freeze import Executable, setup
 
-# ryos-cli.exe carries the MCP server (`ryos-cli mcp`), so the SDK must be
-# in the build environment: without it cx_Freeze would quietly build an exe
-# whose `mcp` says the SDK is missing. The extra installs it.
-try:
-    import mcp  # noqa: F401
-except ImportError:
-    sys.exit("The build needs the MCP SDK: run it as\n"
-             "  uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe")
-
-BUILD_DIR = Path("dist/cxfreeze")
-
 # Which download this build is (ryos/buildinfo.py): written into the package
 # for the length of the build, so the frozen app knows, and removed after so
 # the source tree stays "from source".
@@ -30,7 +23,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ryos import buildinfo  # noqa: E402
 
 VARIANT = os.environ.get("RYOS_VARIANT", buildinfo.WINDOWS)
+if VARIANT not in buildinfo.BUILD_FOLDERS:
+    sys.exit(f"RYOS_VARIANT must be one of {', '.join(buildinfo.BUILD_FOLDERS)}, "
+             f"not {VARIANT!r}")
+BUILD_DIR = Path(buildinfo.BUILD_FOLDERS[VARIANT])
 BUILD_INFO = Path("ryos/_build_info.py")
+
+# windows-ai and agent carry the MCP server (`ryos-cli mcp`), so the SDK must
+# be in the build environment: without it cx_Freeze would quietly build an
+# exe whose `mcp` says the SDK is missing. The extra installs it.
+if buildinfo.bundles_mcp(VARIANT):
+    try:
+        import mcp  # noqa: F401
+    except ImportError:
+        sys.exit("The build needs the MCP SDK: run it as\n"
+                 "  uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe")
 
 #: The Qt plugin folders RYOS loads: the platform (windows, offscreen), the
 #: widget style, image formats and the SVG icon engine for its icons, and
@@ -111,13 +118,18 @@ EXECUTABLES = [
     ),
 ]
 
+if not buildinfo.bundles_mcp(VARIANT):
+    # The Windows build without AI agents: the SDK stays out even when the
+    # build environment has it (the same command builds every variant).
+    # ryos.mcpserver imports it only when serving, so leaving the package out
+    # leaves out everything it would bring (pydantic, cryptography, ...).
+    build_options["excludes"] = [*build_options["excludes"], "mcp", "mcp_types"]
+
 if VARIANT == buildinfo.AGENT:
     # RYOS Agent (RYOS_VARIANT=agent): the command line and the MCP server,
     # no window -- so no Qt. ryos.qtui and PySide6 are left out, which is
     # most of the full build's size; so are the window's icons and themes.
-    BUILD_DIR = Path("dist/cxfreeze-agent")
     build_options.update({
-        "build_exe": str(BUILD_DIR),
         "bin_excludes": [],
         "include_files": [("icon.ico", "icon.ico")],
         "excludes": [*build_options["excludes"], "ryos.qtui", "PySide6", "shiboken6"],

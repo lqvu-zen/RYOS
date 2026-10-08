@@ -2,7 +2,7 @@
 
 **RYOS Agent** is RYOS without the window. You give it a short list of your scripts, and Claude can run those scripts and read their output, and nothing else. Use it when you want Claude to have your scripts but have no use for the RYOS window.
 
-If you already use the RYOS window, you don't need this page. The full Windows download includes everything here. See [The command line and AI agents](13-command-line-and-agents.md).
+If you already use the RYOS window, you don't need this page: **RYOS-windows-ai.zip** is the app with everything here built in. See [The command line and AI agents](13-command-line-and-agents.md).
 
 ## What you get
 
@@ -122,7 +122,9 @@ RYOS Agent has no window, so RYOS's own schedules don't run. Use Windows Task Sc
 
 ## Moving to the full app later
 
-Download **RYOS-windows.zip** and run `RYOS.exe`. Your scripts, presets, history, and what Claude may run are all there, because both versions keep your data in the same place (`%APPDATA%\RYOS`). Change the Claude config to point at the new `ryos-cli.exe`, then delete the RYOS-agent folder.
+Download **RYOS-windows-ai.zip** and run `RYOS.exe`. Your scripts, presets, history, and what Claude may run are all there, because every download keeps your data in the same place (`%APPDATA%\RYOS`). Change the Claude config to point at the new `ryos-cli.exe`, then delete the RYOS-agent folder.
+
+(**RYOS-windows.zip** is the app without AI agents: Claude can't connect to it, and the **Available to agents** box is hidden. What you exposed stays recorded, so moving back to an AI download picks it up again.)
 
 Keep both on the same version. From 2.3.0 on, a RYOS that finds data it can't safely use — written by a newer version that changed it in a way older ones don't understand — stops and asks you to update rather than risk damaging it.
 

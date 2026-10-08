@@ -632,6 +632,21 @@ def check_script_dialog(app):
             or not ScriptDialog(db=db, script_id=sid).agent.isChecked():
         PROBLEMS.append("Available to agents was not saved, or not shown again")
 
+    # The download without AI agents hides the box -- and a save keeps the flag,
+    # so moving between downloads never loses it.
+    import types as _types
+    from unittest import mock as _mock
+    with _mock.patch.dict(_sys.modules,
+                          {"ryos._build_info": _types.SimpleNamespace(VARIANT="windows")}):
+        dlg = ScriptDialog(db=db, script_id=sid)
+        dlg.show()
+        app.processEvents()
+        visible = dlg.agent.isVisible()
+        dlg.save()
+        dlg.close()
+    if visible or not db.is_agent_exposed("script", sid):
+        PROBLEMS.append("without AI agents the box showed, or a save cleared the flag")
+
     # -- verdicts: refuse, and ask about a missing file ---------------------------------
     dlg = ScriptDialog(db=db, default_group="First", path_exists=lambda p: False)
     warned.clear()
@@ -814,6 +829,20 @@ def check_pipeline_editor(app):
     if not db.is_agent_exposed("pipeline", pid) or not reopened.agent.isChecked():
         PROBLEMS.append("Available to agents was not saved, or not shown again")
     reopened.deleteLater()
+    # Without AI agents in this download: hidden, and Save keeps the flag.
+    import types as _types
+    from unittest import mock as _mock
+    with _mock.patch.dict(_sys.modules,
+                          {"ryos._build_info": _types.SimpleNamespace(VARIANT="windows")}):
+        hidden = PipelineEditorDialog(db=db, pipeline_id=pid, name="Renamed", group="G")
+        hidden.show()
+        app.processEvents()
+        shown = hidden.agent.isVisible()
+        hidden.save()
+        hidden.close()
+        hidden.deleteLater()
+    if shown or not db.is_agent_exposed("pipeline", pid):
+        PROBLEMS.append("without AI agents the pipeline's box showed, or Save cleared it")
 
     print("  [ok] pipeline editor: labels, Add Step choices, move, with-prev, "
           "policy combos, step presets, add/remove, rename and agents, all stored")

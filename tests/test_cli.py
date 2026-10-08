@@ -389,6 +389,21 @@ class TestVersion(unittest.TestCase):
         self.assertIn("Could not reach GitHub", out)
 
 
+class TestMcpInTheBuildWithoutIt(unittest.TestCase):
+    def test_says_which_download_has_it_and_exits_refused(self):
+        import types
+        from unittest import mock
+        err = io.StringIO()
+        build = types.SimpleNamespace(VARIANT="windows")
+        with mock.patch.dict(sys.modules, {"ryos._build_info": build}), \
+                mock.patch.object(sys, "stderr", err):
+            self.assertEqual(cli.main(["mcp"]), cli.EXIT_REFUSED)
+        said = err.getvalue()
+        self.assertIn("isn't included in this download (RYOS-windows.zip)", said)
+        self.assertIn("RYOS-windows-ai.zip", said)
+        self.assertIn("RYOS-agent.zip", said)
+
+
 class TestMcpWithoutTheSdk(unittest.TestCase):
     def test_says_how_to_get_it_and_exits_refused(self):
         from unittest import mock

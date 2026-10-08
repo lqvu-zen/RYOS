@@ -107,8 +107,23 @@ def build(tools: AgentTools):
     return server
 
 
+def not_in_this_download() -> str:
+    """What `ryos-cli mcp` says in the Windows build without AI agents."""
+    from . import buildinfo
+    return (f"The MCP server for AI agents isn't included in this download "
+            f"({buildinfo.download_name(buildinfo.WINDOWS)}). To connect Claude, get "
+            f"{buildinfo.download_name(buildinfo.WINDOWS_AI)} or "
+            f"{buildinfo.download_name(buildinfo.AGENT)} from "
+            "https://github.com/lqvu-zen/RYOS/releases/latest -- your scripts and "
+            "settings carry over.")
+
+
 def serve() -> int:
     """Run the server on stdio until the client goes away."""
+    from . import buildinfo
+    if not buildinfo.agents_offered():
+        print(not_in_this_download(), file=sys.stderr)
+        return EXIT_NO_SDK
     try:
         import mcp  # noqa: F401
     except ImportError:
