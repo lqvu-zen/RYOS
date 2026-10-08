@@ -5,6 +5,7 @@ Usage (via build_cxfreeze.bat):
 
 Output: dist/cxfreeze/RYOS.exe  (plus supporting DLLs in the same folder)
 """
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -21,6 +22,15 @@ except ImportError:
              "  uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe")
 
 BUILD_DIR = Path("dist/cxfreeze")
+
+# Which download this build is (ryos/buildinfo.py): written into the package
+# for the length of the build, so the frozen app knows, and removed after so
+# the source tree stays "from source".
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ryos import buildinfo  # noqa: E402
+
+VARIANT = os.environ.get("RYOS_VARIANT", buildinfo.WINDOWS)
+BUILD_INFO = Path("ryos/_build_info.py")
 
 #: The Qt plugin folders RYOS loads: the platform (windows, offscreen), the
 #: widget style, image formats and the SVG icon engine for its icons, and
@@ -84,28 +94,34 @@ build_options = {
     "build_exe": str(BUILD_DIR),
 }
 
-setup(
-    name="RYOS",
-    version="2.2.0",
-    description="RYOS - Run Your Own Scripts",
-    options={"build_exe": build_options},
-    executables=[
-        Executable(
-            script="_packed_entry.py",
-            base="gui",               # suppresses the console window (cx_Freeze 7+)
-            target_name="RYOS.exe",
-            icon="icon.ico",
-        ),
-        # The command line (ryos list / run / pipeline): the console base, so
-        # it has a stdout -- RYOS.exe's GUI base has none.
-        Executable(
-            script="_packed_cli.py",
-            base="console",
-            target_name="ryos-cli.exe",
-            icon="icon.ico",
-        ),
-    ],
-)
+EXECUTABLES = [
+    Executable(
+        script="_packed_entry.py",
+        base="gui",               # suppresses the console window (cx_Freeze 7+)
+        target_name="RYOS.exe",
+        icon="icon.ico",
+    ),
+    # The command line (ryos list / run / pipeline / mcp): the console base,
+    # so it has a stdout -- RYOS.exe's GUI base has none.
+    Executable(
+        script="_packed_cli.py",
+        base="console",
+        target_name="ryos-cli.exe",
+        icon="icon.ico",
+    ),
+]
+
+BUILD_INFO.write_text(buildinfo.build_info_source(VARIANT), encoding="utf-8")
+try:
+    setup(
+        name="RYOS",
+        version="2.2.0",
+        description="RYOS - Run Your Own Scripts",
+        options={"build_exe": build_options},
+        executables=EXECUTABLES,
+    )
+finally:
+    BUILD_INFO.unlink(missing_ok=True)
 
 # Qt's own translations: data files, so bin_excludes cannot leave them out,
 # and RYOS installs no QTranslator, so nothing reads them (6 MB).

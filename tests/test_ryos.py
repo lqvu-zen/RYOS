@@ -8027,6 +8027,61 @@ class TestUpdateStatus(unittest.TestCase):
         self.assertIn("v2.0.0", n.banner_text("v2.0.0", "1.0.0"))
         self.assertIn("you have v1.0.0", n.banner_text("v2.0.0", "1.0.0"))
 
+    def test_the_banner_names_this_downloads_zip(self):
+        from ryos import notifications as n
+        self.assertIn("get RYOS-agent.zip", n.banner_text("v2.0.0", "1.0.0", "RYOS-agent.zip"))
+        self.assertNotIn("get", n.banner_text("v2.0.0", "1.0.0"))
+
+    def test_version_check_wording(self):
+        from ryos import notifications as n
+        newer = n.version_check_text(n.NEWER, "v2.3.1", "https://x/r", "2.3.0", "RYOS-agent.zip")
+        self.assertEqual(newer, "RYOS 2.3.1 is out (you have 2.3.0). "
+                                "Download RYOS-agent.zip from https://x/r")
+        self.assertIn("Up to date", n.version_check_text(n.CURRENT, "v2.3.0", "u", "2.3.0", "z"))
+        self.assertIn("GitHub", n.version_check_text(n.UNREACHABLE, "", "", "2.3.0", "z"))
+
+
+class TestBuildInfo(unittest.TestCase):
+    """Which download this RYOS is (ryos/buildinfo.py)."""
+
+    def test_from_source_without_a_builds_file(self):
+        from ryos import buildinfo
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}):
+            self.assertEqual(buildinfo.variant(), buildinfo.PORTABLE)
+            self.assertEqual(buildinfo.describe(), "from source")
+            self.assertEqual(buildinfo.download_name(), "RYOS-portable.zip")
+
+    def test_a_builds_file_names_its_variant(self):
+        from ryos import buildinfo
+        for which, word, zipname in ((buildinfo.WINDOWS, "Windows build", "RYOS-windows.zip"),
+                                     (buildinfo.AGENT, "RYOS Agent", "RYOS-agent.zip")):
+            fake = types.SimpleNamespace(VARIANT=which)
+            with self.subTest(which=which), \
+                    mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+                self.assertEqual(buildinfo.variant(), which)
+                self.assertEqual(buildinfo.describe(), word)
+                self.assertEqual(buildinfo.download_name(), zipname)
+        with mock.patch.dict(sys.modules,
+                             {"ryos._build_info": types.SimpleNamespace(VARIANT="odd")}):
+            self.assertEqual(buildinfo.variant(), buildinfo.PORTABLE)
+
+    def test_the_file_a_build_writes(self):
+        from ryos import buildinfo
+        namespace: dict = {}
+        exec(buildinfo.build_info_source(buildinfo.AGENT), namespace)
+        self.assertEqual(namespace["VARIANT"], "agent")
+        with self.assertRaises(ValueError):
+            buildinfo.build_info_source("other")
+        # Never in the tree: the build removes it again.
+        self.assertFalse((Path(__file__).resolve().parents[1] / "ryos" / "_build_info.py").exists())
+
+    def test_the_bug_report_says_which_download(self):
+        from ryos import bugreport
+        env = dict(bugreport.environment("2.3.0", frozen=True, os_name="W", python="3",
+                                         qt="6", theme="light", layout="normal",
+                                         build="RYOS Agent"))
+        self.assertEqual(env["RYOS"], "2.3.0 (RYOS Agent)")
+
 
 class TestTrayPolicy(unittest.TestCase):
     """Tray contents and the window's life (traypolicy), drawn by qtui/tray.py."""

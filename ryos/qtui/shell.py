@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QScrollArea, QSizePolicy,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import activity, basefolder, bugreport
+from .. import activity, basefolder, bugreport, buildinfo
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
@@ -1708,7 +1708,8 @@ class MainWindow(QMainWindow):
         banner.setObjectName("updateBanner")
         row = QHBoxLayout(banner)
         row.setContentsMargins(10, 4, 6, 4)
-        self.update_label = QLabel(notifications.banner_text(tag, __version__))
+        self.update_label = QLabel(notifications.banner_text(
+            tag, __version__, buildinfo.download_name()))
         row.addWidget(self.update_label, 1)
         self.update_download = QPushButton("Download")
         self.update_download.setObjectName("primary")
@@ -1742,6 +1743,7 @@ class MainWindow(QMainWindow):
             layout = "normal"
         env = bugreport.environment(
             __version__, frozen=bool(getattr(sys, "frozen", False)),
+            build=buildinfo.describe(),
             os_name=platform.platform(), python=platform.python_version(),
             qt=f"{qVersion()} (PySide6 {pyside_version})",
             theme=str(self._settings.get("theme", "light")), layout=layout)

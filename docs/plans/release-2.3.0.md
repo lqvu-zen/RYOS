@@ -130,8 +130,8 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 4 Compatible-from guard | done (schema v10 adds `meta`) |
 | 5 CLI management | done |
 | 6 History source | done |
-| 7 Build variant | — |
-| 8 Update names the zip | — |
+| 7 Build variant | done (no About dialog: `--version` and the bug report show it) |
+| 8 Update names the zip | done |
 | 9 Help polish | — |
 | 10 Agent build | — |
 | 11 Build matrix | — |

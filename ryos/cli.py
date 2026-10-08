@@ -41,7 +41,7 @@ import json
 import sys
 from typing import Callable, TextIO
 
-from . import __version__, manage
+from . import __version__, buildinfo, manage
 from . import history as runhistory
 from .db import SOURCE_CLI, NewerDatabaseError, ScriptDB
 from .headless import (PIPELINE, SCRIPT, TIMEOUT, HeadlessError, HeadlessRunner,
@@ -49,7 +49,7 @@ from .headless import (PIPELINE, SCRIPT, TIMEOUT, HeadlessError, HeadlessRunner,
 from .jobs import STOPPED
 
 COMMANDS = ("list", "run", "pipeline", "mcp",
-            "add", "edit", "remove", "expose", "preset", "history")
+            "add", "edit", "remove", "expose", "preset", "history", "version")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -82,7 +82,8 @@ def _parser() -> argparse.ArgumentParser:
                f"Exit codes: the script's own; {EXIT_FAILED} failed; "
                f"{EXIT_TIMEOUT} timed out; {EXIT_REFUSED} refused by RYOS; "
                f"{EXIT_INTERRUPTED} interrupted.")
-    p.add_argument("--version", action="version", version=f"RYOS {__version__}")
+    p.add_argument("--version", action="version",
+                   version=f"RYOS {__version__} ({buildinfo.describe()})")
     sub = p.add_subparsers(dest="command", required=True)
 
     ls = sub.add_parser("list", help="List scripts and pipelines.")
@@ -153,6 +154,11 @@ def _parser() -> argparse.ArgumentParser:
     pr = pre_sub.add_parser("remove", help="Remove a preset.")
     pr.add_argument("ref", metavar="SCRIPT")
     pr.add_argument("label")
+
+    ve = sub.add_parser("version", help="This RYOS's version; --check asks GitHub "
+                                         "whether a newer one is out.")
+    ve.add_argument("--check", action="store_true",
+                    help="Check for a newer release, and name the file to download.")
 
     hi = sub.add_parser("history", help="What has run, newest first.")
     hi.add_argument("ref", nargs="?", metavar="SCRIPT")
@@ -399,7 +405,8 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
          out: TextIO | None = None, err: TextIO | None = None,
          notify_window: Callable[[], object] | None = None,
          rebuild_window: Callable[[], object] | None = None,
-         ask: Callable[[str], bool | None] | None = None) -> int:
+         ask: Callable[[str], bool | None] | None = None,
+         fetch_release: Callable[[], object] | None = None) -> int:
     """Run one command. Everything with an effect outside this process is an
     argument, so tests pass throwaway ones; the defaults are the real ones."""
     out = out if out is not None else sys.stdout
@@ -408,6 +415,16 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         args = _parser().parse_args(argv)
     except SystemExit as e:             # --help, --version, or a bad line
         return e.code if isinstance(e.code, int) else EXIT_OK
+    if args.command == "version":
+        print(f"RYOS {__version__} ({buildinfo.describe()})", file=out)
+        if not args.check:
+            return EXIT_OK
+        from . import notifications
+        fetch = fetch_release or notifications._fetch_latest_release
+        status, tag, url = notifications.update_status(fetch(), __version__)
+        print(notifications.version_check_text(status, tag, url, __version__,
+                                               buildinfo.download_name()), file=out)
+        return EXIT_FAILED if status == notifications.UNREACHABLE else EXIT_OK
     if args.command == "mcp":
         # Its own start-up: it logs to ryos-mcp.log, and it is long-lived.
         from .mcpserver import serve

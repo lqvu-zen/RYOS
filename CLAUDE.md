@@ -62,6 +62,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Paths, settings load/save                      | `ryos/settings.py`      |
 | Windows "run at login" registry                | `ryos/startup.py`       |
 | Toast + GitHub update check                    | `ryos/notifications.py` |
+| Which download this is (windows/agent/source)  | `ryos/buildinfo.py`     |
 | `ScriptDB` (all SQLite logic)                  | `ryos/db.py`            |
 | `detect_interpreter`, `build_command`          | `ryos/interpreter.py`   |
 | Subprocess worker + output-queue protocol      | `ryos/runner.py`        |

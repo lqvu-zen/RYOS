@@ -26,10 +26,13 @@ MAX_URL = 6000
 
 
 def environment(version: str, *, frozen: bool, os_name: str, python: str,
-                qt: str, theme: str, layout: str) -> list[tuple[str, str]]:
-    """The facts a bug report needs, as (label, value) pairs."""
+                qt: str, theme: str, layout: str,
+                build: str | None = None) -> list[tuple[str, str]]:
+    """The facts a bug report needs, as (label, value) pairs. ``build`` is
+    which download (buildinfo.describe); without it, frozen or not says."""
+    which = build or ("Windows build" if frozen else "from source")
     return [
-        ("RYOS", f"{version} ({'Windows build' if frozen else 'from source'})"),
+        ("RYOS", f"{version} ({which})"),
         ("OS", os_name),
         ("Python", python),
         ("Qt", qt),

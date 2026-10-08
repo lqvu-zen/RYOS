@@ -364,6 +364,31 @@ class TestEditRemoveExpose(_Manage):
         self.assertIn(b"backup", raw.getvalue())
 
 
+class TestVersion(unittest.TestCase):
+    def run_version(self, *argv, fetch=None):
+        out = io.StringIO()
+        code = cli.main(["version", *argv], db=None, settings={}, out=out,
+                        err=io.StringIO(), fetch_release=fetch)
+        return code, out.getvalue()
+
+    def test_says_which_download(self):
+        from ryos import buildinfo
+        code, out = self.run_version()
+        self.assertEqual(code, 0)
+        self.assertIn(f"RYOS {__version__} ({buildinfo.describe()})", out)
+
+    def test_check(self):
+        from ryos import buildinfo
+        code, out = self.run_version("--check", fetch=lambda: ("v99.0.0", "https://x/r"))
+        self.assertEqual(code, 0)
+        self.assertIn(f"Download {buildinfo.download_name()} from https://x/r", out)
+        code, out = self.run_version("--check", fetch=lambda: (f"v{__version__}", "u"))
+        self.assertIn("Up to date", out)
+        code, out = self.run_version("--check", fetch=lambda: None)
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn("Could not reach GitHub", out)
+
+
 class TestMcpWithoutTheSdk(unittest.TestCase):
     def test_says_how_to_get_it_and_exits_refused(self):
         from unittest import mock

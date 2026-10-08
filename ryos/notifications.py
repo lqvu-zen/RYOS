@@ -100,5 +100,20 @@ def up_to_date_notice(current: str) -> tuple[str, str]:
     return "Up to date", f"You are running the latest version ({current})."
 
 
-def banner_text(tag: str, current: str) -> str:
-    return f"🔔  Update available: {tag}  (you have v{current})"
+def banner_text(tag: str, current: str, download: str = "") -> str:
+    """The window's update banner; ``download`` names the zip that replaces
+    this one (buildinfo.download_name), so nobody updates into another kind."""
+    get = f" \u2014 get {download}" if download else ""
+    return f"🔔  Update available: {tag}  (you have v{current}){get}"
+
+
+def version_check_text(status: str, tag: str, url: str, current: str,
+                       download: str) -> str:
+    """What `ryos-cli version --check` says: RYOS Agent has no window for a
+    banner."""
+    if status == NEWER:
+        return (f"RYOS {tag.lstrip('v')} is out (you have {current}). "
+                f"Download {download} from {url}")
+    if status == CURRENT:
+        return f"Up to date: RYOS {current} is the latest."
+    return UNREACHABLE_NOTICE[1]

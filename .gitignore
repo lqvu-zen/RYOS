@@ -9,6 +9,9 @@ dist/
 
 # Test scripts: ignore ad-hoc sample programs but track the unit-test
 # module and the fixture files that CI subprocess tests depend on.
+# Written by setup_cxfreeze.py for the length of a build (ryos/buildinfo.py).
+ryos/_build_info.py
+
 tests/*
 !tests/test_ryos.py
 !tests/test_headless.py
