@@ -4133,6 +4133,17 @@ class TestRunHistoryFormatting(unittest.TestCase):
                 # earlier column's text.
                 self.assertTrue(format_run_row(row)[at:].startswith(describe(row)))
 
+    def test_who_started_it(self):
+        from ryos.history import format_source
+        for source, word in (("manual", "You"), ("schedule", "Schedule"),
+                             ("pipeline", "Pipeline"), ("cli", "CLI"), ("agent", "Agent"),
+                             ("startup", "Startup"), ("other", "other"), (None, "—")):
+            with self.subTest(source=source):
+                self.assertEqual(format_source(source), word)
+        header = header_row()
+        row = format_run_row(_run_row(trigger_source="agent"))
+        self.assertEqual(row[header.index("BY"):].split()[0], "Agent")
+
     def test_summarize_counts(self):
         rows = [_run_row(status="ok"), _run_row(status="error"), _run_row(status="ok")]
         self.assertEqual(summarize(rows), "3 runs · 2 passed · 1 failed")

@@ -16,6 +16,7 @@ _W_WHEN = 17
 _W_STATUS = 9
 _W_TOOK = 8
 _W_EXIT = 5
+_W_BY = 10
 
 #: The same words the rows use for an outcome ("● OK", "● Failed").
 _STATUS_MARK = {
@@ -69,6 +70,23 @@ def format_status(status) -> str:
     return _STATUS_MARK.get(status, status or "—")
 
 
+#: Who started a run, from runs.trigger_source: the window (a click), a
+#: schedule, a pipeline (its steps), start-up, the command line, an agent.
+_SOURCE_WORD = {
+    "manual": "You",
+    "schedule": "Schedule",
+    "pipeline": "Pipeline",
+    "startup": "Startup",
+    "cli": "CLI",
+    "agent": "Agent",
+}
+
+
+def format_source(source) -> str:
+    """Who started it, in a word; an unknown source passes through."""
+    return _SOURCE_WORD.get(source, source or "—")
+
+
 def format_exit_code(exit_code) -> str:
     """Exit code, or '—' when the run never produced one (a launch failure)."""
     return "—" if exit_code is None else str(exit_code)
@@ -89,13 +107,14 @@ def format_run_row(row) -> str:
             f"{format_status(row[7]):<{_W_STATUS}}"
             f"{format_duration(row[5], row[6]):>{_W_TOOK}}  "
             f"{format_exit_code(row[8]):>{_W_EXIT}}   "
+            f"{format_source(row[10] if len(row) > 10 else None):<{_W_BY}}"
             f"{describe(row)}")
 
 
 def header_row() -> str:
     """Column headings aligned to format_run_row."""
     return (f"{'WHEN':<{_W_WHEN}}{'STATUS':<{_W_STATUS}}{'TOOK':>{_W_TOOK}}  "
-            f"{'EXIT':>{_W_EXIT}}   WHAT")
+            f"{'EXIT':>{_W_EXIT}}   {'BY':<{_W_BY}}WHAT")
 
 
 def clear_prompt(count: int) -> str:

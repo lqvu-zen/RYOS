@@ -129,7 +129,7 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 3 Exit code | done |
 | 4 Compatible-from guard | — |
 | 5 CLI management | done |
-| 6 History source | — |
+| 6 History source | done |
 | 7 Build variant | — |
 | 8 Update names the zip | — |
 | 9 Help polish | — |
