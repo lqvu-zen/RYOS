@@ -134,6 +134,6 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 8 Update names the zip | done |
 | 9 Help polish | done (argparse lists every command) |
 | 10 Agent build | done (48 MB, against 93 MB for the full build) |
-| 11 Build matrix | — |
+| 11 Build matrix | done (`build_release.py`; zips: windows 37 MB, agent 19 MB) |
 | 12 Docs | — |
 | 13 Release check | — |

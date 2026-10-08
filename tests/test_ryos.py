@@ -8041,6 +8041,37 @@ class TestUpdateStatus(unittest.TestCase):
         self.assertIn("GitHub", n.version_check_text(n.UNREACHABLE, "", "", "2.3.0", "z"))
 
 
+class TestReleaseZipChecks(unittest.TestCase):
+    """build_release.problems_in: what each download must and must not hold.
+    A check that passes a broken zip would publish it."""
+
+    def setUp(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import build_release
+        self.check = build_release.problems_in
+
+    def test_good_downloads_pass(self):
+        self.assertEqual(self.check("RYOS-windows.zip",
+                                    ["RYOS.exe", "ryos-cli.exe", "lib/mcp/__init__.pyc",
+                                     "lib/PySide6/Qt6Core.dll"]), [])
+        self.assertEqual(self.check("RYOS-agent.zip",
+                                    ["ryos-cli.exe", "lib/mcp/__init__.pyc"]), [])
+        self.assertEqual(self.check("RYOS-portable.zip",
+                                    ["pyproject.toml", "run.bat", "install_uv.bat",
+                                     "icon.ico", "ryos/__init__.py"]), [])
+
+    def test_broken_downloads_fail(self):
+        self.assertTrue(self.check("RYOS-windows.zip", ["RYOS.exe", "lib/mcp/x.pyc"]))
+        self.assertTrue(self.check("RYOS-windows.zip", ["RYOS.exe", "ryos-cli.exe"]))
+        self.assertTrue(self.check("RYOS-agent.zip", ["ryos-cli.exe", "lib/mcp/x.pyc",
+                                                      "lib/PySide6/Qt6Core.dll"]))
+        self.assertTrue(self.check("RYOS-agent.zip", ["ryos-cli.exe", "RYOS.exe",
+                                                      "lib/mcp/x.pyc"]))
+        self.assertTrue(self.check("RYOS-portable.zip",
+                                   ["pyproject.toml", "run.bat", "install_uv.bat", "icon.ico",
+                                    "ryos/__init__.py", "ryos/__pycache__/db.pyc"]))
+
+
 class TestBuildInfo(unittest.TestCase):
     """Which download this RYOS is (ryos/buildinfo.py)."""
 

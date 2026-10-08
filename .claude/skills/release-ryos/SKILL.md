@@ -5,7 +5,7 @@ description: 'Cut a new GitHub release of the RYOS desktop app — bump the vers
 
 # Releasing RYOS
 
-RYOS ships as a GitHub release with two downloadable assets: **`RYOS-windows.zip`** (the frozen `RYOS.exe`, the console `ryos-cli.exe` for the command line, and their DLLs, for users who just want to run it) and **`RYOS-portable.zip`** (the source, for users who run it from Python via `run.bat`). The release is tagged in the repo `lqvu-zen/RYOS`, and the app's built-in update check (`ryos/notifications.py`) compares the running `__version__` against the latest GitHub tag — so the tag, the assets, and `__version__` must all line up.
+RYOS ships as a GitHub release with three downloadable assets, built and checked by `build_release.py`: **`RYOS-windows.zip`** (`RYOS.exe` and the console `ryos-cli.exe`, MCP server inside, for most users), **`RYOS-agent.zip`** (`ryos-cli.exe` alone, no window and no Qt — RYOS Agent) and **`RYOS-portable.zip`** (the source, run with uv via `run.bat`), plus `SHA256SUMS.txt`. The release is tagged in the repo `lqvu-zen/RYOS`, and the app's built-in update check (`ryos/notifications.py`) compares the running `__version__` against the latest GitHub tag — so the tag, the assets, and `__version__` must all line up.
 
 Releasing is **not a design problem** — it's a deterministic runbook, so unlike `add-ryos-feature` and `fix-ryos-bug` there are no design/review subagents here. You run it inline. The safety comes from **hard gates**: CI must be green on the commit you're shipping, the build must succeed, the exe must survive a smoke test *showing the version you just built*, and both zips must contain the expected files — stop and report at any gate that fails rather than publishing a broken release. A gate that fails for an unexpected reason is worth a minute's diagnosis before you either abort or work around it; the smoke test in particular has a known false failure, documented in step 4. (Drafting release notes from the commit log is the one step you may hand to a cheap Haiku/Sonnet subagent if you like; everything else is yours.)
 
@@ -53,87 +53,51 @@ cd D:/Projects/RYOS && grep -n "__version__" ryos/__init__.py
 
 Edit the line to the concrete version, e.g. `__version__ = "1.6.5"`. (Optional polish: `setup_cxfreeze.py` carries its own hardcoded `version=` string used only for exe metadata, and it drifts — if you care about correct file metadata, update it to match; it does not affect the update check.)
 
-### 3. Build the exe
+### 3. Build and package every download — hard gate
 
-Clear the old build first, so nothing stale can be packaged or smoke-tested by mistake:
-
-```bash
-cd D:/Projects/RYOS && rm -rf dist/cxfreeze build && uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe 2>&1 | tail -3
-```
-
-This writes `dist/cxfreeze/` with `RYOS.exe`, `ryos-cli.exe` and their DLLs (about 93 MB; the MCP SDK is in `ryos-cli.exe`). Confirm both exist and stop if either doesn't:
+One script builds both exes from clean folders, zips all three downloads, checks what each holds and must not hold, and writes `SHA256SUMS.txt`:
 
 ```bash
-ls -lh D:/Projects/RYOS/dist/cxfreeze/RYOS.exe D:/Projects/RYOS/dist/cxfreeze/ryos-cli.exe
+cd D:/Projects/RYOS && uv run --extra mcp --with cx_Freeze python build_release.py 2>&1 | tail -8
 ```
 
-> `build.bat` and `build_cxfreeze.bat` run the same command — cx_Freeze is the only packager and the sole release path.
+It ends with `build_release done`, a size per zip (2.3.0: windows about 37 MB, agent about 19 MB, portable under 1 MB) and the checksums file. It stops with exit 1 on any problem: an exe missing, no MCP SDK in an exe, Qt or the window in the agent build, a `__pycache__` or `_build_info.py` in the source. **If it fails, stop and report.** The builds stay in `dist/cxfreeze/` (Windows) and `dist/cxfreeze-agent/` (agent) for the smoke tests.
 
-### 4. Smoke-test the exe — hard gate
+> `build.bat` / `build_cxfreeze.bat` build only the Windows folder, for development; releases go through `build_release.py`.
 
-A release that crashes on launch is worse than no release, so prove the exe starts before going further. `tests/launch_smoke.py` launches it the way the maintainer needs it launched:
+### 4. Smoke-test the builds — hard gate
+
+A release that crashes on launch is worse than no release, so prove both builds start before going further. `tests/launch_smoke.py` launches them the way the maintainer needs it launched:
 
 - **Never on the first screen.** The maintainer works there (and may be in a game). With no flag, the app runs on Qt's offscreen platform and no window appears anywhere; `--visible` puts it on the second screen (`tests/smoke_screen.py`), and falls back to the primary only when there is one monitor — so check `smoke_screen()` before using `--visible`. Never launch `RYOS.exe` directly with `Start-Process`: its window opens wherever Windows places it.
 - **Throwaway data, no registry writes.** `APPDATA` points at a temp folder, `RYOS_NO_REGISTRY=1` and `RYOS_NO_TOASTS=1`, so no notification pops up and the real database, settings and run-at-login entry are never touched; the smoke fails if anything in the real `%APPDATA%\RYOS` changed.
 - **`RYOS_ALLOW_MULTIPLE=1`**, so the maintainer's own running RYOS is neither signalled nor made to swallow the launch. (Without it, the single-instance guard makes the new exe hand off and exit 0 — which looks like a crash. Never "fix" that by killing the maintainer's instance.)
 - **It checks the version.** The app logs `RYOS <version> starting`; the smoke fails unless that is the version in `ryos/__init__.py`, which is what proves you are testing the build you just made rather than a stale `dist/`.
+- **It checks the command line and MCP too:** `ryos-cli.exe --version`, `list` and a real `run`, then `ryos-cli.exe mcp` spoken to as plain JSON-RPC (initialize, the tool list, `list_scripts`).
 
-Run it twice — offscreen, then on the second screen, which also proves the frozen Windows platform plugin (`qwindows.dll`) loads:
+The Windows build twice — offscreen, then on the second screen, which also proves the frozen Windows platform plugin (`qwindows.dll`) loads — then the agent build:
 
 ```bash
 cd D:/Projects/RYOS && uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe
 cd D:/Projects/RYOS && uv run python -c "import sys; sys.path.insert(0,'tests'); from smoke_screen import _monitor_work_areas as a; print(len(a()), 'monitor(s)')"
 cd D:/Projects/RYOS && uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe --visible   # only with 2+ monitors
+cd D:/Projects/RYOS && uv run python tests/launch_smoke.py --cli-only dist/cxfreeze-agent/ryos-cli.exe
 ```
 
-**If either fails, stop and report — do not release.**
+The agent smoke also checks the build says `RYOS <version> (RYOS Agent)` and carries no Qt and no window. **If any fails, stop and report — do not release.**
 
-Then check the upgrade path on a copy of an older database, if one exists (`%APPDATA%\RYOS\scripts.db.backup-*`, or one the maintainer names). `--db` opens a *copy*; the real file is never opened:
+Then check the upgrade path on a copy of an older database, if one exists (`%APPDATA%\RYOS\scripts.db.backup-*`, or one the maintainer names), and on a copy of the current data. `--db` opens a *copy*; the real file is never opened:
 
 ```bash
 cd D:/Projects/RYOS && uv run python tests/real_data_smoke.py --db "$APPDATA/RYOS/scripts.db.backup-<date>"
+cd D:/Projects/RYOS && uv run python tests/real_data_smoke.py
 ```
 
-It prints the schema step and what changed (`schema: v7 -> v8; pipeline steps 59 -> 0`). A count that drops is a stop until you know why: open another copy with `sqlite3` and confirm the rows were ones the migration is meant to remove (v8's `_migrate_drop_orphans` removes only steps, presets and schedules whose script or pipeline is gone) — and say so in the release notes.
+It prints the schema step and what changed (`schema: v7 -> v10; pipeline steps 59 -> 0`). A count that drops is a stop until you know why: open another copy with `sqlite3` and confirm the rows were ones the migration is meant to remove (v8's `_migrate_drop_orphans` removes only steps, presets and schedules whose script or pipeline is gone) — and say so in the release notes. The current-data check also opens every script in the script dialog and fails if an unchanged save would change one (it caught 2.2.0's outside-folder bug).
 
-### 5. Package both assets — hard gate
+### 5. (Packaging is step 3)
 
-The Windows build zip (the contents of the cx_Freeze folder):
-
-```powershell
-Compress-Archive -Force -Path D:\Projects\RYOS\dist\cxfreeze\* -DestinationPath D:\Projects\RYOS\dist\RYOS-windows.zip
-```
-
-The portable source zip (everything needed to run from source). Built with Python rather than `Compress-Archive`, which would sweep in every local `__pycache__` (95 stale bytecode files, tripling the zip, in 2.0.0's first attempt):
-
-```bash
-cd D:/Projects/RYOS && uv run --no-project python - <<'EOF'
-import zipfile
-from pathlib import Path
-with zipfile.ZipFile("dist/RYOS-portable.zip", "w", zipfile.ZIP_DEFLATED) as z:
-    for p in sorted(Path("ryos").rglob("*")):
-        if p.is_file() and "__pycache__" not in p.parts:
-            z.write(p, p.as_posix())
-    for f in ("pyproject.toml", "run.bat", "install_uv.bat", "icon.ico"):
-        z.write(f, f)
-    names = z.namelist()
-missing = [f for f in ("pyproject.toml", "run.bat", "install_uv.bat", "icon.ico",
-                       "ryos/__init__.py") if f not in names]
-caches = sum("__pycache__" in n for n in names)
-print(f"{len(names)} entries; missing {missing or 'nothing'}; {caches} cache files")
-raise SystemExit(1 if missing or caches else 0)
-EOF
-```
-
-Verify the Windows zip carries the exe, and stop if either check fails:
-
-```powershell
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$zip = [System.IO.Compression.ZipFile]::OpenRead("D:\Projects\RYOS\dist\RYOS-windows.zip")
-$entries = $zip.Entries.Name; $zip.Dispose()
-foreach ($exe in "RYOS.exe", "ryos-cli.exe") { if ($entries -notcontains $exe) { Write-Error "RYOS-windows.zip has no $exe — aborting"; exit 1 } }
-Write-Output "RYOS-windows.zip verified ($($entries.Count) entries)"
-```
+`build_release.py` zips and checks all three downloads; there is nothing to package by hand. Don't use `Compress-Archive` for the portable zip: it sweeps in every local `__pycache__` (95 stale bytecode files, tripling the zip, in 2.0.0's first attempt).
 
 ### 6. Commit and push the version bump
 
@@ -149,7 +113,8 @@ cd D:/Projects/RYOS && git add ryos/__init__.py <other intended files> && git co
 Only once CI is green on the version-bump commit (`gh run watch <id> --exit-status`). Write the notes to a file in the scratchpad rather than quoting them on the command line, where backticks and `$` get mangled:
 
 ```bash
-cd D:/Projects/RYOS && gh release create v<X.Y.Z> dist/RYOS-windows.zip dist/RYOS-portable.zip \
+cd D:/Projects/RYOS && gh release create v<X.Y.Z> dist/RYOS-windows.zip dist/RYOS-agent.zip \
+  dist/RYOS-portable.zip dist/SHA256SUMS.txt \
   -R lqvu-zen/RYOS --target main --title "v<X.Y.Z>" --notes-file <notes.md> 2>&1
 ```
 
@@ -158,9 +123,11 @@ Include the download guidance in the notes so users know which asset to grab:
 ```
 <user-approved notes>
 
-## Downloads
-- **RYOS-windows.zip** — Windows build; extract and run `RYOS.exe` inside (`ryos-cli.exe` beside it is the command line).
-- **RYOS-portable.zip** — run from source; extract and double-click `run.bat` (needs uv; run `install_uv.bat` first if needed).
+## Which download?
+- **RYOS-windows.zip** — the app: extract and run `RYOS.exe`. `ryos-cli.exe` beside it is the command line and the MCP server for AI agents (`ryos-cli.exe mcp`).
+- **RYOS-agent.zip** — RYOS Agent: just `ryos-cli.exe`, for letting Claude run an allow-list of your scripts without the app. See the guide's RYOS Agent page.
+- **RYOS-portable.zip** — run from source: extract and double-click `run.bat` (needs uv; run `install_uv.bat` first if needed).
+- **SHA256SUMS.txt** — checksums of the three zips.
 ```
 
 ### 8. Clear `dist/`
