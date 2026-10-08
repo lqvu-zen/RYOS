@@ -22,7 +22,7 @@ installed; nothing outside `ryos/qtui/` imports it.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QPainter
 from PySide6.QtWidgets import (QFrame, QLabel, QLayout, QSizePolicy, QVBoxLayout,
                                QWidget)
@@ -139,7 +139,7 @@ class ScrollingLabel(QWidget):
         painter.end()
 
 
-class HoverPreview(QWidget):
+class HoverPreview(QObject):
     """A delayed popup showing caller-built detail for a card.
 
     The Tk version needed containment-aware leave detection, walking up from
@@ -147,6 +147,10 @@ class HoverPreview(QWidget):
     each child crossed. Qt only sends `leaveEvent` when the pointer leaves the
     widget and all its children, so this is just a timer and a frameless
     window.
+
+    A QObject, not a QWidget: as a widget it was an unsized 100x30 child in
+    the card's top-left corner, invisible but taking the clicks there -- the
+    whole of a favourite chip's Run button, and every compact row's star.
     """
 
     def __init__(self, host: QWidget, builder, delay_ms: int = 1000):

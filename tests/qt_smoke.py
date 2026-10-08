@@ -3907,6 +3907,16 @@ def check_badges_banner_previews(app):
         if texts[:1] != ["asks"] or "--p" not in texts or "Path" not in texts:
             PROBLEMS.append(f"the preview showed {texts}")
         preview.hide_now()
+    # The preview must take no room on the card. As a widget it was an
+    # unsized 100x30 box in the card's corner, taking the clicks there: every
+    # compact row's star, and the whole Run button of a favourite chip.
+    win.show()
+    settle()
+    for button in (target.fav_button, target.run_button):
+        under = target.childAt(button.mapTo(target, button.rect().center()))
+        if under is not button and (under is None or not button.isAncestorOf(under)):
+            PROBLEMS.append(f"on a compact row, {type(under).__name__} sits over the "
+                            f"{button.objectName() or 'button'}, so clicks miss it")
     win.deleteLater()
     win = window({"compact_mode": True, "hover_preview": False})
     if getattr(card(win, "asks"), "preview", None) is not None:
