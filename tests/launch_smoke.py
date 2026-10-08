@@ -156,12 +156,53 @@ def _check_mcp(exe: Path, env: dict, data: Path, problems: list) -> str:
     return f"  [ok] MCP from {exe.name} mcp: initialize, {len(tools)} tools, list_scripts"
 
 
+def _agent_smoke(exe: Path) -> int:
+    """RYOS Agent: ryos-cli.exe on its own -- it says so, carries no Qt and no
+    window, and its command line and MCP server work against a throwaway
+    folder."""
+    real = Path(os.environ.get("APPDATA") or Path.home() / ".local" / "share") / "RYOS"
+    before = _snapshot(real)
+    tmp = Path(tempfile.mkdtemp(prefix="ryos-agent-"))
+    data = tmp / "RYOS"
+    data.mkdir()
+    env = dict(os.environ, APPDATA=str(tmp), RYOS_NO_REGISTRY="1", RYOS_NO_TOASTS="1")
+    print(f"RYOS agent smoke: {exe}\n  (data in {data}; registry writes off)")
+    problems: list = []
+    version = subprocess.run([str(exe), "--version"], env=env, capture_output=True,
+                             text=True, timeout=60).stdout.strip()
+    if version != f"RYOS {_source_version()} (RYOS Agent)":
+        problems.append(f"--version said {version!r}, not RYOS {_source_version()} (RYOS Agent)")
+    qt = [p.name for p in exe.parent.rglob("*")
+          if p.name.lower().startswith(("qt6", "pyside6", "shiboken6"))]
+    if qt:
+        problems.append(f"the agent build carries Qt: {sorted(set(qt))[:5]}")
+    if (exe.parent / "RYOS.exe").exists() or (exe.parent / "lib" / "ryos" / "qtui").exists():
+        problems.append("the agent build carries the window")
+    report = _check_cli([str(exe)], env, data, problems)
+    if not problems:
+        report += "\n" + _check_mcp(exe, env, data, problems)
+    if _snapshot(real) != before:
+        problems.append("the real RYOS folder changed")
+    if problems:
+        print("\n".join(f"  PROBLEM: {p}" for p in problems))
+        print("\nRYOS agent smoke FAILED")
+        return 1
+    print(f"  [ok] {version}: no Qt, no window; the real RYOS folder is unchanged")
+    print(report)
+    print("\nRYOS agent smoke PASSED")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--exe", help="a built RYOS.exe to launch instead of source")
     parser.add_argument("--visible", action="store_true",
                         help="show the window (on a second screen when there is one)")
+    parser.add_argument("--cli-only", metavar="RYOS-CLI-EXE",
+                        help="RYOS Agent: check a ryos-cli.exe built without the window")
     args = parser.parse_args()
+    if args.cli_only:
+        return _agent_smoke(Path(args.cli_only).resolve())
 
     real = Path(os.environ.get("APPDATA") or Path.home() / ".local" / "share") / "RYOS"
     before = _snapshot(real)

@@ -111,6 +111,19 @@ EXECUTABLES = [
     ),
 ]
 
+if VARIANT == buildinfo.AGENT:
+    # RYOS Agent (RYOS_VARIANT=agent): the command line and the MCP server,
+    # no window -- so no Qt. ryos.qtui and PySide6 are left out, which is
+    # most of the full build's size; so are the window's icons and themes.
+    BUILD_DIR = Path("dist/cxfreeze-agent")
+    build_options.update({
+        "build_exe": str(BUILD_DIR),
+        "bin_excludes": [],
+        "include_files": [("icon.ico", "icon.ico")],
+        "excludes": [*build_options["excludes"], "ryos.qtui", "PySide6", "shiboken6"],
+    })
+    EXECUTABLES = [e for e in EXECUTABLES if e.target_name == "ryos-cli.exe"]
+
 BUILD_INFO.write_text(buildinfo.build_info_source(VARIANT), encoding="utf-8")
 try:
     setup(

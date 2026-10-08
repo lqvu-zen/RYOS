@@ -132,8 +132,8 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 6 History source | done |
 | 7 Build variant | done (no About dialog: `--version` and the bug report show it) |
 | 8 Update names the zip | done |
-| 9 Help polish | — |
-| 10 Agent build | — |
+| 9 Help polish | done (argparse lists every command) |
+| 10 Agent build | done (48 MB, against 93 MB for the full build) |
 | 11 Build matrix | — |
 | 12 Docs | — |
 | 13 Release check | — |
