@@ -11,24 +11,34 @@ The point of this skill is that adding or improving a feature here is not just "
 
 Work through the phases in order. Don't skip the test/review phase to save time; a feature that isn't verified isn't done.
 
-**You are the orchestrator.** You own the conversation with the user, the delegation below, the verification of everything you delegate, and the commit decision. You do **not** design the feature, write the implementation, run the tests, or review the final diff yourself — each of those goes to a fresh subagent with a pinned model, because an independent agent has no anchoring from this conversation and catches assumptions you've already absorbed. Design and review go to **Opus**; implement/test/fix goes to **Sonnet** (a different agent from you). Your own job is steps 1–2 (gather context), then spawning, verifying, and committing. This separation is the whole point — keep it even for small features.
+**You are the orchestrator.** You own the conversation with the user, the delegation below, the verification of everything you delegate, and the commit decision. You do **not** design the feature, write the implementation, run the tests, or review the final diff yourself — each of those goes to a fresh subagent with a pinned model, because an independent agent has no anchoring from this conversation and catches assumptions you've already absorbed. Design goes to `ryos-designer` and review to `ryos-reviewer` (both Opus, high effort); implement/test/fix goes to `ryos-implementer` (Sonnet, a different agent from you). Your own job is steps 1–2 (gather context), then spawning, verifying, and committing. This separation is the whole point — keep it even for small features.
 
-## Recommended model per phase
+## Who does each phase
 
-Each phase has a default model chosen to match its demand — peak reasoning where correctness is decided, a fast strong coder for the implementation loop, and the orchestrator's own model for conversation and mechanics.
+Each phase goes to the role that matches its demand: peak reasoning where correctness is decided, a fast strong coder for the implementation loop, and the orchestrator for conversation and mechanics.
 
-| Phase | Runs as | Default model | Why this model |
+| Phase | Runs as | Model (set in the agent file) | Why |
 |---|---|---|---|
-| 1. Understand | orchestrator | Sonnet 4.6 | Owns the conversation; needs sound judgment, not peak reasoning. |
-| 2. Locate code | subagent | **Haiku 4.5** | Cheap, fast broad search; returns the code excerpts the orchestrator needs to brief design. |
-| 3. Design | subagent | **Opus 4.8** | Hardest reasoning — architecture fit, edge cases, smallest correct change. |
-| 4. Implement / test / fix | subagent | **Sonnet 4.6** | Excellent coder; fast and economical across the many tool calls in the fix loop. |
-| 4b. Verify | orchestrator | Sonnet 4.6 | Re-runs tests and walks the checklist; the real correctness gate is the step-5 Opus review. |
-| 5. Review | subagent | **Opus 4.8** | Catches subtle correctness and architecture-rule bugs the implementer can miss. |
-| 6. Commit & push | orchestrator | Sonnet 4.6 | Mechanical. |
-| 7. Report | orchestrator | Sonnet 4.6 | Light summarization. |
+| 1. Understand | orchestrator (you) | session model: run from Sonnet | Owns the conversation; needs sound judgment, not peak reasoning. |
+| 2. Locate code | `ryos-locator` | Haiku | Cheap, fast search; returns the code excerpts the design brief needs. |
+| 3. Design | `ryos-designer` | Opus, high effort | Hardest reasoning: architecture fit, edge cases, the smallest correct change. |
+| 4. Implement / test / fix | `ryos-implementer` | Sonnet (Opus, medium effort, when escalated) | Strong coder; fast and economical across the many tool calls in the fix loop. |
+| 4b. Verify | orchestrator (you) | session model | Re-runs tests and walks the checklist; the real gate is the step-5 review. |
+| 5. Review | `ryos-reviewer` | Opus, high effort | Fresh eyes: catches correctness and architecture-rule bugs the implementer missed. |
+| 6. Commit & push | orchestrator (you) | session model | Mechanical. |
+| 7. Report | orchestrator (you) | session model | Light summarization. |
 
-The delegated phases are pinned in their `Agent(... model: ...)` calls below (`haiku` for search, `opus` for design, `sonnet` for implementation, `opus` for review) — those are enforced. The orchestrator phases (1, 4b, 6, 7) all run on whatever model is driving this session; the skill can't switch that per phase, so **run it from a Sonnet session** for the intended balance. Opus as orchestrator works too but is slower and costlier for no gain on the mechanical phases.
+Each role is defined once, in `.claude/agents/`: `ryos-locator`, `ryos-designer`, `ryos-implementer` and `ryos-reviewer`. Each file's frontmatter sets that role's model and effort, so **change a model there, not in this skill**, and don't pass `model` or `effort` in the calls below except to escalate. The orchestrator phases (1, 4b, 6, 7) run on whatever model drives this session, which the skill can't switch per phase, so **run it from a Sonnet session**. Opus as orchestrator works too, but it is slower and costlier for no gain on the mechanical phases.
+
+**Escalate the implementer** to Opus at medium effort when a mistake is expensive or the fix loop will be deep. That covers database schema, migrations or the schema-version guard; packaging and freezing (`setup_cxfreeze.py`, cx_Freeze missing modules); and threading or the output queue:
+
+```
+Agent({ description: "...", subagent_type: "ryos-implementer", model: "opus", effort: "medium", prompt: <brief> })
+```
+
+**If the `ryos-*` agent types aren't listed**, for example because the session started before `.claude/agents/` existed, fall back to `subagent_type: "general-purpose"`. Pin the same model (`haiku`, `opus`, `sonnet`, `opus`), pass `effort: "high"` for the designer and reviewer, and paste that role's instructions from `.claude/agents/<name>.md` at the top of the brief.
+
+**When the work is a step from a release plan** (`docs/plans/*.md`), paste that step's **Needs / Work / Done when** verbatim into the design, implement and review briefs. The reviewer checks every "Done when" item, and the step isn't finished until each one is met or marked "needs a human" (a clean-machine test, a real Claude Desktop connection). Report the "needs a human" items to the user.
 
 ## Where things live
 
@@ -92,7 +102,7 @@ This skill covers both **new capabilities** and **improvements to existing ones*
 You need the current shape of the code to brief the design agent — but sweeping the package for the right functions is cheap, mechanical work. Hand it to a fast Haiku agent and keep your own context clean.
 
 ```
-Agent({ description: "Locate code for <feature>", subagent_type: "general-purpose", model: "haiku", prompt: <brief> })
+Agent({ description: "Locate code for <feature>", subagent_type: "ryos-locator", prompt: <brief> })
 ```
 
 The brief gives the feature in one line plus the **Where things live** table, and asks the agent to:
@@ -116,7 +126,7 @@ Either way, you finish step 2 holding the code excerpts (and any "already exists
 You do not design inline. Spawn a fresh Opus agent to produce the plan — even for a small feature — so the design is free of context bias from the feature-request conversation.
 
 ```
-Agent({ description: "Design <feature>", subagent_type: "general-purpose", model: "opus", prompt: <self-contained brief> })
+Agent({ description: "Design <feature>", subagent_type: "ryos-designer", prompt: <self-contained brief> })
 ```
 
 The brief must be self-contained — the design agent can't see this conversation. Paste in, verbatim: the user's request (one paragraph); the **Where things live** table and the entire **Architecture rules that always apply** section from this skill; the Grep/Read output from step 2 showing the current shape of the code (and anything you found in step 2 that already exists); and this instruction: *"Design the smallest correct implementation. Do NOT write code — produce only a plan with the sections below. If something is ambiguous, list it as a question for the user instead of guessing."*
@@ -139,7 +149,7 @@ Present the plan to the user and proceed once they're on board (a "go ahead" wit
 You do not write the implementation, run the tests, or launch the app yourself. Spawn a Sonnet agent (separate from you) to execute the approved plan, run the suite, smoke-test, and fix failures end-to-end. Offloading the whole implement–test–fix loop keeps your context clean for verification and the final review.
 
 ```
-Agent({ description: "Implement <feature>", subagent_type: "general-purpose", model: "sonnet", prompt: <self-contained brief> })
+Agent({ description: "Implement <feature>", subagent_type: "ryos-implementer", prompt: <self-contained brief> })
 ```
 
 The brief must include, verbatim: the **full approved plan** from step 3; the entire **Architecture rules that always apply** section (paste it — don't summarize; the full list is the contract); and the verification + acceptance criteria:
@@ -168,7 +178,7 @@ If anything's off, fix it inline or send the Sonnet agent a follow-up via SendMe
 Spawn an independent Opus agent to review the staged diff. A fresh agent has no bias from the planning step — it sees only the code and the brief.
 
 ```
-Agent({ description: "Review <feature>", subagent_type: "general-purpose", model: "opus", prompt: <self-contained brief> })
+Agent({ description: "Review <feature>", subagent_type: "ryos-reviewer", prompt: <self-contained brief> })
 ```
 
 The brief must include, verbatim: the original request (one paragraph); the approved plan from step 3; the full `git diff` of all modified files; the entire **Architecture rules that always apply** section; and this instruction: *"Review ONLY the diff and the files it modifies. If a change references a new external symbol you may open that file to confirm the API exists, but don't go hunting for unrelated issues. Look for correctness bugs, deviations from the plan, and architecture-rule violations in the changed code. Do NOT edit anything. Report findings as BLOCKERS, SUGGESTIONS, and OK. If there are no blockers, end with the line 'READY TO COMMIT'."*

@@ -11,22 +11,32 @@ The trap with bug-fixing here is fixing the *symptom* instead of the *cause*, or
 
 Work through the phases in order. A "fix" you didn't reproduce and can't demonstrate passing is not a fix.
 
-**You are the orchestrator.** You own the conversation, the delegation below, the verification of everything you delegate, and the commit decision. You do **not** diagnose the root cause, write the fix, run the tests, or review the final diff yourself — each goes to a fresh subagent with a pinned model, because an independent agent has no anchoring from this conversation and catches assumptions you've already absorbed. Your own job is steps 1–2 (reproduce, gather context), then spawning, verifying, and committing. Keep the separation even for a one-line fix.
+**You are the orchestrator.** You own the conversation, the delegation below, the verification of everything you delegate, and the commit decision. You do **not** diagnose the root cause, write the fix, run the tests, or review the final diff yourself — each goes to a fresh subagent from `.claude/agents/` (diagnosis to `ryos-designer` in bug mode, the fix to `ryos-implementer`, review to `ryos-reviewer`), because an independent agent has no anchoring from this conversation and catches assumptions you've already absorbed. Your own job is steps 1–2 (reproduce, gather context), then spawning, verifying, and committing. Keep the separation even for a one-line fix.
 
-## Recommended model per phase
+## Who does each phase
 
-| Phase | Runs as | Default model | Why this model |
+| Phase | Runs as | Model (set in the agent file) | Why |
 |---|---|---|---|
-| 1. Reproduce & scope | orchestrator | Sonnet 4.6 | Owns the conversation; pins down repro steps and expected vs. actual. |
-| 2. Locate code | subagent | **Haiku 4.5** | Cheap, fast search; returns the suspect code excerpts to brief diagnosis. |
-| 3. Diagnose + failing test | subagent | **Opus 4.8** | Hardest reasoning — root-cause analysis and the minimal correct fix plan. |
-| 4. Fix / verify | subagent | **Sonnet 4.6** | Strong coder; fast and economical across the fix-and-re-run loop. |
-| 4b. Verify | orchestrator | Sonnet 4.6 | Re-runs tests and walks the checklist; the real gate is the step-5 Opus review. |
-| 5. Review | subagent | **Opus 4.8** | Confirms the fix addresses the cause, not the symptom, with no new regressions. |
-| 6. Commit & push | orchestrator | Sonnet 4.6 | Mechanical. |
-| 7. Report | orchestrator | Sonnet 4.6 | Light summarization. |
+| 1. Reproduce & scope | orchestrator (you) | session model: run from Sonnet | Owns the conversation; pins down the repro and expected vs. actual. |
+| 2. Locate code | `ryos-locator` | Haiku | Cheap, fast search; returns the suspect code excerpts for diagnosis. |
+| 3. Diagnose + failing test | `ryos-designer` (bug mode) | Opus, high effort | Hardest reasoning: root-cause analysis and the minimal correct fix plan. |
+| 4. Fix / verify | `ryos-implementer` | Sonnet (Opus, medium effort, when escalated) | Strong coder; fast and economical across the fix-and-re-run loop. |
+| 4b. Verify | orchestrator (you) | session model | Re-runs tests and walks the checklist; the real gate is the step-5 review. |
+| 5. Review | `ryos-reviewer` | Opus, high effort | Confirms the fix addresses the cause, not the symptom, with no new regressions. |
+| 6. Commit & push | orchestrator (you) | session model | Mechanical. |
+| 7. Report | orchestrator (you) | session model | Light summarization. |
 
-The delegated phases are pinned in their `Agent(... model: ...)` calls below (`haiku`, `opus`, `sonnet`, `opus`) — enforced. The orchestrator phases (1, 4b, 6, 7) run on the session model, so **run this from a Sonnet session** for the intended balance.
+Each role is defined once, in `.claude/agents/`: `ryos-locator`, `ryos-designer`, `ryos-implementer` and `ryos-reviewer`. Each file's frontmatter sets that role's model and effort, so **change a model there, not in this skill**, and don't pass `model` or `effort` in the calls below except to escalate. The orchestrator phases (1, 4b, 6, 7) run on whatever model drives this session, which the skill can't switch per phase, so **run it from a Sonnet session**. Opus as orchestrator works too, but it is slower and costlier for no gain on the mechanical phases.
+
+**Escalate the implementer** to Opus at medium effort when a mistake is expensive or the fix loop will be deep. That covers database schema, migrations or the schema-version guard; packaging and freezing (`setup_cxfreeze.py`, cx_Freeze missing modules); and threading or the output queue:
+
+```
+Agent({ description: "...", subagent_type: "ryos-implementer", model: "opus", effort: "medium", prompt: <brief> })
+```
+
+**If the `ryos-*` agent types aren't listed**, for example because the session started before `.claude/agents/` existed, fall back to `subagent_type: "general-purpose"`. Pin the same model (`haiku`, `opus`, `sonnet`, `opus`), pass `effort: "high"` for the designer and reviewer, and paste that role's instructions from `.claude/agents/<name>.md` at the top of the brief.
+
+**When the work is a step from a release plan** (`docs/plans/*.md`), paste that step's **Needs / Work / Done when** verbatim into the design, implement and review briefs. The reviewer checks every "Done when" item, and the step isn't finished until each one is met or marked "needs a human" (a clean-machine test, a real Claude Desktop connection). Report the "needs a human" items to the user.
 
 ## Where things live
 
@@ -93,7 +103,7 @@ If you genuinely cannot reproduce it, say so and ask the user for more detail (O
 Hand the search for the suspect code to a fast Haiku agent and keep your own context clean.
 
 ```
-Agent({ description: "Locate code for <bug>", subagent_type: "general-purpose", model: "haiku", prompt: <brief> })
+Agent({ description: "Locate code for <bug>", subagent_type: "ryos-locator", prompt: <brief> })
 ```
 
 The brief gives the bug and its repro in a line or two plus the **Where things live** table, and asks the agent to: find the file(s)/function(s) on the failing path; return the relevant code **excerpts verbatim** with `file:line` references (the suspect function plus its callers/callees) so they can be pasted into the diagnosis brief; and flag anything that looks like a violated architecture rule near the failure. End with: *"Do not propose a fix or edit anything — only locate and quote the relevant code."*
@@ -103,7 +113,7 @@ The brief gives the bug and its repro in a line or two plus the **Where things l
 You do not diagnose inline. Spawn a fresh Opus agent to find the *root cause* (not the symptom) and produce the fix plan.
 
 ```
-Agent({ description: "Diagnose <bug>", subagent_type: "general-purpose", model: "opus", prompt: <self-contained brief> })
+Agent({ description: "Diagnose <bug>", subagent_type: "ryos-designer", prompt: <self-contained brief> })
 ```
 
 The brief is self-contained — paste, verbatim: the confirmed repro and expected/actual behavior; any traceback; the **Where things live** table and the entire **Architecture rules that always apply** section; the code excerpts from step 2; and this instruction: *"Find the ROOT CAUSE, not the symptom — explain why the bug happens, tracing it to a specific line or interaction. Then specify the smallest correct fix. Where the bug is in testable non-UI logic, write a unit test (in the `TestScriptDB*` style of tests/test_ryos.py) that FAILS on the current code and will PASS once fixed — this proves the bug and guards against regression. For a purely visual bug, describe the run-ryos check that demonstrates it instead. Do NOT write the fix; produce: root cause, the failing test (or visual check), the fix plan (files + functions + one-line purpose), and risks/regressions to watch. List any open questions instead of guessing."*
@@ -117,7 +127,7 @@ Present the diagnosis and fix plan to the user; proceed once they're on board (a
 You do not write the fix or run the tests yourself. Spawn a Sonnet agent to apply the plan, make the failing test pass, and confirm nothing else broke.
 
 ```
-Agent({ description: "Fix <bug>", subagent_type: "general-purpose", model: "sonnet", prompt: <self-contained brief> })
+Agent({ description: "Fix <bug>", subagent_type: "ryos-implementer", prompt: <self-contained brief> })
 ```
 
 The brief includes, verbatim: the root cause and fix plan from step 3; the failing test to add (or the visual check); the entire **Architecture rules that always apply** section (paste it — the fix must not trade one violation for another); and the acceptance criteria:
@@ -145,7 +155,7 @@ Fix inline or send the Sonnet agent a follow-up via SendMessage if anything's of
 Spawn an independent Opus agent to review the staged diff.
 
 ```
-Agent({ description: "Review fix for <bug>", subagent_type: "general-purpose", model: "opus", prompt: <self-contained brief> })
+Agent({ description: "Review fix for <bug>", subagent_type: "ryos-reviewer", prompt: <self-contained brief> })
 ```
 
 The brief includes, verbatim: the original bug + repro; the root cause and plan from step 3; the full `git diff`; the entire **Architecture rules that always apply** section; and: *"Review ONLY the diff and the files it modifies. Confirm the change fixes the stated root cause (not just the symptom), that the regression test genuinely covers the bug, and that no architecture rule is violated or new regression introduced. Do NOT edit anything. Report BLOCKERS, SUGGESTIONS, and OK. If there are no blockers, end with 'READY TO COMMIT'."*
