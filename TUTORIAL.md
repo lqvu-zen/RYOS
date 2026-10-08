@@ -9,7 +9,10 @@ The full guide, with real screenshots of every screen, is the **[illustrated use
 ## Installation
 
 ### Option A — Standalone executable
-Download `RYOS-windows.zip` from the latest release, extract it, and double-click `RYOS.exe`. No installation required. `ryos-cli.exe` beside it is the command line.
+Download `RYOS-windows.zip` from the latest release, extract it, and double-click `RYOS.exe`. No installation required. `ryos-cli.exe` beside it is the command line, and the MCP server for AI agents.
+
+### Only want Claude to run your scripts?
+Download `RYOS-agent.zip` instead: just `ryos-cli.exe`, no window. See [RYOS Agent](docs/tutorial/14-ryos-agent.md).
 
 ### Option B — Portable (run from source)
 1. Download and extract `RYOS-portable.zip`.
@@ -35,3 +38,4 @@ Download `RYOS-windows.zip` from the latest release, extract it, and double-clic
 11. [Settings and appearance](docs/tutorial/11-settings.md) — Options, themes and the accent colour.
 12. [Tips](docs/tutorial/12-tips.md) — compact rows, select mode, and small time-savers.
 13. [The command line and AI agents](docs/tutorial/13-command-line-and-agents.md) — running scripts from a terminal, and letting Claude run the ones you choose.
+14. [RYOS Agent](docs/tutorial/14-ryos-agent.md) — RYOS without the window: add your scripts, choose what Claude may run, connect it.

@@ -103,7 +103,7 @@ One command builds every download with consistent names, plus `SHA256SUMS.txt`. 
 
 ### 12 — Docs
 - Page 13: "Connect Claude" for the exe (`ryos-cli.exe mcp`, no `uv`), from source as the alternative; the management commands; A2 stated plainly.
-- Page 14, RYOS Agent: from the draft beside this plan ([`release-2.3.0-page14-draft.md`](release-2.3.0-page14-draft.md)); linked from the contents and page 13. Every command on it run for real before it ships.
+- Page 14, RYOS Agent: [`docs/tutorial/14-ryos-agent.md`](../tutorial/14-ryos-agent.md), from the first draft; linked from the contents and page 13. Every command on it run for real before it ships.
 - README and release notes: a "Which download?" table.
 
 ### 13 — Release check
@@ -135,5 +135,5 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 9 Help polish | done (argparse lists every command) |
 | 10 Agent build | done (48 MB, against 93 MB for the full build) |
 | 11 Build matrix | done (`build_release.py`; zips: windows 37 MB, agent 19 MB) |
-| 12 Docs | — |
+| 12 Docs | done (Claude Desktop / Code connection to the exe still to be tried by the maintainer) |
 | 13 Release check | — |

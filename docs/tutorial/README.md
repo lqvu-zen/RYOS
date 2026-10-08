@@ -19,6 +19,7 @@ Every picture here was captured from the real app (the **Samples** group that sh
 11. [Settings and appearance](11-settings.md)
 12. [Tips](12-tips.md)
 13. [The command line and AI agents](13-command-line-and-agents.md)
+14. [RYOS Agent: let Claude run your scripts, without the app](14-ryos-agent.md)
 
 ---
 

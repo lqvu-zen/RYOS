@@ -1,10 +1,8 @@
-<!-- DRAFT for v2.3.0 (docs/plans/release-2.3.0.md, step 12). Not linked from the tutorial: the commands below are planned (steps 5, 6, 8, 10) and don't exist yet. Run every command and check every output before it moves to docs/tutorial/14-ryos-agent.md. -->
-
 # RYOS Agent: let Claude run your scripts, without the app
 
 **RYOS Agent** is RYOS without the window. You give it a short list of your scripts, and Claude can run those scripts and read their output, and nothing else. Use it when you want Claude to have your scripts but have no use for the RYOS window.
 
-If you already use the RYOS window, you don't need this page. The full Windows download includes everything here. See [The command line and AI agents](../tutorial/13-command-line-and-agents.md).
+If you already use the RYOS window, you don't need this page. The full Windows download includes everything here. See [The command line and AI agents](13-command-line-and-agents.md).
 
 ## What you get
 
@@ -19,7 +17,7 @@ What you don't get without the window: RYOS schedules, notifications, Quick Run,
 
 ## 1. Download
 
-Download **RYOS-agent.zip** from the [latest release](https://github.com/lqvu-zen/RYOS/releases/latest) and extract it, for example to `C:\Tools\RYOS-agent`. Inside is `ryos-cli.exe`. Nothing else needs installing.
+Download **RYOS-agent.zip** from the [latest release](https://github.com/lqvu-zen/RYOS/releases/latest) and extract it, for example to `C:\Tools\RYOS-agent`. Inside is `ryos-cli.exe`. Nothing else needs installing for RYOS itself; your scripts still need whatever runs them, as they do now (Python for a `.py`, and so on) — RYOS uses what's on your PC.
 
 Open a terminal in that folder and check it runs:
 
@@ -144,9 +142,9 @@ This tells you whether a newer RYOS Agent is available, and which file to downlo
 | Claude connects but lists nothing | No script is exposed yet. Run `ryos-cli list`, then `ryos-cli expose <name> on`. |
 | `ryos-cli mcp` seems to hang when you run it yourself | That's normal: it's waiting for Claude to talk to it. Press **Ctrl+C**. |
 | A command stops with exit code 125 | RYOS refused: no such script, an ambiguous name, a bad path, a name already in the group, or no such preset. The message says which. |
-| "Created by a newer RYOS" | Another RYOS on this PC is newer. Update this one to the same version. |
+| "…updated by a newer RYOS, and this one cannot use it safely" | Another RYOS on this PC is newer. Update this one to the same version; nothing was changed. |
 
 > **Output is just text.** A script's output goes back to Claude as it is. If a script prints something that looks like an instruction, a careful agent reports it rather than doing what it says, but keep that in mind before exposing a script that reads web pages or e-mail.
 
 ---
-[← The command line and AI agents](../tutorial/13-command-line-and-agents.md) · [Contents](../tutorial/README.md)
+[← The command line and AI agents](13-command-line-and-agents.md) · [Contents](README.md)

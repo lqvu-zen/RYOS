@@ -34,6 +34,16 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 - **Themes** — one set of drawn icons that follows the theme; Light and Dark built in, a theme creator (7 colours + live preview), import/export, and more in the [theme gallery](theme-gallery/GALLERY.md). Every colour follows the theme and is checked for contrast.
 - **Multi-monitor aware** — opens on the monitor under the cursor; at login, on the last screen you used.
 
+## Which download?
+
+| Download | What's in it | For |
+| --- | --- | --- |
+| **RYOS-windows.zip** | `RYOS.exe` (the app) and `ryos-cli.exe` (the command line and the MCP server for AI agents) | Most people |
+| **RYOS-agent.zip** | `ryos-cli.exe` alone, no window | Letting Claude run an allow-list of your scripts without the app — see [RYOS Agent](docs/tutorial/14-ryos-agent.md) |
+| **RYOS-portable.zip** | The source, run with `uv` | Running from source |
+
+Both Windows downloads keep your data in the same place, so you can start with one and move to the other.
+
 ## Getting Started
 
 **Option A — Standalone exe** (no Python needed)
@@ -120,7 +130,7 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 
 ## Documentation
 
-- [Illustrated user guide](docs/tutorial/README.md) — a 13-page walkthrough with real screenshots of every screen.
+- [Illustrated user guide](docs/tutorial/README.md) — a 14-page walkthrough with real screenshots of every screen.
 - [Theme gallery](theme-gallery/GALLERY.md) — preview and download extra themes.
 - [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
 - [Module reference](docs/API_REFERENCE.md) — public API of the core modules.
