@@ -491,9 +491,29 @@ def step_quick_run_search_select(s: Session, project: Path) -> None:
     s.wait_for(lambda: (len(s.runs(script_id=hello)), len(s.runs(script_id=cleanup)))
                == (counts[0] + 1, counts[1] + 1), "both selected scripts to run")
     s.idle("run selected")
+
+    # A pipeline is tickable too, and a click on its row ticks it (issue #27).
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    for card in win.selectable_cards():
+        card.checkbox.setChecked(False)
+    release = s.card("Project", "Release")
+    QTest.mouseClick(release, Qt.MouseButton.LeftButton,
+                     pos=QPoint(release.width() // 2, 6))
+    if not release.checkbox.isChecked() or len(win.selected_cards()) != 1:
+        problem("a click on the pipeline row did not tick just it")
+    pipe_id = release.pipeline_id
+    pipe_runs = len(s.runs(pipeline_id=pipe_id))
+    win.run_selected_button.click()
+    if win.statusBar().currentMessage() != "Started 1 pipeline.":
+        problem(f"status after running a ticked pipeline: "
+                f"{win.statusBar().currentMessage()!r}")
+    s.wait_for(lambda: len(s.runs(pipeline_id=pipe_id)) > pipe_runs,
+               "the selected pipeline to run", timeout=30)
+    s.idle("run selected pipeline", timeout=30)
     win.set_select_mode(False)
     ok("quick run reuses the registered script; search filters the cards; "
-       "select mode runs the ticked scripts")
+       "select mode runs the ticked scripts and a ticked pipeline (row click)")
 
 
 def step_favourite_and_delete(s: Session) -> None:

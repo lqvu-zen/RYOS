@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+import shiboken6
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
@@ -2129,14 +2130,14 @@ class MainWindow(QMainWindow):
         return self.select_bar
 
     def selectable_cards(self) -> list:
-        """The script cards select mode acts on: those on the current tab."""
+        """The script and pipeline cards select mode acts on: those on the
+        current tab."""
         if self.showing_all():
             pages = list(self.all_pages.values())
         else:
             page = self.card_lists.get(self.current_group())
             pages = [page] if page else []
-        return [c for page in pages for c in page.cards
-                if isinstance(c, ScriptCard)]
+        return [c for page in pages for c in page.cards]
 
     def selected_cards(self) -> list:
         return [c for c in self.selectable_cards() if c.checkbox.isChecked()]
@@ -2150,17 +2151,15 @@ class MainWindow(QMainWindow):
         self.select_bar.setVisible(on)
         for page in [*self.card_lists.values(), *self.all_pages.values()]:
             for card in page.cards:
-                if isinstance(card, ScriptCard):
-                    card.checkbox.setChecked(False)
-                    card.checkbox.setVisible(on)
-                    if on:
-                        card.checkbox.toggled.connect(self._update_select_bar)
-                    else:
-                        try:
-                            card.checkbox.toggled.disconnect(
-                                self._update_select_bar)
-                        except (RuntimeError, TypeError):
-                            pass
+                card.checkbox.setChecked(False)
+                card.checkbox.setVisible(on)
+                if on:
+                    card.checkbox.toggled.connect(self._update_select_bar)
+                else:
+                    try:
+                        card.checkbox.toggled.disconnect(self._update_select_bar)
+                    except (RuntimeError, TypeError):
+                        pass
         self._update_select_bar()
 
     def _update_select_bar(self, *_args) -> None:
@@ -2178,29 +2177,43 @@ class MainWindow(QMainWindow):
         self._update_select_bar()
 
     def run_selected(self) -> None:
-        """Run every ticked script, up to the job cap, by the shared plan."""
+        """Run every ticked script and pipeline, up to the job cap, by the
+        shared plan."""
         from ..settings import _SETTINGS_DEFAULTS
         cards = self.selected_cards()
         running = len(self._bridge.registry) if self._bridge is not None else 0
         max_jobs = self._settings.get("max_parallel_jobs",
                                       _SETTINGS_DEFAULTS["max_parallel_jobs"])
-        plan = selection.plan_run(len(cards), running, max_jobs)
+        plan = selection.plan_run(
+            [cardmenu.PIPELINE if isinstance(c, PipelineCard) else cardmenu.SCRIPT
+             for c in cards], running, max_jobs)
         for card in cards[:plan.start]:
-            card.run_requested.emit(card.script_id)
+            # A prompt on an earlier run can reload the list under the rest.
+            if not shiboken6.isValid(card):
+                continue
+            card.run_requested.emit(card.pipeline_id
+                                    if isinstance(card, PipelineCard)
+                                    else card.script_id)
         if plan.notice:
             self.inform(*plan.notice)
         elif plan.status:
             self.statusBar().showMessage(plan.status)
 
     def delete_selected(self) -> None:
-        ids = [c.script_id for c in self.selected_cards()]
-        if not ids:
+        cards = self.selected_cards()
+        pids = [c.pipeline_id for c in cards if isinstance(c, PipelineCard)]
+        ids = [c.script_id for c in cards if isinstance(c, ScriptCard)]
+        if not ids and not pids:
             self.inform(*selection.NOTHING_TO_DELETE)
             return
-        if self._db is None or not self.ask_yes_no(
-                *selection.delete_prompt(len(ids), self._db.pipelines_using(ids))):
+        if self._db is None or not self.ask_yes_no(*selection.delete_prompt(
+                len(ids), self._db.pipelines_using(ids), pipelines=len(pids))):
             return
-        self._db.delete_many(ids)
+        # Pipelines first: a script's removal also drops its steps from them.
+        for pid in pids:
+            self._db.delete_pipeline(pid)
+        if ids:
+            self._db.delete_many(ids)
         self._defer_reload()
 
     # -- right-click menus ------------------------------------------------------

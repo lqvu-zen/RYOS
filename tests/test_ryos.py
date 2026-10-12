@@ -8388,7 +8388,60 @@ class TestSelection(unittest.TestCase):
 
     def test_delete_prompt(self):
         self.assertEqual(selection.delete_prompt(2),
-                         ("Delete Selected", "Delete 2 selected script(s)?"))
+                         ("Delete Selected", "Delete 2 scripts?"))
+
+
+class TestSelectionTakesPipelines(unittest.TestCase):
+    """Issue #27: select mode ticks pipelines as well as scripts, so what it
+    says and plans names both kinds."""
+
+    S, P = cardmenu.SCRIPT, cardmenu.PIPELINE
+
+    def test_wording_names_scripts_and_pipelines(self):
+        for text in (selection.ENTER_LABEL, selection.HINT,
+                     selection.NOTHING_TO_RUN[1], selection.NOTHING_TO_DELETE[1]):
+            self.assertIn("scripts or pipelines", text)
+
+    def test_count_words(self):
+        self.assertEqual(selection.count_words(1, 0), "1 script")
+        self.assertEqual(selection.count_words(3, 0), "3 scripts")
+        self.assertEqual(selection.count_words(0, 1), "1 pipeline")
+        self.assertEqual(selection.count_words(0, 2), "2 pipelines")
+        self.assertEqual(selection.count_words(2, 1), "2 scripts and 1 pipeline")
+
+    def test_run_plan_counts_each_kind(self):
+        S, P = self.S, self.P
+        plan = selection.plan_run([P, S, S], 0, 10)
+        self.assertEqual((plan.start, plan.skipped, plan.notice, plan.status),
+                         (3, 0, None, "Started 2 scripts and 1 pipeline."))
+        self.assertEqual(selection.plan_run([P], 0, 10).status,
+                         "Started 1 pipeline.")
+
+    def test_a_pipeline_is_one_job_against_the_cap(self):
+        S, P = self.S, self.P
+        # Launch order is the order given: the third is the one skipped.
+        plan = selection.plan_run([S, P, S], 1, 3)
+        self.assertEqual((plan.start, plan.skipped, plan.status), (2, 1, None))
+        self.assertEqual(plan.notice[0], "Job limit reached")
+        self.assertIn("Started 2 of 3 selected scripts and pipelines", plan.notice[1])
+        only = selection.plan_run([P, P], 0, 1)
+        self.assertIn("Started 1 of 2 selected pipelines", only.notice[1])
+
+    def test_a_count_still_means_scripts(self):
+        self.assertEqual(selection.plan_run(3, 0, 10).status, "Started 3 scripts.")
+        self.assertEqual(selection.plan_run([], 0, 10).notice, selection.NOTHING_TO_RUN)
+        self.assertIn("Started 2 of 3 selected scripts.",
+                      selection.plan_run(3, 0, 2).notice[1])
+
+    def test_delete_prompt_counts_both_kinds_in_one_question(self):
+        title, q = selection.delete_prompt(2, ["X"], pipelines=1)
+        self.assertEqual(title, "Delete Selected")
+        self.assertTrue(q.startswith("Delete 2 scripts and 1 pipeline?"), q)
+        self.assertIn("Their steps in pipeline 'X' will be removed too.", q)
+        self.assertEqual(selection.delete_prompt(0, pipelines=2),
+                         ("Delete Selected", "Delete 2 pipelines?"))
+        self.assertEqual(selection.delete_prompt(1),
+                         ("Delete Selected", "Delete 1 script?"))
 
 
 class TestCardMenu(unittest.TestCase):

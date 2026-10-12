@@ -87,6 +87,11 @@ class _CardBase(QFrame):
         self._row.setSpacing(6)
         if chip:
             self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        # Select mode's tick, hidden until it is on. Here rather than on the
+        # script card so a pipeline can be ticked too.
+        self.checkbox = QCheckBox()
+        self.checkbox.setVisible(False)
+        self._row.addWidget(self.checkbox)
 
     def _ink(self, color: str) -> str:
         """``color``, shaded until it reads as text on the row, hovered or not."""
@@ -149,6 +154,10 @@ class _CardBase(QFrame):
         self._press_pos = None
         super().mouseReleaseEvent(event)
         if clicked:
+            # In select mode the row is the tick box's target: the box alone
+            # is 24x16.
+            if self.checkbox.isVisible():
+                self.checkbox.toggle()
             self.activated.emit()
 
     # -- the keyboard --------------------------------------------------------------
@@ -171,9 +180,8 @@ class _CardBase(QFrame):
         if event.matches(QKeySequence.StandardKey.Paste):
             self.paste_requested.emit()
             return
-        tick = getattr(self, "checkbox", None)
-        if key == Qt.Key.Key_Space and tick is not None and tick.isVisible():
-            tick.toggle()
+        if key == Qt.Key.Key_Space and self.checkbox.isVisible():
+            self.checkbox.toggle()
             return
         step = self._STEPS.get(key)
         page = self._page()
@@ -502,10 +510,6 @@ class ScriptCard(_CardBase):
         self._last_run = last_run
         self.params_combo: QComboBox | None = None
         self.params_pick: QPushButton | None = None
-
-        self.checkbox = QCheckBox()
-        self.checkbox.setVisible(False)
-        self._row.addWidget(self.checkbox)
 
         text = QVBoxLayout()
         text.setSpacing(1)

@@ -2,14 +2,14 @@
 
 The **Options** menu holds the settings, the look, and a few switches:
 
-![The Options menu: Options…, Appearance…, Start with Windows, Select scripts and Delete All](images/11-options-menu.png)
+![The Options menu: Options…, Appearance…, Start with Windows, Select scripts or pipelines and Delete All](images/11-options-menu.png)
 
 | Entry | What it does |
 | --- | --- |
 | **Options…** | The settings below. |
 | **Appearance…** | Themes and the accent colour. |
 | **Start with Windows** | Start RYOS when you sign in (needed for schedules to run). |
-| **Select scripts** | Tick several scripts to run or delete them together. See [Tips](12-tips.md). |
+| **Select scripts or pipelines** | Tick several scripts and pipelines to run or delete them together. See [Tips](12-tips.md). |
 | **Delete All…** | Remove every group, script and pipeline, after asking. Export first if you might want them back. |
 
 ## Options…

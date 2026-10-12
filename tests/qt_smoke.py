@@ -2044,8 +2044,14 @@ def check_select_mode(app):
     import tempfile
     import time as _time
 
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtTest import QTest
+
+    import ryos.jobs
     from ryos import selection
     from ryos.db import ScriptDB
+    from ryos.qtui.cards import PipelineCard
     from ryos.qtui.jobs import JobBridge
     from ryos.qtui.shell import MainWindow
     from ryos.themes import REFERENCE
@@ -2079,7 +2085,13 @@ def check_select_mode(app):
     told: list = []
     win.inform = lambda title, text: told.append(title)
     answers = {"yes": False}
-    win.ask_yes_no = lambda title, q: answers["yes"]
+    asked: list = []
+
+    def ask(title, q):
+        asked.append(q)
+        return answers["yes"]
+
+    win.ask_yes_no = ask
 
     def pump_until(predicate, timeout=25.0):
         end = _time.time() + timeout
@@ -2097,21 +2109,57 @@ def check_select_mode(app):
     if (not win.select_bar.isVisible()
             or win.select_action.text() != selection.LEAVE_LABEL):
         PROBLEMS.append("Options > Select scripts did not enter select mode")
-    if len(cards) != 3 or not all(c.checkbox.isVisible() for c in cards):
-        PROBLEMS.append(f"{len(cards)} selectable cards; pipelines are not "
-                        "selectable and every script should show a box")
+    if (len(cards) != 4 or not isinstance(cards[0], PipelineCard)
+            or not all(c.checkbox.isVisible() for c in cards)):
+        PROBLEMS.append(f"{len(cards)} selectable cards; the pipeline and "
+                        "every script should show a box")
     if win.select_label.text() != selection.HINT:
         PROBLEMS.append("the bar did not start with the hint")
+
+    # -- a click on the row ticks it ------------------------------------------
+    activated: list = []
+    cards[0].activated.connect(lambda: activated.append(1))
+    row_click = QPoint(cards[0].width() // 2, 4)
+    QTest.mouseClick(cards[0], Qt.MouseButton.LeftButton, pos=row_click)
+    if not cards[0].checkbox.isChecked() or not activated:
+        PROBLEMS.append("a click on a pipeline row did not tick it (and choose it)")
+    QTest.mouseClick(cards[0], Qt.MouseButton.LeftButton, pos=row_click)
+    if cards[0].checkbox.isChecked():
+        PROBLEMS.append("a second click on the row did not untick it")
+    # A button keeps its click: Run and the star are not the row.
+    for button in (cards[2].run_button, cards[2].fav_button):
+        button.clicked.disconnect()
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        if cards[2].checkbox.isChecked():
+            PROBLEMS.append("clicking a row's button also ticked the row")
+    # A drag is not a click.
+    dragged: list = []
+    cards[3].drag_runner = lambda drag: dragged.append(drag)
+
+    def mouse(kind, pos, buttons):
+        ev = QMouseEvent(kind, QPointF(pos), QPointF(cards[3].mapToGlobal(pos)),
+                         Qt.MouseButton.LeftButton, buttons,
+                         Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(cards[3], ev)
+
+    start = QPoint(20, 4)
+    mouse(QEvent.Type.MouseButtonPress, start, Qt.MouseButton.LeftButton)
+    mouse(QEvent.Type.MouseMove, start + QPoint(0, 12), Qt.MouseButton.LeftButton)
+    mouse(QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+    if len(dragged) != 1 or cards[3].checkbox.isChecked():
+        PROBLEMS.append(f"a drag gave {len(dragged)} drags and ticked="
+                        f"{cards[3].checkbox.isChecked()}; it should be one "
+                        "drag and no tick")
 
     # -- ticking -------------------------------------------------------------
     cards[0].checkbox.click()
     cards[1].checkbox.click()
-    if win.select_label.text() != "2 of 3 selected":
-        PROBLEMS.append(f"bar said {win.select_label.text()!r} for 2 of 3")
+    if win.select_label.text() != "2 of 4 selected":
+        PROBLEMS.append(f"bar said {win.select_label.text()!r} for 2 of 4")
     win.select_all_button.click()
-    if (len(win.selected_cards()) != 3
+    if (len(win.selected_cards()) != 4
             or win.select_all_button.text() != "Deselect All"):
-        PROBLEMS.append("Select All did not tick every script")
+        PROBLEMS.append("Select All did not tick every script and pipeline")
     win.select_all_button.click()
     if win.selected_cards():
         PROBLEMS.append("Deselect All left something ticked")
@@ -2127,7 +2175,9 @@ def check_select_mode(app):
     if len(bridge.registry) != 2 or told != ["Job limit reached"]:
         PROBLEMS.append(f"past the cap: {len(bridge.registry)} started, "
                         f"told {told}")
-    if len(win.selected_cards()) != 3:
+    if ("pipeline", pid) not in ryos.jobs.own_runs(bridge.registry.all()):
+        PROBLEMS.append("the ticked pipeline, first in the list, did not start")
+    if len(win.selected_cards()) != 4:
         PROBLEMS.append("the selection was cleared, so skipped scripts "
                         "cannot be retried")
     if not pump_until(lambda: len(bridge.registry) == 0):
@@ -2136,9 +2186,9 @@ def check_select_mode(app):
     # The window and the bridge each copy their settings; raise both caps.
     win._settings["max_parallel_jobs"] = bridge._settings["max_parallel_jobs"] = 10
     win.run_selected_button.click()
-    if len(bridge.registry) != 3 or told:
-        PROBLEMS.append("under the cap, not every selected script started")
-    if win.statusBar().currentMessage() != "Started 3 scripts.":
+    if len(bridge.registry) != 4 or told:
+        PROBLEMS.append("under the cap, not every selected item started")
+    if win.statusBar().currentMessage() != "Started 3 scripts and 1 pipeline.":
         PROBLEMS.append(f"status after running: "
                         f"{win.statusBar().currentMessage()!r}")
     pump_until(lambda: len(bridge.registry) == 0)
@@ -2167,26 +2217,34 @@ def check_select_mode(app):
     # -- deleting ------------------------------------------------------------
     for c in win.selectable_cards():
         c.checkbox.setChecked(False)
-    win.selectable_cards()[2].checkbox.click()
+    win.selectable_cards()[0].checkbox.click()
+    win.selectable_cards()[3].checkbox.click()
     answers["yes"] = False
+    asked.clear()
     win.delete_selected_button.click()
     app.processEvents()
-    if len([r for r in db.list_all() if r[8] == "G"]) != 3:
+    if (len([r for r in db.list_all() if r[8] == "G"]) != 3
+            or not db.list_pipelines("G")):
         PROBLEMS.append("declining Delete Selected still deleted")
     answers["yes"] = True
+    asked.clear()
     win.delete_selected_button.click()
     for _ in range(3):
         app.processEvents()
+    if len(asked) != 1 or not asked[0].startswith("Delete 1 script and 1 pipeline?"):
+        PROBLEMS.append(f"Delete Selected asked {asked}")
     left = [r[0] for r in db.list_all() if r[8] == "G"]
-    if left != ids[:2]:
-        PROBLEMS.append(f"Delete Selected left {left}")
+    if left != ids[:2] or db.list_pipelines("G"):
+        PROBLEMS.append(f"Delete Selected left {left} and pipelines "
+                        f"{db.list_pipelines('G')}")
     if win.select_mode or win.select_bar.isVisible():
         PROBLEMS.append("select mode survived the reload after deleting")
 
     bridge.stop()
-    print("  [ok] select mode: enters from Options, pipelines excluded, count "
-          "and Select All, one notice past the cap with the selection kept, "
-          "tab re-scopes, delete asks first")
+    print("  [ok] select mode: enters from Options, scripts and pipelines "
+          "tickable, a row click ticks (buttons and drags do not), count and "
+          "Select All, one notice past the cap with the selection kept, tab "
+          "re-scopes, delete asks once for both kinds")
     win.hide()
     win.deleteLater()
 
@@ -2923,10 +2981,12 @@ def check_sections_and_favorites(app):
                         f"{len(both)} bravo cards")
     win.search_box.clear()
 
-    # -- select mode ticks the group's scripts, not the favourite copies ---------------
+    # -- select mode ticks the group's scripts and pipelines, not the favourite copies --
     win.set_select_mode(True)
-    if len(win.selectable_cards()) != 4:
+    if len(win.selectable_cards()) != 6:
         PROBLEMS.append(f"select mode offered {len(win.selectable_cards())} cards")
+    if any(c.checkbox.isVisible() for c in win.card_lists["G"].favorite_cards):
+        PROBLEMS.append("a favourite copy showed a select box")
     win.set_select_mode(False)
 
     print("  [ok] sections: Favorites / Pipelines / Scripts filled and ordered, "
@@ -3765,6 +3825,30 @@ def check_outside_warning(app):
                     if c.name_label.text() == name)
 
     try:
+        # Run selected goes through the same warning: a ticked pipeline asks once.
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+
+        win.show()
+        win.set_select_mode(True)
+        app.processEvents()
+        pipe_row = row("pipe", "pipelines")
+        QTest.mouseClick(pipe_row, Qt.MouseButton.LeftButton,
+                         pos=QPoint(pipe_row.width() // 2, 4))
+        win.run_dialog = answer(False)
+        win.run_selected_button.click()
+        if len(asked) != 1 or "Step 2 runs" not in asked[-1] or win._bridge.started:
+            PROBLEMS.append(f"Run selected on an outside pipeline: asked {asked}, "
+                            f"started {win._bridge.started}")
+        win.run_dialog = answer(True)
+        win.run_selected_button.click()
+        if win._bridge.started != [("pipeline", pid)]:
+            PROBLEMS.append("Run selected did not start the ticked pipeline "
+                            f"after Run anyway: {win._bridge.started}")
+        win.set_select_mode(False)
+        asked.clear()
+        win._bridge.started.clear()
+
         win.run_dialog = answer(False, dont_warn=True)
         row("away").run_button.click()
         if win._bridge.started or len(asked) != 1:
@@ -4480,6 +4564,11 @@ def check_keyboard_through_the_list(app):
         if not rows[-1].accessibleName().startswith("gamma") \
                 or not rows[-1].accessibleDescription():
             PROBLEMS.append("a row has no name or key hint for a screen reader")
+        # Outside select mode a click only chooses the row.
+        QTest.mouseClick(win.card_lists["G"].rows()[1], Qt.MouseButton.LeftButton,
+                         pos=QPoint(40, 4))
+        if win.card_lists["G"].rows()[1].checkbox.isChecked():
+            PROBLEMS.append("a row click ticked a hidden box outside select mode")
         win.set_select_mode(True)
         app.processEvents()
         row = win.card_lists["G"].rows()[1]
@@ -4487,6 +4576,11 @@ def check_keyboard_through_the_list(app):
         QTest.keyClick(row, Qt.Key.Key_Space)
         if not row.checkbox.isChecked():
             PROBLEMS.append("Space in select mode did not tick the row")
+        first = win.card_lists["G"].rows()[0]
+        first.setFocus()
+        QTest.keyClick(first, Qt.Key.Key_Space)
+        if not (hasattr(first, "pipeline_id") and first.checkbox.isChecked()):
+            PROBLEMS.append("Space in select mode did not tick the pipeline row")
         win.set_select_mode(False)
         _ = pid
     finally:
