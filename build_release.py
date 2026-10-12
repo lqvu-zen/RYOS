@@ -118,7 +118,10 @@ def main() -> int:
               + (f"  PROBLEM: {'; '.join(found)}" if found else ""))
         failed |= bool(found)
         sums.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {name}")
-    (DIST / "SHA256SUMS.txt").write_text("\n".join(sums) + "\n", encoding="utf-8")
+    # LF on every OS: `sha256sum -c` reads a CRLF line's file name with a
+    # stray \r and fails (2.3.0's file had to be rewritten before publishing).
+    (DIST / "SHA256SUMS.txt").write_text("\n".join(sums) + "\n", encoding="utf-8",
+                                         newline="\n")
     if failed:
         print("\nbuild_release FAILED")
         return 1

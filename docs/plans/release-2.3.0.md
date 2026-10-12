@@ -140,4 +140,4 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 10b No-MCP Windows build | done (A1: `windows`, no SDK, checkbox hidden, `mcp` refused with 125) |
 | 11 Build matrix | done (`build_release.py`: four zips and SHA256SUMS) |
 | 12 Docs | done (Claude Desktop / Code connection to the exe still to be tried by the maintainer) |
-| 13 Release check | — |
+| 13 Release check | done: v2.3.0 released 2026-10-09 |
