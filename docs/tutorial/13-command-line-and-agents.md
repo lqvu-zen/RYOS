@@ -47,6 +47,15 @@ ryos-cli remove Tools/backup                           asks first
 
 [RYOS Agent](14-ryos-agent.md) walks through all of them.
 
+**Trying it out without touching your scripts.** RYOS keeps its data in `%APPDATA%\RYOS`. To experiment on a throwaway copy, point `APPDATA` at an empty folder for that terminal only — and use the right syntax for your shell, because the wrong one fails silently and RYOS then uses your real data:
+
+| Shell | Command |
+| --- | --- |
+| Command Prompt | `set APPDATA=C:\Tempyos-test` |
+| PowerShell | `$env:APPDATA = "C:\Tempyos-test"` (in PowerShell, `set APPDATA=...` does **not** do this) |
+
+Check with `ryos-cli list`: a throwaway folder lists nothing. Close the terminal to go back to your real data.
+
 **Running on a timer without the window.** RYOS's own [schedules](07-schedules-and-history.md) need the window running (in the tray is enough). To run something when RYOS is closed, point Windows Task Scheduler at `ryos-cli.exe` with `run <group/name>` as the arguments.
 
 ## Letting an AI agent run your scripts

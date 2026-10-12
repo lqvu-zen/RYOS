@@ -139,5 +139,5 @@ Steps 2 and 5 are the big pieces and run side by side; 3, 4 and 7 are small and 
 | 10 Agent build | done (48 MB, against 93 MB for `windows-ai`) |
 | 10b No-MCP Windows build | done (A1: `windows`, no SDK, checkbox hidden, `mcp` refused with 125) |
 | 11 Build matrix | done (`build_release.py`: four zips and SHA256SUMS) |
-| 12 Docs | done (Claude Desktop / Code connection to the exe still to be tried by the maintainer) |
-| 13 Release check | done: v2.3.0 released 2026-10-09 |
+| 12 Docs | done; Claude Desktop and Claude Code connection to the exe tried by the maintainer on 2026-10-09 (passed) |
+| 13 Release check | done: v2.3.0 released 2026-10-09. Run: build_release (four zips, content checks), launch smoke on all three frozen builds (windows-ai and windows also on the second screen), agent smoke, upgrade on a v7 backup and on current v10 data, mixed install both ways, the newer-data guard on all three CLIs, edit/preset/remove on a built exe, ryos-reviewer READY TO PUBLISH, MCP connection by the maintainer. Not run: a real v9 file through each build, the window's newer-data message in a built RYOS.exe, a clean machine without Python |
