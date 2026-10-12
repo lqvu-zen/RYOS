@@ -51,8 +51,8 @@ ryos-cli remove Tools/backup                           asks first
 
 | Shell | Command |
 | --- | --- |
-| Command Prompt | `set APPDATA=C:\Tempyos-test` |
-| PowerShell | `$env:APPDATA = "C:\Tempyos-test"` (in PowerShell, `set APPDATA=...` does **not** do this) |
+| Command Prompt | `set APPDATA=C:\Temp\ryos-test` |
+| PowerShell | `$env:APPDATA = "C:\Temp\ryos-test"` (in PowerShell, `set APPDATA=...` does **not** do this) |
 
 Check with `ryos-cli list`: a throwaway folder lists nothing. Close the terminal to go back to your real data.
 
