@@ -7,18 +7,44 @@ its own throwaway database and folder.
 from __future__ import annotations
 
 import os
+import signal
 import sys
 import tempfile
+import time
 import unittest
 from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ryos.db import FAIL_CONTINUE, SOURCE_AGENT, SOURCE_CLI, ScriptDB  # noqa: E402
+from ryos.db import (FAIL_CONTINUE, RUN_PIPELINE, RUN_STEP, SOURCE_AGENT,  # noqa: E402
+                     SOURCE_CLI, ScriptDB)
 from ryos.headless import (MAX_LINES, PIPELINE, SCRIPT, TIMEOUT,  # noqa: E402
                            HeadlessError, HeadlessRunner, Run, Target, resolve)
 from ryos.jobs import STOPPED  # noqa: E402
+
+#: How long a leftover process holds the pipe: far longer than _PROMPT, so a
+#: pass cannot be the leftover ending on its own.
+_LINGER = 20
+#: How long a step may take to be reported done after its script exits.
+_PROMPT = 8
+_ERROR_LINE = "error: 1 received when making data"
+
+
+def _leaves_a_process_running(pidfile, then_sleep=0):
+    """A Python step that starts a process inheriting its stdout, then exits 1.
+
+    Popen with stdout=None hands the child this process's stdout -- the RYOS
+    pipe -- on Windows and Linux alike.
+    """
+    return (
+        "import subprocess, sys, time\n"
+        f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep({_LINGER})'])\n"
+        f"open({str(pidfile)!r}, 'a').write(str(p.pid) + '\\n')\n"
+        f"print({_ERROR_LINE!r}, flush=True)\n"
+        f"time.sleep({then_sleep})\n"
+        "sys.exit(1)\n"
+    )
 
 
 class _Base(unittest.TestCase):
@@ -204,6 +230,108 @@ class TestRunningAPipeline(_Base):
         run = self.runner.start_pipeline(self.target(PIPELINE, pid))
         self.runner.stop(run)
         run = self.runner.wait(run, 30)
+        self.assertEqual(run.status, STOPPED)
+        self.assertNotIn("never", run.lines)
+
+    # -- issue #26: a step that leaves a process holding its output pipe ----
+    def _leftovers(self, expect):
+        """A pidfile the leftover processes append to, killed after the test.
+
+        RYOS leaves them alone (one may be a build server), so the test cleans
+        up after itself -- waiting a moment for a pid a batch file's leftover
+        writes itself.
+        """
+        pidfile = self.tmp / f"leftover{id(self)}_{expect}.pid"
+
+        def kill():
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    if len(pidfile.read_text().split()) >= expect:
+                        break
+                except OSError:
+                    pass
+                time.sleep(0.05)
+            try:
+                pids = pidfile.read_text().split()
+            except OSError:
+                return
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                except (OSError, ValueError):
+                    pass
+        self.addCleanup(kill)
+        return pidfile
+
+    def _check_policies(self, bake):
+        """The failed step ends the run, or the next step runs -- promptly."""
+        after = self.script("after", "print('after ran')\n")
+        pid, steps = self.pipeline(bake, after)
+
+        def run_it():
+            started = time.monotonic()
+            run = self.runner.wait(self.runner.start_pipeline(self.target(PIPELINE, pid)),
+                                   _PROMPT * 4)
+            return run, time.monotonic() - started
+
+        run, took = run_it()
+        self.assertFalse(run.timed_out, f"stuck for {took:.1f}s on a finished step")
+        self.assertLess(took, _PROMPT)
+        self.assertEqual(run.status, "error")
+        self.assertIn(_ERROR_LINE, run.lines)
+        self.assertNotIn("after ran", run.lines)
+        # Run history: the step failed with its own exit code, and so did the run.
+        step_row = self.db.list_runs(script_id=bake, kinds=(RUN_STEP,))[0]
+        self.assertEqual((step_row[7], step_row[8]), ("error", 1))
+        self.assertEqual(self.db.list_runs(pipeline_id=pid, kinds=(RUN_PIPELINE,))[0][7], "error")
+
+        self.db.set_step_policy(steps[0], on_failure=FAIL_CONTINUE)
+        run, took = run_it()
+        self.assertFalse(run.timed_out, f"stuck for {took:.1f}s on a finished step")
+        self.assertLess(took, _PROMPT)
+        self.assertEqual(run.status, "ok")
+        self.assertIn("after ran", run.lines)
+        self.assertEqual(self.db.list_runs(pipeline_id=pid, kinds=(RUN_PIPELINE,))[0][7], "ok")
+
+    def test_a_python_step(self):
+        self._check_policies(self.script(
+            "bake", _leaves_a_process_running(self._leftovers(expect=2))))
+
+    @unittest.skipUnless(sys.platform == "win32", "the reported case is a batch file")
+    def test_the_batch_file_from_the_issue(self):
+        pidfile = self._leftovers(expect=2)
+        leftover = (f"import os, time; open(r'{pidfile}', 'a').write(str(os.getpid()) + chr(10)); "
+                    f"time.sleep({_LINGER})")
+        # start /b is what leaves the process behind, holding the pipe.
+        path = self.tmp / "bakeDataWin.bat"
+        path.write_text("\n".join([
+            "@echo off",
+            f'start /b "" "{sys.executable}" -c "{leftover}"',
+            f"echo {_ERROR_LINE}",
+            "pause",
+            "exit /B 1",
+            "",
+        ]), encoding="utf-8")
+        self._check_policies(self.db.add("bakeDataWin", str(path), "", "", "A"))
+
+    def test_stop_ends_a_step_whose_children_hold_the_pipe(self):
+        # The script is still running, so Stop has a process to kill; what it
+        # started must not keep the run alive after it (on Linux terminate()
+        # reaches only the script itself).
+        slow = self.script("slow", _leaves_a_process_running(
+            self._leftovers(expect=1), then_sleep=60))
+        never = self.script("never", "print('never')\n")
+        pid, _ = self.pipeline(slow, never)
+        run = self.runner.start_pipeline(self.target(PIPELINE, pid))
+        deadline = time.monotonic() + _PROMPT
+        while _ERROR_LINE not in run.lines and time.monotonic() < deadline:
+            self.runner.step()
+            time.sleep(0.05)
+        started = time.monotonic()
+        self.runner.stop(run)
+        run = self.runner.wait(run, _PROMPT * 4)
+        self.assertLess(time.monotonic() - started, _PROMPT)
         self.assertEqual(run.status, STOPPED)
         self.assertNotIn("never", run.lines)
 

@@ -2492,6 +2492,95 @@ class TestRunSubprocess(unittest.TestCase):
         self.assertEqual(done[0][2], 7)          # script_id echoed back
         self.assertEqual(done[0][3], "error")
 
+    def test_done_comes_when_the_script_exits_with_all_its_output_first(self):
+        # Issue #26: the script leaves a process holding its output pipe
+        # (a batch file's start /b, a build server) and exits. The run is
+        # finished then, not when that process lets go of the pipe.
+        import threading
+        tmp = Path(tempfile.mkdtemp())
+        pidfile = tmp / "leftover.pid"
+        self.addCleanup(_kill_leftovers, pidfile)
+        script = tmp / "bake.py"
+        # A last line with no newline (a prompt) must not be lost either.
+        script.write_text(_leaves_a_process_running(
+            pidfile, tail="Press any key to continue . . . "), encoding="utf-8")
+        q = _queue.Queue()
+        t = threading.Thread(target=run_subprocess,
+                             args=(q, self._job(), [sys.executable, str(script)], "bake", 1),
+                             daemon=True)
+        started = time.monotonic()
+        t.start()
+        t.join(_PROMPT)
+        self.assertFalse(t.is_alive(), "the run waited for the process it left running")
+        self.assertLess(time.monotonic() - started, _PROMPT)
+        items = self._drain(q)
+        kinds = [i[0] for i in items]
+        self.assertEqual(kinds[-1], "done_tag")
+        self.assertEqual(kinds.count("done_tag"), 1)
+        self.assertEqual(items[-1][3], "error")
+        self.assertIn("exit code 1", items[-1][5])
+        text = "".join(i[2] for i in items if i[0] == "stdout")
+        self.assertIn(_ERROR_LINE + "\n", text)
+        self.assertTrue(text.endswith("Press any key to continue . . . "), repr(text))
+
+    def test_a_byte_the_locale_cannot_decode_does_not_kill_the_run(self):
+        # 0x81 is undefined in cp1252 and invalid alone in UTF-8. A strict
+        # decode raised inside the worker thread, which then never posted its
+        # done item: the run (and a pipeline) waited forever.
+        import threading
+        script = Path(tempfile.mkdtemp()) / "bytes.py"
+        script.write_text("import sys\nsys.stdout.buffer.write(bytes([111, 107, 10, 0x81, 10]))\n",
+                          encoding="utf-8")
+        q = _queue.Queue()
+        t = threading.Thread(target=run_subprocess,
+                             args=(q, self._job(), [sys.executable, str(script)], "t", 1),
+                             daemon=True)
+        t.start()
+        t.join(_PROMPT)
+        items = list(q.queue)
+        self.assertTrue(items and items[-1][0] == "done_tag", items)
+        self.assertEqual(items[-1][3], "ok")
+        self.assertIn(("stdout", 1, "ok\n"), items)
+
+
+#: How long a leftover process holds the pipe: far longer than _PROMPT, so a
+#: pass cannot be the leftover ending on its own.
+_LINGER = 20
+#: How long a run may take to be reported done after its script exits.
+_PROMPT = 8
+_ERROR_LINE = "error: 1 received when making data"
+
+
+def _leaves_a_process_running(pidfile, tail=""):
+    """A Python script that starts a process inheriting its stdout, then exits 1.
+
+    Popen with stdout=None hands the child this process's stdout -- the RYOS
+    pipe -- on Windows and Linux alike.
+    """
+    return (
+        "import subprocess, sys\n"
+        f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep({_LINGER})'])\n"
+        f"open({str(pidfile)!r}, 'a').write(str(p.pid) + '\\n')\n"
+        f"print({_ERROR_LINE!r}, flush=True)\n"
+        f"sys.stdout.write({tail!r}); sys.stdout.flush()\n"
+        "sys.exit(1)\n"
+    )
+
+
+def _kill_leftovers(pidfile):
+    # RYOS leaves the leftover alone (it may be a build server), so the test
+    # cleans up after itself.
+    import signal
+    try:
+        pids = pidfile.read_text().split()
+    except OSError:
+        return
+    for pid in pids:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (OSError, ValueError):
+            pass
+
 
 from ryos.runner import decode_output_item  # noqa: E402
 

@@ -13,9 +13,13 @@ Every shape above may carry one extra trailing element, a step_token, appended
 only when the producer supplies one (concurrent pipeline steps); untagged
 callers keep the shorter tuple unchanged.
 """
+import codecs
+import io
+import locale
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -23,6 +27,13 @@ from .interpreter import RunSpec, working_dir_for
 from .logger import get_logger
 
 _log = get_logger("runner")
+
+#: How long a step's output is still read after its process exits. What the
+#: script itself wrote is at most a pipe buffer by then, so this loses none of
+#: its lines; a normal run reaches end-of-file at once and never waits. Only a
+#: process the script left running (``start /b``, a build server) still holds
+#: the pipe -- and the step is not kept waiting for it (issue #26).
+DRAIN_SECONDS = 1.0
 
 
 def child_env(env: dict | None, base=None) -> dict | None:
@@ -44,10 +55,11 @@ def terminate_tree(proc, *, platform=None, run=subprocess.run) -> None:
     """Stop a run and everything it started.
 
     On Windows ``terminate()`` ends only the process RYOS launched. A batch
-    file's own children (python, a game client) survive it, keep the output
-    pipe open, and the worker never sees end-of-file -- so the job stayed
-    "running" after Stop (issue #12). ``taskkill /T`` takes the whole tree.
-    Never raises: a process already gone is the outcome Stop wanted.
+    file's own children (python, a game client) survive it, so ``taskkill /T``
+    takes the whole tree (issue #12). A step is done once its own process
+    exits (see run_subprocess; a launcher's aside), so whatever it left
+    behind no longer keeps the job running. Never raises: a process already gone is the outcome
+    Stop wanted.
     """
     if proc is None or proc.poll() is not None:
         return
@@ -67,12 +79,20 @@ def terminate_tree(proc, *, platform=None, run=subprocess.run) -> None:
         pass
 
 
-def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, step_token=None):
+def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, step_token=None,
+                   follow_leftovers=False):
     """Launch a run, stream stdout to output_queue, and post a completion item.
 
     `spec` is a RunSpec. A bare command list is also accepted and given the
     default working directory and an inherited environment — exactly what every
     caller did before per-script environments existed.
+
+    A step is done when its process exits, not when its output pipe closes: a
+    process the script leaves running inherits the pipe and may hold it for
+    hours (issue #26). Its output is read for DRAIN_SECONDS more, then the
+    done item is posted and anything later is discarded. With
+    ``follow_leftovers`` (a launcher, whose run the UI releases on its own)
+    the output is followed to end-of-file as before.
 
     Sets job.current_process (and job.processes[step_token]) so the UI can
     terminate it. Never raises: launch failures are reported on the queue as
@@ -98,8 +118,8 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
             # wait forever and the job could never finish (issue #12). With no
             # stdin they get end-of-file at once and the run carries on.
             stdin=subprocess.DEVNULL,
-            bufsize=1,
-            text=True,
+            # Binary: _forward_output decodes it, without ever raising.
+            bufsize=0,
             cwd=spec.cwd,
             env=child_env(spec.env),
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
@@ -122,13 +142,15 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
         _put(("done", job.job_id, script_id, "error", f"❌ Error: {name}\n"))
         return
 
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        _put(("stdout", job.job_id, line))
-        if log_output:
-            _log.debug("[%s] %s", name, line.rstrip())
-
+    stream = _Stream()
+    reader = threading.Thread(
+        target=_forward_output, args=(proc, stream, _put, job.job_id, name, log_output),
+        daemon=True)
+    reader.start()
+    if follow_leftovers:
+        reader.join()
     proc.wait()
+    reader.join(DRAIN_SECONDS)
     rc = proc.returncode
     tag = "ok" if rc == 0 else "stderr"
     status = "ok" if rc == 0 else "error"
@@ -136,11 +158,69 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
         _log.info("Done: %s | exit=%s", name, rc)
     else:
         _log.error("Done: %s | exit=%s", name, rc)
-    _put((
-        "done_tag", job.job_id, script_id, status, tag,
-        f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
-    ))
+    # Under the reader's lock, so no line of this step lands after its done.
+    with stream.lock:
+        stream.cut = True
+        if stream.partial:
+            _put(("stdout", job.job_id, stream.partial))
+            if log_output:
+                _log.debug("[%s] %s", name, stream.partial.rstrip())
+            stream.partial = ""
+        _put((
+            "done_tag", job.job_id, script_id, status, tag,
+            f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
+        ))
 
+
+class _Stream:
+    """What run_subprocess and its reader thread share about one step's output."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.cut = False     # the done item is posted: forward nothing more
+        self.partial = ""    # text after the last newline, not yet posted
+
+
+def _forward_output(proc, stream, put, job_id, name, log_output) -> None:
+    """Read a run's output pipe to end-of-file, posting one item per line.
+
+    os.read returns whatever is there, so a last prompt with no newline is not
+    trapped in a buffer; it is held as the partial line and posted at the cut.
+    The decoder is what text=True used (locale encoding, universal newlines)
+    but replaces a byte it cannot decode instead of raising -- a raise here
+    killed the thread before the done item, and the run never ended. After
+    the cut the pipe is still drained, so a leftover process never blocks on
+    a full pipe or gets a broken pipe.
+    """
+    decoder = io.IncrementalNewlineDecoder(
+        codecs.getincrementaldecoder(locale.getpreferredencoding(False))(errors="replace"),
+        translate=True)
+
+    def forward(text):
+        with stream.lock:
+            if stream.cut:
+                return
+            *lines, stream.partial = (stream.partial + text).split("\n")
+            for line in lines:
+                put(("stdout", job_id, line + "\n"))
+                if log_output:
+                    _log.debug("[%s] %s", name, line.rstrip())
+
+    try:
+        fd = proc.stdout.fileno()
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            forward(decoder.decode(chunk))
+        forward(decoder.decode(b"", final=True))
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
 
 
 @dataclass

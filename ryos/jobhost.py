@@ -108,6 +108,7 @@ class JobHost:
     def _launch(self, job: Job, spec, name: str, script_id: int,
                 step_token=None) -> None:
         self.db.mark_run(script_id)
+        launcher = self.db.is_detached(script_id)
         # step_token and log_output are keyword-only in effect: run_subprocess
         # takes log_output first positionally, so passing the token positionally
         # would silently enable run logging and lose the token.
@@ -117,13 +118,15 @@ class JobHost:
             kwargs={
                 "log_output": bool(self.settings.get("log_runs_output", False)),
                 "step_token": step_token,
+                # A launcher's output keeps reaching its tab after release.
+                "follow_leftovers": launcher,
             },
             daemon=True,
         ).start()
         # A launcher opens something and keeps running, so waiting for it
         # would stall the pipeline (issue #5) -- or, run on its own, leave it
         # in Running for as long as what it opened is up.
-        if self.db.is_detached(script_id):
+        if launcher:
             secs = max(0, int(self.settings.get(
                 "launcher_release_seconds",
                 _SETTINGS_DEFAULTS["launcher_release_seconds"])))
