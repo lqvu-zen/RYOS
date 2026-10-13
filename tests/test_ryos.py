@@ -7823,6 +7823,46 @@ class TestFileDropAndCardDetails(unittest.TestCase):
         self.assertIn(sections.NO_BASE_DIR, sections.banner_text(""))
 
 
+class TestOutputTabOrder(unittest.TestCase):
+    """A run's output tab opens right after All, so the newest is in view
+    (#31). A pipeline's tab is placed like a script's: its steps are chips
+    inside the one tab (PL-08), so there is no step-tab order."""
+
+    @staticmethod
+    def opened(keys, key):
+        keys = list(keys)
+        keys.insert(outputpanel.new_tab_index(keys, key), key)
+        return keys
+
+    def test_all_goes_first(self):
+        self.assertEqual(outputpanel.new_tab_index([], outputpanel.ALL), 0)
+        self.assertEqual(self.opened([], outputpanel.ALL), [outputpanel.ALL])
+
+    def test_new_run_goes_right_after_all(self):
+        a = outputpanel.ALL
+        self.assertEqual(self.opened([a, "job:1", "job:2"], "job:3"),
+                         [a, "job:3", "job:1", "job:2"])
+
+    def test_a_rerun_gets_a_new_tab_in_front(self):
+        a = outputpanel.ALL
+        # A re-run is a new job, so a new key: the earlier tab stays, shifted.
+        self.assertEqual(self.opened([a, "job:1"], "job:2"), [a, "job:2", "job:1"])
+
+    def test_runs_started_together_read_newest_first(self):
+        a = outputpanel.ALL
+        keys = [a]
+        for k in ("job:4", "job:5", "job:6"):
+            keys = self.opened(keys, k)
+        self.assertEqual(keys, [a, "job:6", "job:5", "job:4"])
+
+    def test_an_open_tab_does_not_move(self):
+        self.assertEqual(outputpanel.new_tab_index(
+            [outputpanel.ALL, "job:2", "job:1"], "job:1"), 2)
+
+    def test_without_all_it_goes_first(self):
+        self.assertEqual(outputpanel.new_tab_index(["job:1"], "job:2"), 0)
+
+
 class TestOutputPanelRules(unittest.TestCase):
     """The output header's rules, shared by the Tk and Qt panels."""
 

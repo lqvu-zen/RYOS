@@ -3729,10 +3729,37 @@ def check_output_panel(app):
     win._on_job_started(SimpleNamespace(tab_key="job:3", name="three"))
     if not win.output_expanded:
         PROBLEMS.append("auto_open_output did not open the panel for a new job")
+
+    # -- a run's tab goes right after All; the tab being read stays chosen (#31) -------
+    from PySide6.QtWidgets import QTabBar
+    tabs = win.output_tabs
+    bar = tabs.tabBar()
+    if win._output_keys()[0] != outputpanel.ALL:
+        PROBLEMS.append(f"All is not first: {win._output_keys()}")
+    tabs.setCurrentWidget(win._output_tabs["job:3"])
+    reading = tabs.currentWidget()
+    changes: list[int] = []
+    tabs.currentChanged.connect(changes.append)
+    win._on_job_started(SimpleNamespace(tab_key="job:4", name="four"))
+    win._on_job_started(SimpleNamespace(tab_key="job:5", name="five"))
+    tabs.currentChanged.disconnect(changes.append)
+    order = win._output_keys()
+    if order != [outputpanel.ALL, "job:5", "job:4", "job:3"]:
+        PROBLEMS.append(f"output tabs read {order}, not newest first after All")
+    if tabs.currentWidget() is not reading or changes:
+        PROBLEMS.append("a new run's tab changed the tab being read")
+    if bar.tabButton(0, QTabBar.ButtonPosition.RightSide) is not None:
+        PROBLEMS.append("the All tab has a close button")
+    for i in range(1, bar.count()):
+        btn = bar.tabButton(i, QTabBar.ButtonPosition.RightSide)
+        if btn is None or btn.objectName() != "tabClose":
+            PROBLEMS.append(f"output tab {i} lost its close button")
+    if not bar.rect().intersects(bar.tabRect(1)):
+        PROBLEMS.append("the newest run's tab is out of the tab bar's view")
     print("  [ok] output panel: starts collapsed, fits 540, colours by tag, errors "
           "only hides and restores, cap holds while filtered, find counts and "
           "steps, per-tab state, Esc, Copy/Save/Close, Clear, Close All keeps "
-          "running, auto-open")
+          "running, auto-open, newest tab right after All")
     win.deleteLater()
 
 

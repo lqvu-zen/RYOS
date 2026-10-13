@@ -125,6 +125,18 @@ def tab_menu(key: str) -> list[str | None]:
     return items
 
 
+def new_tab_index(keys, key: str) -> int:
+    """Where a run's tab goes in a bar holding ``keys`` (bar order): right
+    after All, so the newest run is first and in view instead of scrolled off
+    at the far end (#31). All is first; a tab already open keeps its place."""
+    keys = list(keys)
+    if key == ALL:
+        return 0
+    if key in keys:
+        return keys.index(key)
+    return keys.index(ALL) + 1 if ALL in keys else 0
+
+
 def closable(keys, running) -> list:
     """The tabs Close All closes: every one but All and those still running."""
     running = set(running)

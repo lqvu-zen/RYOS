@@ -20,7 +20,7 @@ Click **Show output** at the bottom to open the output panel.
 
 ![The output panel opened under the list: Find and Errors only, pill tabs for All, Say hello and Always fails, and the dark output with the programs' text and the exit codes](images/03-output.png)
 
-- **A tab per run**, named after the script, and **All**, which shows every run together. Click a tab's cross to close it; right-click a tab to **Copy** its text, **Save** it to a file, or **Close** it.
+- **A tab per run**, named after the script, and **All**, which shows every run together. The newest run's tab comes first, right after **All**, and the tab you are reading stays where it is. Click a tab's cross to close it; right-click a tab to **Copy** its text, **Save** it to a file, or **Close** it.
 - **Colours**: what the script prints is light grey, its error output is red, and RYOS's own lines (a step starting, the exit code) are blue and green.
 - **Find** highlights matches; press **Enter** for the next one and **Shift+Enter** for the previous. **Errors only** hides everything but the red lines.
 - **Clear** empties the tab in front. **Close all** closes every finished tab.

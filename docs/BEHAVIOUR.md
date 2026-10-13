@@ -238,6 +238,7 @@ and the test that guards it, or **untested**.
 | **OP-18** The status bar's last line says what happened ("Ready", "Done", "Failed", "Stopped"). | W R | `session_smoke::step_status_line` ("Started N": see SM-07) |
 | **OP-19** A script waiting for input does not hang its run. | CLI W | `test_ryos::TestStopAndLiveStatus::test_a_script_waiting_for_input_does_not_hang` |
 | **OP-20** A finished run sends a notification unless the option is off or toasts are blocked. | W | `qt_smoke::check_updates_and_notify`, `test_ryos::TestToastsCanBeBlocked` |
+| **OP-21** A run's output tab opens right after All, so the newest run is first and in view; the tab you are reading stays chosen; a re-run gets its own new tab in front, the earlier one moves right (#31). | W D · Sc P | `test_ryos::TestOutputTabOrder`, `qt_smoke::check_output_panel`, `session_smoke::step_run_and_output` (N C) |
 
 ## 8. Run history
 
@@ -440,3 +441,4 @@ breaks B" has happened. The table says which surfaces are unguarded.
 | Outside-folder warning when running (GR-30) | N (and compact tag) | F, D: Run from a chip or from the pane | -> 2.4 |
 | Heavy output (OP-05) | D | N | -> 2.4 |
 | Pane buttons (RC-35) | Run, Retry | Edit, star, three dots, Schedule | -> 2.4 |
+| Newest run's tab right after All (OP-21) | N C (`qt_smoke::check_output_panel`, `session_smoke::step_run_and_output`) | D: the same bar in the detail pane | -> 2.4 |

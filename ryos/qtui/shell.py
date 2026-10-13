@@ -2706,8 +2706,9 @@ class MainWindow(QMainWindow):
         pane = self._output_tabs.get(key)
         if pane is None:
             pane = OutputPane(self._palette)
+            at = outputpanel.new_tab_index(self._output_keys(), key)
             self._output_tabs[key] = pane
-            index = self.output_tabs.addTab(pane, literal(label))
+            index = self.output_tabs.insertTab(at, pane, literal(label))
             if key != outputpanel.ALL:
                 # The app's own cross, in place of Qt's: it was the last icon
                 # outside the set, 16 px, and out of Tab's reach.
@@ -2742,6 +2743,12 @@ class MainWindow(QMainWindow):
                     return          # the mirror tab is not closeable
                 del self._output_tabs[key]
         self.output_tabs.removeTab(index)
+
+    def _output_keys(self) -> list[str]:
+        """The open output tabs' keys, in bar order."""
+        by_widget = {id(p): k for k, p in self._output_tabs.items()}
+        return [k for i in range(self.output_tabs.count())
+                if (k := by_widget.get(id(self.output_tabs.widget(i)))) is not None]
 
     def active_output_key(self) -> str | None:
         widget = self.output_tabs.currentWidget()

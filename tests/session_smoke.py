@@ -183,9 +183,10 @@ class Session:
 
     def output(self, name: str) -> str:
         """Text of the newest output tab titled ``name``: each run opens its
-        own tab, as in Tk, so a script run twice has two."""
+        own tab, so a script run twice has two. The newest is the left-most
+        (right after All, #31), so this scans forward."""
         tabs = self.win.output_tabs
-        for i in reversed(range(tabs.count())):
+        for i in range(tabs.count()):
             if tabs.tabText(i).replace("&&", "&") == name:
                 return tabs.widget(i).plain_text()
         self.last_tabs = [tabs.tabText(i) for i in range(tabs.count())]
@@ -298,6 +299,23 @@ def step_run_and_output(s: Session) -> None:
                   f"{[combo.itemText(i) for i in range(combo.count())]}; "
                   f"output {s.output('Say hello')!r})")
         s.idle("hello --loud")
+
+    # OP-21: the newest run's tab sits right after All, in view (#31).
+    tabs = s.win.output_tabs
+    was_open = s.win.output_expanded
+    try:
+        s.win.set_output_expanded(True)
+        s.pump(0.3)
+        names = [tabs.tabText(i).replace("&&", "&") for i in range(tabs.count())]
+        if names[1:3] != ["Say hello", "Say hello"]:
+            problem(f"the run tabs are not right after All: {names}")
+        elif "hello --loud" not in tabs.widget(1).plain_text():
+            problem("the preset's (newest) run is not the tab at index 1")
+        bar = tabs.tabBar()
+        if not bar.rect().contains(bar.tabRect(1)):
+            problem("the newest run's tab is not inside the tab bar")
+    finally:
+        s.win.set_output_expanded(was_open)
 
     # Run history, from the card's menu.
     seen = {}
