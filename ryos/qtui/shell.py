@@ -128,23 +128,49 @@ class OutputPane(QWidget):
         fmt.setForeground(QColor(self._palette[self.TAG_COLORS.get(tag, "out_stdout")]))
         return fmt
 
-    def _write(self, line: str, tag: str, step: tuple | None = None) -> None:
+    def _write(self, entries: list) -> None:
+        """Write (line, tag, step) entries at the end, one line each.
+
+        One cursor, and one insert per run of plain lines of one tag: an
+        item may now hold thousands of lines (issue #29a).
+        """
+        if not entries:
+            return
         from PySide6.QtGui import QColor, QTextCursor
-        cursor = QTextCursor(self.text.document())
+        doc = self.text.document()
+        cursor = QTextCursor(doc)
         cursor.movePosition(QTextCursor.MoveOperation.End)
-        if not self.text.document().isEmpty():
-            cursor.insertBlock()
-        if step is not None:
+        cursor.beginEditBlock()
+        formats: dict = {}
+        first = doc.isEmpty()
+        i = 0
+        while i < len(entries):
+            line, tag, step = entries[i]
+            fmt = formats.get(tag)
+            if fmt is None:
+                fmt = formats[tag] = self._format(tag)
+            if not first:
+                cursor.insertBlock()
+            first = False
+            if step is None:
+                j = i + 1
+                while j < len(entries) and entries[j][2] is None and entries[j][1] == tag:
+                    j += 1
+                cursor.insertText("\n".join(e[0] for e in entries[i:j]), fmt)
+                i = j
+                continue
             # The step's "[name] " in its own colour, so interleaved lines
             # can be told apart at a glance.
             prefix = outputpanel.step_prefix(step[1])
             if line.startswith(prefix):
-                fmt = self._format(tag)
-                fmt.setForeground(QColor(step_colour(step[0], self._palette["out_bg"])))
-                fmt.setFontWeight(700)
-                cursor.insertText(prefix, fmt)
+                bold = self._format(tag)
+                bold.setForeground(QColor(step_colour(step[0], self._palette["out_bg"])))
+                bold.setFontWeight(700)
+                cursor.insertText(prefix, bold)
                 line = line[len(prefix):]
-        cursor.insertText(line, self._format(tag))
+            cursor.insertText(line, fmt)
+            i += 1
+        cursor.endEditBlock()
 
     def _shown(self, tag: str, step: tuple | None) -> bool:
         return (outputpanel.shown_when_filtered(tag, self.errors_only)
@@ -154,15 +180,21 @@ class OutputPane(QWidget):
     def append(self, text: str, max_lines: int, *, scroll: bool = True,
                tag: str | None = None, step: tuple | None = None) -> None:
         tag = tag or "stdout"
-        line = text.rstrip("\n")
-        self.lines.append((line, tag, step))
-        if self._shown(tag, step):
-            self._write(line, tag, step)
+        old_count = len(self.lines)
+        new = [(line, tag, step) for line in outputpanel.split_lines(text)]
+        self.lines.extend(new)
         drop = outputpanel.overflow_lines(len(self.lines), max_lines)
+        dropped: list = []
         if drop:
             dropped, self.lines = self.lines[:drop], self.lines[drop:]
-            shown = sum(self._shown(tg, st) for _l, tg, st in dropped)
-            self._drop_blocks(shown)
+        if drop and drop >= old_count:
+            # Nothing on screen survives: write only what is kept, not a
+            # batch bigger than the cap.
+            self.text.clear()
+            self._write([e for e in self.lines if self._shown(e[1], e[2])])
+        else:
+            self._drop_blocks(sum(self._shown(tg, st) for _l, tg, st in dropped))
+            self._write([e for e in new if self._shown(e[1], e[2])])
         if scroll:
             bar = self.text.verticalScrollBar()
             bar.setValue(bar.maximum())
@@ -185,9 +217,7 @@ class OutputPane(QWidget):
     def rebuild(self) -> None:
         """Redraw from the kept lines -- for the filter, and a new palette."""
         self.text.clear()
-        for line, tag, step in self.lines:
-            if self._shown(tag, step):
-                self._write(line, tag, step)
+        self._write([e for e in self.lines if self._shown(e[1], e[2])])
         self.search()
 
     def clear(self) -> None:

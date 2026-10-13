@@ -12,6 +12,7 @@ increment (running-row teardown).
 from __future__ import annotations
 
 import queue
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -155,7 +156,11 @@ class JobController:
         now: Callable[[], datetime] = datetime.now,
         on_step: Callable[[str, int, str, str], None] = lambda *a: None,
         base_notes: bool = False,
+        # perf_counter, not monotonic: on Windows monotonic ticks every
+        # 15.6 ms, too coarse for pump()'s budget.
+        clock: Callable[[], float] = time.perf_counter,
     ) -> None:
+        self._clock = clock
         self._registry = registry
         self._queue = output_queue
         self._db = db                    # persists per-step run status
@@ -267,40 +272,79 @@ class JobController:
         self._on_started(job)
         return job
 
-    def pump(self) -> None:
-        """Drain all pending output-queue items on the UI thread.
+    def pump(self, budget: float | None = None, *, coalesce: bool = False) -> bool:
+        """Drain pending output-queue items on the UI thread.
 
         For each item: append its text to the right tab, persist a finished
         step's run status, and dispatch completion. The caller owns the repeat
-        scheduling (``after(80, ...)``); the worker never touches a widget — it
-        only feeds this queue.
+        scheduling; the worker never touches a widget -- it only feeds this
+        queue.
+
+        ``budget`` (seconds) stops the drain between items once it is spent,
+        so a step printing faster than the window can draw does not hold the
+        event loop until it goes quiet (issue #29a). At least one item is
+        always handled. None drains everything, as the command line needs.
+        ``coalesce`` hands consecutive whole lines bound for the same place
+        over as one text. Returns True when it stopped on the budget.
         """
-        try:
-            while True:
+        deadline = None if budget is None else self._clock() + budget
+        pending: list[str] = []
+        pending_key: tuple | None = None
+
+        def flush() -> None:
+            nonlocal pending_key
+            if pending_key is None:
+                return
+            tab_key, tag, step = pending_key
+            text = "".join(pending)
+            pending.clear()
+            pending_key = None
+            if step is None:
+                self._on_output(tab_key, text, tag)
+            else:
+                self._on_output(tab_key, _tag_lines(text, step[1]), tag, step)
+
+        def emit(tab_key: str, text: str, tag, step) -> None:
+            nonlocal pending_key
+            key = (tab_key, tag, step)
+            # Only onto a finished line: "Press any key" must not swallow the
+            # next line into itself.
+            if pending_key != key or not pending[-1].endswith("\n"):
+                flush()
+                pending_key = key
+            pending.append(text)
+            if not coalesce:
+                flush()
+
+        while True:
+            try:
                 item = self._queue.get_nowait()
-                job = self._registry.get(item[1])
-                act = decode_output_item(item)
-                released = self._released.get(item[1])
-                if released is not None:
-                    if act.text is not None and act.status is None:
-                        self._on_output(released.tab_key, act.text, act.tag)
-                    elif act.status is not None:
-                        del self._released[item[1]]
-                    continue
+            except queue.Empty:
+                flush()
+                return False
+            job = self._registry.get(item[1])
+            act = decode_output_item(item)
+            released = self._released.get(item[1])
+            if released is not None:
+                if act.text is not None and act.status is None:
+                    emit(released.tab_key, act.text, act.tag, None)
+                elif act.status is not None:
+                    flush()
+                    del self._released[item[1]]
+            else:
+                if act.status is not None:
+                    flush()
                 if act.text is not None and job:
-                    text = act.text
                     # Gate on the group's fixed launch size (not the live
                     # count), so the prefix doesn't vanish mid-group as
-                    # siblings finish one by one.
+                    # siblings finish one by one. The step rides along so
+                    # the tab can colour its prefix and filter to it.
+                    step = None
                     if job.group_size > 1 and act.token in job.group_labels:
-                        label = job.group_labels[act.token]
-                        # The step rides along so the tab can colour its
-                        # prefix and filter to it.
-                        self._on_output(job.tab_key, _tag_lines(text, label), act.tag,
-                                        (act.token, label))
-                    else:
-                        self._on_output(job.tab_key, text, act.tag)
+                        step = (act.token, job.group_labels[act.token])
+                    emit(job.tab_key, act.text, act.tag, step)
                 if act.status is not None:
+                    flush()
                     # A completion item always carries its script id (protocol).
                     assert act.sid is not None
                     status = act.status
@@ -312,8 +356,9 @@ class JobController:
                     self._db.mark_run_status(act.sid, status)
                     if job:
                         self.handle_step_done(job, act.sid, status, act.token)
-        except queue.Empty:
-            pass
+            if deadline is not None and self._clock() >= deadline:
+                flush()
+                return True
 
     def run_next_pipeline_step(self, job: Job) -> None:
         """Pop and launch the next step, or the whole concurrent group it leads.

@@ -5267,6 +5267,89 @@ def check_pill_corners(app):
     print("  [ok] tab pills keep round corners at a small font (#11)")
 
 
+def check_heavy_output_stays_responsive(app):
+    """Issue #29a: maximised, a pipeline printing faster than the window
+    could draw froze it -- one drain of the output queue ran until the step
+    stopped printing. Run a real chatty two-step pipeline, choose its row as
+    the user did, and the window must keep getting turns while it runs and
+    after, with every line still delivered."""
+    import sys as _sys
+    import tempfile
+    import time as _time
+    from PySide6.QtCore import Qt
+    from ryos import detail, outputpanel as op
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    lines_per_step = 12000
+    tmp = Path(tempfile.mkdtemp(prefix="ryos-chatty-"))
+    chatty = tmp / "chatty.py"
+    chatty.write_text(
+        f"for i in range({lines_per_step}):\n"
+        "    print(f'chatty {i:05} build output with a path D:/work/data/file_{i}.bin and more text')\n",
+        encoding="utf-8")
+    db = ScriptDB(tmp / "chatty.db")
+    db.create_group("G")
+    sid = db.add("chatty", str(chatty), "", _sys.executable, "G")
+    pid = db.create_pipeline("Chatty", "G")
+    db.add_pipeline_step(pid, sid)
+    db.add_pipeline_step(pid, sid)
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win.attach_jobs(bridge)
+    bridge.start()
+    win.load_from_db(db)
+    win.show_group("G")
+    win.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    win.resize(1600, 900)
+    win.show()
+    win.set_workspace(True)
+    app.processEvents()
+
+    def row():
+        return win.card_lists["G"].section("pipelines").cards[0]
+
+    def turns_until(predicate, timeout):
+        """The longest single event-loop turn while waiting for predicate."""
+        worst, end = 0.0, _time.monotonic() + timeout
+        while _time.monotonic() < end and not predicate():
+            t = _time.monotonic()
+            app.processEvents()
+            worst = max(worst, _time.monotonic() - t)
+            _time.sleep(0.01)
+        return worst, predicate()
+
+    row().activated.emit()
+    app.processEvents()
+    win.detail.run.click()
+    # Watching it: the row chosen again, its Output in front.
+    row().activated.emit()
+    win.detail.show_tab(detail.OUTPUT_TAB)
+    running, finished = turns_until(lambda: win.running.count == 0, 90)
+    after, _ = turns_until(lambda: False, 1.0)
+    row().activated.emit()
+    after2, _ = turns_until(lambda: False, 0.5)
+    after = max(after, after2)
+    pane = next((p for k, p in win._output_tabs.items() if k != op.ALL), None)
+    text = pane.plain_text() if pane is not None else ""
+    print(f"    worst turn running {running:.2f}s, after {after:.2f}s")
+    if not finished:
+        PROBLEMS.append("the chatty pipeline did not finish")
+    if running > 0.5:
+        PROBLEMS.append(f"maximised, a chatty pipeline held the window for {running:.1f} s in one turn")
+    if after > 0.5:
+        PROBLEMS.append(f"after the chatty pipeline, a turn took {after:.1f} s")
+    if f"chatty {lines_per_step - 1:05}" not in text or "Pipeline complete" not in text:
+        PROBLEMS.append("the chatty pipeline's last line or its completion is missing")
+    bridge.stop()
+    win.hide()
+    win.deleteLater()
+    print("  [ok] heavy output: the window keeps its turns while a chatty pipeline runs")
+
+
 def check_parallel_step_output(app):
     """Steps running side by side: their lines were interleaved in one tab
     behind a short, uncoloured "[name]", so it was hard to follow one step or
@@ -5568,6 +5651,7 @@ def main() -> int:
     check_newer_database_is_refused(app)
     check_bug_report(app)
     check_maximised_layout(app)
+    check_heavy_output_stays_responsive(app)
     check_ampersands_show(app)
     if _real_log_state() != real_log:
         PROBLEMS.append("the user's own RYOS log was written during the smoke")

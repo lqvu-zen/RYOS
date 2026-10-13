@@ -51,6 +51,17 @@ def overflow_lines(line_count: int, max_lines: int) -> int:
     return line_count - max_lines
 
 
+def split_lines(text: str) -> list[str]:
+    """The lines of one output item, which may hold many (issue #29a).
+
+    Exactly one trailing newline ends the last line; any further one is a
+    blank line the script printed.
+    """
+    if text.endswith("\n"):
+        text = text[:-1]
+    return text.split("\n")
+
+
 def section_is_visible(*, query_active: bool, has_cards: bool,
                        any_match: bool) -> bool:
     """Whether a card section's header should show.

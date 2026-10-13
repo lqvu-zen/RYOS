@@ -2990,6 +2990,154 @@ class TestJobController(unittest.TestCase):
         self.assertEqual(self.rec["status"], ["Pipeline step 1/1: build"])
 
 
+class TestPumpBudget(unittest.TestCase):
+    """Issue #29a: a step printing faster than the window could draw kept
+    pump() draining until the step stopped printing, so the window never got
+    a turn -- maximised, watching a chatty pipeline froze RYOS."""
+
+    def setUp(self):
+        self.t = 0.0          # the controller's clock, in seconds
+        self.out = []
+        self.stepped = []     # (text, step) as the window's tab gets them
+        self.finished = []
+        self.feed = 0         # lines the reader still has ready
+        self.q = _CostlyQueue(self)
+        self.reg = JobRegistry()
+        self.db = _FakeDB()
+        self.ctl = JobController(
+            self.reg, self.q, self.db,
+            on_output=self._output, on_status=lambda _t: None,
+            on_notify=lambda *_a: None, on_started=lambda _j: None,
+            on_finish=lambda job: self.finished.append(job.job_id),
+            on_rename=lambda _j: None, launch=lambda *_a: None,
+            now=lambda: _dt(2020, 1, 1, 12, 0, 0), clock=lambda: self.t)
+        self.reg.add(Job(1, "script", 1, None, "n", "job:1", "g"))
+
+    def _output(self, tab, text, tag=None, step=None):
+        self.t += 0.001       # drawing it takes the window a millisecond
+        self.out.append((text, tag))
+        self.stepped.append((text, step))
+        if self.feed:         # ...by which time the reader has posted another
+            self.feed -= 1
+            self.q.put(("stdout", 1, "more\n"))
+
+    def texts(self):
+        return [text for text, _tag in self.out]
+
+    def test_a_pump_hands_back_control_while_output_keeps_coming(self):
+        self.feed = 5000
+        self.q.put(("stdout", 1, "first\n"))
+        self.assertTrue(self.ctl.pump(budget=0.05))
+        self.assertLessEqual(len(self.out), 51)
+        self.assertFalse(self.q.empty())
+
+    def test_budgeted_pumps_deliver_every_line_in_order_then_the_done_once(self):
+        for i in range(300):
+            self.q.put(("stdout", 1, f"{i}\n"))
+        self.q.put(("done_tag", 1, 5, "ok", "ok", "footer"))
+        turns = 1
+        while self.ctl.pump(budget=0.05):
+            turns += 1
+            self.assertLess(turns, 100)
+        self.assertGreater(turns, 1)
+        self.assertEqual(self.texts(), [f"{i}\n" for i in range(300)] + ["footer"])
+        self.assertEqual(self.finished, [1])
+        self.assertEqual(self.db.marked, [(5, "ok")])
+
+    def test_a_pump_always_handles_at_least_one_item(self):
+        self.q.put(("stdout", 1, "a\n"))
+        self.q.put(("stdout", 1, "b\n"))
+        self.assertTrue(self.ctl.pump(budget=0))
+        self.assertEqual(self.texts(), ["a\n"])
+        self.ctl.pump(budget=0)
+        self.assertEqual(self.texts(), ["a\n", "b\n"])
+
+    def test_without_a_budget_a_pump_drains_everything(self):
+        # The command line and the MCP server pump this way: one call, all of it.
+        self.feed = 2000
+        self.q.put(("stdout", 1, "first\n"))
+        self.assertFalse(self.ctl.pump())
+        self.assertEqual(len(self.out), 2001)
+        self.assertTrue(self.q.empty())
+
+    def test_coalescing_joins_a_runs_consecutive_lines_and_keeps_their_order(self):
+        for item in (("stdout", 1, "a\n"), ("stdout", 1, "b\n"), ("stderr", 1, "e\n"),
+                     ("stdout", 1, "c\n"), ("stdout", 1, "Press any key"),
+                     ("done_tag", 1, 5, "error", "stderr", "\n  exit code 1\n")):
+            self.q.put(item)
+        self.ctl.pump(coalesce=True)
+        self.assertEqual(self.out, [("a\nb\n", None), ("e\n", "stderr"),
+                                    ("c\nPress any key", None),
+                                    ("\n  exit code 1\n", "stderr")])
+        self.assertEqual(self.finished, [1])
+
+    def test_coalescing_never_joins_onto_an_unfinished_line(self):
+        self.q.put(("stdout", 1, "no newline"))
+        self.q.put(("stdout", 1, "next\n"))
+        self.ctl.pump(coalesce=True)
+        self.assertEqual(self.texts(), ["no newline", "next\n"])
+
+    def test_coalescing_keeps_parallel_steps_apart_and_tagged(self):
+        job = self.reg.get(1)
+        job.kind = "pipeline"
+        job.group_size = 2
+        job.group_labels = {1: "build", 2: "test"}
+        for item in (("stdout", 1, "x\n", 1), ("stdout", 1, "y\n", 1),
+                     ("stdout", 1, "z\n", 2), ("stdout", 1, "w\n", 1)):
+            self.q.put(item)
+        self.ctl.pump(coalesce=True)
+        self.assertEqual(self.stepped, [("[build] x\n[build] y\n", (1, "build")),
+                               ("[test] z\n", (2, "test")),
+                               ("[build] w\n", (1, "build"))])
+
+    def test_coalesced_text_is_handed_over_before_a_budgeted_pump_returns(self):
+        # Coalesced lines cost the controller next to nothing to gather, so
+        # here the time goes on taking items off the queue.
+        self.q.cost = 0.03
+        for i in range(10):
+            self.q.put(("stdout", 1, f"{i}\n"))
+        self.q.put(("done_tag", 1, 5, "ok", "ok", "footer"))
+        self.assertTrue(self.ctl.pump(budget=0.05, coalesce=True))
+        first = "".join(self.texts())
+        self.assertTrue(first and "".join(f"{i}\n" for i in range(10)).startswith(first))
+        self.assertFalse(self.q.empty())
+        while self.ctl.pump(budget=0.05, coalesce=True):
+            pass
+        self.assertEqual("".join(self.texts()),
+                         "".join(f"{i}\n" for i in range(10)) + "footer")
+        self.assertEqual(self.finished, [1])
+
+
+class _CostlyQueue(_queue.Queue):
+    """A queue whose every take moves the test's clock on."""
+
+    def __init__(self, test):
+        super().__init__()
+        self._test, self.cost = test, 0.0
+
+    def get_nowait(self):
+        item = super().get_nowait()
+        self._test.t += self.cost
+        return item
+
+
+class TestSplitOutputLines(unittest.TestCase):
+    """One output item may now hold many lines (issue #29a): the tab keeps
+    each as its own line, so the cap counts what is on screen."""
+
+    def test_one_line(self):
+        self.assertEqual(outputpanel.split_lines("a\n"), ["a"])
+
+    def test_many_lines_and_a_blank_one(self):
+        self.assertEqual(outputpanel.split_lines("a\n\nb\n"), ["a", "", "b"])
+
+    def test_a_blank_line_alone(self):
+        self.assertEqual(outputpanel.split_lines("\n"), [""])
+
+    def test_unfinished_last_line(self):
+        self.assertEqual(outputpanel.split_lines("a\nPress any key"), ["a", "Press any key"])
+
+
 class TestSourceIntegrity(unittest.TestCase):
     """Guard shipped source against corruption and bad merges.
 

@@ -135,7 +135,12 @@ Scripts must never block the UI, so execution happens off the main thread:
 3. A `QTimer` on the UI thread (every 80 ms) calls `JobController.pump()`,
    which drains pending items, turns each into an `OutputAction` via
    `runner.decode_output_item()`, and emits it to the window — **the worker
-   never touches a widget**.
+   never touches a widget**. The window's drain is budgeted (`PUMP_BUDGET`,
+   50 ms: it stops between items and leaves the rest for the next tick) and
+   coalesced (consecutive whole lines for the same tab, tag and step go over
+   as one text), so a step printing faster than a tab can draw no longer
+   holds the event loop until it goes quiet (issue #29a). The headless
+   runner and the MCP server pump with no budget and drain everything.
 
 The queue protocol (defined in `runner.py`) is a tuple keyed by its first
 element:

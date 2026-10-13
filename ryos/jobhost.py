@@ -32,6 +32,11 @@ from .settings import _SETTINGS_DEFAULTS
 
 #: How often the host drains the queue: output appears at this rate.
 PUMP_MS = 80
+#: How long one of the window's drains may draw before it hands the event
+#: loop back (seconds). A step can print far faster than a tab can draw, and
+#: an unbounded drain then froze the window until the step went quiet
+#: (issue #29a). Headless hosts pass no budget and drain everything.
+PUMP_BUDGET = 0.05
 
 
 def _ignore(*_args) -> None:
@@ -70,9 +75,12 @@ class JobHost:
         )
 
     # -- lifecycle ---------------------------------------------------------
-    def pump(self) -> None:
-        """Drain the output queue. Call it on one thread, every PUMP_MS."""
-        self.controller.pump()
+    def pump(self, budget: float | None = None, *, coalesce: bool = False) -> bool:
+        """Drain the output queue. Call it on one thread, every PUMP_MS.
+
+        True when ``budget`` ran out with items left (see JobController.pump).
+        """
+        return self.controller.pump(budget, coalesce=coalesce)
 
     def stop_all(self) -> None:
         """Terminate everything still running.

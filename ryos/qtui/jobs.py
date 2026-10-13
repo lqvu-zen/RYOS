@@ -4,7 +4,7 @@ Everything about running jobs lives in ``ryos/jobhost.py``, toolkit-free and
 shared with the headless runner. What is Qt-shaped is here, and small:
 
 * **Draining the queue.** A ``QTimer`` calls ``JobHost.pump`` every
-  ``PUMP_MS``.
+  ``PUMP_MS``, for at most ``PUMP_BUDGET`` each time.
 * **Later, on the UI thread.** A launcher's release goes through
   ``QTimer.singleShot``, so it reaches the controller on the thread that
   pumps it.
@@ -21,7 +21,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from .. import schedule_runner
 from ..db import SOURCE_MANUAL, ScriptDB
-from ..jobhost import PUMP_MS, JobHost
+from ..jobhost import PUMP_BUDGET, PUMP_MS, JobHost
 from ..logger import get_logger
 
 __all__ = ["JobBridge", "PUMP_MS"]
@@ -69,7 +69,7 @@ class JobBridge(QObject):
         self._settings = self._host.settings
         self._timer = QTimer(self)
         self._timer.setInterval(PUMP_MS)
-        self._timer.timeout.connect(self._host.pump)
+        self._timer.timeout.connect(self._pump)
         self._schedule_timer = QTimer(self)
         self._schedule_timer.setSingleShot(True)
         self._schedule_timer.timeout.connect(self._tick_schedules)
@@ -78,6 +78,11 @@ class JobBridge(QObject):
     def start(self) -> None:
         self._timer.start()
         self._schedule_timer.start(schedule_runner.FIRST_TICK_MS)
+
+    def _pump(self) -> None:
+        # Budgeted, so a chatty step cannot hold the event loop; what is left
+        # waits for the next tick rather than an immediate re-pump.
+        self._host.pump(budget=PUMP_BUDGET, coalesce=True)
 
     def stop(self) -> None:
         """Stop draining and terminate anything still running (window close)."""

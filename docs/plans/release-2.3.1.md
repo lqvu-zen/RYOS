@@ -9,7 +9,9 @@ _Created 2026-10-12 by the secretary session from Vũ's agreed weekly plan. v2.3
 3. Let users see who made RYOS and check that a download is the real one. RYOS isn't code-signed, so SmartScreen keeps saying "Unknown publisher".
 4. Make a whole group available to agents in one go, and pick up new scripts and pipelines by running it again.
 5. Fix what Vũ reported on 2026-10-13 while using 2.3.0: #29 (a freeze, and the log is hard to find) and #30 (Quick Run no longer adds a new script).
-6. Ship **2.3.1**, the first release through the release-review gate.
+6. Stop "working on A breaks B" (user feedback, 2026-10-13): a behaviour map that every change is checked against.
+7. A real test phase before every release: a release candidate Vũ uses for a few days, one release-check script as a hard gate, and a tester agent.
+8. Ship **2.3.1**, the first release through the release-review gate and the new test phase.
 
 ## Who does what
 
@@ -26,6 +28,9 @@ _Created 2026-10-12 by the secretary session from Vũ's agreed weekly plan. v2.3
 | 10 #29b: make the app log easy to find | coding session | `/add-ryos-feature` |
 | 11 Fix #30: Quick Run no longer adds a new script | coding session | `/fix-ryos-bug` |
 | 12 #31: newest log tab first | coding session | `/add-ryos-feature` |
+| 13 Behaviour map, wired into the workflow | coding session + Vũ reviews | the agent team; Vũ reviews the map |
+| 14 "Suggest a feature" next to "Report a bug" | coding session | `/add-ryos-feature` |
+| 15 The release test phase (RC, release check, tester agent) | coding session; Vũ uses the RC | `/add-ryos-feature` for the script; agent file and skill edits by hand |
 | 6 Release 2.3.1 | coding session + Vũ | `/release-ryos`; Vũ names the version |
 
 ## Steps
@@ -134,14 +139,108 @@ _Added 2026-10-13 from issue #30 (Vũ, on 2.3.0 Windows build with AI agents, co
 _Added 2026-10-13 from issue #31 (Vũ's suggestion). It's small; if it turns out not to be, move it to 2.4 and say so in the Status table._ When a script or pipeline starts, its tab in the output panel goes **right after "All"** instead of at the end, so the run just started is always in view. The alternative in the issue was scrolling the tab bar to the end on each run. The rule (where a new tab goes) lives in the toolkit-free `ryos/outputpanel.py`, and the window only draws it. A re-run of a script that already has a tab moves that tab to the front, not a duplicate.
 **Done when** a unit test covers the order (new tab, re-run, several runs at once, a pipeline's step tabs keep their order inside the pipeline), and the tab bar shows the newest run without scrolling in both the normal and compact layouts.
 
+### 13 — The behaviour map: stop "working on A breaks B"
+_Added 2026-10-13 from user feedback: "Are you creating a design document? I keep seeing situations where working on A ends up breaking B."_ The history agrees:
+- compact mode broke three times (#28, the outside-folder tag on compact rows, the empty box beside Run);
+- select mode missed pipelines (#27);
+- Quick Run lost "add as a new script" (#30);
+- a copied script lost its star, highlight and presets;
+- `CLAUDE.md` records widened rows breaking call sites three times.
+
+`docs/ARCHITECTURE.md`, `docs/adr/` and `CLAUDE.md` say how the code is built. Nothing says **what must keep working, and everywhere it shows up**. Most behaviours appear in several places: normal rows, compact rows, favourite chips, the detail pane, select mode, scripts and pipelines, window and CLI. A change reaches one place, and the others break unseen.
+
+**Work:**
+1. **Write `docs/BEHAVIOUR.md`**, grouped by area (rows and cards, favourites, groups, select mode, Quick Run, pipelines, output panel, history, schedules, tray and window, CLI, MCP, import and export, settings and themes). Each entry has:
+   - the behaviour in one line, as the user sees it;
+   - **every surface** it appears on;
+   - the test that guards it (file and test name), or **untested**.
+
+   Build it from the code, the tests, the tutorial and closed issues. Start with the areas behind the regressions above. Vũ reviews the map before it's final.
+2. **Wire it into the workflow** (`add-ryos-feature`, `fix-ryos-bug`, and the `ryos-designer` and `ryos-reviewer` agents):
+   - the locator returns the map entries for the area;
+   - the designer's plan lists every surface the change touches, from the map;
+   - the reviewer checks each of those surfaces, not only the one in the task;
+   - every bug fix adds or updates its entry, with its regression test;
+   - a new feature adds its entry.
+3. **Smoke both layouts.** `tests/session_smoke.py` today runs the normal layout only. Run it, or at least its rows, favourites and select-mode parts, in the **compact** layout too.
+4. **Turn the untested entries into a backlog:** a short list at the end of the map. The most-used ones get checks in `session_smoke.py` now, as part of this step; the rest are listed for 2.4.
+
+**Order:** do this right after the two bug fixes (steps 9 and 11) and before steps 7, 8, 10 and 12, so those features are built with the map. Steps 9 and 11 add their entries once it exists.
+**Done when:**
+- `docs/BEHAVIOUR.md` exists, covers every area above, and has been reviewed by Vũ;
+- the skills and agent files use it as described;
+- `session_smoke.py` passes in both layouts;
+- each regression listed above has its entry and a test.
+
+### 14 — "Suggest a feature…" next to "Report a bug…"
+_Added 2026-10-13 by Vũ._ Users already send suggestions as plain issues (#31 starts with "Suggestion:"). Give them a button that does it properly, the same way *Report a bug…* works (`ryos/bugreport.py`):
+- **Where:** right next to *Report a bug…*, everywhere that one appears (menu and button), with the same look. Placement follows the behaviour map (step 13).
+- **What it does:** opens a **new GitHub issue in the browser, already filled in.** Nothing is sent from RYOS; the person reads it, writes, and submits it themselves, exactly like the bug report.
+  - **Title:** `Suggestion: ` followed by an empty space to type into.
+  - **Label:** `enhancement` (it already exists in the repo).
+  - **Body:**
+    - *What would you like RYOS to do?*
+    - *What are you trying to get done, and how do you do it today?*
+    - *Anything else* (screenshots, examples).
+    - A short footer with the RYOS version and download only, e.g. `2.3.1 (Windows build with AI agents)`. No log hint, no OS details, no paths.
+- **Wording:** menu label `Suggest a feature…`; tooltip "Suggest a feature — opens a new issue on GitHub, nothing is sent until you submit it"; and after opening, "Opened a suggestion in your browser — nothing is sent until you submit it."
+- **Code:** the rules (label, title, body, URL) go in a toolkit-free module next to `bugreport.py`, sharing its URL builder and `MAX_URL` limit, with unit tests. The window only draws the button. Present in every Windows download, including the no-AI build.
+- Add its entry to `docs/BEHAVIOUR.md` (both layouts, every place the bug-report button appears).
+
+**Done when** unit tests cover the URL (title, label, body, version footer, length limit), the button shows next to *Report a bug…* in both the normal and compact layouts (checked in `session_smoke.py`), and clicking it opens a correctly filled issue page.
+
+### 15 — A real test phase before every release
+_Added 2026-10-13 by Vũ._ Before this step, every change ran unit, lint, types, `qt_smoke`, `session_smoke` and an Opus diff review, and `release-ryos` built, smoke-tested, zip-checked and release-reviewed. What leaked:
+- **Nobody used the build before it shipped.** 2.3.0 was built and published in about an hour; #29 and #30 were found days later in normal use.
+- **The real release check was optional.** 2.3.0's step 13 was a plan item, and parts of it weren't run.
+- **Nobody tested the built app like a user**, around the changes.
+- **Coverage was uneven:** smokes in one layout, and upgrade checks depending on whatever old database is on Vũ's PC.
+
+**Work:**
+1. **`tests/release_check.py`**, one script over all four zips in `dist/`, with throwaway data and nothing opening on the first screen. It covers:
+   - `launch_smoke` for each download;
+   - the CLI commands, including the management ones;
+   - MCP over plain JSON-RPC (list, run, poll, stop) for the MCP builds, and the 125 refusal for `windows`;
+   - `session_smoke` in **both** layouts;
+   - **an upgrade from a fixture database of each past version.** Commit sanitised copies under `tests/fixtures/db/`, e.g. `v2.0.db` … `v2.3.db`, with no real paths;
+   - a mixed install in both orders (agent then full app, and the reverse: same scripts, history and exposure);
+   - the A3 "compatible from" guard.
+
+   It prints a pass/fail report and exits non-zero on any failure.
+2. **A release-candidate flow in `release-ryos`:**
+   1. build;
+   2. run `release_check.py` (**hard gate**);
+   3. publish **`v<X.Y.Z>-rc<N>` as a GitHub pre-release.** The update check reads `/releases/latest`, which skips pre-releases, so users aren't notified;
+   4. run the tester agent (item 3) on the RC zips;
+   5. Vũ uses the RC on his real data, for at least one day;
+   6. any fix means a new RC from step 1;
+   7. once Vũ says so, **promote the same commit**: rebuild from the RC's commit with the final version, run `release_check.py` again, run the release review, then publish.
+   - **Version handling:** `_parse_version` in `ryos/notifications.py` reads `2.3.1-rc1` as `2.3.1`, so an RC build would not see the final as newer. Make the comparison treat a pre-release as older than its final (with a unit test), or document that RC users swap the zip by hand. The first is preferred.
+   - `__version__` for an RC is `X.Y.Z-rcN`. Update the "no `-dev` suffix" rule in `CLAUDE.md` to allow `-rcN` on RC builds only.
+3. **The `ryos-tester` agent** (`.claude/agents/ryos-tester.md`; Sonnet, medium effort; tools Read, Grep, Glob, Bash). It gets the behaviour map (step 13), `git log <last-tag>..HEAD`, and the RC zips. For each change, it drives the **built** app off screen with the `run-ryos` driver, in both layouts and for each relevant download, and works through the user flows around the change, every surface the map lists, not just the changed line. It never edits code. It reports `PASS` / `FAIL` per flow, with screenshots for failures and exact steps to reproduce. Any `FAIL` blocks promotion.
+4. **Vũ's manual checklist.** The release review lists only what no agent can check, e.g. the Claude Desktop and Claude Code connection, real data looking right, and the SmartScreen flow on a fresh download. It goes in the release's plan Status for Vũ to tick during the RC days.
+5. **The escape rule**, in `CLAUDE.md` and the behaviour map: every bug found after a release gets one line, "should have been caught by …", and that check is added (test, map entry, or `release_check.py` case).
+
+**Done when:**
+- `release_check.py` passes on a fresh build of all four zips, and fails on a planted fault (e.g. a zip with MCP in `windows`, or a broken fixture upgrade);
+- `release-ryos` describes and enforces the RC flow;
+- the pre-release version comparison is fixed and tested;
+- `ryos-tester` exists and has run once on a test RC;
+- the escape rule is written down.
+
 ### 6 — Release 2.3.1
-**Needs** steps 3, 4, 5 and 7–12, plus green CI.
-Run `/release-ryos`. Vũ names the version (suggested: 2.3.1, a patch release for fixes). The release-review gate must print `READY TO PUBLISH` before anything is pushed. Release notes name #26, #27, #29, #30 and #31.
+**Needs** steps 3, 4, 5 and 7–15, plus green CI.
+Run `/release-ryos` with the new flow from step 15. Vũ names the version (suggested: 2.3.1, a patch release for fixes). The steps:
+1. `release_check.py` must pass;
+2. publish `v2.3.1-rc1` as a pre-release;
+3. `ryos-tester` reports no `FAIL`;
+4. Vũ uses the RC for at least a day and ticks his manual checklist;
+5. promote the same commit to `v2.3.1`, where the release-review gate must print `READY TO PUBLISH` before anything is pushed. Release notes name #26, #27, #29, #30 and #31.
 **Done when** v2.3.1 is published with the four zips and `SHA256SUMS.txt`, and #26, #27, #29, #30 and #31 are closed with a link to the release.
 
 ## Order
 
-Steps 3, 4 and 5 are done. Steps 7–12 are independent of each other and can start now; do the bug fixes (9 and 11) first, since Vũ hits them every day. Step 6, the release, comes last.
+Steps 3, 4 and 5 are done. Order: the bug fixes 9 and 11 first (Vũ hits them every day), then 13 (the behaviour map), then 10 and 14 (both next to *Report a bug…*), 7, 8 and 12, which are built with the map. Then 15 (the test phase), and finally step 6, the release, through that phase.
 
 ## Status
 
@@ -154,8 +253,11 @@ Steps 3, 4 and 5 are done. Steps 7–12 are independent of each other and can st
 | 5 Loose ends | done, `5d100ad` (CLI on throwaway data, per shell; the 2.3.0 plan records what was run) |
 | 7 Publisher details and download check | — |
 | 8 Expose a group | — |
-| 9 Fix #29a freeze | — |
+| 9 Fix #29a freeze | done: the window drains run output in 50 ms slices and joins a run's lines (a chatty pipeline held it for 70 s in one turn); `qt_smoke` heavy-output check |
 | 10 #29b log easy to find | — |
 | 11 Fix #30 Quick Run | — |
 | 12 #31 newest log tab first | — |
+| 13 Behaviour map | — |
+| 14 Suggest a feature | — |
+| 15 Release test phase | — |
 | 6 Release 2.3.1 | — |
