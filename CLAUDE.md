@@ -92,6 +92,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Maximised list + detail layout: rules, wording | `ryos/detail.py`        |
 | Activity bar: up next, recent, summary       | `ryos/activity.py`      |
 | Report a bug: the filled-in GitHub issue link | `ryos/bugreport.py`    |
+| Suggest a feature: the filled-in GitHub issue link | `ryos/suggestion.py` |
 | Export / import / Delete All wording           | `ryos/configio.py`      |
 | Drag-and-drop reordering rules                 | `ryos/dragdrop.py`      |
 | Monitor work areas (pure geometry)             | `ryos/screens.py`       |

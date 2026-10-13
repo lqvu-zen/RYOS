@@ -98,9 +98,17 @@ def issue_body(env: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
-def issue_url(env: list[tuple[str, str]]) -> str:
-    """The link that opens a new, filled-in issue."""
-    url = f"{NEW_ISSUE}?" + urlencode({"labels": "bug", "body": issue_body(env)})
-    if len(url) > MAX_URL:          # never, with today's body -- but never broken
-        url = f"{NEW_ISSUE}?labels=bug"
+def new_issue_url(*, label: str, body: str, title: str = "") -> str:
+    """A link that opens a new, filled-in issue. Shared by the bug report and
+    the suggestion, so both drop the body the same way when it is too long:
+    the label (and title) still arrive, the link never breaks."""
+    fields = {"labels": label, **({"title": title} if title else {})}
+    url = f"{NEW_ISSUE}?" + urlencode({**fields, "body": body})
+    if len(url) > MAX_URL:
+        url = f"{NEW_ISSUE}?" + urlencode(fields)
     return url
+
+
+def issue_url(env: list[tuple[str, str]]) -> str:
+    """The link that opens a new, filled-in bug issue."""
+    return new_issue_url(label="bug", body=issue_body(env))

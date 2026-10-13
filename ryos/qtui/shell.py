@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
                                QScrollArea, QSizePolicy,
                                QSplitter, QTabWidget, QVBoxLayout, QWidget)
 
-from .. import activity, basefolder, bugreport, buildinfo
+from .. import activity, basefolder, bugreport, buildinfo, suggestion
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
@@ -491,7 +491,16 @@ class MainWindow(QMainWindow):
         self.activity_status.setObjectName("statusSummary")
         self.activity_status.hide()
         self.statusBar().addPermanentWidget(self.activity_status)
-        # Always there, and quiet: one click to a filled-in bug report.
+        # Always there, and quiet: one click to a suggestion or a filled-in
+        # bug report. The bug button is added last so it stays far right.
+        self.suggest_button = IconButton("lightbulb", role="muted",
+                                         hover_role="text", size=14,
+                                         palette=self._palette)
+        self.suggest_button.setObjectName("statusSuggest")
+        set_tooltip(self.suggest_button, suggestion.TOOLTIP)
+        self.suggest_button.setAccessibleName(suggestion.ACCESSIBLE_NAME)
+        self.suggest_button.clicked.connect(self.suggest_feature)
+        self.statusBar().addPermanentWidget(self.suggest_button)
         self.bug_button = IconButton("bug", role="muted", hover_role="text", size=14,
                                      palette=self._palette)
         self.bug_button.setObjectName("statusBug")
@@ -938,6 +947,10 @@ class MainWindow(QMainWindow):
             lambda: self.check_for_updates(manual=True))
         self._menu_icon(self.update_action, "import")
         help_menu.addAction(self.update_action)
+        self.suggest_action = QAction(suggestion.MENU_LABEL, self)
+        self.suggest_action.triggered.connect(self.suggest_feature)
+        self._menu_icon(self.suggest_action, "lightbulb")
+        help_menu.addAction(self.suggest_action)
         self.report_bug_action = QAction(bugreport.MENU_LABEL, self)
         self.report_bug_action.triggered.connect(self.report_bug)
         self._menu_icon(self.report_bug_action, "bug")
@@ -1772,6 +1785,12 @@ class MainWindow(QMainWindow):
         if self.update_banner is not None:
             self.update_banner.deleteLater()
             self.update_banner = None
+
+    def suggest_feature(self) -> None:
+        """Open a new GitHub issue with a few questions. Nothing is sent, and
+        there is no dialog: it holds nothing to show or attach."""
+        self.open_url(suggestion.issue_url(__version__, buildinfo.describe()))
+        self.statusBar().showMessage(suggestion.OPENED, 8000)
 
     def report_bug(self) -> None:
         """Open a new GitHub issue, filled in with this machine's versions.

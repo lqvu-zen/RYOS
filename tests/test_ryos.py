@@ -9668,6 +9668,79 @@ class TestBugReport(unittest.TestCase):
             self.assertEqual(path.parent, settings.LOG_DIR)
 
 
+class TestSuggestion(unittest.TestCase):
+    """Help -> Suggest a feature: a new, titled, labelled GitHub issue with
+    three questions and only the version -- nothing sent."""
+
+    def _parts(self, url):
+        from urllib.parse import parse_qs, urlparse
+        parts = urlparse(url)
+        return (f"{parts.scheme}://{parts.netloc}{parts.path}",
+                parse_qs(parts.query), parts.query)
+
+    def test_the_link_opens_a_new_titled_labelled_issue(self):
+        from ryos import bugreport, suggestion
+        url = suggestion.issue_url("2.3.1", "Windows build with AI agents")
+        base, query, raw = self._parts(url)
+        self.assertEqual(base, bugreport.NEW_ISSUE)
+        self.assertEqual(query["labels"], ["enhancement"])
+        self.assertEqual(query["title"], ["Suggestion: "])
+        self.assertIn("title=Suggestion%3A+", raw)
+        self.assertLess(len(url), bugreport.MAX_URL)
+
+    def test_the_body_asks_three_things(self):
+        from ryos import suggestion
+        body = suggestion.issue_body("2.3.1", "Windows build")
+        for want in ("**What would you like RYOS to do?**",
+                     "**What are you trying to get done, and how do you do it today?**",
+                     "**Anything else** (screenshots, examples)"):
+            self.assertIn(want, body)
+
+    def test_the_footer_is_version_and_download_only(self):
+        from ryos import bugreport, suggestion
+        body = suggestion.issue_body("2.3.1", "Windows build with AI agents")
+        self.assertTrue(body.endswith("---\nRYOS 2.3.1 (Windows build with AI agents)"))
+        for banned in ("OS:", "Python", "Qt", "Theme", "Layout",
+                       bugreport.LOG_HINT, "%APPDATA%"):
+            self.assertNotIn(banned, body)
+        self.assertNotIn("log", body.lower())
+
+    def test_every_download_names_itself(self):
+        from ryos import buildinfo, suggestion
+        for which in buildinfo.DOWNLOADS:
+            word = buildinfo.describe(which)
+            body = suggestion.issue_body("2.3.1", word)
+            self.assertTrue(body.endswith(f"RYOS 2.3.1 ({word})"), which)
+        self.assertEqual(buildinfo.describe(buildinfo.WINDOWS), "Windows build")
+
+    def test_too_long_drops_the_body_but_keeps_title_and_label(self):
+        from ryos import bugreport
+        url = bugreport.new_issue_url(label="enhancement", title="Suggestion: ",
+                                      body="x" * bugreport.MAX_URL)
+        self.assertLessEqual(len(url), bugreport.MAX_URL)
+        _, query, _ = self._parts(url)
+        self.assertEqual(query["labels"], ["enhancement"])
+        self.assertEqual(query["title"], ["Suggestion: "])
+        self.assertNotIn("body", query)
+
+    def test_the_bug_report_link_is_unchanged(self):
+        from urllib.parse import urlencode
+        from ryos import bugreport
+        env = bugreport.environment("2.3.1", frozen=True, os_name="W", python="3",
+                                    qt="6", theme="light", layout="normal")
+        want = f"{bugreport.NEW_ISSUE}?" + urlencode(
+            {"labels": "bug", "body": bugreport.issue_body(env)})
+        self.assertEqual(bugreport.issue_url(env), want)
+        self.assertNotIn("title=", want)
+
+    def test_the_icon_exists_without_qt(self):
+        root = Path(__file__).resolve().parents[1]
+        src = (root / "ryos" / "qtui" / "icons.py").read_text(encoding="utf-8")
+        self.assertIn('"lightbulb":', src)
+        from ryos import suggestion
+        self.assertNotIn("PySide6", Path(suggestion.__file__).read_text(encoding="utf-8"))
+
+
 class TestCopyBetweenGroups(unittest.TestCase):
     """Copy / Paste and Copy to: a script or pipeline from one group into
     another, beside Clone (which copies within its own group)."""

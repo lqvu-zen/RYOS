@@ -111,5 +111,6 @@ files = [
     "ryos/basefolder.py",
     "ryos/activity.py",
     "ryos/bugreport.py",
+    "ryos/suggestion.py",
     "design-system/build.py",
 ]

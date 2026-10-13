@@ -739,7 +739,8 @@ def step_keyboard_and_menu(s: Session) -> None:
 
 def step_help_and_log(s: Session) -> None:
     """Report a bug opens the browser, then shows where the log is; Help ->
-    Open log folder opens that folder (TW-18, TW-25)."""
+    Open log folder opens that folder (TW-18, TW-25); Suggest a feature
+    opens a titled, labelled issue (TW-26)."""
     from pathlib import Path
 
     from ryos import settings as settings_mod
@@ -767,6 +768,30 @@ def step_help_and_log(s: Session) -> None:
         problem(f"the log folder was opened as {s.folders}, not {want}")
     ok("Report a bug opens one link then the log dialog; its button and "
        "Help -> Open log folder both open the log folder")
+
+    # Suggest a feature (TW-26): button and menu, a titled, labelled issue.
+    from urllib.parse import parse_qs, urlparse
+
+    from ryos import suggestion
+    s.urls.clear()
+    win.suggest_button.click()
+    win.suggest_action.trigger()
+    s.pump(0.2)
+    if len(s.urls) != 2:
+        problem(f"Suggest a feature opened {len(s.urls)} links, not 2")
+    for url in s.urls:
+        query = parse_qs(urlparse(url).query)
+        if query.get("labels") != ["enhancement"] \
+                or query.get("title") != ["Suggestion: "]:
+            problem(f"the suggestion link is not titled and labelled: {url[:120]}")
+    if win.statusBar().currentMessage() != suggestion.OPENED:
+        problem("suggesting did not say what happened: "
+                f"{win.statusBar().currentMessage()!r}")
+    sb, bb = win.suggest_button, win.bug_button
+    if not sb.isVisible() or sb.x() >= bb.x():
+        problem("the suggestion button is not visible and left of the bug button")
+    ok("Suggest a feature opens a titled, labelled issue from the status bar "
+       "and Help, says so, and sits left of the bug button")
 
 
 def step_favourite_and_delete(s: Session) -> None:

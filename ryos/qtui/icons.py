@@ -75,6 +75,9 @@ SHAPES: dict[str, str] = {
              '<circle cx="4.5" cy="18" r="1.2" fill="{c}"/>'),
     "search": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
     "activity": '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+    # Suggest a feature (the status bar, Help).
+    "lightbulb": ('<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/>'
+                  '<path d="M9 18h6"/><path d="M10 22h4"/>'),
     # Report a bug (the status bar, Help).
     "bug": ('<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/>'
             '<path d="M9 7.13v-1a3 3 0 1 1 6 0v1"/>'

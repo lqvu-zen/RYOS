@@ -4834,6 +4834,64 @@ def check_bug_report(app):
     print("  [ok] bug report: status-bar button and Help menu open a filled-in issue")
 
 
+def check_suggestion(app):
+    """The status bar's lightbulb and Help -> Suggest a feature both open a
+    new, titled, labelled GitHub issue -- no dialog, nothing sent."""
+    from urllib.parse import parse_qs, urlparse
+
+    from ryos import __version__, buildinfo, suggestion
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
+    urls: list = []
+    dialogs: list = []
+    win.open_url = lambda url: urls.append(url)
+    win.run_dialog = lambda dlg: dialogs.append(dlg)
+    win.show()
+    app.processEvents()
+    try:
+        btn, bug = win.suggest_button, win.bug_button
+        if not btn.isVisible() or btn.width() < 24 or not btn.accessibleName():
+            PROBLEMS.append("the suggestion button is missing, too small or unnamed")
+        if btn.toolTip() != suggestion.TOOLTIP:
+            PROBLEMS.append(f"the suggestion button's tooltip: {btn.toolTip()!r}")
+        if not btn.x() < bug.x():
+            PROBLEMS.append("the suggestion button is not left of the bug button")
+        bar = win.statusBar()
+        between = [w for w in bar.findChildren(type(btn))
+                   if w.isVisible() and btn.x() < w.x() < bug.x()]
+        if between:
+            PROBLEMS.append("something sits between the suggestion and bug buttons")
+        btn.click()
+        win.suggest_action.trigger()
+        if dialogs:
+            PROBLEMS.append("suggesting a feature opened a dialog")
+        if len(urls) != 2:
+            PROBLEMS.append(f"the suggestion button and menu opened {len(urls)} "
+                            f"links, not 2")
+        for url in urls:
+            query = parse_qs(urlparse(url).query)
+            body = query.get("body", [""])[0]
+            if query.get("labels") != ["enhancement"] \
+                    or query.get("title") != ["Suggestion: "] \
+                    or not body.endswith(f"RYOS {__version__} ({buildinfo.describe()})"):
+                PROBLEMS.append(f"the suggestion link is not filled in: {url[:120]}")
+        if bar.currentMessage() != suggestion.OPENED:
+            PROBLEMS.append(f"suggesting did not say what happened: "
+                            f"{bar.currentMessage()!r}")
+        texts = [a.text() for a in win.menuBar().actions()[-1].menu().actions()]
+        want = [win.update_action.text(), suggestion.MENU_LABEL,
+                win.report_bug_action.text(), win.open_log_action.text()]
+        if texts != want:
+            PROBLEMS.append(f"the Help menu order is {texts}, not {want}")
+    finally:
+        win.close()
+        win.deleteLater()
+    print("  [ok] suggestion: status-bar button and Help menu open a titled, "
+          "labelled issue")
+
+
 def check_newer_database_is_refused(app):
     """Data a newer RYOS reshaped: the window says why and stops, before it
     is built -- and the file is left as it was."""
@@ -5212,6 +5270,8 @@ def check_maximised_layout(app):
                 or "next: P, Tomorrow 08:00" not in win.activity_status.text():
             PROBLEMS.append(f"Up next: {[(e.name, e.meta) for e in up]}; status "
                             f"{win.activity_status.text()!r}")
+        if not win.suggest_button.isVisible():
+            PROBLEMS.append("the suggestion button is not visible when maximised")
         # The rail hides and shows it.
         saved: list = []
         win._save_settings = lambda s: saved.append(dict(s))
@@ -5758,6 +5818,7 @@ def main() -> int:
     check_cli_run_reaches_the_window(app)
     check_newer_database_is_refused(app)
     check_bug_report(app)
+    check_suggestion(app)
     check_maximised_layout(app)
     check_heavy_output_stays_responsive(app)
     check_ampersands_show(app)
