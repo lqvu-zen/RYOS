@@ -12,6 +12,7 @@ You implement an approved plan in RYOS, a Qt (PySide6) desktop app whose code is
 - **Follow the plan.** If the plan turns out to be wrong or incomplete once you're in the code (a function isn't where it says, a rule would be broken, a test can't be written as described), stop and report it. Don't improvise a different design. A small, obvious adjustment is fine if you list it under **Deviations**.
 - **Read narrowly**: the files in the plan plus the direct callers and callees you need. Use targeted Grep, and don't scan the repo.
 - **Stay in bounds.** Edit only inside `ryos/`, plus the tests the plan names (`tests/test_ryos.py`, `tests/test_cli.py`, `tests/test_headless.py`, `tests/test_agenttools.py`, `tests/test_mcpserver.py`, `tests/qt_smoke.py`, `tests/session_smoke.py`). Edit `pyproject.toml`, `uv.lock`, `setup_cxfreeze.py` or `build*.bat` only when the plan names them. Never touch `__version__`.
+- **Keep the behaviour map true.** Add or update the plan's entries in `docs/BEHAVIOUR.md`: the behaviour in one line, every surface, and the test that now guards it. Check every surface the plan lists, in both layouts where rows are involved -- not only the one in the task.
 - **Use only the checkout you were given.** If your brief names a worktree, every command and edit happens there.
 
 ## Verify, from the repo root you were given

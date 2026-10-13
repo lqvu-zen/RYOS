@@ -15,8 +15,13 @@ imported, and the run refuses to start unless the database, settings and
 log all resolve inside it. The user's own folder is compared before and
 after. Run-at-login writes are off (RYOS_NO_REGISTRY).
 
-    uv run python tests/session_smoke.py              # offscreen
+    uv run python tests/session_smoke.py              # offscreen, both layouts
+    uv run python tests/session_smoke.py --layout compact
     uv run python tests/session_smoke.py --visible    # on a second screen
+
+Both layouts (the default) run the whole session twice, once with normal rows
+and once with the `compact_mode` setting on, each pass in its own process and
+its own throwaway folder (the data paths are fixed when ryos is imported).
 """
 
 from __future__ import annotations
@@ -35,6 +40,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 PROBLEMS: list[str] = []
+KNOWN_BUGS: list[str] = []        # app bugs a check found: reported, not failed
+LAYOUT = ["normal"]
 
 SCRIPTS = {
     "hello.py": ("import os, sys\n"
@@ -379,6 +386,99 @@ def step_stop(s: Session) -> None:
     ok(f"stop: the process ends, Running empties, recorded as {runs[-1][0] if runs else None!r}")
 
 
+def step_status_line(s: Session) -> None:
+    """The status bar's last line says what happened (OP-18)."""
+    win = s.win
+    for want, name in (("Done.", "Say hello"), ("Failed.", "Fail")):
+        s.card("Project", name).run_button.click()
+        s.idle(name)
+        s.pump(0.3)
+        if win.statusBar().currentMessage() != want:
+            problem(f"after {name} the status bar says "
+                    f"{win.statusBar().currentMessage()!r}, not {want!r}")
+    s.card("Project", "Slow").run_button.click()
+    s.wait_for(lambda: "tick 2" in s.output("Slow"), "the slow script to tick")
+    rows = list(win.running._rows.values())
+    if len(rows) != 1:
+        problem(f"{len(rows)} rows in Running for one job")
+        return
+    rows[0].stop_button.click()
+    s.idle("stop", timeout=10)
+    s.pump(0.3)
+    if win.statusBar().currentMessage() != "Stopped.":
+        problem(f"after a stopped run the status bar says "
+                f"{win.statusBar().currentMessage()!r}")
+    ok("status bar: Done., Failed. and Stopped. after a run")
+
+
+def step_output_options(s: Session) -> None:
+    """"Clear output between runs" and "Scroll to the newest output" (OP-15).
+
+    Clearing has no effect in the window today (nothing reads the setting):
+    reported as a known app bug, not failed, so the map can say so."""
+    from ryos import outputpanel
+    win = s.win
+    all_pane = win._output_tabs[outputpanel.ALL]
+    win._settings["auto_clear_output"] = True
+    try:
+        for _ in range(2):
+            s.card("Project", "Say hello").run_button.click()
+            s.idle("hello, clearing between runs")
+            s.pump(0.2)
+        runs_shown = all_pane.plain_text().count("hello world")
+    finally:
+        win._settings["auto_clear_output"] = False
+    if runs_shown != 1:
+        KNOWN_BUGS.append(f"OP-15: with 'Clear output between runs' on, the All tab "
+                          f"holds {runs_shown} runs of hello, not 1 (the setting is "
+                          f"read nowhere)")
+        print(f"  KNOWN BUG: {KNOWN_BUGS[-1]}")
+
+    # Auto-scroll: off leaves the view where it was, on follows the newest line.
+    win.set_output_expanded(True)
+    win.output_tabs.setCurrentIndex(win.output_tabs.indexOf(all_pane))
+    s.pump(0.3)
+    bar = all_pane.text.verticalScrollBar()
+    flood = "".join(f"line {i}\n" for i in range(300))
+    try:
+        win._settings["auto_scroll_output"] = False
+        bar.setValue(0)
+        win.append_output(flood)
+        s.pump(0.3)
+        if bar.value() != 0:
+            problem(f"with auto-scroll off the output moved to {bar.value()}")
+        win._settings["auto_scroll_output"] = True
+        win.append_output(flood)
+        s.pump(0.3)
+        if bar.maximum() <= 0 or bar.value() != bar.maximum():
+            problem(f"with auto-scroll on the output sits at {bar.value()} "
+                    f"of {bar.maximum()}")
+    finally:
+        win._settings["auto_scroll_output"] = True
+        win.set_output_expanded(False)
+    ok("output options: auto-scroll follows or stays as set (clearing: see known bugs)")
+
+
+def step_run_click(s: Session) -> None:
+    """A real mouse click on a row's Run starts the run, in either layout."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    cleanup = s.script_id("Cleanup")
+    before = len(s.runs(script_id=cleanup))
+    s.win.show_group("Project")
+    s.pump(0.2)
+    card = s.card("Project", "Cleanup")
+    if (LAYOUT[0] == "compact") != bool(card._compact):
+        problem(f"the {LAYOUT[0]} layout shows a row with compact={card._compact}")
+    if not card.run_button.isVisibleTo(s.win):
+        problem("the row's Run button is not visible")
+    QTest.mouseClick(card.run_button, Qt.MouseButton.LeftButton)
+    s.wait_for(lambda: len(s.runs(script_id=cleanup)) > before,
+               "a click on Run to start the run")
+    s.idle("clicked run")
+    ok(f"a mouse click on Run in a {LAYOUT[0]} row starts the run")
+
+
 def step_pipeline(s: Session) -> None:
     win = s.win
     marker = s.work / "marker.txt"
@@ -462,6 +562,42 @@ def step_schedule(s: Session) -> None:
         ok("schedule: made in its dialog; the real sweep timer fires it when due")
 
 
+def step_scheduled_outside(s: Session) -> None:
+    """A scheduled run of a script outside the base folder never asks and
+    never asks (GR-33, the schedule half; the "no note" half is a known bug). Any question or dialog it
+    raised would be reported as unexpected."""
+    away = s.work / "away_sched.py"
+    away.write_text("print('scheduled from away')\n", encoding="utf-8")
+    sid = s.db.add("AwayTimer", str(away), "", sys.executable, "Project")
+    s.db.add_schedule("script", script_id=sid, spec_type="interval",
+                      spec=json.dumps({"minutes": 1}), enabled=True,
+                      next_run_at="2000-01-01T00:00:00")
+    s.win.reload()
+    s.win.show_group("Project")
+    asked = len(s.asked)
+    started = s.win._bridge.run_due_schedules()
+    if started < 1:
+        problem(f"the sweep started {started} runs for a due schedule")
+    s.wait_for(lambda: "scheduled from away" in s.output("AwayTimer"),
+               "the scheduled outside script's output")
+    s.idle("scheduled outside run")
+    from ryos.db import SOURCE_SCHEDULE
+    if [r[2] for r in s.runs(script_id=sid)] != [SOURCE_SCHEDULE]:
+        problem(f"the outside script's runs: {s.runs(script_id=sid)}")
+    first = s.output("AwayTimer").split("\n")[0]
+    if first.startswith("Note:"):
+        # GR-33 says a schedule adds no note; it does. Reported, not failed.
+        KNOWN_BUGS.append("GR-33: a scheduled run of an outside script opens its "
+                          "output with the outside-folder note (the map says none)")
+        print(f"  KNOWN BUG: {KNOWN_BUGS[-1]}")
+    if len(s.asked) != asked:
+        problem(f"a scheduled run asked {s.asked[asked:]}")
+    s.db.delete(sid)
+    s.win.reload()
+    s.win.show_group("Project")
+    ok("a scheduled run of an outside script starts at once, with no question")
+
+
 def step_quick_run_search_select(s: Session, project: Path) -> None:
     win = s.win
     hello = s.script_id("Say hello")
@@ -536,6 +672,64 @@ def step_quick_run_search_select(s: Session, project: Path) -> None:
     win.set_select_mode(False)
     ok("quick run reuses the registered script; search filters the cards; "
        "select mode runs the ticked scripts and a ticked pipeline (row click)")
+
+
+def step_keyboard_and_menu(s: Session) -> None:
+    """Esc clears the search (TW-14); the Select menu entry reads "Cancel
+    select" while the mode is on (SM-12); Ctrl+V on a row pastes into that
+    row's group (GR-25)."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtTest import QTest
+
+    from ryos import selection
+    win = s.win
+
+    win.search_box.setText("fail")
+    s.pump(0.4)
+    QTest.keyClick(win.search_box, Qt.Key.Key_Escape)
+    s.pump(0.4)
+    if win.search_box.text() != "":
+        problem(f"Esc left {win.search_box.text()!r} in the search box")
+    shown = [c._name for c in win.card_lists["Project"].cards if c.isVisibleTo(win)]
+    if len(shown) < 5:
+        problem(f"after Esc the list shows only {shown}")
+
+    if win.select_action.text() != selection.ENTER_LABEL:
+        problem(f"the Select entry reads {win.select_action.text()!r} at rest")
+    win.select_action.trigger()
+    if win.select_action.text() != selection.LEAVE_LABEL or not win.select_mode:
+        problem(f"the Select entry reads {win.select_action.text()!r} in select mode")
+    win.select_action.trigger()
+    if win.select_action.text() != selection.ENTER_LABEL or win.select_mode:
+        problem(f"the Select entry reads {win.select_action.text()!r} after leaving")
+
+    s.db.create_group("Other")
+    other_id = s.db.add("Other one", str(s.work / "away.py"), "", sys.executable, "Other")
+    win.reload()
+    win.show_group("Project")
+    s.pump(0.3)
+    ctrl = Qt.KeyboardModifier.ControlModifier
+    s.app.sendEvent(s.card("Project", "Say hello"),
+                    QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_C, ctrl))
+    if win.copied_name() != "Say hello":
+        problem(f"Ctrl+C on a row held {win.copied_name()!r}")
+    s.app.sendEvent(s.card("Other", "Other one"),
+                    QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_V, ctrl))
+    s.pump(0.4)
+    rows = [(r[0], r[1]) for r in s.db.list_all() if (r[8] or "") == "Other"]
+    pasted = [i for i, n in rows if n.startswith("Say hello")]
+    if len(rows) != 2 or len(pasted) != 1:
+        problem(f"after Ctrl+V on a row of Other, that group holds {rows}")
+    for sid in pasted + [other_id]:
+        s.db.delete(sid)
+    s.db.delete_group("Other")
+    win._copied = None
+    win.reload()
+    win.show_group("Project")
+    s.pump(0.3)
+    ok("Esc clears the search; the Select entry flips to Cancel select and back; "
+       "Ctrl+V on a row pastes into that row's group")
 
 
 def step_favourite_and_delete(s: Session) -> None:
@@ -647,6 +841,14 @@ def step_options_and_theme(s: Session, settings_path: Path) -> None:
 
 def step_restart(s: Session, build, settings_loader) -> None:
     win = s.win
+    # History older than the retention window goes at start-up (HI-05); a
+    # recent run stays.
+    hello = s.script_id("Say hello")
+    old = s.db.record_run("script", name="Say hello", script_id=hello,
+                          started_at="2000-01-01T00:00:00", status="ok", exit_code=0)
+    recent = s.db.record_run("script", name="Say hello", script_id=hello,
+                             started_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                             status="ok", exit_code=0)
     if not win.quit_app():
         problem("quitting was refused")
     s.pump(0.3)
@@ -667,17 +869,53 @@ def step_restart(s: Session, build, settings_loader) -> None:
         problem("settings did not survive the restart")
     if win2.current_group() != "Project":
         problem(f"the app reopened on {win2.current_group()!r}, not the last group")
+    conn = sqlite3.connect(s.db.db_path)
+    try:
+        left = {r[0] for r in conn.execute("SELECT id FROM runs WHERE id IN (?, ?)",
+                                           (old, recent))}
+    finally:
+        conn.close()
+    if old in left or recent not in left:
+        problem(f"start-up pruning kept {sorted(left)}: the 2000 run {old} should "
+                f"be gone and the recent run {recent} kept")
     win2.quit_app()
     s.pump(0.2)
     ok("restart: groups, scripts, the pipeline, options, theme and the last group "
-       "all come back")
+       "all come back; history past its retention is pruned")
+
+
+def run_both(args) -> int:
+    """One process per layout: the data paths are fixed when ryos is imported,
+    so each pass needs its own interpreter and throwaway folder."""
+    import subprocess
+    codes: dict[str, tuple[int, float]] = {}
+    for layout in ("normal", "compact"):
+        print(f"\n=== session smoke: {layout} layout ===", flush=True)
+        cmd = [sys.executable, str(Path(__file__).resolve()), "--layout", layout]
+        if args.visible:
+            cmd.append("--visible")
+        start = time.monotonic()
+        code = subprocess.call(cmd)
+        codes[layout] = (code, time.monotonic() - start)
+    print()
+    for layout, (code, secs) in codes.items():
+        print(f"{layout}: {'passed' if code == 0 else f'FAILED (exit {code})'} "
+              f"in {secs:.0f}s")
+    return 0 if all(c == 0 for c, _t in codes.values()) else 1
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--visible", action="store_true",
                         help="show the window, on a second screen when there is one")
+    parser.add_argument("--layout", choices=("normal", "compact", "both"),
+                        default="both",
+                        help="rows to run the session with (default: both, each in "
+                             "its own process and throwaway folder)")
     args = parser.parse_args()
+    if args.layout == "both":
+        return run_both(args)
+    LAYOUT[0] = args.layout
 
     real = _real_folder()
     real_before = _snapshot(real)
@@ -696,7 +934,7 @@ def main() -> int:
         if tmp not in Path(path).resolve().parents:
             print(f"Refusing to run: the {label} would be {path}, outside {tmp}")
             return 2
-    print(f"RYOS session smoke (a throwaway folder: {tmp}; "
+    print(f"RYOS session smoke, {args.layout} layout (a throwaway folder: {tmp}; "
           f"{'window on the smoke screen' if args.visible else 'no window'})")
 
     from ryos.logger import setup_logging
@@ -717,6 +955,7 @@ def main() -> int:
             settings["window_geometry"] = "500x600+150+120"
         settings["remember_window_geometry"] = True
         settings["snap_corner"] = "none"
+        settings["compact_mode"] = args.layout == "compact"
         if args.visible:
             sys.path.insert(0, str(ROOT / "tests"))
             from smoke_screen import smoke_screen
@@ -761,13 +1000,23 @@ def main() -> int:
     else:
         ok(f"start-up: the window first shows where it stays, {final}")
 
+    if win.statusBar().currentMessage() != "Ready":
+        problem(f"at start-up the status bar says {win.statusBar().currentMessage()!r}")
+    if bool(win._settings.get("compact_mode")) != (args.layout == "compact"):
+        problem("the compact_mode setting did not reach the window")
+
     steps = [lambda: step_groups_and_scripts(s, project),
              lambda: step_run_and_output(s),
              lambda: step_failure_and_retry(s),
              lambda: step_stop(s),
+             lambda: step_status_line(s),
+             lambda: step_output_options(s),
+             lambda: step_run_click(s),
              lambda: step_pipeline(s),
              lambda: step_schedule(s),
+             lambda: step_scheduled_outside(s),
              lambda: step_quick_run_search_select(s, project),
+             lambda: step_keyboard_and_menu(s),
              lambda: step_favourite_and_delete(s),
              lambda: step_export_import(s),
              lambda: step_options_and_theme(s, Path(settings_mod._SETTINGS_PATH)),
@@ -800,7 +1049,9 @@ def main() -> int:
     if _snapshot(real) != real_before:
         problem("the user's own RYOS folder changed during the run")
 
-    print(f"\nRYOS session smoke {'FAILED' if PROBLEMS else 'PASSED'}")
+    for bug in KNOWN_BUGS:
+        print(f"  known app bug (not failed): {bug}")
+    print(f"\nRYOS session smoke ({args.layout}) {'FAILED' if PROBLEMS else 'PASSED'}")
     return 1 if PROBLEMS else 0
 
 

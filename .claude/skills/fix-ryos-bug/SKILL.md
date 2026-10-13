@@ -59,6 +59,16 @@ Agent({ description: "...", subagent_type: "ryos-implementer", model: "opus", ef
 | Stylesheet — every colour, font and spacing rule | `ryos/qtui/stylesheet.py` |
 | `__version__` | `ryos/__init__.py` |
 
+## The behaviour map (`docs/BEHAVIOUR.md`)
+
+Most RYOS behaviours show up in several places -- normal and compact rows, favourite chips, the All tab, the maximised detail pane, select mode, scripts *and* pipelines, the window *and* the CLI. A change that reaches one place and not the others is how "working on A breaks B" happened (#27, #28, #30, the copied script that lost its star). `docs/BEHAVIOUR.md` lists, per area, each behaviour, **every surface** it appears on, and the test that guards it (or **untested**). Use it in every phase:
+
+- **Locate (step 2):** the locator returns the map rows for the area(s) the change touches, verbatim, with their IDs.
+- **Design (step 3):** paste those rows into the brief. The plan lists **every surface** the change touches, from the map, and says how each one is kept working.
+- **Implement (step 4):** the implementer adds or updates the map entries -- a bug fix updates its entry and names its regression test; a new behaviour gets a new entry -- and checks every surface listed, in both layouts where rows are involved.
+- **Review (step 5):** the reviewer checks each listed surface, not only the one in the task, and that the map was updated. A surface left unchecked, or a missing entry, is a blocker.
+- **Commit (step 6):** `docs/BEHAVIOUR.md` goes in the same commit as the change.
+
 ## Architecture rules that always apply
 
 These are the invariants that make RYOS work. Most "looked fine, broke in practice" bugs come from violating one of them, so internalize the *why*, not just the rule. **This is the canonical list** — when a brief below says to include the architecture rules, paste this whole section in verbatim rather than summarizing it; a partial list is how a rule quietly gets dropped.

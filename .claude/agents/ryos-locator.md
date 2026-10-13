@@ -21,7 +21,8 @@ Use exactly these sections:
 2. **Excerpts**: the relevant code quoted **verbatim**, each headed with `path:start-end`. Include the target function plus its direct callers and callees. Don't paraphrase code; quote it.
 3. **Already exists**: anything that could be extended or wired up instead of rebuilt, or "nothing found".
 4. **Possibly relevant rules**: if code near the target looks like it touches one of the architecture rules in your brief (a worker thread reaching a widget, a top-level module importing PySide6, a raw SQL call in the UI, a widened `db.get()` row), quote it and name the rule. Flag it; don't judge it.
-5. **Not found**: anything the brief asked for that you could not locate, and what you searched for.
+5. **Behaviour map**: the rows of `docs/BEHAVIOUR.md` for every area the change touches, quoted verbatim with their IDs, so the designer can list every surface the behaviour appears on. Read the map with targeted Grep on the area's heading and keywords.
+6. **Not found**: anything the brief asked for that you could not locate, and what you searched for.
 
 ## Never
 

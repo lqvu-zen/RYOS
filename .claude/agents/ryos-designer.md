@@ -20,6 +20,7 @@ Produce a plan, not code. The plan answers:
 - **UI placement**, and behavior while a script runs.
 - **Thread-safety touch points**: every place a worker reaches the UI, which must be only via the output queue or a `MainThreadInvoker`.
 - **Regression surface**: the existing behaviors next to the change that must not break, and the tests that cover them.
+- **Surfaces**: every surface the change touches, from the `docs/BEHAVIOUR.md` rows in your brief (normal and compact rows, favourite chips, All tab, detail pane, select mode, scripts and pipelines, window and CLI ...), and how each keeps working. Name the map entry to add or update.
 - For an improvement, the **root cause** of the current limitation, so the change targets it.
 - **Open questions**: anything ambiguous, as a question for the user. Never guess.
 
@@ -31,6 +32,7 @@ Prefer the smallest change that is correct. If the locator found something that 
 - **Failing test**: for testable non-UI logic, a unit test in the `TestScriptDB*` style of `tests/test_ryos.py` that fails on the current code and will pass once fixed. Confirm it fails if you can do that without editing tracked files, for example a scratch test file outside the repo that puts the repo on `sys.path`. If you couldn't run it, say "unconfirmed". For a purely visual bug, describe the `run-ryos` check that shows it.
 - **Fix plan**: the files and functions to change, one line of purpose each.
 - **Risks**: regressions to watch.
+- **Surfaces**: every surface the bug's behaviour appears on, from the `docs/BEHAVIOUR.md` rows in your brief -- does the bug or the fix reach the others? Name the map entry to update, with its regression test.
 - **Open questions**, as above.
 
 ## Release-plan steps

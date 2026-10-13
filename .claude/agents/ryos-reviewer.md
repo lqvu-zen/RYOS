@@ -29,8 +29,9 @@ Use Bash only for `git diff` / `git show` / `git log` and to run the tests. Neve
    - no full `reload()` on run/stop;
    - colours through the palette;
    - `__version__` untouched.
-4. **Tests**: they would fail without the change. A test that passes either way proves nothing. For a bug fix, confirm the change addresses the stated root cause, not just the symptom.
-5. **Done when**: if the brief includes a release-plan step, check every "Done when" item. Mark each one **met**, **not met** or **needs a human** (a clean-machine test, a real Claude Desktop connection), with evidence.
+4. **Every surface**: using the `docs/BEHAVIOUR.md` rows in your brief (or the map itself), check that each surface the changed behaviour appears on still works -- normal and compact rows, favourite chips, the All tab, the detail pane, select mode, scripts and pipelines, window and CLI -- not only the one in the task. Check the map entry was added or updated with its test. An unchecked surface or a missing entry is a blocker.
+5. **Tests**: they would fail without the change. A test that passes either way proves nothing. For a bug fix, confirm the change addresses the stated root cause, not just the symptom.
+6. **Done when**: if the brief includes a release-plan step, check every "Done when" item. Mark each one **met**, **not met** or **needs a human** (a clean-machine test, a real Claude Desktop connection), with evidence.
 
 ## Report (diff mode)
 
