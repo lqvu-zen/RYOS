@@ -2,7 +2,7 @@
 
 `ui/app.py` decided both inline while writing into a Tk Text widget. The rules
 are the same whichever widget holds the text, so they live here and both
-front-ends route through them (docs/plans/qt-migration.md).
+front-ends route through them (docs/archive/qt-migration.md).
 
 Pure: takes keys and counts, returns keys and counts.
 """

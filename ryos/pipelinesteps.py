@@ -3,7 +3,7 @@
 `ui/pipeline.py` built the row label inline while filling a Tk listbox, and
 the move-up/move-down handlers each rebuilt the id list by hand. Both are the
 same whichever toolkit draws the list, so they live here and the Tk and Qt
-editors share them (docs/plans/qt-migration.md).
+editors share them (docs/archive/qt-migration.md).
 
 Pure: takes step rows as returned by `db.list_pipeline_steps()`, returns
 strings and lists.

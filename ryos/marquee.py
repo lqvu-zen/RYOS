@@ -3,7 +3,7 @@
 `ui/widgets.py` had this arithmetic inline in a `tk.Canvas` subclass, and Qt
 has no marquee widget either, so both toolkits need the same rules. They live
 here so there is one answer rather than two that drift
-(docs/plans/qt-migration.md).
+(docs/archive/qt-migration.md).
 
 Pure: no widget, no timer, no toolkit. The caller measures the text, owns the
 timer, and paints.

@@ -4,7 +4,7 @@ The CRUD helpers here answer the questions ``RYOSApp`` used to answer inline
 between dialog calls -- what to call a clone, and which tab to select once the
 one you were on has been renamed or deleted. Keeping them here makes them
 testable and means they survive the Qt migration
-(docs/plans/qt-migration.md).
+(docs/archive/qt-migration.md).
 """
 
 from __future__ import annotations

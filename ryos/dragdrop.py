@@ -4,7 +4,7 @@ Pure functions extracted from ``RYOSApp``'s drag handlers so the geometry *and*
 the decisions can be unit-tested without a display. Callers resolve screen
 coordinates and widget state from widgets; these functions decide what should
 happen. Nothing here imports a toolkit, which is also what lets the rules
-survive the Qt migration (docs/plans/qt-migration.md).
+survive the Qt migration (docs/archive/qt-migration.md).
 """
 
 from __future__ import annotations

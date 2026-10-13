@@ -51,7 +51,7 @@ uv run --extra mcp ryos mcp      # MCP server over stdio, for AI agents
 
 Name an item by its name, `group/name` or `#id` (an ambiguous name is refused with the candidates). Exit codes: the script's own; 1 failed; 124 timed out; 125 refused by RYOS; 130 interrupted. Runs are recorded in History as `cli`. Its tests (`tests/test_cli.py`, `tests/test_headless.py`) run real tiny scripts against throwaway databases.
 
-`ryos mcp` serves only the scripts and pipelines ticked **Available to agents** (off by default; never set by an import), runs them with their own parameters or a preset (no free-text arguments), and pages their output. Its rules live in `ryos/agenttools.py`, tested without the SDK; `tests/test_mcpserver.py` drives the real server with a real client and needs `--with "mcp>=2.3,<3"` (CI has it). Plan and decisions: `docs/plans/agent-support.md`.
+`ryos mcp` serves only the scripts and pipelines ticked **Available to agents** (off by default; never set by an import), runs them with their own parameters or a preset (no free-text arguments), and pages their output. Its rules live in `ryos/agenttools.py`, tested without the SDK; `tests/test_mcpserver.py` drives the real server with a real client and needs `--with "mcp>=2.3,<3"` (CI has it). Plan and decisions: `docs/archive/agent-support.md`.
 
 ## Versions
 

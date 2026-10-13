@@ -4,7 +4,7 @@
 them back in `_save`, where the numeric fields were five near-identical
 ``try/except ValueError`` blocks differing only in their bounds and fallback.
 That arithmetic is the same whichever toolkit draws the form, so it lives here
-and both front-ends coerce through it (docs/plans/qt-migration.md).
+and both front-ends coerce through it (docs/archive/qt-migration.md).
 
 Pure: no toolkit, no widget, no settings file. `coerce()` never raises and
 never returns something the app cannot use — an unparseable entry falls back

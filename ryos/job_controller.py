@@ -89,7 +89,7 @@ class Refusal:
 
     Kept as data rather than a messagebox call so the decision is testable and
     does not name a toolkit -- the Qt port shows the same strings through a
-    different dialog (docs/plans/qt-migration.md).
+    different dialog (docs/archive/qt-migration.md).
     """
 
     title: str

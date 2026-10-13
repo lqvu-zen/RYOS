@@ -9,7 +9,7 @@ It is UI-free. The one thing it cannot do for itself is hop back onto the main
 thread, so the caller injects a ``schedule`` function (Tk's ``after(0, ...)``,
 Qt's ``QTimer.singleShot(0, ...)``) and a ``on_ready`` callback to refresh
 whatever is showing. That is the same shape as ``JobController``, and it is
-what lets this survive the Qt migration (docs/plans/qt-migration.md).
+what lets this survive the Qt migration (docs/archive/qt-migration.md).
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ dialog, so a test can answer in its place.
 
 `RYOSApp` still owns the shipping app and `__main__` still starts it; flipping
 over is the last step of the migration and has not happened. What the shell
-still lacks is listed in docs/plans/qt-migration.md under "Parity".
+still lacks is listed in docs/archive/qt-migration.md under "Parity".
 """
 
 from __future__ import annotations

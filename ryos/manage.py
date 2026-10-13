@@ -15,7 +15,7 @@ and a dialog does not:
 Everything that refuses raises `ManageError`, in words for the person at
 the terminal. Whether to let agents run something (`set_exposed`) is
 decided here; whether the caller may decide it -- a terminal, or --yes -- is
-the command line's (docs/plans/release-2.3.0.md, A2).
+the command line's (docs/archive/release-2.3.0.md, A2).
 """
 
 from __future__ import annotations

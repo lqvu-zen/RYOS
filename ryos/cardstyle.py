@@ -3,7 +3,7 @@
 `ui/cards.py` held these as module globals and resolved colours against the Tk
 palette on the spot. Qt needs the same spacing and the same Run/Retry rule but
 resolves colours through a stylesheet, so the *decisions* live here and each
-front-end binds them to its own palette (docs/plans/qt-migration.md).
+front-end binds them to its own palette (docs/archive/qt-migration.md).
 
 Nothing here imports a toolkit or a palette: the run-button rule returns
 palette **keys**, not colours.

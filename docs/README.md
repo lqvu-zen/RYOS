@@ -8,7 +8,7 @@
 | [API_REFERENCE.md](API_REFERENCE.md) | Contributors | Public surface of each core module (`db`, `interpreter`, `runner`, `jobs`, `quickrun`, `settings`, …). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | Environment setup, running tests/lint, conventions, release builds. |
 | [tech-debt-2026-09-21.md](tech-debt-2026-09-21.md) | Maintainers | **Current** debt register: ranked findings, what's healthy, phased plan. |
-| [plans/qt-migration.md](plans/qt-migration.md) | Maintainers | **Completed**: the Tk → Qt (PySide6) migration — extract first, then port alongside. Kept for its measurements and reasoning; the Tk interface has been removed. |
-| [../TECH_DEBT.md](../TECH_DEBT.md), [tech-debt-2026-06-24.md](tech-debt-2026-06-24.md) | Maintainers | Superseded audits, kept for provenance. |
+| [archive/qt-migration.md](archive/qt-migration.md) | Maintainers | **Completed**: the Tk → Qt (PySide6) migration — extract first, then port alongside. Kept for its measurements and reasoning; the Tk interface has been removed. |
+| [archive/agent-support.md](archive/agent-support.md), [archive/release-2.3.0.md](archive/release-2.3.0.md) | Maintainers | **Completed**: the CLI and MCP server plan, and the 2.3.0 release plan. Kept because their decisions (A1–A8) are still cited. |
 
 New to the code? Read **ARCHITECTURE.md** first, then **CONTRIBUTING.md**.

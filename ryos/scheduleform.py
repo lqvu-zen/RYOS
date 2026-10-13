@@ -4,7 +4,7 @@
 to. What lived only inside the Tk ScheduleDialog was the form around it:
 which fields make up a spec for each mode, how a catch-up label maps back to
 its key, how a preview line reads, and what to say when a spec is unusable.
-Both front-ends ask this module (docs/plans/qt-migration.md).
+Both front-ends ask this module (docs/archive/qt-migration.md).
 """
 
 from __future__ import annotations

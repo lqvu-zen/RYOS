@@ -14,7 +14,7 @@ the window.
 Adding, editing, removing and exposing follow the script dialog's own rules
 (``ryos/manage.py``). Letting agents run something, and removing, ask at
 the terminal; without one -- an agent calling ryos-cli, say -- they refuse
-unless given ``--yes`` (docs/plans/release-2.3.0.md, A2). A running window
+unless given ``--yes`` (docs/archive/release-2.3.0.md, A2). A running window
 rebuilds its rows after any change.
 
 A script or pipeline is named by its name, ``group/name`` or ``#id``

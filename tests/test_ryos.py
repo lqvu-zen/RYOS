@@ -956,7 +956,7 @@ class TestQuickRunIndexTTL(unittest.TestCase):
     This used to build a dict literal and assert arithmetic about
     time.monotonic() -- it exercised no RYOS code at all, because the logic was
     unreachable inside RYOSApp. QuickRunIndex made it testable for real
-    (docs/plans/qt-migration.md phase 1.2).
+    (docs/archive/qt-migration.md phase 1.2).
     """
 
     def setUp(self):
@@ -6156,7 +6156,7 @@ class TestDragDropRules(unittest.TestCase):
     These were four nested branches inside _card_drag_release, reachable only
     through real Tk events -- which this environment cannot synthesise, so they
     had no direct coverage at all. Extracted for the Qt migration
-    (docs/plans/qt-migration.md phase 1.1); the rules outlive the toolkit.
+    (docs/archive/qt-migration.md phase 1.1); the rules outlive the toolkit.
     """
 
     def test_a_click_is_not_a_drag(self):
@@ -6267,7 +6267,7 @@ class TestQuickRunIndexController(unittest.TestCase):
 
     These lived inside RYOSApp, tangled with `self.after` and a background
     thread, so none of them had a test. Extracted for the Qt migration
-    (docs/plans/qt-migration.md phase 1.2).
+    (docs/archive/qt-migration.md phase 1.2).
 
     Both injection points are exercised synchronously here: `spawn` runs the
     worker inline and `schedule` runs the callback inline, so a test sees the
@@ -7599,7 +7599,7 @@ class TestDocumentedHarnessesAreTracked(unittest.TestCase):
                    if line.strip().startswith("!tests/")}
         docs = ""
         for rel in ("docs/ARCHITECTURE.md", "CLAUDE.md",
-                    "docs/plans/qt-migration.md"):
+                    "docs/archive/qt-migration.md"):
             fp = self.ROOT / rel
             if fp.exists():
                 docs += fp.read_text(encoding="utf-8")

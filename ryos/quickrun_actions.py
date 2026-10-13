@@ -4,7 +4,7 @@ Typing a path into the bar either reuses the script already registered for it
 in that group, or registers a new one, and then runs it. The Tk bar did this
 inline in `_quick_run_submit` between a message box and a card refresh; both
 bars now call `ensure_script` and handle only the display around it
-(docs/plans/qt-migration.md).
+(docs/archive/qt-migration.md).
 
 UI-free. Needs the database, which is why it is not in the pure `quickrun`.
 """

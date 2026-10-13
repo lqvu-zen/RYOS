@@ -64,7 +64,7 @@ Facts for the diagnosis (not a conclusion):
 **Done when** the repro from #27 no longer reproduces, a regression test (or a `session_smoke.py` check for select mode) guards it, and select mode's run-selected and bar text still behave (`ryos/selection.py`).
 
 ### 5 — Loose ends from 2.3.0 (one commit)
-- `docs/plans/release-2.3.0.md`, Status: step 12 is "done; Claude Desktop and Claude Code connection to the exe tried by the maintainer on 2026-10-09 (passed)". Step 13 records what was actually run before the release, and "not run" for anything that wasn't.
+- `docs/archive/release-2.3.0.md`, Status: step 12 is "done; Claude Desktop and Claude Code connection to the exe tried by the maintainer on 2026-10-09 (passed)". Step 13 records what was actually run before the release, and "not run" for anything that wasn't.
 - `docs/tutorial/13-command-line-and-agents.md`, wherever an environment variable is set: `set VAR=...` works only in Command Prompt; in PowerShell it is `$env:VAR = "..."`. (During the 2.3.0 test a PowerShell `set APPDATA=...` silently wrote test scripts into the real data.)
 
 **Done when** both are committed.
