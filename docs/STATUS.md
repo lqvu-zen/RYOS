@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-13 21:20 (UTC+7).
+Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-13 21:30 (UTC+7).
 
 ## Roles
 
@@ -49,6 +49,14 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 | 12 | #31 newest log tab first | — |
 | 15 | Release test phase (`release_check.py` gate, RC pre-release, `ryos-tester`, manual checklist, escape rule) | — |
 | 6 | Release 2.3.1 via the RC flow | needs 7–15 |
+
+## Secretary skill and planner agent (drafted 2026-10-13 21:30)
+
+Staged in `docs/plans/secretary/` (uncommitted). A coding session copies them into place by following its `APPLY.md`, after the current step:
+- `.claude/skills/ryos-secretary/SKILL.md`: this role, run as `/ryos-secretary` in its own Claude Code tab (Sonnet 5.5, Medium);
+- `.claude/agents/ryos-planner.md`: a read-only Opus planner at high effort, called by the skill for heavy planning.
+
+Once it works, `docs/STATUS.md` in the repo is the only master and the claude.ai project copy is deleted.
 
 ## Found by the behaviour map (not yet planned)
 
@@ -100,6 +108,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-10-13 21:21: **The secretary and planner become repo assets:** the `ryos-secretary` skill (talks to Vũ, keeps STATUS and the plans, commits only its own doc files, never pushes or writes code) and the `ryos-planner` agent (read-only, Opus at high effort, returns drafts and open questions).
 - 2026-10-13 21:15: **STATUS is mirrored into the repo as `docs/STATUS.md`** (the repo is public). The claude.ai project copy stays the master.
 - 2026-10-13 21:06: **Coding sessions run on Sonnet 5.5 at Medium,** with High for steps 15 and 6, and Opus 5.5 at High for planning. One fresh conversation per plan step.
 - 2026-10-13 20:04: **Docs cleanup:** superseded docs removed, finished plans archived, links fixed (done: `d7ca83a`, `df179db`).
