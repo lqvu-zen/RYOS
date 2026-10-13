@@ -34,6 +34,15 @@ class EnsuredScript:
     changed: bool
 
 
+def needs_refresh(got: EnsuredScript, shown_ids) -> bool:
+    """Whether the window must rebuild its list after this submission.
+
+    A new or changed script is stale on screen, and one registered elsewhere
+    (``ryos-cli add`` beside a running window) has no row yet.
+    """
+    return got.created or got.changed or got.script_id not in shown_ids
+
+
 def find_script(db, abs_path: str, group: str):
     """The record already registered for this path in this group, or None.
 

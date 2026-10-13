@@ -474,6 +474,28 @@ def step_quick_run_search_select(s: Session, project: Path) -> None:
     if sum(1 for r in s.db.list_all() if r[2].endswith("hello.py")) != 1:
         problem("quick run registered hello.py a second time")
 
+    # A file that is not a script yet is registered, and its row must appear
+    # without a restart (issue #30).
+    (project / "fresh.py").write_text("print('fresh')\n", encoding="utf-8")
+    if not win.quick_run_submit("Project", str(project), "fresh.py",
+                                on_error=lambda *a: problem(f"quick run: {a}")):
+        problem("quick run did not start fresh.py")
+    s.wait_for(lambda: any(r[1] == "fresh" for r in s.db.list_all()),
+               "fresh.py to be registered")
+    s.idle("quick run of a new file")
+    s.pump(0.4)
+    try:
+        fresh = s.card("Project", "fresh")
+    except Exception:
+        fresh = None
+    if fresh is None:
+        problem("quick run of a new file added no row to Project")
+    elif fresh._last_status != "ok":
+        problem(f"the new quick-run row says {fresh._last_status!r}, not ok")
+    if not any(c._name == "fresh" for page in win.all_pages.values()
+               for c in page.cards):
+        problem("quick run of a new file added no row to All")
+
     win.search_box.setText("fail")
     s.pump(0.4)
     visible = [c._name for c in win.card_lists["Project"].cards if c.isVisibleTo(win)]
@@ -637,7 +659,7 @@ def step_restart(s: Session, build, settings_loader) -> None:
         problem("after a restart the Project group is gone")
         return
     names = sorted(c._name for c in win2.card_lists["Project"].cards)
-    want = sorted(["Say hello", "Fail", "Slow", "Mark", "Release"])
+    want = sorted(["Say hello", "Fail", "Slow", "Mark", "Release", "fresh"])
     # Favourites show a second card for the same script.
     if sorted(set(names)) != want:
         problem(f"after a restart Project shows {names}")

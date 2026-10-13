@@ -1346,6 +1346,80 @@ def check_small_dialogs(app):
 
 
 
+def check_quick_run_shows_new_row(app):
+    """Issue #30: a Quick Run of a file that is not a script yet must put its
+    row on screen -- in the group and on All -- in every layout. check_quick_run
+    builds with set_cards (no database), so it could not see this."""
+    import shutil
+    import tempfile
+    import time as _time
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def pump(seconds):
+        end = _time.monotonic() + seconds
+        while _time.monotonic() < end:
+            app.processEvents()
+            _time.sleep(0.01)
+
+    def rows(pages):
+        return [c for p in pages for c in p.cards
+                if getattr(c, "_name", "") == "newtool"]
+
+    before = len(PROBLEMS)
+    for layout in ("compact", "normal", "maximised"):
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "newtool.py").write_text(
+            "import time; time.sleep(0.6); print('hi')\n", encoding="utf-8")
+        db = ScriptDB(tmp / "t.db")
+        db.create_group("G", base_dir=str(tmp))
+        settings = {"compact_mode": layout == "compact",
+                    "quick_run_enabled": True}
+        win = MainWindow(REFERENCE["light"], settings=settings)
+        bridge = JobBridge(db, settings)
+        win.attach_jobs(bridge)
+        bridge.start()
+        win.load_from_db(db)
+        if layout == "maximised":
+            win.set_workspace(True)
+        win.show_group("G")
+        pump(0.1)
+        started = win.quick_run_submit("G", str(tmp), "newtool.py")
+        pump(0.2)
+        in_group = rows([win.card_lists["G"]])
+        if not started:
+            PROBLEMS.append(f"quick run ({layout}): did not start")
+        if not in_group:
+            PROBLEMS.append(f"quick run ({layout}): no row for the new script")
+        elif in_group[0]._last_status != "running":
+            PROBLEMS.append(f"quick run ({layout}): row says "
+                            f"{in_group[0]._last_status!r} while running")
+        if not rows(win.all_pages.values()):
+            PROBLEMS.append(f"quick run ({layout}): no row on All")
+        end = _time.monotonic() + 15
+        while _time.monotonic() < end and len(bridge.registry):
+            pump(0.05)
+        pump(0.3)
+        in_group = rows([win.card_lists["G"]])
+        if in_group and in_group[0]._last_status != "ok":
+            PROBLEMS.append(f"quick run ({layout}): row says "
+                            f"{in_group[0]._last_status!r} after the run")
+        bar = win.quick_run_bars.get("G")
+        if bar is None or bar.isVisible():
+            PROBLEMS.append(f"quick run ({layout}): bar missing or left open")
+        bridge.stop()
+        win.close()
+        win.deleteLater()
+        pump(0.05)
+        shutil.rmtree(tmp, ignore_errors=True)
+    if len(PROBLEMS) == before:
+        print("  [ok] quick run of a new file adds its row in the compact, "
+              "normal and maximised layouts")
+
+
 def check_quick_run(app):
     """The Qt Quick Run bar, end to end, with the real background index.
 
@@ -5619,6 +5693,7 @@ def main() -> int:
     check_parallel_step_output(app)
     check_small_dialogs(app)
     check_quick_run(app)
+    check_quick_run_shows_new_row(app)
     check_drag_and_drop(app)
     check_schedules(app)
     check_context_menus(app)

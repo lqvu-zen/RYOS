@@ -255,7 +255,7 @@ Steps 3, 4 and 5 are done. Order: the bug fixes 9 and 11 first (Vũ hits them ev
 | 8 Expose a group | — |
 | 9 Fix #29a freeze | done: the window drains run output in 50 ms slices and joins a run's lines (a chatty pipeline held it for 70 s in one turn); `qt_smoke` heavy-output check |
 | 10 #29b log easy to find | — |
-| 11 Fix #30 Quick Run | — |
+| 11 Fix #30 Quick Run | done: the Qt port (2.0.0) dropped Tk's refresh after Quick Run registered a script; restored as `quickrun_actions.needs_refresh`, smoke-checked in compact, normal and maximised |
 | 12 #31 newest log tab first | — |
 | 13 Behaviour map | — |
 | 14 Suggest a feature | — |

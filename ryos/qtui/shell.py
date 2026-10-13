@@ -1263,12 +1263,15 @@ class MainWindow(QMainWindow):
 
         The same flow as the Tk bar, through `quickrun_actions`: nothing typed
         does nothing; no match says why; several matches ask which; one match
-        is reused or registered and then run. ``choose`` and ``on_error`` are
+        is reused or registered and then run, and the list is rebuilt when
+        that registered or changed a script -- typed parameters count as a
+        change even when they match, as on the Tk bar. ``choose`` and ``on_error`` are
         injectable so the flow can be exercised without modal dialogs.
         """
         from ..quickrun import display_relpath
         from ..quickrun_actions import (CHOOSE, ERROR, NOTHING, chosen_path,
-                                        ensure_script, plan_submit)
+                                        ensure_script, needs_refresh,
+                                        plan_submit)
 
         plan = plan_submit(raw, base_dir)
         if plan.kind == NOTHING:
@@ -1289,6 +1292,12 @@ class MainWindow(QMainWindow):
             return False
         got = ensure_script(self._bridge.db, abs_path, group_name,
                             plan.params, plan.params_explicit)
+        shown = {i for (k, i) in self._records if k == cardmenu.SCRIPT}
+        if needs_refresh(got, shown):
+            # Deferred: this runs inside the bar's `submitted` signal, on a
+            # bar the reload replaces. It lands after the run starts, so the
+            # new row is built already showing running.
+            self._defer_reload()
         return self._bridge.run_script(
             got.script_id, display_relpath(abs_path, base_dir), abs_path,
             got.params, got.interpreter, active_group=group_name)

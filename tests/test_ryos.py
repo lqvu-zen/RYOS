@@ -9044,6 +9044,29 @@ class TestQuickRunSubmit(unittest.TestCase):
         self.assertEqual(presets.count("--b"), 1, presets)
         self.assertIn("--a", presets)
 
+    # -- issue #30: the window must show what Quick Run registered ----------
+    def test_a_new_script_needs_the_list_refreshed(self):
+        got = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False)
+        self.assertTrue(got.created)
+        self.assertTrue(qra.needs_refresh(got, shown_ids=set()))
+
+    def test_a_shown_script_run_as_saved_does_not(self):
+        sid = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False).script_id
+        again = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False)
+        self.assertFalse(qra.needs_refresh(again, shown_ids={sid}))
+
+    def test_typed_parameters_refresh_the_drop_down(self):
+        sid = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False).script_id
+        got = qra.ensure_script(self.db, self._path("deploy.py"), "G", "--x", True)
+        self.assertTrue(qra.needs_refresh(got, shown_ids={sid}))
+
+    def test_a_script_registered_elsewhere_but_not_shown_is_refreshed(self):
+        # `ryos-cli add` beside a running window: in the database, no row yet.
+        sid = self.db.add("deploy", self._path("deploy.py"), "", "", "G")
+        got = qra.ensure_script(self.db, self._path("deploy.py"), "G", "", False)
+        self.assertEqual(got.script_id, sid)
+        self.assertTrue(qra.needs_refresh(got, shown_ids=set()))
+
     def test_reusing_a_script_keeps_its_launcher_flag(self):
         # update() is called with None for the fields it should not touch;
         # a regression there would quietly turn a launcher back into a
