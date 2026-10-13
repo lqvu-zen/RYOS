@@ -164,8 +164,10 @@ and the test that guards it, or **untested**.
 | **SM-10** Switching tabs re-scopes the selection; in All, select mode offers every group's rows. | S A | `qt_smoke::check_select_mode`, `qt_smoke::check_all_tab` |
 | **SM-11** The session test ticks a pipeline row by clicking it and runs it. | S N · P | `session_smoke::step_quick_run_search_select` |
 | **SM-12** The menu entry flips to "Cancel select" while the mode is on. | S W | `session_smoke::step_keyboard_and_menu` |
-| **SM-13** Select mode on compact rows, on the maximised list and with a search active: ticking, Select All, Run selected. | S C D | **untested** |
+| **SM-13** Select mode on compact rows, on the maximised list and with a search active: ticking, Select All, Run selected. | S C D | `qt_smoke::check_select_bar_fits` (ticking and Select All on C and D, both builds); Run selected and Delete on C/D, and a search active: **untested** |
 | **SM-14** Make available / unavailable to agents act on every ticked script and pipeline: on lists only what changes and asks once, off doesn't ask; ticks stay; hidden without agents. | S N C · Sc P | `session_smoke::step_agents_for_a_group`, `test_ryos::TestGroupExposure` |
+| **SM-15** The select bar stays readable: every button's label whole and the count on one line, at the 480 px minimum, at 540 and in the maximised list, on full and compact rows, with and without agents. The count sits above the buttons, which wrap onto more lines rather than clip (2.3.1 release test). | S N C D · W | `qt_smoke::check_select_bar_fits`, `qt_smoke::check_output_panel` (minimum width) |
+| **SM-16** Starring or unstarring a row in select mode, or maximising the window with full rows, leaves select mode and drops the ticks (known since 2.3.0: every reload does). | S N D · Sc P | **untested (known)** |
 
 ## 5. Quick Run
 
@@ -440,6 +442,8 @@ step 13; "-> 2.4" is left for 2.4.
 | **CLI-05** Ctrl+C exits 130 | needs a real interrupt signal | -> 2.4 |
 | **ST-13** The log-file options | not tested | -> 2.4 |
 | **TW-27** (part) The exe's version resource | the publisher constants are tested; the built exe's version resource is not read by any test (the release review reads it) | -> 2.4 |
+| **SM-16** Starring or maximising in select mode leaves it | `_set_favorite` -> `_defer_reload` -> `load_from_db` -> `set_select_mode(False)`; `set_workspace` reloads when rows are not compact | -> 2.4: keep the mode and the ticked (kind, id) across a reload, except after Delete selected (SM-09) |
+| **SM-13** (part) Run selected / Delete on C, D; a search active | not tested | -> 2.4 |
 
 ### Guarded on some surfaces only
 
@@ -449,7 +453,7 @@ breaks B" has happened. The table says which surfaces are unguarded.
 | Behaviour | Guarded on | Unguarded | Plan |
 | --- | --- | --- | --- |
 | Click Run / star on a row (RC-03, RC-09, RC-10, FV-05) | N C (a real click on Run: `session_smoke::step_run_click`, both layouts; C also for the overlap check) | F D: a click on the real button | -> 2.4 |
-| Select mode (SM-01 to SM-09, SM-14) | N | C, D, with a search active, with a pipeline in the list on those layouts; SM-14 on the All tab and D | -> 2.4 |
+| Select mode (SM-01 to SM-09, SM-13, SM-14) | N; ticking, Select All and the bar's fit also C, D (`check_select_bar_fits`) | Run selected / Delete on C, D, with a search active; SM-14 on the All tab and D | -> 2.4 |
 | Keyboard through the list, F2, Menu key (RC-29) | N | C, D | -> 2.4 |
 | Right-click menu actions (RC-20 to RC-25) | N | C, F, D (three dots) | -> 2.4 |
 | Drag and drop (GR-14, GR-15) | N | C, D list | -> 2.4 |

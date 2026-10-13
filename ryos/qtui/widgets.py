@@ -261,7 +261,8 @@ class FlowLayout(QLayout):
     """Lays widgets out left to right, wrapping onto a new line when full.
 
     Qt has none built in (it ships one as an example). Used for the
-    Favorites strip, whose chips are sized to their names.
+    Favorites strip, whose chips are sized to their names, and for the select
+    bar's buttons beneath its count.
     """
 
     def __init__(self, parent: QWidget | None = None, spacing: int = 6):

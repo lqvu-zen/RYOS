@@ -2323,6 +2323,120 @@ def check_select_mode(app):
     win.deleteLater()
 
 
+def check_select_bar_fits(app):
+    """The select bar's buttons and count stay readable (SM-15, SM-13).
+
+    Found by the 2.3.1 release test: with the two agent buttons the bar's one
+    row needed about 750 px, so at the 480 minimum, at 540 and in the
+    maximised list's 380 px column every button was cut and the count wrapped
+    a word a line. Both builds, full and compact rows, normal and maximised.
+    """
+    import sys as _sys
+    import tempfile
+    import types as _types
+    from unittest import mock
+
+    from PySide6.QtCore import Qt
+
+    from ryos import selection
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    tmp = Path(tempfile.mkdtemp())
+    db = ScriptDB(tmp / "bar.db")
+    db.create_group("G")
+    ids = []
+    for i in range(3):
+        script = tmp / f"s{i}.py"
+        script.write_text("print(1)\n", encoding="utf-8")
+        ids.append(db.add(f"s{i}", str(script), "", _sys.executable, "G"))
+    pid = db.create_pipeline("p", "G")
+    db.add_pipeline_step(pid, ids[0])
+
+    def pump():
+        for _ in range(8):
+            app.processEvents()
+
+    def fits(win, where):
+        bar, label = win.select_bar, win.select_label
+        area = bar.layout().contentsRect()
+        room = area.width()
+        shown = [b for b in (win.select_all_button, win.run_selected_button,
+                             win.agents_on_button, win.agents_off_button,
+                             win.delete_selected_button) if b.isVisibleTo(win)]
+        for b in shown:
+            # Only a button wider than the whole bar may be cut.
+            if b.width() < min(b.sizeHint().width(), room):
+                PROBLEMS.append(f"select bar, {where}: {b.text()!r} is "
+                                f"{b.width()} px of {b.sizeHint().width()}")
+            if b.sizeHint().width() <= room and b.geometry().right() > area.right():
+                PROBLEMS.append(f"select bar, {where}: {b.text()!r} runs past the bar")
+            if b.geometry().bottom() > area.bottom():
+                PROBLEMS.append(f"select bar, {where}: {b.text()!r} is cut off below")
+        for i, a in enumerate(shown):
+            for b in shown[i + 1:]:
+                if a.geometry().intersects(b.geometry()):
+                    PROBLEMS.append(f"select bar, {where}: {a.text()!r} "
+                                    f"overlaps {b.text()!r}")
+        text = label.text()
+        if text != selection.HINT and \
+                label.fontMetrics().horizontalAdvance(text) > label.width():
+            PROBLEMS.append(f"select bar, {where}: {text!r} wraps in {label.width()} px")
+        if label.height() < label.heightForWidth(label.width()):
+            PROBLEMS.append(f"select bar, {where}: the message is cut off")
+        if label.width() < room // 2:
+            PROBLEMS.append(f"select bar, {where}: the message is squeezed "
+                            f"to {label.width()} of {room} px")
+
+    for variant in ("windows-ai", "windows"):
+        build = {"ryos._build_info": _types.SimpleNamespace(VARIANT=variant)}
+        with mock.patch.dict(_sys.modules, build):
+            for compact in (False, True):
+                win = MainWindow(REFERENCE["dark"], settings={
+                    "quick_run_enabled": False, "compact_mode": compact})
+                win.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+                win.move(-4000, -4000)
+                win.resize(540, 640)
+                win.show()
+                win.load_from_db(db)
+                win.show_group("G")
+                pump()
+                for width in (MainWindow.MIN_WIDTH, 540, "maximised"):
+                    if width == "maximised":
+                        win.resize(1600, 900)
+                        pump()
+                        win.set_workspace(True)     # what maximising does
+                    else:
+                        win.resize(width, 640)
+                    pump()
+                    # After set_workspace: its reload leaves select mode (SM-16).
+                    win.set_select_mode(True)
+                    pump()
+                    where = (f"{variant}, {'compact' if compact else 'full'} rows, "
+                             f"{width}")
+                    fits(win, where + ", hint")
+                    win.selectable_cards()[0].checkbox.click()
+                    pump()
+                    if win.select_label.text() != "1 of 4 selected":
+                        PROBLEMS.append(f"select bar, {where}: ticking said "
+                                        f"{win.select_label.text()!r}")
+                    fits(win, where + ", count")
+                    win.select_all_button.click()
+                    pump()
+                    if len(win.selected_cards()) != 4:
+                        PROBLEMS.append(f"select bar, {where}: Select All ticked "
+                                        f"{len(win.selected_cards())} of 4")
+                    fits(win, where + ", Deselect All")
+                    if width == MainWindow.MIN_WIDTH and \
+                            win.minimumSizeHint().width() > MainWindow.MIN_WIDTH:
+                        PROBLEMS.append(f"select bar, {where}: the window's minimum "
+                                        f"grew to {win.minimumSizeHint().width()}")
+                    win.set_select_mode(False)
+                win.hide()
+                win.deleteLater()
+    print("  [ok] select bar: every button whole and the count on one line at "
+          "480, 540 and maximised, full and compact rows, with and without agents")
 
 
 def check_group_management(app):
@@ -5819,6 +5933,7 @@ def main() -> int:
     check_context_menus(app)
     check_copy_paste_between_groups(app)
     check_select_mode(app)
+    check_select_bar_fits(app)
     check_group_management(app)
     check_tray_and_close(app)
     check_updates_and_notify(app)

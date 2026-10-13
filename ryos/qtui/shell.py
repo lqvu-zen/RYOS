@@ -56,7 +56,7 @@ from ..jobs import live_statuses, own_runs
 from .stylesheet import stylesheet
 from . import icons
 from .icons import IconButton, IconLabel
-from .widgets import literal, set_tooltip
+from .widgets import FlowLayout, literal, set_tooltip
 
 #: Matches the Tk placeholder, so the two shells prompt identically.
 SEARCH_PLACEHOLDER = "Search scripts and pipelines…"
@@ -2190,11 +2190,18 @@ class MainWindow(QMainWindow):
     def _build_select_bar(self) -> QWidget:
         self.select_bar = QFrame()
         self.select_bar.setObjectName("selectBar")
-        row = QHBoxLayout(self.select_bar)
-        row.setContentsMargins(10, 4, 6, 4)
+        # With the agent buttons a single row needed ~750 px, more than the
+        # 480 minimum or the maximised 380 px list column: the count read a
+        # word a line and every button was clipped. So the count gets its own
+        # line and the buttons wrap beneath it.
+        col = QVBoxLayout(self.select_bar)
+        col.setContentsMargins(10, 4, 6, 4)
+        col.setSpacing(4)
         self.select_label = QLabel(selection.HINT)
         self.select_label.setWordWrap(True)
-        row.addWidget(self.select_label, 1)
+        col.addWidget(self.select_label)
+        buttons = FlowLayout(spacing=6)
+        col.addLayout(buttons)
         self.select_all_button = QPushButton("Select All")
         self.select_all_button.clicked.connect(self.toggle_select_all)
         self.run_selected_button = IconButton("play", "Run selected", size=12,
@@ -2216,7 +2223,7 @@ class MainWindow(QMainWindow):
         for b in (self.select_all_button, self.run_selected_button,
                   self.agents_on_button, self.agents_off_button,
                   self.delete_selected_button):
-            row.addWidget(b)
+            buttons.addWidget(b)
         self.select_bar.setVisible(False)
         return self.select_bar
 
