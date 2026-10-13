@@ -106,6 +106,8 @@ extracted, lives in `docs/ARCHITECTURE.md`.
 
 What must keep working, and **every surface** it shows up on (normal and compact rows, favourite chips, the All tab, the detail pane, select mode, scripts and pipelines, window and CLI), with the test guarding each: `docs/BEHAVIOUR.md`. Read an area's rows before changing it; a fix updates its entry and test, a new behaviour adds one.
 
+`docs/STATUS.md` is the project status, kept by the `ryos-secretary` skill (with the read-only `ryos-planner` agent for drafting plans); coding sessions read it but record plan progress in each plan's Status table.
+
 Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained every 80 ms by `JobHost.pump()` (`ryos/jobhost.py`) — on the UI thread by a `QTimer` in the window (`qtui/jobs.py`).
 
 ## Key Design Choices
