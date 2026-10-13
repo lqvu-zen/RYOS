@@ -31,6 +31,8 @@ RYOS Agent, `ryos-cli.exe` alone without the window or Qt (about 48 MB): `RYOS_V
 
 To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no toasts, no window; `--visible` shows it on a second screen). It then runs the command line in the same folder -- `ryos-cli.exe` beside a built `RYOS.exe`, which must be there, or `python -m ryos` -- with `--version`, `list` and a real `run`, and, for a build with AI agents, talks MCP to `ryos-cli.exe mcp` (initialize, the tool list, `list_scripts`) as plain JSON-RPC, so the smoke itself needs no SDK -- or, for the build without them, checks `ryos-cli.exe mcp` refuses with 125.
 
+The release gate, after `build_release.py`: `uv run python tests/release_check.py` checks all four zips in `dist/` on throwaway data (launch smokes, the CLI's management commands, MCP list/run/poll/stop, `session_smoke` in both layouts, an upgrade from a fixture database of every past release in `tests/fixtures/db/`, mixed installs in both orders, the newer-database guard, and that each exe names HEAD's commit) and ends `RELEASE CHECK PASSED` or exits 1. `release-ryos` runs it before a release candidate and again before promotion; `tests/fixtures/db/make_fixtures.py vX.Y.Z` adds a fixture when a release brings a new schema.
+
 To check the Qt app against your own data without changing it: `uv run python tests/real_data_smoke.py` (copies `%APPDATA%\RYOS` to a throwaway folder, opens every dialog and editor on the copy, prints counts only, and checks the real folder is unchanged; `--visible` as above; `--db PATH` opens a copy of another database file instead, e.g. an older backup, to check an upgrade).
 
 To run a whole working session in the Qt app: `uv run python tests/session_smoke.py` (a throwaway folder; makes a group and scripts through their dialogs, runs, fails, retries, stops, builds and runs a pipeline, fires a schedule, uses Quick Run, search, select mode, export/import, options and themes, then restarts and checks what persisted; `--visible` as above).
@@ -57,9 +59,11 @@ Name an item by its name, `group/name` or `#id` (an ambiguous name is refused wi
 
 ## Versions
 
-`__version__` in `ryos/__init__.py` (and `version=` in `setup_cxfreeze.py`) changes **only when a release is cut** — the `release-ryos` skill does it. A feature or fix commit, or a PR, never bumps it: between releases the tree holds the last released version, with no `-dev` suffix. (PR #14 bumped it to 2.0.1 on its own; no 2.0.1 was ever released.)
+`__version__` in `ryos/__init__.py` (and `version=` in `setup_cxfreeze.py`) changes **only when the `release-ryos` skill cuts a release candidate or a release**. A feature or fix commit, or a PR, never bumps it: between releases the tree holds the last published version, or `X.Y.Z-rcN` while that release candidate is being tested. `-rcN` appears only on the candidate commit `release-ryos` makes (`setup_cxfreeze.py` then says `X.Y.Z`: the Windows version resource takes numbers only); never `-dev`. (PR #14 bumped it to 2.0.1 on its own; no 2.0.1 was ever released.)
 
 The maintainer chooses the version number. Before a release, ask for it and wait for the answer — even if one was suggested earlier, a bare "release" or "go ahead" doesn't pick it.
+
+**The escape rule.** Every bug found after a release gets one line in `docs/BEHAVIOUR.md` § Escapes: "#NN (vX.Y.Z): should have been caught by <check>; added <test / map entry / release_check case>". The fix's commit adds that line and that check.
 
 ## Architecture
 

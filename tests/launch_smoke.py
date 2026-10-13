@@ -30,10 +30,12 @@ beside a built RYOS.exe (a build without one fails), or `python -m ryos`.
 import argparse
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -63,8 +65,8 @@ def _second_screen_geometry():
 def _check_cli(cli: list, env: dict, data: Path, problems: list) -> str:
     """The command line against the throwaway folder; a line for the report."""
     def ryos(*args):
-        return subprocess.run([*cli, *args], cwd=str(ROOT), env=env, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace", timeout=120)
+        return run_bounded([*cli, *args], cwd=str(ROOT), env=env,
+                           stdin=subprocess.DEVNULL, timeout=600)
 
     version = _source_version()
     got = ryos("--version")
@@ -100,6 +102,104 @@ def _check_cli(cli: list, env: dict, data: Path, problems: list) -> str:
             "list, run")
 
 
+class McpClient:
+    """`ryos-cli.exe mcp` spoken to as the protocol's newline-delimited
+    JSON-RPC -- no SDK needed here. tests/release_check.py drives it too."""
+
+    def __init__(self, exe_cmd: list, env: dict):
+        # stderr to a file: a pipe nobody reads fills and stalls the server.
+        self._stderr = tempfile.TemporaryFile()
+        self.proc = subprocess.Popen(exe_cmd, cwd=str(ROOT), env=env, stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=self._stderr,
+                                     text=True, encoding="utf-8", errors="replace")
+        self._next_id = 0
+        # readline() blocks; a reader thread lets answer() keep its timeout.
+        self._lines: queue.Queue = queue.Queue()
+        threading.Thread(target=self._read, daemon=True).start()
+
+    def _read(self) -> None:
+        for line in self.proc.stdout:
+            self._lines.put(line)
+        self._lines.put(None)
+
+    def stderr_text(self) -> str:
+        self._stderr.seek(0)
+        return self._stderr.read().decode("utf-8", errors="replace")
+
+    def send(self, message: dict) -> None:
+        self.proc.stdin.write(json.dumps(message) + "\n")
+        self.proc.stdin.flush()
+
+    def answer(self, want_id, timeout: float = 60) -> dict:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                line = self._lines.get(timeout=max(0.0, deadline - time.time()))
+            except queue.Empty:
+                break
+            if line is None:
+                break
+            try:
+                got = json.loads(line)
+            except ValueError:
+                continue
+            if got.get("id") == want_id:
+                return got
+        return {}
+
+    def request(self, method: str, params: dict | None = None, timeout: float = 60) -> dict:
+        self._next_id += 1
+        message = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
+        if params is not None:
+            message["params"] = params
+        self.send(message)
+        return self.answer(self._next_id, timeout)
+
+    def initialize(self) -> dict:
+        got = self.request("initialize", {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "launch-smoke", "version": "1"}})
+        self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        return got
+
+    def tools(self) -> list:
+        got = self.request("tools/list")
+        return sorted(t["name"] for t in got.get("result", {}).get("tools", []))
+
+    def call(self, tool: str, args: dict | None = None, timeout: float = 60):
+        """(the tool's result, is_error): structuredContent when the server
+        sends it (a list comes wrapped as {"result": [...]}), else the JSON
+        -- or the plain text -- of its first content block."""
+        got = self.request("tools/call", {"name": tool, "arguments": args or {}}, timeout)
+        result = got.get("result", {})
+        is_error = bool(result.get("isError")) or "error" in got or not got
+        data = result.get("structuredContent")
+        if isinstance(data, dict) and set(data) == {"result"}:
+            data = data["result"]
+        if data is None:
+            content = result.get("content") or [{}]
+            text = content[0].get("text", "") if content else ""
+            try:
+                data = json.loads(text)
+            except ValueError:
+                data = text or got.get("error", {}).get("message", "")
+        return data, is_error
+
+    def close(self, timeout: float = 15) -> bool:
+        """Close stdin; True when the server then exited on its own."""
+        try:
+            self.proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(timeout=timeout)
+            return True
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait(timeout=15)
+            return False
+
+
 def _check_mcp(exe: Path, env: dict, data: Path, problems: list) -> str:
     """`ryos-cli.exe mcp` from a build: initialize, the tool list and
     list_scripts, spoken as the protocol's newline-delimited JSON-RPC -- no
@@ -110,48 +210,21 @@ def _check_mcp(exe: Path, env: dict, data: Path, problems: list) -> str:
     hello = next((r[0] for r in db.list_all() if r[1] == "hello"), None)
     if hello is not None:
         db.set_agent_exposed("script", hello, True)
-    proc = subprocess.Popen([str(exe), "mcp"], cwd=str(ROOT), env=env, stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                            encoding="utf-8", errors="replace")
+    client = McpClient([str(exe), "mcp"], env)
     answers = {}
-
-    def send(message):
-        proc.stdin.write(json.dumps(message) + "\n")
-        proc.stdin.flush()
-
-    def answer(want_id):
-        deadline = time.time() + 60
-        while time.time() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            got = json.loads(line)
-            if got.get("id") == want_id:
-                return got
-        return {}
     try:
-        send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2025-06-18", "capabilities": {},
-            "clientInfo": {"name": "launch-smoke", "version": "1"}}})
-        answers["init"] = answer(1)
-        send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-        answers["tools"] = answer(2)
-        send({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-              "params": {"name": "list_scripts", "arguments": {}}})
-        answers["list"] = answer(3)
+        answers["init"] = client.initialize()
+        answers["tools"] = client.request("tools/list")
+        answers["list"] = client.request("tools/call",
+                                         {"name": "list_scripts", "arguments": {}})
     finally:
-        proc.stdin.close()
-        try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        client.close()
     info = answers["init"].get("result", {}).get("serverInfo", {})
     tools = sorted(t["name"] for t in answers["tools"].get("result", {}).get("tools", []))
     listed = json.dumps(answers["list"].get("result", {}))
     if info.get("name") != "RYOS" or info.get("version") != _source_version():
         problems.append(f"ryos-cli mcp did not start as RYOS {_source_version()}: "
-                        f"{answers['init']!r} {proc.stderr.read()[-500:]!r}")
+                        f"{answers['init']!r} {client.stderr_text()[-500:]!r}")
     elif "run_script" not in tools or "Smoke/hello" not in listed:
         problems.append(f"ryos-cli mcp tools {tools}, list_scripts {listed[:200]}")
     return f"  [ok] MCP from {exe.name} mcp: initialize, {len(tools)} tools, list_scripts"
@@ -213,6 +286,80 @@ def _agent_smoke(exe: Path) -> int:
     return 0
 
 
+def kill_tree(proc) -> None:
+    """End a process and everything it started (run.bat starts uv, which
+    starts Python)."""
+    if proc.poll() is None:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                           capture_output=True)
+        else:
+            proc.terminate()
+        proc.wait(timeout=15)
+
+
+def run_bounded(cmd: list, *, timeout: float, **kwargs) -> subprocess.CompletedProcess:
+    """subprocess.run with its output in files: on Windows, run(timeout=)
+    can hang in communicate() when a grandchild (python under uv) still
+    holds the pipes. On timeout the whole tree is killed and it raises."""
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(cmd, stdout=out, stderr=err, **kwargs)
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_tree(proc)
+            raise
+        out.seek(0)
+        err.seek(0)
+        return subprocess.CompletedProcess(
+            cmd, proc.returncode, out.read().decode("utf-8", errors="replace"),
+            err.read().decode("utf-8", errors="replace"))
+
+
+def launch_window(cmd: list, data: Path, env: dict, wait_s: float = WAIT_S,
+                  version: str | None = None) -> tuple[list, str, str]:
+    """Start the window with ``cmd`` on the data folder ``data`` (``env``'s
+    APPDATA/RYOS), wait for "Window shown", check the log, and kill it.
+    Returns (problems, the log's text, the process's own output)."""
+    problems: list = []
+    # Its output to a file: run.bat's uv can write more than a pipe holds.
+    sink = tempfile.TemporaryFile()
+    proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env, stdout=sink, stderr=subprocess.STDOUT)
+    try:
+        log_text = ""
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            logs = sorted(data.rglob("*.log"))
+            log_text = "".join(p.read_text(encoding="utf-8", errors="replace")
+                               for p in logs)
+            if "Window shown" in log_text or proc.poll() is not None:
+                break
+            time.sleep(0.5)
+        version = version or _source_version()
+        if f"RYOS {version} starting" not in log_text:
+            problems.append(f"the log does not say RYOS {version} started "
+                            "(a stale build?)")
+        if "ui=qt" not in log_text:
+            problems.append("the log does not say the Qt interface started")
+        if "Window shown" not in log_text:
+            problems.append(f"no 'Window shown' within {wait_s}s "
+                            f"(exit code {proc.poll()})")
+        for bad in ("Traceback", "Fatal error", "ERROR", "no SVG"):
+            if bad in log_text:
+                problems.append(f"the log contains {bad!r}")
+        if not (data / "scripts.db").exists():
+            problems.append("no database was created in the throwaway folder")
+        time.sleep(1.0)                          # let it settle into the loop
+        if proc.poll() is not None:
+            problems.append(f"the app exited on its own (code {proc.returncode})")
+    finally:
+        kill_tree(proc)
+        sink.seek(0)
+        output = sink.read().decode("utf-8", errors="replace")
+        sink.close()
+    return problems, log_text, output
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--exe", help="a built RYOS.exe to launch instead of source")
@@ -248,45 +395,7 @@ def main() -> int:
     print(f"  (data in {data}; registry writes off; "
           f"{'window visible' if args.visible else 'no window'})")
 
-    problems = []
-    proc = subprocess.Popen(cmd, cwd=str(ROOT), env=env,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    try:
-        log_text = ""
-        deadline = time.time() + WAIT_S
-        while time.time() < deadline:
-            logs = sorted(data.rglob("*.log"))
-            log_text = "".join(p.read_text(encoding="utf-8", errors="replace")
-                               for p in logs)
-            if "Window shown" in log_text or proc.poll() is not None:
-                break
-            time.sleep(0.5)
-        version = _source_version()
-        if f"RYOS {version} starting" not in log_text:
-            problems.append(f"the log does not say RYOS {version} started "
-                            "(a stale build?)")
-        if "ui=qt" not in log_text:
-            problems.append("the log does not say the Qt interface started")
-        if "Window shown" not in log_text:
-            problems.append(f"no 'Window shown' within {WAIT_S}s "
-                            f"(exit code {proc.poll()})")
-        for bad in ("Traceback", "Fatal error", "ERROR", "no SVG"):
-            if bad in log_text:
-                problems.append(f"the log contains {bad!r}")
-        if not (data / "scripts.db").exists():
-            problems.append("no database was created in the throwaway folder")
-        time.sleep(1.0)                          # let it settle into the loop
-        if proc.poll() is not None:
-            problems.append(f"the app exited on its own (code {proc.returncode})")
-    finally:
-        if proc.poll() is None:
-            if sys.platform == "win32":
-                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                               capture_output=True)
-            else:
-                proc.terminate()
-            proc.wait(timeout=15)
-        output = proc.stdout.read().decode("utf-8", errors="replace") if proc.stdout else ""
+    problems, _log_text, output = launch_window(cmd, data, env)
 
     cli_report = ""
     if args.exe:

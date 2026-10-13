@@ -51,7 +51,9 @@ def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None
                           instance_lock=instance_lock, argv=argv)
     except NewerDatabaseError as e:
         # No window without the data: say why, and stop. The application
-        # already exists (build made it before opening the database).
+        # already exists (build made it before opening the database). Logged
+        # too, so a check with no screen to read the box can see the refusal.
+        _log.warning("Refused to open the data: %s", e)
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.critical(None, "RYOS needs updating", str(e))
         return 1

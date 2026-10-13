@@ -39,6 +39,28 @@ win.set_output_expanded(True); win.quick_run_bars["Samples"].open()
 idle(win)                               # wait for running jobs to finish
 ```
 
+`--variant windows|windows-ai|agent|portable` makes the window behave as that download (`ryos/buildinfo.py`): `windows` hides "Available to agents" and the group's expose actions. The default is `portable` (from source).
+
+### Writing your own flow
+
+A one-off flow (the `ryos-tester` agent works this way) is a scratch Python file outside the repo that imports the driver -- importing it points `APPDATA` at a throwaway folder, turns off registry writes and toasts, and starts the `QApplication`:
+
+```python
+import sys
+sys.path.insert(0, r"D:\Projects\RYOS\.claude\skills\run-ryos")
+import driver as d
+
+d.set_variant("windows-ai")            # before window(): which download to be
+d.load_samples()                       # or add your own with ryos.db.ScriptDB()
+win = d.window("dark", compact_mode=True)   # any settings key as an override
+win.run_dialog = lambda dlg: ...       # answer dialogs; ask_yes_no / ask_text / warn too
+d.card(win, "Say hello").run_button.click()
+d.idle(win)
+d.shot(win, "tester-hello-compact")    # -> .claude/skills/run-ryos/screenshots/
+```
+
+One process per download (`set_variant` patches this process) and per layout; `window_width`/`window_height` large enough, or the shell's maximise path, for the maximised list + detail layout. Run it with `uv run python <file>`. This runs the window from **source**: on a release candidate, check out nothing -- the tree at the RC commit is what the zips hold (`tests/release_check.py` proves it). The built `RYOS.exe` is only ever started through `tests/launch_smoke.py --exe`.
+
 ## Run (human path)
 
 ```

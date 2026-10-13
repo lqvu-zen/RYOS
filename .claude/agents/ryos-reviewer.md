@@ -48,23 +48,31 @@ You check a built release before it is published. The build and smoke gates have
 
 Your brief gives you:
 
-- the version and the last released tag;
+- the version, the release candidate tag it promotes (`v<X.Y.Z>-rc<N>`), and the last released tag;
 - the approved release notes;
 - the expected lineup: each zip, what it must contain and what it must not contain;
-- the output of `build_release.py` and of the smoke tests;
+- the output of `build_release.py` and of `tests/release_check.py` on this build;
+- the `ryos-tester` agent's last report on the candidate, and the state of Vũ's manual checklist;
+- the promotion diff, `git diff --stat v<X.Y.Z>-rc<N>..HEAD -- . ':(exclude)docs'`;
 - the release plan's final step with its "Done when" items, if there is one.
 
 **Check for yourself.** Don't rely on the build script's own checks:
 
-1. **The version agrees everywhere:** `ryos/__init__.py`, `setup_cxfreeze.py`'s `version=`, the planned tag (`v<X.Y.Z>`), and the version the smoke test saw. Also check the version is greater than the last tag.
+1. **The version agrees everywhere:** `ryos/__init__.py`, `setup_cxfreeze.py`'s `version=`, the planned tag (`v<X.Y.Z>`), and the version the release check saw. Also check the version is greater than the last final tag.
 2. **Each zip holds what its variant should.** List each zip in `dist/` yourself (for example with Python's `zipfile`). Confirm every required file is present and nothing forbidden is: MCP present or absent per variant; no Qt and no `RYOS.exe` in the agent zip; no `__pycache__`, `_build_info.py`, `scripts.db` or settings file anywhere. Read each build's variant from the zip (its `_build_info` or `--version` output in the smoke log) and check that it matches the zip's name.
 3. **The publisher and the commit are in each build.** Read-only, for `RYOS.exe` and `ryos-cli.exe` in `dist/cxfreeze` and `dist/cxfreeze-ai`, and `ryos-cli.exe` in `dist/cxfreeze-agent`: `[Console]::OutputEncoding=[Text.Encoding]::UTF8; (Get-Item <exe>).VersionInfo | Format-List CompanyName,LegalCopyright,ProductName,ProductVersion`. CompanyName must be `Zenitus (Lê Quang Vũ)` and LegalCopyright `© 2026 Lê Quang Vũ (Zenitus)`. The commit in each smoke `--version` line must equal `git rev-parse --short=7 HEAD`, with no `-dirty`, and HEAD must be what will be tagged. A build made before the version bump was committed fails this: rebuild.
 4. **There is nothing extra in the lineup:** every zip in `dist/` is in the lineup and every lineup entry has a zip.
 5. **The checksums match:** recompute SHA-256 for each zip and compare it with `SHA256SUMS.txt`. Check that the file lists exactly the zips being published.
 6. **The release notes cover what changed:** compare the notes with `git log <last-tag>..HEAD --oneline`. Flag user-visible changes the notes leave out, and anything that behaves differently from before but isn't called out (data migrations, renamed downloads, changed defaults). Check that the "Which download?" section names every zip correctly. Check that it carries the "Check your download" section.
 7. **The working tree is clean** apart from the version bump. Nothing in `dist/` is older than this build: compare file times with the build output.
-8. **Done when:** for the release plan's final step, mark each item **met**, **not met** or **needs a human**, with evidence.
+8. **It went through a release candidate:**
+   - the candidate tag exists and is published as a pre-release (`gh release view v<X.Y.Z>-rc<N> -R lqvu-zen/RYOS --json isPrerelease,publishedAt,tagName`);
+   - the promotion diff lists only `ryos/__init__.py`, one line changed (`-rc<N>` dropped) -- anything else means it is a new candidate, not a promotion (run the diff yourself);
+   - the tester's last report on that candidate ends `TESTER: PASS` and has no FAIL row;
+   - every box of Vũ's manual checklist is ticked (the release plan's Status table), and the candidate was published at least 24 hours ago unless Vũ waived that in writing;
+   - `release_check.py` ended `RELEASE CHECK PASSED` on this build, with `build_commit` passing.
+9. **Done when:** for the release plan's final step, mark each item **met**, **not met** or **needs a human**, with evidence.
 
 Use Bash only to read: list, hash, `git log` / `git status` / `git diff`, and read the logs. Never build, edit, commit, tag, upload or publish.
 
-Report **BLOCKERS**, **SUGGESTIONS**, **OK**, and the **Done when** checklist, as in diff mode. A **not met** item is a blocker. List every **needs a human** item, because the maintainer must confirm each one before publishing. If there are no blockers, end with the line `READY TO PUBLISH`.
+Report **BLOCKERS**, **SUGGESTIONS**, **OK**, and the **Done when** checklist, as in diff mode. A **not met** item is a blocker. List every **needs a human** item, because the maintainer must confirm each one before publishing; for a candidate, they go into Vũ's manual checklist. If there are no blockers, end with the line `READY TO PUBLISH`.

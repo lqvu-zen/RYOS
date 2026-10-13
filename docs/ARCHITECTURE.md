@@ -262,7 +262,10 @@ drives one realistic session through the real start-up. `tests/launch_smoke.py`
 starts the real entry point, from source or the exe, and
 `tests/real_data_smoke.py` opens a copy of the user's own data. All of them run
 on a throwaway data folder and, with `--visible`, keep their windows on a
-second screen. `CLAUDE.md` lists them with their options.
+second screen. `tests/release_check.py`, the release gate, runs the built
+downloads in `dist/` through them and through the CLI, MCP, fixture-database
+upgrades (`tests/fixtures/db/`) and mixed installs. `CLAUDE.md` lists them with
+their options.
 
 One CI trap worth knowing: `--no-project` still resolves against a local
 `.venv`, so a dependency present locally can be absent on CI and the documented

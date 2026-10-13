@@ -52,12 +52,20 @@ $t2.AppendChild($xml.CreateTextNode("{b}")) | Out-Null
         _log.debug("Toast notification failed: %s", e)
 
 
-def _parse_version(tag: str) -> tuple:
+def _parse_version(tag: str) -> tuple[tuple[int, ...], int, int]:
+    """(release numbers, is_final, pre-release number), so that
+    2.3.1-dev < 2.3.1-rc1 < 2.3.1-rc10 < 2.3.1 < 2.3.2-rc1: a release
+    candidate must see its own final release as newer."""
     try:
-        return tuple(int(x.split("-")[0]) for x in tag.lstrip("v").split("."))
+        release, dash, suffix = tag.lstrip("v").partition("-")
+        numbers = tuple(int(x) for x in release.split("."))
     except (ValueError, AttributeError):
         # Non-numeric component, or tag isn't a string: sorts lowest.
-        return (0,)
+        return (0,), 0, 0
+    if not dash:
+        return numbers, 1, 0
+    digits = suffix[len(suffix.rstrip("0123456789")):]
+    return numbers, 0, int(digits) if digits else 0
 
 
 def _fetch_latest_release() -> tuple[str, str] | None:

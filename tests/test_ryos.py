@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -1002,36 +1003,42 @@ class TestParseVersion(unittest.TestCase):
     to show the 'update available' banner, so ordering must be correct."""
 
     def test_basic_semver(self):
-        self.assertEqual(_parse_version("1.7.2"), (1, 7, 2))
+        self.assertEqual(_parse_version("1.7.2"), ((1, 7, 2), 1, 0))
 
     def test_strips_v_prefix(self):
-        self.assertEqual(_parse_version("v1.7.2"), (1, 7, 2))
+        self.assertEqual(_parse_version("v1.7.2"), ((1, 7, 2), 1, 0))
 
-    def test_strips_prerelease_suffix(self):
-        self.assertEqual(_parse_version("1.7.2-dev"), (1, 7, 2))
-        self.assertEqual(_parse_version("v2.0.0-rc1"), (2, 0, 0))
+    def test_reads_prerelease_suffix(self):
+        self.assertEqual(_parse_version("1.7.2-dev"), ((1, 7, 2), 0, 0))
+        self.assertEqual(_parse_version("v2.0.0-rc1"), ((2, 0, 0), 0, 1))
 
     def test_two_component_version(self):
-        self.assertEqual(_parse_version("v2.0"), (2, 0))
+        self.assertEqual(_parse_version("v2.0"), ((2, 0), 1, 0))
 
     def test_malformed_returns_zero_tuple(self):
-        self.assertEqual(_parse_version("not-a-version"), (0,))
-        self.assertEqual(_parse_version(""), (0,))
+        self.assertEqual(_parse_version("not-a-version"), ((0,), 0, 0))
+        self.assertEqual(_parse_version(""), ((0,), 0, 0))
 
     def test_non_string_tag_returns_zero_tuple(self):
         # AttributeError path (tag is not a str) still sorts lowest.
-        self.assertEqual(_parse_version(None), (0,))
+        self.assertEqual(_parse_version(None), ((0,), 0, 0))
 
     def test_newer_compares_greater(self):
         self.assertGreater(_parse_version("v1.7.3"), _parse_version("v1.7.2"))
         self.assertGreater(_parse_version("v1.8.0"), _parse_version("v1.7.9"))
         self.assertGreater(_parse_version("v2.0.0"), _parse_version("v1.9.9"))
 
-    def test_prerelease_equals_release_numerically(self):
-        self.assertEqual(_parse_version("1.7.2-dev"), _parse_version("1.7.2"))
+    def test_prerelease_sorts_before_its_release(self):
+        chain = ["2.3.1-dev", "2.3.1-rc1", "2.3.1-rc2", "2.3.1-rc9", "2.3.1-rc10",
+                 "2.3.1", "v2.3.2-rc1", "v2.3.2"]
+        parsed = [_parse_version(t) for t in chain]
+        for older, newer, a, b in zip(parsed, parsed[1:], chain, chain[1:]):
+            self.assertLess(older, newer, f"{a} should sort before {b}")
+        self.assertLess(_parse_version("v2.0"), _parse_version("2.0.0"))
 
     def test_malformed_sorts_lowest(self):
         self.assertGreater(_parse_version("v1.0.0"), _parse_version("garbage"))
+        self.assertLess(_parse_version("garbage"), _parse_version("v0.0.1-rc1"))
 
 # ---------------------------------------------------------------------------
 # Quick Run suggestion ranking (ryos.quickrun)
@@ -1924,6 +1931,82 @@ class TestCompatibleFrom(unittest.TestCase):
             code = _cli.main(["list"], settings={}, out=_io.StringIO(), err=err)
         self.assertEqual(code, _cli.EXIT_REFUSED)
         self.assertIn("newer RYOS", err.getvalue())
+
+
+FIXTURE_DBS = Path(__file__).resolve().parent / "fixtures" / "db"
+FIXTURE_TABLES = ("groups", "scripts", "pipelines", "pipeline_steps",
+                  "script_param_presets", "runs", "schedules")
+
+
+def fixture_counts(path) -> dict:
+    """Rows per table, and how many items an agent may run, read without
+    upgrading anything (tests/release_check.py counts the same way)."""
+    from contextlib import closing
+    with closing(sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True)) as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                  for t in FIXTURE_TABLES if t in tables}
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
+        if "agent_exposed" in cols:
+            counts["exposed"] = sum(conn.execute(
+                f"SELECT COUNT(*) FROM {t} WHERE agent_exposed=1").fetchone()[0]
+                for t in ("scripts", "pipelines"))
+        counts["user_version"] = conn.execute("PRAGMA user_version").fetchone()[0]
+    return counts
+
+
+class TestFixtureUpgrades(unittest.TestCase):
+    """A database written by each past release (tests/fixtures/db, made by
+    make_fixtures.py from the release's own code) upgrades with nothing lost.
+    Only copies are opened: the committed files never change."""
+
+    def setUp(self):
+        self.fixtures = sorted(FIXTURE_DBS.glob("*.db"))
+        self.assertTrue(self.fixtures, f"no fixture databases in {FIXTURE_DBS}")
+        tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+
+    def test_every_fixture_upgrades_with_nothing_lost(self):
+        from contextlib import closing
+        for fixture in self.fixtures:
+            with self.subTest(fixture=fixture.name):
+                copy = self.tmp / fixture.name
+                shutil.copyfile(fixture, copy)
+                before = fixture_counts(copy)
+                with closing(sqlite3.connect(copy)) as conn:
+                    names = sorted(r[0] for r in conn.execute("SELECT name FROM scripts"))
+                db = ScriptDB(copy)
+                after = fixture_counts(copy)
+                self.assertEqual(after.pop("user_version"), SCHEMA_VERSION)
+                before.pop("user_version")
+                if "exposed" not in before:          # older than agent exposure
+                    self.assertEqual(after.pop("exposed"), 0)
+                self.assertEqual(after, before)
+                self.assertEqual(sorted(r[1] for r in db.list_all()), names)
+                with closing(sqlite3.connect(copy)) as conn:
+                    self.assertEqual(conn.execute(
+                        "SELECT value FROM meta WHERE key='compatible_from'").fetchone(),
+                        ("1",))
+
+    def test_fixtures_hold_no_real_paths(self):
+        from contextlib import closing
+        for fixture in self.fixtures:
+            with self.subTest(fixture=fixture.name):
+                uri = f"file:{fixture.as_posix()}?mode=ro"
+                with closing(sqlite3.connect(uri, uri=True)) as conn:
+                    cells = [r[0] for r in conn.execute("SELECT path FROM scripts")]
+                    cells += [r[0] for r in conn.execute("SELECT work_dir FROM scripts")]
+                    cells += [r[0] for r in conn.execute("SELECT base_dir FROM groups")]
+                for cell in filter(None, cells):
+                    self.assertTrue(cell.startswith("C:\\RYOS-fixture"), cell)
+                raw = fixture.read_bytes()
+                for bad in (b"Users\\", b"AppData", "Users\\".encode("utf-16-le")):
+                    self.assertNotIn(bad, raw)
+
+    def test_a_fixture_per_released_schema(self):
+        versions = {fixture_counts(f)["user_version"] for f in self.fixtures}
+        self.assertTrue({7, 8, 9, 10} <= versions, versions)
 
 
 class TestAgentExposure(unittest.TestCase):
@@ -8292,6 +8375,12 @@ class TestUpdateStatus(unittest.TestCase):
         self.assertEqual(n.update_status(("v1.2.3", "u"), "1.2.3")[0], n.CURRENT)
         self.assertEqual(n.update_status(("v1.2.2", "u"), "1.2.3")[0], n.CURRENT)
         self.assertEqual(n.update_status(("v1.10.0", "u"), "1.9.9")[0], n.NEWER)
+
+    def test_a_release_candidate_sees_its_final_as_newer(self):
+        from ryos import notifications as n
+        self.assertEqual(n.update_status(("v2.3.1", "u"), "2.3.1-rc1")[0], n.NEWER)
+        self.assertEqual(n.update_status(("v2.3.0", "u"), "2.3.1-rc1")[0], n.CURRENT)
+        self.assertEqual(n.update_status(("v2.3.1-rc2", "u"), "2.3.1")[0], n.CURRENT)
 
     def test_unparseable_tag_is_never_newer(self):
         from ryos import notifications as n

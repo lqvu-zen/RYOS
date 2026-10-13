@@ -23,6 +23,8 @@ and the test that guards it, or **untested**.
   `session_smoke::<step>` (a step in `tests/session_smoke.py`). A bare class name
   means every test in that class applies. `tests/test_cli.py`, `test_headless.py`,
   `test_agenttools.py` and `test_mcpserver.py` are cited the same way.
+  `release_check::<case>` is a case of `tests/release_check.py`, the release gate
+  that runs on the built downloads (`release-ryos`), not in CI.
 - **A smoke check usually opens one layout.** Where a check covers only some of the
   surfaces, the Guarded-by cell says which, e.g. "(N only)". The surfaces it does not
   name are unguarded, and the last section lists them.
@@ -293,9 +295,9 @@ and the test that guards it, or **untested**.
 | **TW-14** Esc clears the search box; Down goes to the first row. | W | `qt_smoke::check_keyboard_through_the_list` (Down), `session_smoke::step_keyboard_and_menu` (Esc) |
 | **TW-15** The menus are File (New script / pipeline / group, Import, Export, Exit), Options (Options, Appearance, Start with Windows, Select, Delete All) and Help (Check for updates, Suggest a feature, Report a bug, Open log folder). | W | `session_smoke::step_groups_and_scripts` (File menu), `qt_smoke::check_bug_report` (Help menu), `session_smoke::step_help_and_log`, plus `qt_smoke::check_suggestion` (Help menu) |
 | **TW-16** Start with Windows turns the run-at-login entry on and off. | W | **untested** |
-| **TW-17** A newer release shows the update banner (fetched off the UI thread, once, dismissible, naming this download's zip); a manual check always answers; an automatic check that fails says nothing. | W | `test_ryos::TestUpdateStatus`, `qt_smoke::check_updates_and_notify` |
+| **TW-17** A newer release shows the update banner (fetched off the UI thread, once, dismissible, naming this download's zip); a manual check always answers; an automatic check that fails says nothing. A release candidate sees its final release as newer; a pre-release is never offered (`/releases/latest` skips it). | W CLI | `test_ryos::TestUpdateStatus`, `test_ryos::TestParseVersion`, `test_ryos::TestUpdateStatus::test_a_release_candidate_sees_its_final_as_newer`, `qt_smoke::check_updates_and_notify` |
 | **TW-18** Report a bug (status bar button and Help menu) opens a new GitHub issue filled in with versions (a build's commit too), theme and layout, and sends nothing; then shows the log's path with an Open log folder button and warns it can hold script paths and output (#29). | W | `test_ryos::TestBugReport`, `test_ryos::TestBuildInfo::test_the_bug_report_names_the_commit`, `test_ryos::TestSuggestion::test_the_bug_report_link_is_unchanged`, `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
-| **TW-19** A database a newer RYOS reshaped makes the window say so and stop, leaving the file untouched. | W CLI | `test_ryos::TestCompatibleFrom`, `qt_smoke::check_newer_database_is_refused` |
+| **TW-19** A database a newer RYOS reshaped makes the window say so in the window and the log, and stop, leaving the file untouched. | W CLI | `test_ryos::TestCompatibleFrom`, `qt_smoke::check_newer_database_is_refused`, `release_check::newer_database_refused` |
 | **TW-20** Maximising shows the rail, group picker, detail pane and Activity bar and turns rows compact; restoring brings back the pills, the output panel and full rows; the option turns the layout off. | D | `test_ryos::TestMaximisedLayout`, `qt_smoke::check_maximised_layout` |
 | **TW-21** The rail's Search puts the keyboard in the search box; the group picker offers groups, All and New group; Activity shows or hides the bar and the choice is remembered. | D | `qt_smoke::check_maximised_layout` |
 | **TW-22** The Overview shows a script's presets as pills (the highlighted one is what Run passes, each pill's play runs with it), then facts and a Last run box with Open output or History. | D · Sc | `test_ryos::TestMaximisedLayout`, `test_ryos::TestOverviewCards::test_the_last_run_box`, `qt_smoke::check_maximised_layout` |
@@ -318,11 +320,11 @@ and the test that guards it, or **untested**.
 | **CLI-07** Parameters and presets: own parameters by default, a preset by label, or `--params`; an unknown preset is refused. | CLI · Sc | `test_cli::TestRun::test_params`, `test_cli::TestRun::test_refusals`, `test_headless::TestRunningAScript::test_parameters_and_presets` |
 | **CLI-08** `pipeline` runs every step and exits as the run did. | CLI · P | `test_cli::TestPipeline`, `test_headless::TestRunningAPipeline` |
 | **CLI-09** `add` creates a script as the dialog would, making the group, refusing a duplicate name, a missing working folder or a question unless `--yes`; making it available to agents needs a person. | CLI · Sc | `test_cli::TestAdd` |
-| **CLI-10** `edit` changes only what was given; `remove` asks and names its pipelines; `expose` turns agent access on and off; `preset` adds and removes. | CLI · Sc P | `test_cli::TestEditRemoveExpose` |
+| **CLI-10** `edit` changes only what was given; `remove` asks and names its pipelines; `expose` turns agent access on and off; `preset` adds and removes. | CLI · Sc P | `test_cli::TestEditRemoveExpose`, `release_check::cli_management` |
 | **CLI-11** The command line takes no instance lock, writes no run-at-login entry and imports no Qt. | CLI | `test_cli::TestTheRealEntryPoint` |
 | **CLI-12** A command-line run reaches a running window's row (a failed run turns it to Retry) and a script added from the command line appears, without bringing the window forward. | CLI W | `qt_smoke::check_cli_run_reaches_the_window` |
 | **CLI-13** `--version` says which download this is and, in a build, the commit it was built from; `version --check` names its zip. | CLI | `test_cli::TestVersion`, `test_cli::TestVersion::test_names_the_build_commit`, `test_ryos::TestBuildInfo`, `test_ryos::TestBuildInfo::test_a_build_names_its_commit` |
-| **CLI-14** A newer database is refused with 125. | CLI | `test_ryos::TestCompatibleFrom::test_the_cli_refuses_with_125` |
+| **CLI-14** A newer database is refused with 125. | CLI | `test_ryos::TestCompatibleFrom::test_the_cli_refuses_with_125`, `release_check::newer_database_refused` |
 | **CLI-15** A run's output is kept in a bounded buffer, lines split across chunks, with old lines dropped and paging skipping them. | CLI MCP | `test_headless::TestRunOutput` |
 | **CLI-16** A run from the command line is recorded in History as `cli` and a stop ends it. | CLI · Sc P | `test_headless::TestRunningAScript::test_history_says_who_started_it`, `test_headless::TestRunningAScript::test_stop` |
 | **CLI-17** `ryos-cli version` prints where the logs are: the folder and each log this download writes (#29). | CLI | `test_cli::TestVersion::test_says_where_the_logs_are`, `test_ryos::TestBugReport::test_log_lines_per_download` |
@@ -338,8 +340,8 @@ and the test that guards it, or **untested**.
 | **MCP-04** A run reports its output and outcome; a failure, a stop and a pipeline run work; a second run of the same item is refused; an unknown run id is named. | MCP · Sc P | `test_agenttools::TestRunning` |
 | **MCP-05** Output comes a page at a time with long lines capped; waiting returns as soon as there is news. | MCP | `test_agenttools::TestOutputInPages` |
 | **MCP-06** A finished agent run tells a running window to refresh its rows. | MCP W | `test_agenttools::TestRunning::test_a_running_window_is_told` |
-| **MCP-07** The real server lists six tools, serves only available items, runs one by preset and refuses an unavailable one with a readable message. | MCP | `test_mcpserver::TestMcpServer::test_the_tools` |
-| **MCP-08** The Windows download has no MCP server: `ryos-cli mcp` exits 125 saying which download has it; without the SDK it says how to get it. | MCP CLI | `test_cli::TestMcpInTheBuildWithoutIt`, `test_cli::TestMcpWithoutTheSdk`, `test_ryos::TestBuildInfo::test_which_builds_carry_mcp_and_offer_agents` |
+| **MCP-07** The real server lists six tools, serves only available items, runs one by preset and refuses an unavailable one with a readable message. | MCP | `test_mcpserver::TestMcpServer::test_the_tools`, `release_check::mcp_windows_ai`, `release_check::mcp_agent` (the built servers: list, run, poll, stop) |
+| **MCP-08** The Windows download has no MCP server: `ryos-cli mcp` exits 125 saying which download has it; without the SDK it says how to get it. | MCP CLI | `test_cli::TestMcpInTheBuildWithoutIt`, `test_cli::TestMcpWithoutTheSdk`, `test_ryos::TestBuildInfo::test_which_builds_carry_mcp_and_offer_agents`, `release_check::mcp_windows` |
 | **MCP-09** The "Available to agents" box is in the script dialog and the pipeline editor, off until ticked, hidden in the build without agents but its stored value untouched; so are the group menu's and select mode's agent actions. | W · Sc P | `qt_smoke::check_script_dialog`, `qt_smoke::check_pipeline_editor`, `test_ryos::TestScriptFormLoadSave::test_agents_off_unless_ticked_and_untickable`, `test_ryos::TestCardMenu::test_group_menu_offers_agents_only_where_offered`, `session_smoke::step_agents_for_a_group` |
 | **MCP-10** The command line shows which items agents may run, and exposing from it, one item or a whole group, needs a person to confirm. | CLI | `test_cli::TestEditRemoveExpose::test_expose_on_and_off`, `test_cli::TestAdd::test_expose_needs_a_person`, `test_cli::TestExposeAGroup::test_refused_without_a_terminal_or_yes` |
 
@@ -394,12 +396,25 @@ and the test that guards it, or **untested**.
 
 | Behaviour | Surfaces | Guarded by |
 | --- | --- | --- |
-| **DB-01** A new database is stamped current; migrations run in order, once, and are safe to run twice; an old schema upgrades. | W CLI MCP | `test_ryos::TestSchemaVersioning`, `test_ryos::TestRunMigrations`, `test_ryos::TestScriptDBMigration` |
+| **DB-01** A new database is stamped current; migrations run in order, once, and are safe to run twice; an old schema upgrades; a database from every past release upgrades with nothing lost. | W CLI MCP | `test_ryos::TestSchemaVersioning`, `test_ryos::TestRunMigrations`, `test_ryos::TestScriptDBMigration`, `test_ryos::TestFixtureUpgrades`, `release_check::fixture_upgrade_<name>` (one per `tests/fixtures/db/*.db`) |
 | **DB-02** Accessor rows keep their pinned widths; the UI slices instead of unpacking a fixed number of names. | N C F D | `test_ryos::TestRowWidthsArePinned`, `test_ryos::TestPipelineEditorUnpacksDefensively` |
 | **DB-03** Groups, scripts and pipelines keep their order; swap and move-to-top are reversible; reordering and moving between groups work for both kinds. | Sc P | `test_ryos::TestScriptDBOrdering`, `test_ryos::TestScriptDBReorderMove` |
 | **DB-04** Deleting a group orphans its items into Ungrouped; renaming a group renames it for scripts and pipelines. | W | `test_ryos::TestScriptDBGroups::test_delete_group_orphans_scripts_and_pipelines`, `test_ryos::TestScriptDBGroups::test_rename_group_propagates_to_scripts_and_pipelines` |
 | **DB-05** Rows that point at deleted scripts are cleaned up when the database opens. | W | `test_ryos::TestOrphanMigration` |
 | **DB-06** Colours (highlight) are stored per script and pipeline and do not disturb earlier columns. | N C F D · Sc P | `test_ryos::TestLabelColorDB` |
+| **DB-07** Moving between downloads (RYOS Agent, Windows with or without agents) keeps scripts, history, presets and agent exposure, in either order. | W CLI MCP | `release_check::mixed_agent_first`, `release_check::mixed_app_first` |
+
+## Escapes
+
+Every bug found after a release gets one line here, in the fix's commit, and that
+commit adds the check named: "#NN (vX.Y.Z): should have been caught by <check>;
+added <test / map entry / release_check case>".
+
+- #26 (v2.3.0): a pipeline stalled after a step that left a process running; should have been caught by a pipeline test with a step whose children outlive it; added PL-10 to PL-13 and their `test_headless::TestRunningAPipeline` tests.
+- #27 (v2.3.0): select mode did not tick pipelines, and a click on a row did not tick it; should have been caught by a select-mode check covering pipelines; added SM-01, SM-02, SM-06, GR-31 and `test_ryos::TestSelectionTakesPipelines`.
+- #29a (v2.3.0): a chatty pipeline froze the window; should have been caught by a heavy-output check in the window; added OP-05 and `qt_smoke::check_heavy_output_stays_responsive`.
+- #29b (v2.3.0): the log was hard to find when something went wrong; should have been caught by a user using the build before it shipped (the release candidate phase); added TW-18, TW-25, CLI-17 and `session_smoke::step_help_and_log`.
+- #30 (v2.3.0, since the Qt port in v2.0.0): a Quick Run of a new file did not show its row; should have been caught by a Quick Run check in every layout; added QR-08 and `qt_smoke::check_quick_run_shows_new_row`.
 
 ---
 

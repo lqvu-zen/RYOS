@@ -2,6 +2,7 @@
 capture screens as PNGs, without showing anything on any monitor.
 
     uv run python .claude/skills/run-ryos/driver.py [scenario ...] [--theme ID]
+        [--variant windows|windows-ai|agent|portable]
 
 Scenarios: main, compact, output, quick-run, dialogs, themes, all (default:
 main). Screenshots land in .claude/skills/run-ryos/screenshots/.
@@ -62,6 +63,15 @@ def load_samples() -> None:
                    check=True, capture_output=True)
     from ryos.db import ScriptDB
     ScriptDB().import_from_file(str(ROOT / "samples" / "ryos-samples.json"))
+
+
+def set_variant(which: str) -> None:
+    """Behave as that download (ryos/buildinfo.py) in this process: the
+    `windows` build hides "Available to agents". Call it before window()."""
+    from ryos import buildinfo
+    if which not in buildinfo.DOWNLOADS:
+        raise ValueError(f"no download {which!r}: one of {sorted(buildinfo.DOWNLOADS)}")
+    buildinfo.variant = lambda: which
 
 
 def window(theme: str, **overrides):
@@ -247,7 +257,11 @@ def main() -> int:
     parser.add_argument("scenario", nargs="*", default=["main"],
                         help=f"{', '.join(SCENARIOS)}, or all")
     parser.add_argument("--theme", default="dark", help="theme id (default: dark)")
+    parser.add_argument("--variant", choices=("windows", "windows-ai", "agent", "portable"),
+                        help="behave as that download (default: from source, portable)")
     args = parser.parse_args()
+    if args.variant:
+        set_variant(args.variant)
     names = list(SCENARIOS) if "all" in args.scenario else args.scenario
     unknown = [n for n in names if n not in SCENARIOS]
     if unknown:
