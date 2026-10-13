@@ -104,11 +104,16 @@ class Session:
         self._dialogs: list = []
         self._answers: dict[str, list] = {"yes_no": [], "text": [], "save": [], "open": []}
         self.asked: list[tuple[str, str]] = []
+        self.urls: list[str] = []
+        self.folders: list[str] = []
         self.hook(win)
 
     def hook(self, win) -> None:
         self.win = win
         win.run_dialog = self._run_dialog
+        # No step may open a real browser or Explorer.
+        win.open_url = self.urls.append
+        win.open_folder = self.folders.append
         win.ask_yes_no = lambda t, q: self._take("yes_no", t, q)
         win.ask_text = lambda t, q, _i="": self._take("text", t, q)
         win.ask_save_path = lambda t, _n: self._take("save", t, "")
@@ -732,6 +737,38 @@ def step_keyboard_and_menu(s: Session) -> None:
        "Ctrl+V on a row pastes into that row's group")
 
 
+def step_help_and_log(s: Session) -> None:
+    """Report a bug opens the browser, then shows where the log is; Help ->
+    Open log folder opens that folder (TW-18, TW-25)."""
+    from pathlib import Path
+
+    from ryos import settings as settings_mod
+    win = s.win
+    s.urls.clear()
+    s.folders.clear()
+
+    def fill(dlg):
+        shown = Path(dlg.path_label.text())
+        appdata = Path(os.environ["APPDATA"]).resolve()
+        if appdata not in shown.resolve().parents:
+            problem(f"the bug report shows a log outside the session folder: {shown}")
+        if shown != Path(settings_mod.LOG_PATH):
+            problem(f"the bug report shows {shown}, not the log")
+        dlg.open_button.click()
+
+    s.expect_dialog("BugReportDialog", fill)
+    win.bug_button.click()
+    win.open_log_action.trigger()
+    s.pump(0.2)
+    if len(s.urls) != 1:
+        problem(f"Report a bug opened {len(s.urls)} links, not 1")
+    want = [str(settings_mod.LOG_DIR)] * 2
+    if s.folders != want:
+        problem(f"the log folder was opened as {s.folders}, not {want}")
+    ok("Report a bug opens one link then the log dialog; its button and "
+       "Help -> Open log folder both open the log folder")
+
+
 def step_favourite_and_delete(s: Session) -> None:
     win = s.win
     s.card("Project", "Say hello").fav_button.click()
@@ -1017,6 +1054,7 @@ def main() -> int:
              lambda: step_scheduled_outside(s),
              lambda: step_quick_run_search_select(s, project),
              lambda: step_keyboard_and_menu(s),
+             lambda: step_help_and_log(s),
              lambda: step_favourite_and_delete(s),
              lambda: step_export_import(s),
              lambda: step_options_and_theme(s, Path(settings_mod._SETTINGS_PATH)),

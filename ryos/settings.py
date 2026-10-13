@@ -18,6 +18,8 @@ _SETTINGS_PATH = _APPDATA / "settings.json"
 LOG_DIR = _APPDATA / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = LOG_DIR / "ryos.log"
+CLI_LOG_PATH = LOG_DIR / "ryos-cli.log"
+MCP_LOG_PATH = LOG_DIR / "ryos-mcp.log"
 
 DATA_DIR = _APPDATA  # public alias for ui/* to import without touching private name
 QR_INDEX_DIR = _APPDATA / "qr_index"

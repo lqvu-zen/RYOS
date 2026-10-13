@@ -8,6 +8,7 @@ instance lock, writes run-at-login or imports Qt.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -376,6 +377,21 @@ class TestVersion(unittest.TestCase):
         code, out = self.run_version()
         self.assertEqual(code, 0)
         self.assertIn(f"RYOS {__version__} ({buildinfo.describe()})", out)
+
+    def test_says_where_the_logs_are(self):
+        from ryos import settings
+        code, out = self.run_version()
+        self.assertEqual(code, 0)
+        self.assertIn(str(settings.LOG_DIR), out)
+        self.assertIn("ryos-cli.log", out)
+
+    def test_dash_dash_version_stays_one_line(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["--version"], db=None, settings={},
+                            err=io.StringIO())
+        self.assertEqual(code, 0)
+        self.assertEqual(len(out.getvalue().strip().splitlines()), 1)
 
     def test_check(self):
         from ryos import buildinfo

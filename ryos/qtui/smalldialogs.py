@@ -310,6 +310,46 @@ class OutsideBaseWarningDialog(QDialog):
         super().reject()
 
 
+class BugReportDialog(QDialog):
+    """Shown after the bug report opens in the browser: where the log is, with
+    a button that opens its folder. The dialog stays up after the button, so
+    the folder can be opened and the log dragged into the issue. It decides
+    nothing; the wording is `bugreport`'s."""
+
+    def __init__(self, note: str, log_path: str,
+                 on_open_folder: Callable[[], object],
+                 parent: QWidget | None = None):
+        from .. import bugreport
+        super().__init__(parent)
+        self.setWindowTitle(bugreport.DIALOG_TITLE)
+
+        col = QVBoxLayout(self)
+        body = QLabel(note)
+        body.setWordWrap(True)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        col.addWidget(body)
+        self.path_label = QLabel(log_path)
+        self.path_label.setObjectName("cardPath")
+        self.path_label.setWordWrap(True)
+        self.path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        col.addWidget(self.path_label)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.open_button = QPushButton(bugreport.OPEN_LOG_BUTTON)
+        self.open_button.setAutoDefault(False)
+        self.close_button = QPushButton("Close")
+        self.close_button.setDefault(True)
+        row.addWidget(self.open_button)
+        row.addWidget(self.close_button)
+        col.addLayout(row)
+
+        self.open_button.clicked.connect(lambda: on_open_folder())
+        self.close_button.clicked.connect(self.reject)
+        self.setMinimumWidth(460)
+
+
 class CloseToTrayPromptDialog(QDialog):
     """Asked on close when the tray is available: minimise, quit, or stay.
 

@@ -9627,6 +9627,46 @@ class TestBugReport(unittest.TestCase):
         self.assertLess(len(url), bugreport.MAX_URL)
         self.assertNotIn(os.environ.get("USERNAME", "\0"), url)
 
+    def test_the_log_note_keeps_the_warning(self):
+        from ryos import bugreport
+        on = bugreport.log_note(logging_on=True)
+        off = bugreport.log_note(logging_on=False)
+        self.assertIn("have a look first", on.lower())
+        self.assertIn("script paths and output", on)
+        self.assertIn("Write a log file", off)
+        self.assertIn("have a look first", off.lower())
+        self.assertIn("script paths and output", off)
+        self.assertIn("Logging", off)
+
+    def test_log_lines_per_download(self):
+        from ryos import buildinfo, bugreport
+        want = {buildinfo.WINDOWS: ["ryos.log", "ryos-cli.log"],
+                buildinfo.WINDOWS_AI: ["ryos.log", "ryos-cli.log", "ryos-mcp.log"],
+                buildinfo.AGENT: ["ryos-cli.log", "ryos-mcp.log"],
+                buildinfo.PORTABLE: ["ryos.log", "ryos-cli.log", "ryos-mcp.log"]}
+        for which, names in want.items():
+            lines = bugreport.log_lines("C:/logs", which=which, window=True,
+                                        cli=True, mcp=True)
+            self.assertEqual(lines[0], "Logs: C:/logs", which)
+            self.assertEqual([ln.split()[0] for ln in lines[1:]], names, which)
+        lines = bugreport.log_lines("d", which=buildinfo.WINDOWS_AI, window=True,
+                                    cli=True, mcp=True)
+        self.assertIn("the window", lines[1])
+        self.assertIn("AI agents (ryos-cli mcp)", lines[3])
+        self.assertEqual(len({ln.index("the") if "the " in ln else ln.index("AI")
+                              for ln in lines[1:]}), 1)
+
+    def test_the_body_points_at_the_menu(self):
+        from ryos import bugreport
+        body = bugreport.issue_body(self._env())
+        self.assertIn("Help → Open log folder", body)
+        self.assertIn(bugreport.LOG_HINT, body)
+
+    def test_every_log_lives_in_the_log_folder(self):
+        from ryos import settings
+        for path in (settings.LOG_PATH, settings.CLI_LOG_PATH, settings.MCP_LOG_PATH):
+            self.assertEqual(path.parent, settings.LOG_DIR)
+
 
 class TestCopyBetweenGroups(unittest.TestCase):
     """Copy / Paste and Copy to: a script or pipeline from one group into

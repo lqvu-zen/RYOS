@@ -306,7 +306,7 @@ Constants: `INDEX_VERSION` (bump to invalidate on-disk caches), `SKIP_DIRS`
 Resolves the per-user data directory and creates it on import.
 
 - **Paths** (module constants): `DATA_DIR`, `DB_PATH`, `LOG_DIR`, `LOG_PATH`,
-  `QR_INDEX_DIR`. On Windows these live under `%APPDATA%\RYOS`; otherwise
+  `CLI_LOG_PATH`, `MCP_LOG_PATH`, `QR_INDEX_DIR`. On Windows these live under `%APPDATA%\RYOS`; otherwise
   `~/.local/share/RYOS`.
 - `_SETTINGS_DEFAULTS: dict` — every setting and its default (window geometry,
   output limits, Quick Run tuning, logging, theme, `max_parallel_jobs`, …).

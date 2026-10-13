@@ -142,6 +142,7 @@ This tells you whether a newer RYOS Agent is available, and which file to downlo
 | --- | --- |
 | Claude says it has no RYOS tools | Check the path in the config, then fully quit and reopen Claude Desktop. For Claude Code, run `claude mcp list`. |
 | Claude connects but lists nothing | No script is exposed yet. Run `ryos-cli list`, then `ryos-cli expose <name> on`. |
+| You need the log for a bug report | `ryos-cli version` prints the folder; attach `ryos-cli.log` or `ryos-mcp.log` after a look. |
 | `ryos-cli mcp` seems to hang when you run it yourself | That's normal: it's waiting for Claude to talk to it. Press **Ctrl+C**. |
 | A command stops with exit code 125 | RYOS refused: no such script, an ambiguous name, a bad path, a name already in the group, or no such preset. The message says which. |
 | "…updated by a newer RYOS, and this one cannot use it safely" | Another RYOS on this PC is newer. Update this one to the same version; nothing was changed. |

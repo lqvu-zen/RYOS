@@ -139,12 +139,12 @@ def serve() -> int:
         return EXIT_NO_SDK
     from .db import ScriptDB
     from .logger import setup_logging
-    from .settings import LOG_DIR, _load_settings
+    from .settings import MCP_LOG_PATH, _load_settings
     from .single_instance import RELOAD, signal_running
 
     settings = _load_settings()
     setup_logging(settings.get("logging_enabled", True),
-                  settings.get("log_level", "INFO"), LOG_DIR / "ryos-mcp.log")
+                  settings.get("log_level", "INFO"), MCP_LOG_PATH)
     from .db import NewerDatabaseError
     try:
         db = ScriptDB()

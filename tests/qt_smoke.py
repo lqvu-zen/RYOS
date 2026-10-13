@@ -4771,12 +4771,23 @@ def check_bug_report(app):
 
     from ryos import __version__, bugreport
     from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import BugReportDialog
+    from ryos.settings import LOG_DIR, LOG_PATH
     from ryos.themes import REFERENCE
 
     win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False,
                                                    "theme": "dark"})
-    opened: list = []
-    win.open_url = opened.append
+    # One ordered list: the browser must open before the dialog. run_dialog is
+    # stubbed, or exec() would block the check.
+    events: list = []
+    dialogs: list = []
+    win.open_url = lambda url: events.append(("url", url))
+    win.open_folder = lambda path: events.append(("folder", path))
+
+    def _show(dlg):
+        events.append(("dialog", type(dlg)))
+        dialogs.append(dlg)
+    win.run_dialog = _show
     win.show()
     app.processEvents()
     try:
@@ -4785,6 +4796,11 @@ def check_bug_report(app):
             PROBLEMS.append("the bug button is missing, too small or unnamed")
         win.bug_button.click()
         win.report_bug_action.trigger()
+        opened = [e[1] for e in events if e[0] == "url"]
+        if [e[0] for e in events] != ["url", "dialog", "url", "dialog"] \
+                or events[1][1] is not BugReportDialog:
+            PROBLEMS.append(f"the bug report did not open the link, then the log "
+                            f"dialog, twice: {[e[0] for e in events]}")
         if len(opened) != 2:
             PROBLEMS.append(f"the bug button and menu opened {len(opened)} links, not 2")
         else:
@@ -4795,6 +4811,23 @@ def check_bug_report(app):
                 PROBLEMS.append(f"the bug report link is not filled in: {opened[0][:120]}")
         if bugreport.OPENED not in win.statusBar().currentMessage():
             PROBLEMS.append("reporting a bug did not say what happened")
+        if dialogs:
+            dlg = dialogs[0]
+            if dlg.path_label.text() != str(LOG_PATH):
+                PROBLEMS.append("the bug report dialog does not show the log's path")
+            if "script paths and output" not in " ".join(
+                    lab.text() for lab in dlg.findChildren(type(dlg.path_label))):
+                PROBLEMS.append("the bug report dialog lost the look-first warning")
+            events.clear()
+            dlg.open_button.click()
+            win.open_log_action.trigger()
+            if events != [("folder", str(LOG_DIR))] * 2:
+                PROBLEMS.append(f"Open log folder did not open the log folder "
+                                f"twice: {events}")
+            texts = [a.text() for a in win.menuBar().actions()[-1].menu().actions()]
+            if texts.index(win.open_log_action.text()) != \
+                    texts.index(win.report_bug_action.text()) + 1:
+                PROBLEMS.append(f"Open log folder is not right after Report a bug: {texts}")
     finally:
         win.close()
         win.deleteLater()

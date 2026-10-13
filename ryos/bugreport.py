@@ -11,11 +11,16 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
+from . import buildinfo
+
 NEW_ISSUE = "https://github.com/lqvu-zen/RYOS/issues/new"
 
 MENU_LABEL = "Report a bug…"
 TOOLTIP = "Report a bug — opens a new issue on GitHub, filled in with your versions"
 OPENED = "Opened a bug report in your browser — nothing is sent until you submit it."
+OPEN_LOG_LABEL = "Open &log folder"
+OPEN_LOG_BUTTON = "Open log folder"
+DIALOG_TITLE = "Report a bug"
 
 #: Where the log is, as anyone's machine spells it (no user name in it).
 LOG_HINT = r"%APPDATA%\RYOS\logs\ryos.log"
@@ -23,6 +28,41 @@ LOG_HINT = r"%APPDATA%\RYOS\logs\ryos.log"
 #: Browsers and GitHub cope with long links, but not endlessly; the body
 #: here is a few hundred characters, and this keeps it so.
 MAX_URL = 6000
+
+
+def log_note(*, logging_on: bool) -> str:
+    """What the bug-report dialog says about the log. Either way it keeps the
+    warning: the log can hold script paths and output."""
+    if logging_on:
+        return ("If the log would help, attach ryos.log from this folder (drag "
+                "it into the issue). Have a look first: it can contain your "
+                "script paths and output.")
+    return ("RYOS isn't writing a log at the moment. To record one, turn on "
+            "Options… → Logging → Write a log file, then make the bug happen "
+            "again. An older log may still be in the folder: have a look "
+            "first, it can contain your script paths and output.")
+
+
+def open_failed(path: str) -> str:
+    return f"Couldn't open the log folder: {path}"
+
+
+def log_lines(log_dir: str, *, which: str, window: bool, cli: bool,
+              mcp: bool) -> list[str]:
+    """The log folder, then one line per log this download writes and who
+    writes it. The flags say what the caller wants listed; the download
+    decides what exists at all: RYOS Agent has no window, and a Windows build
+    without AI agents has no MCP server."""
+    rows = []
+    if window and which != buildinfo.AGENT:
+        rows.append(("ryos.log", "the window"))
+    if cli:
+        rows.append(("ryos-cli.log", "the command line"))
+    if mcp and buildinfo.agents_offered(which):
+        rows.append(("ryos-mcp.log", "AI agents (ryos-cli mcp)"))
+    width = max((len(name) for name, _ in rows), default=0)
+    return [f"Logs: {log_dir}",
+            *[f"  {name.ljust(width)}  {who}" for name, who in rows]]
 
 
 def environment(version: str, *, frozen: bool, os_name: str, python: str,
@@ -51,8 +91,9 @@ def issue_body(env: list[tuple[str, str]]) -> str:
         "**Environment**",
         *[f"- {label}: {value}" for label, value in env],
         "",
-        f"_If it helps, attach the log, `{LOG_HINT}` — have a look first: it can "
-        "contain your script paths and output._",
+        "_If it helps, attach the log (in RYOS: Help → Open log folder), "
+        f"`{LOG_HINT}` — have a look first: it can contain your script paths "
+        "and output._",
     ]
     return "\n".join(lines)
 

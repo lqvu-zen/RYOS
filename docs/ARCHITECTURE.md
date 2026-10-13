@@ -95,7 +95,7 @@ without a display, and that is still where new logic belongs.
 | `ryos/basefolder.py` | Whether a script file or working folder lies outside its group's base folder (strings only, no disk), and the wording of the badge tooltips, the detail row and the one-line note put at the top of runs started from the window. | yes |
 | `ryos/detail.py` | The maximised layout: when it applies (`use_workspace`), the rail's places (`RAIL`), the pane's tabs (`TABS`) when a run opens Output (`tab_when_run_starts`), the Overview's step cards (`step_cards`) and last-run box (`last_run_lines`), and what the pane says -- the Run/Retry label, the line under the name, and the facts it lists. | yes |
 | `ryos/activity.py` | The maximised window's Activity bar: the next scheduled runs (`up_next`), the last runs with a pipeline standing for its steps (`recent`), the day words, the rail's running count and the status bar's summary line. | yes |
-| `ryos/bugreport.py` | Help → Report a bug and the status bar's bug button: the new GitHub issue's link, filled in with the versions, theme and layout. Nothing is sent; the log is pointed to, not attached. | yes |
+| `ryos/bugreport.py` | Help → Report a bug and the status bar's bug button: the new GitHub issue's link, filled in with the versions, theme and layout, plus the log dialog's wording, Open log folder and `log_lines` (which logs this download writes, shared with `ryos-cli version`). Nothing is sent; the log is pointed to, not attached. | yes |
 | `ryos/scheduleform.py` | The schedule dialog's form rules: which fields make up a spec per mode, how a stored schedule loads back, the catch-up labels, preview formatting, and when to offer starting RYOS at login. | yes |
 | `ryos/themes.py` | The theme gallery, palette building, custom themes, highlight colours and WCAG `contrast_ratio()` / `ink_on()`, used to keep every colour legible. | yes |
 | `ryos/single_instance.py` | Single-instance guard; a second launch asks the running window to restore and exits. `RYOS_ALLOW_MULTIPLE=1` bypasses it. | yes |
@@ -208,6 +208,7 @@ hangs in Running forever.
 | `scripts.db` | SQLite: scripts, groups, pipelines, pipeline steps, param presets, run history (`runs`), schedules. |
 | `settings.json` | All app settings (tolerant load — corrupt/missing falls back to defaults). |
 | `logs/ryos.log` | Rotating log (1 MiB × 3 backups). |
+| `logs/ryos-cli.log`, `logs/ryos-mcp.log` | The same, written by the command line and by `ryos-cli mcp`. |
 | `qr_index/` | Cached Quick Run file indexes per base directory. |
 | `themes/` | Custom themes, one JSON file each. |
 

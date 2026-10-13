@@ -10,6 +10,7 @@ the window.
     ryos expose <script> on|off [--pipeline] [--yes]
     ryos preset add <script> <label> --params="..."   |   ryos preset remove <script> <label>
     ryos history [<script>] [--pipeline] [--limit N] [--json]
+    ryos version [--check]
 
 Adding, editing, removing and exposing follow the script dialog's own rules
 (``ryos/manage.py``). Letting agents run something, and removing, ask at
@@ -155,8 +156,8 @@ def _parser() -> argparse.ArgumentParser:
     pr.add_argument("ref", metavar="SCRIPT")
     pr.add_argument("label")
 
-    ve = sub.add_parser("version", help="This RYOS's version; --check asks GitHub "
-                                         "whether a newer one is out.")
+    ve = sub.add_parser("version", help="This RYOS's version and where its logs are; "
+                                         "--check asks GitHub whether a newer one is out.")
     ve.add_argument("--check", action="store_true",
                     help="Check for a newer release, and name the file to download.")
 
@@ -417,6 +418,14 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         return e.code if isinstance(e.code, int) else EXIT_OK
     if args.command == "version":
         print(f"RYOS {__version__} ({buildinfo.describe()})", file=out)
+        # Lazily, and before any settings, database or log set-up: this
+        # command must work when those are what is broken.
+        from . import bugreport
+        from .settings import LOG_DIR
+        for line in bugreport.log_lines(
+                str(LOG_DIR), which=buildinfo.variant(),
+                window=True, cli=True, mcp=True):
+            print(line, file=out)
         if not args.check:
             return EXIT_OK
         from . import notifications
@@ -431,10 +440,10 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         return serve()
     if settings is None or db is None:
         from .logger import setup_logging
-        from .settings import LOG_DIR, _load_settings
+        from .settings import CLI_LOG_PATH, _load_settings
         settings = _load_settings() if settings is None else settings
         setup_logging(settings.get("logging_enabled", True),
-                      settings.get("log_level", "INFO"), LOG_DIR / "ryos-cli.log")
+                      settings.get("log_level", "INFO"), CLI_LOG_PATH)
         try:
             db = ScriptDB() if db is None else db
         except NewerDatabaseError as e:

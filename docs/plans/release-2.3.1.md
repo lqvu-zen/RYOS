@@ -254,7 +254,7 @@ Steps 3, 4 and 5 are done. Order: the bug fixes 9 and 11 first (Vũ hits them ev
 | 7 Publisher details and download check | — |
 | 8 Expose a group | — |
 | 9 Fix #29a freeze | done: the window drains run output in 50 ms slices and joins a run's lines (a chatty pipeline held it for 70 s in one turn); `qt_smoke` heavy-output check |
-| 10 #29b log easy to find | — |
+| 10 #29b log easy to find | done: Help → Open log folder; Report a bug opens the issue, then a dialog with the log's path, an Open log folder button and the look-first warning; `ryos-cli version` prints the log folder and files; tutorial 12 "If something goes wrong". Needs a human: Explorer really opens on a built exe |
 | 11 Fix #30 Quick Run | done: the Qt port (2.0.0) dropped Tk's refresh after Quick Run registered a script; restored as `quickrun_actions.needs_refresh`, smoke-checked in compact, normal and maximised |
 | 12 #31 newest log tab first | — |
 | 13 Behaviour map | **waiting on Vũ's review of `docs/BEHAVIOUR.md`**. Written (266 entries, 16 areas); wired into both skills, the four agents and `CLAUDE.md`; `session_smoke` runs normal and compact (`--layout`, default both); 7 backlog entries now checked. Found two bugs: OP-15 "Clear output between runs" does nothing, GR-33 a scheduled outside run adds the note |

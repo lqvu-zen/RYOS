@@ -373,6 +373,7 @@ class MainWindow(QMainWindow):
         self._notifier = notifier or (lambda _t, _b: None)
         self._fetch_release = fetch_release or (lambda: None)
         self.open_url: Callable[[str], None] = self._open_url
+        self.open_folder: Callable[[str], object] = self._open_folder
         self.update_banner = None
         # Monitor lookups, injectable so placement can be checked against a
         # made-up desktop rather than whatever screens the test machine has.
@@ -941,6 +942,10 @@ class MainWindow(QMainWindow):
         self.report_bug_action.triggered.connect(self.report_bug)
         self._menu_icon(self.report_bug_action, "bug")
         help_menu.addAction(self.report_bug_action)
+        self.open_log_action = QAction(bugreport.OPEN_LOG_LABEL, self)
+        self.open_log_action.triggered.connect(self.open_log_folder)
+        self._menu_icon(self.open_log_action, "folder")
+        help_menu.addAction(self.open_log_action)
 
     def _menu_icon(self, action, shape: str, *, danger: bool = False) -> None:
         """Give a menu action an icon from the set, re-tinted on a theme change."""
@@ -1789,11 +1794,30 @@ class MainWindow(QMainWindow):
             theme=str(self._settings.get("theme", "light")), layout=layout)
         self.open_url(bugreport.issue_url(env))
         self.statusBar().showMessage(bugreport.OPENED, 8000)
+        # After the browser, so the page is already on its way; the dialog is
+        # where the log is, for someone who wants to attach it.
+        from ..settings import LOG_PATH
+        from .smalldialogs import BugReportDialog
+        self.run_dialog(BugReportDialog(
+            bugreport.log_note(
+                logging_on=bool(self._settings.get("logging_enabled", True))),
+            str(LOG_PATH), self.open_log_folder, self))
+
+    def open_log_folder(self) -> None:
+        from ..settings import LOG_DIR
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        if self.open_folder(str(LOG_DIR)) is False:
+            self.statusBar().showMessage(bugreport.open_failed(str(LOG_DIR)), 8000)
 
     def _open_url(self, url: str) -> None:
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
         QDesktopServices.openUrl(QUrl(url))
+
+    def _open_folder(self, path: str) -> bool:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     # -- tray, second launches, and closing ---------------------------------------
     def attach_tray(self, tray) -> None:

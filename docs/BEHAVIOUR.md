@@ -288,16 +288,17 @@ and the test that guards it, or **untested**.
 | **TW-12** Search filters rows as you type and shows "N of M"; an empty result says so and hides empty sections; a reload keeps the filter; clearing restores everything. | W N C A | `test_ryos::TestSearchNormalizeAndMatch`, `test_ryos::TestSearchEmptyState`, `qt_smoke::check_shell`, `qt_smoke::check_search_empty_state`, `session_smoke::step_quick_run_search_select` |
 | **TW-13** When the open group has no match, the hint links to other groups that do. | W | `test_ryos::TestComputeHint` (the rule). The links in the window: **untested** |
 | **TW-14** Esc clears the search box; Down goes to the first row. | W | `qt_smoke::check_keyboard_through_the_list` (Down), `session_smoke::step_keyboard_and_menu` (Esc) |
-| **TW-15** The menus are File (New script / pipeline / group, Import, Export, Exit), Options (Options, Appearance, Start with Windows, Select, Delete All) and Help (Check for updates, Report a bug). | W | `session_smoke::step_groups_and_scripts` (File menu only) |
+| **TW-15** The menus are File (New script / pipeline / group, Import, Export, Exit), Options (Options, Appearance, Start with Windows, Select, Delete All) and Help (Check for updates, Report a bug, Open log folder). | W | `session_smoke::step_groups_and_scripts` (File menu), `qt_smoke::check_bug_report` (Help menu), `session_smoke::step_help_and_log` |
 | **TW-16** Start with Windows turns the run-at-login entry on and off. | W | **untested** |
 | **TW-17** A newer release shows the update banner (fetched off the UI thread, once, dismissible, naming this download's zip); a manual check always answers; an automatic check that fails says nothing. | W | `test_ryos::TestUpdateStatus`, `qt_smoke::check_updates_and_notify` |
-| **TW-18** Report a bug (status bar button and Help menu) opens a new GitHub issue filled in with versions, theme and layout, and sends nothing. | W | `test_ryos::TestBugReport`, `qt_smoke::check_bug_report` |
+| **TW-18** Report a bug (status bar button and Help menu) opens a new GitHub issue filled in with versions, theme and layout, and sends nothing; then shows the log's path with an Open log folder button and warns it can hold script paths and output (#29). | W | `test_ryos::TestBugReport`, `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
 | **TW-19** A database a newer RYOS reshaped makes the window say so and stop, leaving the file untouched. | W CLI | `test_ryos::TestCompatibleFrom`, `qt_smoke::check_newer_database_is_refused` |
 | **TW-20** Maximising shows the rail, group picker, detail pane and Activity bar and turns rows compact; restoring brings back the pills, the output panel and full rows; the option turns the layout off. | D | `test_ryos::TestMaximisedLayout`, `qt_smoke::check_maximised_layout` |
 | **TW-21** The rail's Search puts the keyboard in the search box; the group picker offers groups, All and New group; Activity shows or hides the bar and the choice is remembered. | D | `qt_smoke::check_maximised_layout` |
 | **TW-22** The Overview shows a script's presets as pills (the highlighted one is what Run passes, each pill's play runs with it), then facts and a Last run box with Open output or History. | D · Sc | `test_ryos::TestMaximisedLayout`, `test_ryos::TestOverviewCards::test_the_last_run_box`, `qt_smoke::check_maximised_layout` |
 | **TW-23** The Activity bar shows running now (with Stop), up next and recent runs; a pipeline stands for its steps; the rail shows how many are running. | D R | `test_ryos::TestActivityBar`, `qt_smoke::check_maximised_layout` |
 | **TW-24** The Activity bar and the pane say "Today" / "Tomorrow" / the weekday correctly. | D | `test_ryos::TestActivityBar::test_day_words` |
+| **TW-25** Help → Open log folder opens the folder RYOS's logs are in, in two clicks (#29). | W | `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
 
 ## 11. Command line
 
@@ -319,6 +320,7 @@ and the test that guards it, or **untested**.
 | **CLI-14** A newer database is refused with 125. | CLI | `test_ryos::TestCompatibleFrom::test_the_cli_refuses_with_125` |
 | **CLI-15** A run's output is kept in a bounded buffer, lines split across chunks, with old lines dropped and paging skipping them. | CLI MCP | `test_headless::TestRunOutput` |
 | **CLI-16** A run from the command line is recorded in History as `cli` and a stop ends it. | CLI · Sc P | `test_headless::TestRunningAScript::test_history_says_who_started_it`, `test_headless::TestRunningAScript::test_stop` |
+| **CLI-17** `ryos-cli version` prints where the logs are: the folder and each log this download writes (#29). | CLI | `test_cli::TestVersion::test_says_where_the_logs_are`, `test_ryos::TestBugReport::test_log_lines_per_download` |
 
 ## 12. MCP (AI agents)
 
@@ -412,7 +414,7 @@ step 13; "-> 2.4" is left for 2.4.
 | **QR-13** "Suggest as you type" off, and the index options, change the bar | the form round-trips the values; the bar's reaction is not checked | -> 2.4 |
 | **IE-05** Replace through the window | tested in the database only | -> 2.4 |
 | **TW-13** (part) The hint's links to other groups | the rule is tested; the links in the window are not | -> 2.4 |
-| **TW-15** (part) The Options and Help menus hold what the tutorial says | only File is checked | -> 2.4 |
+| **TW-15** (part) The Options and Help menus hold what the tutorial says | File and Help are checked; Options isn't | -> 2.4 |
 | **TW-16** Start with Windows toggle | would write the registry; needs the injected startup object | -> 2.4 |
 | **CLI-05** Ctrl+C exits 130 | needs a real interrupt signal | -> 2.4 |
 | **ST-13** The log-file options | not tested | -> 2.4 |
