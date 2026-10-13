@@ -251,7 +251,7 @@ Steps 3, 4 and 5 are done. Order: the bug fixes 9 and 11 first (Vũ hits them ev
 | 3 Fix #26 | done, `4e37723` (a step that leaves a process running no longer stalls its pipeline) |
 | 4 Fix #27 | done, `257aa00` (select mode ticks pipelines too; clicking a row ticks it) |
 | 5 Loose ends | done, `5d100ad` (CLI on throwaway data, per shell; the 2.3.0 plan records what was run) |
-| 7 Publisher details and download check | — |
+| 7 Publisher details and download check | done: Company and Copyright on both exes (`setup(author=)`, `Executable(copyright=)`), the build's short commit (`-dirty` when tracked files changed) in `ryos/_build_info.py` and shown in `--version` and the bug report; "Check your download" in README, TUTORIAL and the release notes template; both lineup checks in `release-ryos` and `ryos-reviewer`; BEHAVIOUR CLI-13, TW-18, TW-27. Checked on a built `agent` `ryos-cli.exe` (Get-Item VersionInfo, `--version`, launch smoke); `windows` and `windows-ai` not built. Needs a human: Explorer Properties → Details. The "`--version` names the commit the tag points at" check cannot pass until step 15 commits the version bump before the build |
 | 8 Expose a group | — |
 | 9 Fix #29a freeze | done: the window drains run output in 50 ms slices and joins a run's lines (a chatty pipeline held it for 70 s in one turn); `qt_smoke` heavy-output check |
 | 10 #29b log easy to find | done: Help → Open log folder; Report a bug opens the issue, then a dialog with the log's path, an Open log folder button and the look-first warning; `ryos-cli version` prints the log folder and files; tutorial 12 "If something goes wrong". Needs a human: Explorer really opens on a built exe |

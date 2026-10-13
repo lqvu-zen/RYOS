@@ -14,6 +14,14 @@ Download `RYOS-windows.zip` from the latest release, extract it, and double-clic
 ### Only want Claude to run your scripts?
 Download `RYOS-agent.zip` instead: just `ryos-cli.exe`, no window. See [RYOS Agent](docs/tutorial/14-ryos-agent.md).
 
+### Check your download
+RYOS is not code-signed yet, so check what you downloaded before you run it:
+
+1. Download only from [github.com/lqvu-zen/RYOS/releases](https://github.com/lqvu-zen/RYOS/releases).
+2. In PowerShell, in the folder you downloaded to, run `Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256` (or the zip you downloaded). The result must match that zip's line in the release's `SHA256SUMS.txt`. Capital or small letters do not matter.
+3. Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details. The company reads **Zenitus (Lê Quang Vũ)**.
+4. Windows SmartScreen will say "Unknown publisher"; that is expected for an unsigned app. Choose **More info -> Run anyway** only for a download that passed the check.
+
 ### Option B — Portable (run from source)
 1. Download and extract `RYOS-portable.zip`.
 2. If you don't have [uv](https://docs.astral.sh/uv/) installed, double-click `install_uv.bat` once.

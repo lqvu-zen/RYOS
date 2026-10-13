@@ -69,7 +69,8 @@ def environment(version: str, *, frozen: bool, os_name: str, python: str,
                 qt: str, theme: str, layout: str,
                 build: str | None = None) -> list[tuple[str, str]]:
     """The facts a bug report needs, as (label, value) pairs. ``build`` is
-    which download (buildinfo.describe); without it, frozen or not says."""
+    which download and a build's commit (buildinfo.describe_build); without
+    it, frozen or not says."""
     which = build or ("Windows build" if frozen else "from source")
     return [
         ("RYOS", f"{version} ({which})"),

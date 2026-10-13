@@ -28,6 +28,9 @@ if VARIANT not in buildinfo.BUILD_FOLDERS:
              f"not {VARIANT!r}")
 BUILD_DIR = Path(buildinfo.BUILD_FOLDERS[VARIANT])
 BUILD_INFO = Path("ryos/_build_info.py")
+# Read from HEAD, never from a file: a stale file would name the wrong commit.
+COMMIT = buildinfo.git_commit(Path(__file__).resolve().parent)
+print(f"building {VARIANT} at {COMMIT or 'no commit'}")
 
 # windows-ai and agent carry the MCP server (`ryos-cli mcp`), so the SDK must
 # be in the build environment: without it cx_Freeze would quietly build an
@@ -107,6 +110,7 @@ EXECUTABLES = [
         base="gui",               # suppresses the console window (cx_Freeze 7+)
         target_name="RYOS.exe",
         icon="icon.ico",
+        copyright=buildinfo.COPYRIGHT,
     ),
     # The command line (ryos list / run / pipeline / mcp): the console base,
     # so it has a stdout -- RYOS.exe's GUI base has none.
@@ -115,6 +119,7 @@ EXECUTABLES = [
         base="console",
         target_name="ryos-cli.exe",
         icon="icon.ico",
+        copyright=buildinfo.COPYRIGHT,
     ),
 ]
 
@@ -136,12 +141,13 @@ if VARIANT == buildinfo.AGENT:
     })
     EXECUTABLES = [e for e in EXECUTABLES if e.target_name == "ryos-cli.exe"]
 
-BUILD_INFO.write_text(buildinfo.build_info_source(VARIANT), encoding="utf-8")
+BUILD_INFO.write_text(buildinfo.build_info_source(VARIANT, COMMIT), encoding="utf-8")
 try:
     setup(
         name="RYOS",
         version="2.3.0",
         description="RYOS - Run Your Own Scripts",
+        author=buildinfo.COMPANY,   # cx_Freeze's version resource: CompanyName
         options={"build_exe": build_options},
         executables=EXECUTABLES,
     )

@@ -96,7 +96,8 @@ def _check_cli(cli: list, env: dict, data: Path, problems: list) -> str:
         problems.append(f"the CLI's run gave exit {ran.returncode}: "
                         f"{ran.stdout[:300]!r} {ran.stderr[-300:]!r}")
     shown = Path(cli[0]).name if len(cli) == 1 else "python -m ryos"
-    return f"  [ok] the command line ({shown}): --version, list, run"
+    return (f"  [ok] the command line ({shown}): --version ({got.stdout.strip()}), "
+            "list, run")
 
 
 def _check_mcp(exe: Path, env: dict, data: Path, problems: list) -> str:
@@ -185,8 +186,12 @@ def _agent_smoke(exe: Path) -> int:
     problems: list = []
     version = subprocess.run([str(exe), "--version"], env=env, capture_output=True,
                              text=True, timeout=60).stdout.strip()
-    if version != f"RYOS {_source_version()} (RYOS Agent)":
-        problems.append(f"--version said {version!r}, not RYOS {_source_version()} (RYOS Agent)")
+    # A build names its commit after the words; the smoke does not compare it
+    # with HEAD (the release review does).
+    if not re.fullmatch(rf"RYOS {re.escape(_source_version())} "
+                        r"\(RYOS Agent(, [0-9a-f]{7,40}(-dirty)?)?\)", version):
+        problems.append(f"--version said {version!r}, not RYOS {_source_version()} "
+                        "(RYOS Agent[, <commit>])")
     qt = [p.name for p in exe.parent.rglob("*")
           if p.name.lower().startswith(("qt6", "pyside6", "shiboken6"))]
     if qt:

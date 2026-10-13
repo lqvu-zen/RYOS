@@ -376,7 +376,25 @@ class TestVersion(unittest.TestCase):
         from ryos import buildinfo
         code, out = self.run_version()
         self.assertEqual(code, 0)
-        self.assertIn(f"RYOS {__version__} ({buildinfo.describe()})", out)
+        self.assertIn(f"RYOS {__version__} ({buildinfo.describe_build()})", out)
+
+    def test_names_the_build_commit(self):
+        import types
+        from unittest import mock
+        fake = types.SimpleNamespace(VARIANT="windows-ai", COMMIT="1a2b3c4")
+        want = f"RYOS {__version__} (Windows build with AI agents, 1a2b3c4)"
+        with mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(cli.main(["--version"], db=None, settings={},
+                                          err=io.StringIO()), 0)
+            self.assertEqual(out.getvalue().strip(), want)
+            code, text = self.run_version()
+            self.assertEqual(code, 0)
+            self.assertEqual(text.splitlines()[0], want)
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}):
+            code, text = self.run_version()
+            self.assertEqual(text.splitlines()[0], f"RYOS {__version__} (from source)")
 
     def test_says_where_the_logs_are(self):
         from ryos import settings

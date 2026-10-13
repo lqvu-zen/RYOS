@@ -74,6 +74,11 @@ def is_cli(argv: list[str]) -> bool:
                            or argv[0] in ("-h", "--help", "--version"))
 
 
+def _version_line() -> str:
+    """One line: the version, which download, and a build's commit."""
+    return f"RYOS {__version__} ({buildinfo.describe_build()})"
+
+
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ryos",
@@ -84,7 +89,7 @@ def _parser() -> argparse.ArgumentParser:
                f"{EXIT_TIMEOUT} timed out; {EXIT_REFUSED} refused by RYOS; "
                f"{EXIT_INTERRUPTED} interrupted.")
     p.add_argument("--version", action="version",
-                   version=f"RYOS {__version__} ({buildinfo.describe()})")
+                   version=_version_line())
     sub = p.add_subparsers(dest="command", required=True)
 
     ls = sub.add_parser("list", help="List scripts and pipelines.")
@@ -417,7 +422,7 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
     except SystemExit as e:             # --help, --version, or a bad line
         return e.code if isinstance(e.code, int) else EXIT_OK
     if args.command == "version":
-        print(f"RYOS {__version__} ({buildinfo.describe()})", file=out)
+        print(_version_line(), file=out)
         # Lazily, and before any settings, database or log set-up: this
         # command must work when those are what is broken.
         from . import bugreport

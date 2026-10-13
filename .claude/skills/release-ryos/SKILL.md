@@ -128,6 +128,11 @@ Expected lineup (**update this table whenever the downloads change**, together w
 
 `SHA256SUMS.txt` lists exactly these four zips.
 
+Two more things the lineup must show (the build puts them in; `buildinfo.COMPANY`, `COPYRIGHT`):
+
+- **Both exes carry the publisher.** `RYOS.exe` and `ryos-cli.exe` (only the latter in the agent build) show company `Zenitus (Lê Quang Vũ)` and copyright `© 2026 Lê Quang Vũ (Zenitus)` in Properties -> Details (`(Get-Item <exe>).VersionInfo`).
+- **Each build's `--version` names HEAD's short commit with no `-dirty`, and HEAD is the commit to be tagged.** This can only pass when the version bump is committed before the build; the order in this skill (build in step 3, commit in step 6) fails it until plan step 15 of release-2.3.1 reorders the runbook, so commit the bump locally before building until then.
+
 If the reviewer reports BLOCKERS, fix them (rebuilding and re-smoking if any build changed) and review again. Go on to step 6 only on `READY TO PUBLISH`. Then show the user every **needs a human** item it listed, such as the clean-machine test of each MCP build, and **wait for them to confirm each one** before publishing.
 
 ### 6. Commit and push the version bump
@@ -162,6 +167,12 @@ Include the download guidance in the notes so users know which asset to grab:
 - **SHA256SUMS.txt** — checksums of the four zips.
 
 All four keep your data in the same place, so you can move between them; each one's update notice names its own zip.
+
+## Check your download
+1. Download only from https://github.com/lqvu-zen/RYOS/releases.
+2. In PowerShell: `Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256` (or the zip you downloaded). The hash must match that zip's line in `SHA256SUMS.txt` (letter case does not matter).
+3. Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
+4. SmartScreen's "Unknown publisher" is expected: RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check.
 ```
 
 ### 8. Clear `dist/`

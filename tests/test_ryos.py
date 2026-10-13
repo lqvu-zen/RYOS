@@ -8360,8 +8360,15 @@ class TestBuildInfo(unittest.TestCase):
         namespace: dict = {}
         exec(buildinfo.build_info_source(buildinfo.AGENT), namespace)
         self.assertEqual(namespace["VARIANT"], "agent")
+        self.assertNotIn("COMMIT", namespace)
+        with_commit: dict = {}
+        exec(buildinfo.build_info_source(buildinfo.AGENT, "1a2b3c4-dirty"), with_commit)
+        self.assertEqual(with_commit["COMMIT"], "1a2b3c4-dirty")
         with self.assertRaises(ValueError):
             buildinfo.build_info_source("other")
+        for bad in ("x; y", "", "1a2b3c", "1A2B3C4"):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                buildinfo.build_info_source(buildinfo.AGENT, bad)
         # Never in the tree: the build removes it again.
         self.assertFalse((Path(__file__).resolve().parents[1] / "ryos" / "_build_info.py").exists())
 
@@ -8371,6 +8378,75 @@ class TestBuildInfo(unittest.TestCase):
                                          qt="6", theme="light", layout="normal",
                                          build="RYOS Agent"))
         self.assertEqual(env["RYOS"], "2.3.0 (RYOS Agent)")
+
+    def test_a_build_names_its_commit(self):
+        from ryos import buildinfo
+        fake = types.SimpleNamespace(VARIANT="windows-ai", COMMIT="1a2b3c4")
+        with mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+            self.assertEqual(buildinfo.commit(), "1a2b3c4")
+            self.assertEqual(buildinfo.describe_build(),
+                             "Windows build with AI agents, 1a2b3c4")
+            self.assertEqual(buildinfo.describe(), "Windows build with AI agents")
+        fake = types.SimpleNamespace(VARIANT="windows-ai", COMMIT="1a2b3c4-dirty")
+        with mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+            self.assertEqual(buildinfo.commit(), "1a2b3c4-dirty")
+            self.assertEqual(buildinfo.describe_build(),
+                             "Windows build with AI agents, 1a2b3c4-dirty")
+
+    def test_without_a_commit_the_words_are_todays(self):
+        from ryos import buildinfo
+        with mock.patch.dict(sys.modules, {
+                "ryos._build_info": types.SimpleNamespace(VARIANT="windows")}):
+            self.assertIsNone(buildinfo.commit())
+            self.assertEqual(buildinfo.describe_build(), "Windows build")
+        for bad in ("x; y", 123):
+            fake = types.SimpleNamespace(VARIANT="windows", COMMIT=bad)
+            with self.subTest(bad=bad), mock.patch.dict(
+                    sys.modules, {"ryos._build_info": fake}):
+                self.assertIsNone(buildinfo.commit())
+                self.assertEqual(buildinfo.describe_build(), "Windows build")
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}):
+            self.assertIsNone(buildinfo.commit())
+            self.assertEqual(buildinfo.describe_build(), "from source")
+
+    def test_git_commit(self):
+        from ryos import buildinfo
+
+        def runner(head=("e4ed9f3\n", 0), status=("", 0)):
+            def run(cmd, **kw):
+                out, rc = head if cmd[1] == "rev-parse" else status
+                return types.SimpleNamespace(stdout=out, returncode=rc)
+            return run
+
+        def missing(cmd, **kw):
+            raise FileNotFoundError("git")
+
+        self.assertIsNone(buildinfo.git_commit(".", run=missing))
+        self.assertIsNone(buildinfo.git_commit(".", run=runner(head=("", 128))))
+        self.assertIsNone(buildinfo.git_commit(".", run=runner(head=("not a commit", 0))))
+        self.assertEqual(buildinfo.git_commit(".", run=runner()), "e4ed9f3")
+        self.assertEqual(
+            buildinfo.git_commit(".", run=runner(status=(" M ryos/__init__.py\n", 0))),
+            "e4ed9f3-dirty")
+        self.assertEqual(buildinfo.git_commit(".", run=runner(status=("", 128))),
+                         "e4ed9f3")
+
+    def test_the_publisher(self):
+        import unicodedata
+        from ryos import buildinfo
+        self.assertEqual(buildinfo.COMPANY, "Zenitus (Lê Quang Vũ)")
+        self.assertEqual(buildinfo.COPYRIGHT, "© 2026 Lê Quang Vũ (Zenitus)")
+        for text in (buildinfo.COMPANY, buildinfo.COPYRIGHT):
+            self.assertTrue(unicodedata.is_normalized("NFC", text))
+
+    def test_the_bug_report_names_the_commit(self):
+        from ryos import buildinfo, bugreport
+        fake = types.SimpleNamespace(VARIANT="windows-ai", COMMIT="1a2b3c4")
+        with mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+            env = dict(bugreport.environment(
+                "2.3.1", frozen=True, os_name="W", python="3", qt="6",
+                theme="light", layout="normal", build=buildinfo.describe_build()))
+        self.assertEqual(env["RYOS"], "2.3.1 (Windows build with AI agents, 1a2b3c4)")
 
 
 class TestTrayPolicy(unittest.TestCase):

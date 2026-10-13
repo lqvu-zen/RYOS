@@ -45,6 +45,21 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 
 Every download keeps your data in the same place, so you can start with one and move to another; each one's update notice names its own zip.
 
+## Check your download
+
+Before you run what you downloaded:
+
+1. **Get it only from the [releases page](https://github.com/lqvu-zen/RYOS/releases).** Not from a link in a message, a mirror or a search ad.
+2. **Compare its SHA-256 with the release's `SHA256SUMS.txt`.** In PowerShell, in the folder you downloaded to:
+
+   ```powershell
+   Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256
+   ```
+
+   (or the zip you downloaded). The hash must match that zip's line in the release's `SHA256SUMS.txt`; letter case does not matter, since `Get-FileHash` prints uppercase and the file lowercase. To let PowerShell compare: `(Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256).Hash -eq '<hash from SHA256SUMS.txt>'` (`True` is a match).
+3. **Look at the publisher.** Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
+4. **"Unknown publisher" from SmartScreen is expected**, because RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check above.
+
 ## Getting Started
 
 **Option A — Standalone exe** (no Python needed)

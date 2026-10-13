@@ -1807,7 +1807,7 @@ class MainWindow(QMainWindow):
             layout = "normal"
         env = bugreport.environment(
             __version__, frozen=bool(getattr(sys, "frozen", False)),
-            build=buildinfo.describe(),
+            build=buildinfo.describe_build(),
             os_name=platform.platform(), python=platform.python_version(),
             qt=f"{qVersion()} (PySide6 {pyside_version})",
             theme=str(self._settings.get("theme", "light")), layout=layout)

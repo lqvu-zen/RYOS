@@ -58,11 +58,12 @@ Your brief gives you:
 
 1. **The version agrees everywhere:** `ryos/__init__.py`, `setup_cxfreeze.py`'s `version=`, the planned tag (`v<X.Y.Z>`), and the version the smoke test saw. Also check the version is greater than the last tag.
 2. **Each zip holds what its variant should.** List each zip in `dist/` yourself (for example with Python's `zipfile`). Confirm every required file is present and nothing forbidden is: MCP present or absent per variant; no Qt and no `RYOS.exe` in the agent zip; no `__pycache__`, `_build_info.py`, `scripts.db` or settings file anywhere. Read each build's variant from the zip (its `_build_info` or `--version` output in the smoke log) and check that it matches the zip's name.
-3. **There is nothing extra in the lineup:** every zip in `dist/` is in the lineup and every lineup entry has a zip.
-4. **The checksums match:** recompute SHA-256 for each zip and compare it with `SHA256SUMS.txt`. Check that the file lists exactly the zips being published.
-5. **The release notes cover what changed:** compare the notes with `git log <last-tag>..HEAD --oneline`. Flag user-visible changes the notes leave out, and anything that behaves differently from before but isn't called out (data migrations, renamed downloads, changed defaults). Check that the "Which download?" section names every zip correctly.
-6. **The working tree is clean** apart from the version bump. Nothing in `dist/` is older than this build: compare file times with the build output.
-7. **Done when:** for the release plan's final step, mark each item **met**, **not met** or **needs a human**, with evidence.
+3. **The publisher and the commit are in each build.** Read-only, for `RYOS.exe` and `ryos-cli.exe` in `dist/cxfreeze` and `dist/cxfreeze-ai`, and `ryos-cli.exe` in `dist/cxfreeze-agent`: `[Console]::OutputEncoding=[Text.Encoding]::UTF8; (Get-Item <exe>).VersionInfo | Format-List CompanyName,LegalCopyright,ProductName,ProductVersion`. CompanyName must be `Zenitus (Lê Quang Vũ)` and LegalCopyright `© 2026 Lê Quang Vũ (Zenitus)`. The commit in each smoke `--version` line must equal `git rev-parse --short=7 HEAD`, with no `-dirty`, and HEAD must be what will be tagged. A build made before the version bump was committed fails this: rebuild.
+4. **There is nothing extra in the lineup:** every zip in `dist/` is in the lineup and every lineup entry has a zip.
+5. **The checksums match:** recompute SHA-256 for each zip and compare it with `SHA256SUMS.txt`. Check that the file lists exactly the zips being published.
+6. **The release notes cover what changed:** compare the notes with `git log <last-tag>..HEAD --oneline`. Flag user-visible changes the notes leave out, and anything that behaves differently from before but isn't called out (data migrations, renamed downloads, changed defaults). Check that the "Which download?" section names every zip correctly. Check that it carries the "Check your download" section.
+7. **The working tree is clean** apart from the version bump. Nothing in `dist/` is older than this build: compare file times with the build output.
+8. **Done when:** for the release plan's final step, mark each item **met**, **not met** or **needs a human**, with evidence.
 
 Use Bash only to read: list, hash, `git log` / `git status` / `git diff`, and read the logs. Never build, edit, commit, tag, upload or publish.
 

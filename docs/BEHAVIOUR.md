@@ -291,7 +291,7 @@ and the test that guards it, or **untested**.
 | **TW-15** The menus are File (New script / pipeline / group, Import, Export, Exit), Options (Options, Appearance, Start with Windows, Select, Delete All) and Help (Check for updates, Suggest a feature, Report a bug, Open log folder). | W | `session_smoke::step_groups_and_scripts` (File menu), `qt_smoke::check_bug_report` (Help menu), `session_smoke::step_help_and_log`, plus `qt_smoke::check_suggestion` (Help menu) |
 | **TW-16** Start with Windows turns the run-at-login entry on and off. | W | **untested** |
 | **TW-17** A newer release shows the update banner (fetched off the UI thread, once, dismissible, naming this download's zip); a manual check always answers; an automatic check that fails says nothing. | W | `test_ryos::TestUpdateStatus`, `qt_smoke::check_updates_and_notify` |
-| **TW-18** Report a bug (status bar button and Help menu) opens a new GitHub issue filled in with versions, theme and layout, and sends nothing; then shows the log's path with an Open log folder button and warns it can hold script paths and output (#29). | W | `test_ryos::TestBugReport`, `test_ryos::TestSuggestion::test_the_bug_report_link_is_unchanged`, `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
+| **TW-18** Report a bug (status bar button and Help menu) opens a new GitHub issue filled in with versions (a build's commit too), theme and layout, and sends nothing; then shows the log's path with an Open log folder button and warns it can hold script paths and output (#29). | W | `test_ryos::TestBugReport`, `test_ryos::TestBuildInfo::test_the_bug_report_names_the_commit`, `test_ryos::TestSuggestion::test_the_bug_report_link_is_unchanged`, `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
 | **TW-19** A database a newer RYOS reshaped makes the window say so and stop, leaving the file untouched. | W CLI | `test_ryos::TestCompatibleFrom`, `qt_smoke::check_newer_database_is_refused` |
 | **TW-20** Maximising shows the rail, group picker, detail pane and Activity bar and turns rows compact; restoring brings back the pills, the output panel and full rows; the option turns the layout off. | D | `test_ryos::TestMaximisedLayout`, `qt_smoke::check_maximised_layout` |
 | **TW-21** The rail's Search puts the keyboard in the search box; the group picker offers groups, All and New group; Activity shows or hides the bar and the choice is remembered. | D | `qt_smoke::check_maximised_layout` |
@@ -300,6 +300,7 @@ and the test that guards it, or **untested**.
 | **TW-24** The Activity bar and the pane say "Today" / "Tomorrow" / the weekday correctly. | D | `test_ryos::TestActivityBar::test_day_words` |
 | **TW-25** Help → Open log folder opens the folder RYOS's logs are in, in two clicks (#29). | W | `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
 | **TW-26** Suggest a feature (a status-bar button just left of the bug button, and Help → Suggest a feature just above Report a bug; normal, compact and maximised; every Windows download, with or without AI agents) opens a new GitHub issue titled "Suggestion: " and labelled enhancement. The issue asks what RYOS should do, what the person is trying to get done and how they do it today, and anything else; its footer holds only the RYOS version and download. RYOS sends nothing and shows no dialog; the status bar says "Opened a suggestion in your browser — nothing is sent until you submit it." | W D R | `test_ryos::TestSuggestion`, `qt_smoke::check_suggestion`, `qt_smoke::check_maximised_layout`, `session_smoke::step_help_and_log` |
+| **TW-27** Both `RYOS.exe` and `ryos-cli.exe` carry the publisher (company Zenitus (Lê Quang Vũ), copyright © 2026 Lê Quang Vũ (Zenitus)) in Properties → Details. | W CLI | `test_ryos::TestBuildInfo::test_the_publisher` |
 
 ## 11. Command line
 
@@ -317,7 +318,7 @@ and the test that guards it, or **untested**.
 | **CLI-10** `edit` changes only what was given; `remove` asks and names its pipelines; `expose` turns agent access on and off; `preset` adds and removes. | CLI · Sc P | `test_cli::TestEditRemoveExpose` |
 | **CLI-11** The command line takes no instance lock, writes no run-at-login entry and imports no Qt. | CLI | `test_cli::TestTheRealEntryPoint` |
 | **CLI-12** A command-line run reaches a running window's row (a failed run turns it to Retry) and a script added from the command line appears, without bringing the window forward. | CLI W | `qt_smoke::check_cli_run_reaches_the_window` |
-| **CLI-13** `--version` says which download this is and `version --check` names its zip. | CLI | `test_cli::TestVersion`, `test_ryos::TestBuildInfo` |
+| **CLI-13** `--version` says which download this is and, in a build, the commit it was built from; `version --check` names its zip. | CLI | `test_cli::TestVersion`, `test_cli::TestVersion::test_names_the_build_commit`, `test_ryos::TestBuildInfo`, `test_ryos::TestBuildInfo::test_a_build_names_its_commit` |
 | **CLI-14** A newer database is refused with 125. | CLI | `test_ryos::TestCompatibleFrom::test_the_cli_refuses_with_125` |
 | **CLI-15** A run's output is kept in a bounded buffer, lines split across chunks, with old lines dropped and paging skipping them. | CLI MCP | `test_headless::TestRunOutput` |
 | **CLI-16** A run from the command line is recorded in History as `cli` and a stop ends it. | CLI · Sc P | `test_headless::TestRunningAScript::test_history_says_who_started_it`, `test_headless::TestRunningAScript::test_stop` |
@@ -419,6 +420,7 @@ step 13; "-> 2.4" is left for 2.4.
 | **TW-16** Start with Windows toggle | would write the registry; needs the injected startup object | -> 2.4 |
 | **CLI-05** Ctrl+C exits 130 | needs a real interrupt signal | -> 2.4 |
 | **ST-13** The log-file options | not tested | -> 2.4 |
+| **TW-27** (part) The exe's version resource | the publisher constants are tested; the built exe's version resource is not read by any test (the release review reads it) | -> 2.4 |
 
 ### Guarded on some surfaces only
 
