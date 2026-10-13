@@ -8668,6 +8668,103 @@ class TestSelectionTakesPipelines(unittest.TestCase):
                          ("Delete Selected", "Delete 1 script?"))
 
 
+class TestGroupExposure(unittest.TestCase):
+    """Turning a group, or a ticked set, into what "Available to agents" would
+    change -- the rule ``ryos-cli expose --group`` and the window share."""
+
+    def setUp(self):
+        import tempfile
+        from ryos import manage
+        self.manage = manage
+        self.tmp = Path(tempfile.mkdtemp())
+        self.db = ScriptDB(self.tmp / "t.db")
+        self.db.create_group("Tools")
+        self.db.create_group("Other")
+        self.backup = self.db.add("backup", "b.py", "", "", "Tools")
+        self.sync = self.db.add("sync", "s.py", "", "", "Tools")
+        self.elsewhere = self.db.add("away", "a.py", "", "", "Other")
+        self.loose = self.db.add("loose", "l.py", "", "", "")
+        self.ship = self.db.create_pipeline("ship", "Tools")
+
+    def test_group_members_scripts_then_pipelines(self):
+        refs = [(t.kind, t.ref) for t in self.manage.group_members(self.db, "Tools")]
+        self.assertEqual(refs, [("script", "Tools/backup"), ("script", "Tools/sync"),
+                                ("pipeline", "Tools/ship")])
+
+    def test_an_unknown_group_is_refused_naming_the_groups(self):
+        for name in ("Nope", "tools", "", "Ungrouped"):
+            with self.subTest(name):
+                with self.assertRaises(self.manage.ManageError) as cm:
+                    self.manage.group_members(self.db, name)
+                self.assertIn("The groups are: Tools, Other.", str(cm.exception))
+        bare = ScriptDB(self.tmp / "b.db")
+        with self.assertRaises(self.manage.ManageError) as cm:
+            self.manage.require_group(bare, "X")
+        self.assertEqual(str(cm.exception), "No group named 'X': there are no groups yet.")
+
+    def test_plan_splits_on_what_is_already_available(self):
+        self.db.set_agent_exposed("script", self.backup, True)
+        plan = self.manage.plan_exposure(
+            self.db, self.manage.group_members(self.db, "Tools"), True)
+        self.assertEqual([t.ref for t in plan.change], ["Tools/sync", "Tools/ship"])
+        self.assertEqual([t.ref for t in plan.unchanged], ["Tools/backup"])
+        off = self.manage.plan_exposure(
+            self.db, self.manage.group_members(self.db, "Tools"), False)
+        self.assertEqual([t.ref for t in off.change], ["Tools/backup"])
+        self.assertEqual(self.manage.apply_exposure(self.db, plan), 2)
+        self.assertEqual(self.db.agent_exposed_ids("script"), {self.backup, self.sync})
+        self.assertEqual(self.db.agent_exposed_ids("pipeline"), {self.ship})
+
+    def test_targets_of_skips_the_gone_and_the_repeated(self):
+        found = self.manage.targets_of(self.db, [
+            ("script", self.sync), ("script", self.sync), ("pipeline", self.ship),
+            ("script", 9999), ("pipeline", 9999), ("script", self.loose)])
+        self.assertEqual([(t.kind, t.ref) for t in found],
+                         [("script", "Tools/sync"), ("pipeline", "Tools/ship"),
+                          ("script", "loose")])
+
+    def test_wording(self):
+        m = self.manage
+        members = m.group_members(self.db, "Tools")
+        self.db.set_agent_exposed("script", self.backup, True)
+        self.db.set_agent_exposed("script", self.sync, True)
+        plan = m.plan_exposure(self.db, members, True)
+        self.assertEqual(m.named(plan.change), "Tools/ship (pipeline)")
+        self.assertEqual(m.exposure_question(plan),
+                         "Will make 1 available to agents: Tools/ship (pipeline). "
+                         "2 already are. Go ahead?")
+        self.assertEqual(m.exposure_done(plan, "Tools"),
+                         "Made 1 available to agents: Tools/ship (pipeline). "
+                         "2 already were.")
+        fresh = m.plan_exposure(self.db, [members[2]], True)
+        self.assertEqual(m.exposure_question(fresh),
+                         "Will make 1 available to agents: Tools/ship (pipeline). Go ahead?")
+        one_already = m.plan_exposure(self.db, [members[0], members[2]], True)
+        self.assertIn("1 already is.", m.exposure_question(one_already))
+        self.assertIn("1 already was.", m.exposure_done(one_already, "Tools"))
+        # Nothing new.
+        self.db.set_agent_exposed("pipeline", self.ship, True)
+        done = m.plan_exposure(self.db, members, True)
+        self.assertEqual(m.nothing_new(done, "Tools"),
+                         "All 3 in Tools are already available to agents.")
+        self.assertEqual(m.nothing_new(done, None),
+                         "All 3 selected are already available to agents.")
+        self.assertEqual(m.nothing_new(m.plan_exposure(self.db, members[:1], True), "Tools"),
+                         "Tools/backup is already available to agents.")
+        # Off.
+        off = m.plan_exposure(self.db, members, False)
+        self.assertEqual(m.exposure_done(off, "Tools"),
+                         "3 in Tools are no longer available to agents.")
+        self.assertEqual(m.exposure_done(off, None),
+                         "3 selected are no longer available to agents.")
+        m.apply_exposure(self.db, off)
+        again = m.plan_exposure(self.db, members, False)
+        self.assertEqual(m.nothing_new(again, "Tools"),
+                         "None in Tools was available to agents.")
+        self.assertEqual(m.empty_group("Tools"), "Tools has no scripts or pipelines yet.")
+        self.assertEqual(m.EXPOSE_TITLE, "Available to agents")
+
+
 class TestCardMenu(unittest.TestCase):
     """The right-click menus as data, and the actions behind them."""
 
@@ -8686,6 +8783,17 @@ class TestCardMenu(unittest.TestCase):
             cardmenu.HISTORY, cardmenu.CLONE, cardmenu.COPY, cardmenu.COPY_TO,
             None, cardmenu.DELETE])
         self.assertTrue(items[-1].danger)
+
+    def test_group_menu_offers_agents_only_where_offered(self):
+        plain = self.keys(cardmenu.group_menu())
+        self.assertNotIn(cardmenu.EXPOSE_GROUP, plain)
+        items = cardmenu.group_menu(agents=True)
+        keys = self.keys(items)
+        self.assertEqual(keys.index(cardmenu.EXPOSE_GROUP),
+                         keys.index(cardmenu.EXPORT_GROUP) + 1)
+        entry = self._entry(items, cardmenu.EXPOSE_GROUP)
+        self.assertEqual(entry.label, "Make all in this group available to agents…")
+        self.assertFalse(entry.danger)
 
     def test_pipeline_menu_leads_with_edit(self):
         items = cardmenu.pipeline_menu(favorite=False, color=None)
@@ -9237,6 +9345,7 @@ class TestMenusUseTheIconSet(unittest.TestCase):
                                       can_move_down=True) for f in (False, True)]
         menus += [cardmenu.pipeline_menu(favorite=f, color=None) for f in (False, True)]
         menus.append(cardmenu.group_menu())
+        menus.append(cardmenu.group_menu(agents=True))
         return [i for m in menus for i in m if i.key is not None]
 
     def test_every_entry_has_a_known_icon(self):

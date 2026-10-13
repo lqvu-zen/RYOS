@@ -38,6 +38,7 @@ PASTE = "paste"
 CLONE_GROUP = "clone_group"
 BASE_DIR = "base_dir"
 EXPORT_GROUP = "export_group"
+EXPOSE_GROUP = "expose_group"
 DELETE_GROUP = "delete_group"
 
 SCRIPT = "script"
@@ -181,15 +182,20 @@ def pipeline_menu(*, favorite: bool, color: str | None,
     ]
 
 
-def group_menu(copied: str | None = None) -> list[MenuItem]:
+def group_menu(copied: str | None = None, *, agents: bool = False) -> list[MenuItem]:
     """The group tab's menu. ``copied`` names what Copy holds, if anything:
-    Paste is there either way, greyed until something is copied."""
+    Paste is there either way, greyed until something is copied. ``agents``
+    adds the entry that lets agents run the group's items -- only in a build
+    that offers agents."""
+    expose = ([MenuItem(EXPOSE_GROUP, "Make all in this group available to agents…",
+                        icon="agent")] if agents else [])
     return [
         MenuItem(RENAME_GROUP, "Rename…", icon="edit"),
         MenuItem(PASTE, paste_label(copied), enabled=bool(copied), icon="import"),
         MenuItem(CLONE_GROUP, "Clone group", icon="copy"),
         MenuItem(BASE_DIR, "Base folder…", icon="folder"),
         MenuItem(EXPORT_GROUP, "Export group…", icon="export"),
+        *expose,
         SEPARATOR,
         MenuItem(DELETE_GROUP, "Delete group", danger=True, icon="trash"),
     ]

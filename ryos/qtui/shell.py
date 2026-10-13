@@ -39,7 +39,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
 
 from .. import activity, basefolder, bugreport, buildinfo, suggestion
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
-               notifications, outputpanel, pipelinesteps, screens, scriptform,
+               manage, notifications, outputpanel, pipelinesteps, screens, scriptform,
                search, sections, selection, traypolicy)
 from . import placement
 from ..themes import REFERENCE, readable_highlight, step_colour
@@ -2202,10 +2202,19 @@ class MainWindow(QMainWindow):
         self.run_selected_button.set_colors(self._palette["btn_run_fg"])
         self.run_selected_button.setObjectName("run")
         self.run_selected_button.clicked.connect(self.run_selected)
+        self.agents_on_button = IconButton("agent", selection.AGENTS_ON_LABEL, size=14,
+                                           palette=self._palette)
+        self.agents_on_button.setToolTip(selection.AGENTS_ON_LABEL)
+        self.agents_on_button.clicked.connect(lambda: self.expose_selected(True))
+        self.agents_off_button = IconButton("agent", selection.AGENTS_OFF_LABEL, size=14,
+                                            palette=self._palette)
+        self.agents_off_button.setToolTip(selection.AGENTS_OFF_LABEL)
+        self.agents_off_button.clicked.connect(lambda: self.expose_selected(False))
         self.delete_selected_button = IconButton("trash", "Delete selected", size=14,
                                                  palette=self._palette)
         self.delete_selected_button.clicked.connect(self.delete_selected)
         for b in (self.select_all_button, self.run_selected_button,
+                  self.agents_on_button, self.agents_off_button,
                   self.delete_selected_button):
             row.addWidget(b)
         self.select_bar.setVisible(False)
@@ -2231,6 +2240,10 @@ class MainWindow(QMainWindow):
         self.select_action.setText(selection.LEAVE_LABEL if on
                                    else selection.ENTER_LABEL)
         self.select_bar.setVisible(on)
+        if on:
+            offered = buildinfo.agents_offered()
+            self.agents_on_button.setVisible(offered)
+            self.agents_off_button.setVisible(offered)
         for page in [*self.card_lists.values(), *self.all_pages.values()]:
             for card in page.cards:
                 card.checkbox.setChecked(False)
@@ -2280,6 +2293,31 @@ class MainWindow(QMainWindow):
             self.inform(*plan.notice)
         elif plan.status:
             self.statusBar().showMessage(plan.status)
+
+    def expose_selected(self, on: bool) -> None:
+        """Let agents run every ticked script and pipeline, or stop. The same
+        plan and wording as ``ryos-cli expose``; no card draws the flag, so
+        nothing is rebuilt and the ticks stay."""
+        if self._db is None:
+            return
+        cards = self.selected_cards()
+        if not cards:
+            self.inform(*selection.NOTHING_TO_EXPOSE)
+            return
+        targets = manage.targets_of(self._db, [
+            (cardmenu.PIPELINE, c.pipeline_id) if isinstance(c, PipelineCard)
+            else (cardmenu.SCRIPT, c.script_id) for c in cards])
+        if not targets:             # every ticked item was deleted meanwhile
+            self.inform(*selection.NOTHING_TO_EXPOSE)
+            return
+        plan = manage.plan_exposure(self._db, targets, on)
+        if not plan.change:
+            self.inform(manage.EXPOSE_TITLE, manage.nothing_new(plan, None))
+            return
+        if on and not self.ask_yes_no(manage.EXPOSE_TITLE, manage.exposure_question(plan)):
+            return
+        manage.apply_exposure(self._db, plan)
+        self.statusBar().showMessage(manage.exposure_done(plan, None))
 
     def delete_selected(self) -> None:
         cards = self.selected_cards()
@@ -2478,7 +2516,8 @@ class MainWindow(QMainWindow):
     def _show_group_menu(self, group: str, pos: QPoint) -> None:
         if not group:
             return                  # "Ungrouped" is not a group to rename
-        menu = build_menu(self, cardmenu.group_menu(self.copied_name()),
+        menu = build_menu(self, cardmenu.group_menu(self.copied_name(),
+                                                    agents=buildinfo.agents_offered()),
                           lambda key: self.on_group_menu(group, key),
                           self._palette)
         self.popup(menu, pos)
@@ -2544,6 +2583,9 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 configio.export_status(n_scripts, n_pipes, path))
             return
+        elif key == cardmenu.EXPOSE_GROUP:
+            self._expose_group(group)
+            return          # no card draws the flag: nothing to rebuild
         elif key == cardmenu.DELETE_GROUP:
             if not self.ask_yes_no(*cardmenu.delete_group_prompt(group)):
                 return
@@ -2554,6 +2596,29 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, lambda: (self.reload(), self.show_group(show)))
         if status:
             self.statusBar().showMessage(status)
+
+    def _expose_group(self, group: str) -> None:
+        """The group tab's "Make all in this group available to agents…": what
+        is in the group now, asked about as the command line does."""
+        db = self._db
+        if db is None:
+            return
+        try:
+            members = manage.group_members(db, group)
+        except manage.ManageError as exc:   # deleted from the command line meanwhile
+            self.warn(manage.EXPOSE_TITLE, str(exc))
+            return
+        if not members:
+            self.inform(manage.EXPOSE_TITLE, manage.empty_group(group))
+            return
+        plan = manage.plan_exposure(db, members, True)
+        if not plan.change:
+            self.inform(manage.EXPOSE_TITLE, manage.nothing_new(plan, group))
+            return
+        if not self.ask_yes_no(manage.EXPOSE_TITLE, manage.exposure_question(plan)):
+            return
+        manage.apply_exposure(db, plan)
+        self.statusBar().showMessage(manage.exposure_done(plan, group))
 
     # -- the real prompts ------------------------------------------------------------
     def _ask_import_mode(self) -> str | None:

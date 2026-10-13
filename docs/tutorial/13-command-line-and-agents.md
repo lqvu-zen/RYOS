@@ -64,7 +64,7 @@ An AI agent connected to RYOS can see and run the scripts and pipelines you choo
 
 ### Choose what it may run
 
-Nothing is available to an agent until you say so. In a download with AI agents (see [Connect Claude](#connect-claude)), open a script (or a pipeline) and tick **Available to agents — an AI agent connected to RYOS may run it**, then **Save**. From the command line, `ryos-cli expose Tools/backup on` does the same (it asks you to confirm), and `off` takes it back.
+Nothing is available to an agent until you say so. In a download with AI agents (see [Connect Claude](#connect-claude)), open a script (or a pipeline) and tick **Available to agents — an AI agent connected to RYOS may run it**, then **Save**. From the command line, `ryos-cli expose Tools/backup on` does the same (it asks you to confirm), and `off` takes it back. To do a whole group at once, `ryos-cli expose --group Tools on` lists what it would change and asks once; run it again later and it asks only about what was added since, and `ryos-cli expose --group Tools off` turns them all off. `ryos-cli list --group Tools` shows what is in the group and what is not available yet. In the window, a group tab's right-click menu has **Make all in this group available to agents…**, and select mode has **Make available to agents** and **Make unavailable to agents** for the ticked items.
 
 ![The script dialog, with three options under Group: Ask for a temporary parameter on each run, Launcher, and Available to agents](images/02-add-script-dialog.png)
 

@@ -8,6 +8,8 @@ the window.
     ryos edit <script> [--name N] [--group G] [--workdir DIR] [--params="..."] [--yes]
     ryos remove <script> [--yes]
     ryos expose <script> on|off [--pipeline] [--yes]
+    ryos expose --group G on|off [--yes]      (the group's scripts and pipelines, as they are now)
+    ryos list --group G                       (only that group; names what is not available yet)
     ryos preset add <script> <label> --params="..."   |   ryos preset remove <script> <label>
     ryos history [<script>] [--pipeline] [--limit N] [--json]
     ryos version [--check]
@@ -39,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from typing import Callable, TextIO
 
@@ -94,6 +97,8 @@ def _parser() -> argparse.ArgumentParser:
 
     ls = sub.add_parser("list", help="List scripts and pipelines.")
     ls.add_argument("--json", action="store_true", help="Print JSON.")
+    ls.add_argument("--group", metavar="GROUP",
+                    help="Only this group's scripts and pipelines.")
 
     def common(sp):
         sp.add_argument("--timeout", type=float, metavar="SECONDS",
@@ -146,8 +151,11 @@ def _parser() -> argparse.ArgumentParser:
     rm.add_argument("--yes", action="store_true", help="Don't ask.")
 
     ex = sub.add_parser("expose", help="Let AI agents run a script or pipeline, or stop.")
-    ex.add_argument("ref", metavar="SCRIPT")
+    ex.add_argument("ref", nargs="?", metavar="SCRIPT")
     ex.add_argument("state", choices=("on", "off"))
+    ex.add_argument("--group", metavar="GROUP",
+                    help="Cover the group's scripts and pipelines as they are now "
+                         "(run it again to take in what was added since).")
     ex.add_argument("--pipeline", action="store_true", help="REF names a pipeline.")
     ex.add_argument("--yes", action="store_true", help="Don't ask (turning it on asks).")
 
@@ -174,25 +182,59 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+def _parse(argv: list[str]) -> argparse.Namespace:
+    """``parse_args`` plus the combinations argparse cannot express: an
+    ``expose`` names one item or a group, not both, not neither."""
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command == "expose":
+        if args.group is not None and (args.ref is not None or args.pipeline):
+            parser.error("give --group alone: it covers a group's scripts and pipelines")
+        if args.group is None and args.ref is None:
+            parser.error("name a script or pipeline, or give --group GROUP")
+    return args
+
+
 # -- list ----------------------------------------------------------------------
 
-def _listing(db: ScriptDB) -> dict:
+def _listing(db: ScriptDB, group: str | None = None) -> dict:
     """What ``list`` shows. Never a script's environment: it can hold secrets."""
     exposed = db.agent_exposed_ids(SCRIPT)
     scripts = [{"id": row[0], "name": row[1], "group": row[8] or "",
                 "ref": Target(SCRIPT, row[0], row[1], row[8] or "").ref,
                 "presets": [label for _pid, label, _p in db.list_param_presets(row[0])],
                 "agents": row[0] in exposed}
-               for row in db.list_all()]
+               for row in db.list_all()
+               if group is None or (row[8] or "") == group]
     exposed_pipes = db.agent_exposed_ids(PIPELINE)
     pipelines = []
-    for group in [*db.list_groups(), ""]:
-        for pid, name, *_ in db.list_pipelines(group):
-            pipelines.append({"id": pid, "name": name, "group": group,
-                              "ref": Target(PIPELINE, pid, name, group).ref,
-                              "steps": len(db.list_pipeline_steps(pid)),
-                              "agents": pid in exposed_pipes})
+    for group_name in [*db.list_groups(), ""]:
+        if group is not None and group_name != group:
+            continue
+        pipelines.extend(_pipeline_rows(db, group_name, exposed_pipes))
     return {"scripts": scripts, "pipelines": pipelines}
+
+
+def _pipeline_rows(db: ScriptDB, group: str, exposed_pipes: set[int]) -> list[dict]:
+    return [{"id": pid, "name": name, "group": group,
+             "ref": Target(PIPELINE, pid, name, group).ref,
+             "steps": len(db.list_pipeline_steps(pid)),
+             "agents": pid in exposed_pipes}
+            for pid, name, *_ in db.list_pipelines(group)]
+
+
+def _print_group_footer(listing: dict, group: str, out: TextIO) -> None:
+    """After ``list --group``: what agents may not run yet."""
+    missing = [Target(SCRIPT, s["id"], s["name"], group)
+               for s in listing["scripts"] if not s["agents"]]
+    missing += [Target(PIPELINE, p["id"], p["name"], group)
+                for p in listing["pipelines"] if not p["agents"]]
+    if missing:
+        print(f"Not available to agents yet: {manage.named(missing)}. "
+              f"`ryos-cli expose --group {subprocess.list2cmdline([group])} on` would offer them.", file=out)
+    else:
+        total = len(listing["scripts"]) + len(listing["pipelines"])
+        print(f"All {total} in {group} are available to agents.", file=out)
 
 
 def _print_listing(listing: dict, out: TextIO) -> None:
@@ -324,9 +366,33 @@ def _history_rows(rows: list) -> list[dict]:
              "step": r[9], "by": r[10]} for r in rows]
 
 
+def _expose_group(args, db: ScriptDB, out: TextIO, ask, rebuild_window) -> int:
+    """``expose --group G on|off``: tick (or clear) "Available to agents" on
+    what is in the group now. Asks once, naming only what would change."""
+    group = args.group
+    members = manage.group_members(db, group)      # an unknown group: refused
+    if not members:
+        print(manage.empty_group(group), file=out)
+        return EXIT_OK
+    on = args.state == "on"
+    plan = manage.plan_exposure(db, members, on)
+    if not plan.change:
+        print(manage.nothing_new(plan, group), file=out)
+        return EXIT_OK
+    if on:
+        _agreed(manage.exposure_question(plan), args.yes, ask,
+                "Letting agents run something")
+    manage.apply_exposure(db, plan)
+    print(manage.exposure_done(plan, group), file=out)
+    rebuild_window()
+    return EXIT_OK
+
+
 def _manage(args, db: ScriptDB, out: TextIO, ask, rebuild_window) -> int:
     """add / edit / remove / expose / preset / history. Raises ManageError."""
     command = args.command
+    if command == "expose" and args.group is not None:
+        return _expose_group(args, db, out, ask, rebuild_window)
     if command == "history":
         kind = PIPELINE if args.pipeline else SCRIPT
         target = _find(db, kind, args.ref) if args.ref else None
@@ -418,7 +484,7 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
     try:
-        args = _parser().parse_args(argv)
+        args = _parse(argv)
     except SystemExit as e:             # --help, --version, or a bad line
         return e.code if isinstance(e.code, int) else EXIT_OK
     if args.command == "version":
@@ -466,11 +532,21 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
             print(f"ryos: {e}", file=err)
             return EXIT_REFUSED
     if args.command == "list":
-        listing = _listing(db)
+        group = args.group
+        if group is not None:
+            try:
+                manage.require_group(db, group)
+            except manage.ManageError as e:
+                return _refuse(str(e), args.json, out, err)
+        listing = _listing(db, group)
         if args.json:
             print(json.dumps(listing), file=out)
+        elif group is not None and not (listing["scripts"] or listing["pipelines"]):
+            print(manage.empty_group(group), file=out)
         else:
             _print_listing(listing, out)
+            if group is not None:
+                _print_group_footer(listing, group, out)
         return EXIT_OK
     return _run(args, db, settings, out, err,
                 notify_window if notify_window is not None else _notify_running_window)

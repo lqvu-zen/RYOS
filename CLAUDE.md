@@ -45,6 +45,8 @@ uv run ryos run <script> [--preset LABEL | --params="--flag value"] [--timeout S
 uv run ryos pipeline <pipeline> [--timeout S] [--json]
 uv run ryos add <file> [--name N] [--group G] [--workdir DIR] [--params="..."] [--expose] [--yes]
 uv run ryos edit <script> ... | remove <script> | expose <script> on|off [--pipeline]
+uv run ryos expose --group <group> on|off [--yes]   # a group's scripts and pipelines, as they are now
+uv run ryos list --group <group>                     # what is in it, and what is not available yet
 uv run ryos preset add|remove <script> <label> [--params="..."] | history [<script>] [--json]
 uv run --extra mcp ryos mcp      # MCP server over stdio, for AI agents
 ```

@@ -16,11 +16,17 @@ Everything that refuses raises `ManageError`, in words for the person at
 the terminal. Whether to let agents run something (`set_exposed`) is
 decided here; whether the caller may decide it -- a terminal, or --yes -- is
 the command line's (docs/archive/release-2.3.0.md, A2).
+
+The window uses this module too, for the actions that cover several items at
+once: a group tab's "Make all in this group available to agents…" and select
+mode's agent buttons share ``group_members`` / ``targets_of``,
+``plan_exposure`` and the wording with ``ryos-cli expose --group``.
 """
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 from . import scriptform
 from .db import ScriptDB
@@ -128,6 +134,137 @@ def set_exposed(db: ScriptDB, target: Target, on: bool) -> bool:
     was = db.is_agent_exposed(target.kind, target.item_id)
     db.set_agent_exposed(target.kind, target.item_id, on)
     return was != on
+
+
+# -- letting agents run several things at once -------------------------------
+#
+# A group is only a way to pick items: ticking "Available to agents" on what is
+# in it *now*. Nothing is stored about the group, so nothing becomes available
+# later by being moved into it.
+
+EXPOSE_TITLE = "Available to agents"
+
+
+@dataclass(frozen=True)
+class Exposure:
+    """What turning agents' access on (or off) for some items would do."""
+
+    on: bool
+    change: tuple[Target, ...]
+    unchanged: tuple[Target, ...]
+
+
+def require_group(db: ScriptDB, group: str) -> str:
+    """``group`` itself when it exists (an exact match; Ungrouped is not a group
+    here), otherwise a refusal naming the ones that do."""
+    groups = db.list_groups()
+    if group in groups:
+        return group
+    if not groups:
+        raise ManageError(f"No group named {group!r}: there are no groups yet.")
+    raise ManageError(f"No group named {group!r}. The groups are: {', '.join(groups)}.")
+
+
+def group_members(db: ScriptDB, group: str) -> list[Target]:
+    """The group's scripts, then its pipelines, as they are now."""
+    require_group(db, group)
+    members = [Target(SCRIPT, row[0], row[1], group)
+               for row in db.list_all() if (row[8] or "") == group]
+    members += [Target(PIPELINE, pid, name, group)
+                for pid, name, *_ in db.list_pipelines(group)]
+    return members
+
+
+def targets_of(db: ScriptDB, items) -> list[Target]:
+    """(kind, id) pairs -- what select mode has ticked -- as targets. Items
+    that are gone are skipped and repeats dropped."""
+    found: list[Target] = []
+    seen: set[tuple[str, int]] = set()
+    for kind, item_id in items:
+        if (kind, item_id) in seen:
+            continue
+        seen.add((kind, item_id))
+        if kind == PIPELINE:
+            ident = db.pipeline_identity(item_id)
+            if ident:
+                found.append(Target(PIPELINE, item_id, ident[0], ident[1]))
+        else:
+            rec = db.get(item_id)
+            if rec:
+                found.append(Target(SCRIPT, item_id, rec[1], rec[5] or ""))
+    return found
+
+
+def plan_exposure(db: ScriptDB, targets, on: bool) -> Exposure:
+    """Split ``targets`` into what would change and what is already so."""
+    exposed = {SCRIPT: db.agent_exposed_ids(SCRIPT),
+               PIPELINE: db.agent_exposed_ids(PIPELINE)}
+    change: list[Target] = []
+    unchanged: list[Target] = []
+    for t in targets:
+        was = t.item_id in exposed.get(t.kind, set())
+        (unchanged if was == on else change).append(t)
+    return Exposure(on, tuple(change), tuple(unchanged))
+
+
+def apply_exposure(db: ScriptDB, plan: Exposure) -> int:
+    """Carry the plan out. How many changed."""
+    for t in plan.change:
+        db.set_agent_exposed(t.kind, t.item_id, plan.on)
+    return len(plan.change)
+
+
+def named(targets) -> str:
+    """'Tools/backup, Tools/sync (pipeline)'."""
+    return ", ".join(t.ref + (" (pipeline)" if t.kind == PIPELINE else "")
+                     for t in targets)
+
+
+def _already(n: int, verb_one: str, verb_many: str) -> str:
+    return f"{n} already {verb_one if n == 1 else verb_many}."
+
+
+def exposure_question(plan: Exposure) -> str:
+    """The one question before agents may run something: only what changes."""
+    n = len(plan.change)
+    text = f"Will make {n} available to agents: {named(plan.change)}."
+    if plan.unchanged:
+        text += " " + _already(len(plan.unchanged), "is", "are")
+    return text + " Go ahead?"
+
+
+def nothing_new(plan: Exposure, where: str | None) -> str:
+    """Said when the plan changes nothing. ``where`` is the group, or None for
+    select mode."""
+    total = len(plan.unchanged)
+    if plan.on:
+        if total == 1:
+            return f"{plan.unchanged[0].ref} is already available to agents."
+        if where is None:
+            return f"All {total} selected are already available to agents."
+        return f"All {total} in {where} are already available to agents."
+    if total == 1:
+        return f"{plan.unchanged[0].ref} was not available to agents."
+    if where is None:
+        return "None of the selected were available to agents."
+    return f"None in {where} was available to agents."
+
+
+def exposure_done(plan: Exposure, where: str | None) -> str:
+    """Said after the plan was applied."""
+    n = len(plan.change)
+    if plan.on:
+        text = f"Made {n} available to agents: {named(plan.change)}."
+        if plan.unchanged:
+            text += " " + _already(len(plan.unchanged), "was", "were")
+        return text
+    place = f"in {where}" if where is not None else "selected"
+    return (f"{n} {place} {'is' if n == 1 else 'are'} "
+            "no longer available to agents.")
+
+
+def empty_group(group: str) -> str:
+    return f"{group} has no scripts or pipelines yet."
 
 
 def add_preset(db: ScriptDB, target: Target, label: str, params: str) -> None:

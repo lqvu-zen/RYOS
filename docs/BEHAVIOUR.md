@@ -118,7 +118,7 @@ and the test that guards it, or **untested**.
 | **GR-06** A group clone is named "X (copy)", then "X (copy 2)", skipping names that exist. | W | `test_ryos::TestGroupCrudRules::test_the_first_copy_is_unnumbered`, `test_ryos::TestGroupCrudRules::test_numbering_skips_what_exists` |
 | **GR-07** Dragging a pill reorders groups, Ungrouped included, and the order is stored. | W | `qt_smoke::check_group_management` |
 | **GR-08** Tab pills keep rounded corners (#11). | W | `qt_smoke::check_pill_corners` |
-| **GR-09** The group menu offers Rename, Paste, Clone, Base folder, Export, Delete; the Ungrouped tab and All offer none. | W A | `qt_smoke::check_context_menus`, `qt_smoke::check_all_tab` |
+| **GR-09** The group menu offers Rename, Paste, Clone, Base folder, Export, Make all in this group available to agents… (where agents are offered), Delete; the Ungrouped tab and All offer none. | W A | `qt_smoke::check_context_menus`, `qt_smoke::check_all_tab`, `test_ryos::TestCardMenu::test_group_menu_offers_agents_only_where_offered` |
 | **GR-10** Setting or moving a group's base folder asks before remapping paths, and reports what it left alone; clearing it always confirms. | W · Sc | `test_ryos::TestGroupMenuRules::test_base_dir_move_confirms_the_remap`, `test_ryos::TestGroupMenuRules::test_base_dir_clear_always_confirms`, `test_ryos::TestBaseDirMovesWorkDir`, `qt_smoke::check_context_menus` |
 | **GR-11** Each group page shows a banner with its base folder, or a hint to set one; Ungrouped has none; clicking it opens the base-folder dialog. | W | `qt_smoke::check_badges_banner_previews`, `test_ryos::TestFileDropAndCardDetails::test_banner` |
 | **GR-12** The All tab shows every group under its heading; the empty message names the Add button; an "Other" heading is not shown when only ungrouped items exist. | A | `test_ryos::TestAllViewAndLastGroup`, `test_ryos::TestSections`, `qt_smoke::check_all_tab` |
@@ -144,6 +144,7 @@ and the test that guards it, or **untested**.
 | **GR-32** The output of a run started from the window begins with a one-line note naming what is outside; a pipeline notes only its outside step; nothing is added when nothing is outside. | N C F D · Sc P | `test_ryos::TestBaseFolderNotes`, `session_smoke::step_outside_note` |
 | **GR-33** Runs from the command line, agents or a schedule add no outside note and never ask. | CLI MCP | `test_cli::TestRun::test_outside_the_base_folder_adds_nothing_to_the_output`, `test_headless::TestRunningAScript::test_a_script_outside_its_base_folder_gets_no_note`. `session_smoke::step_scheduled_outside` (a scheduled run never asks). **Failing:** a scheduled run of an outside script still opens its output with the outside-folder note; the check reports it as a known bug |
 | **GR-34** Dropping files on the window adds them to the group on screen; files outside the group's base folder are skipped and named in a warning; a drop on All goes to Ungrouped; a card drag is not a file drop. | W A | `qt_smoke::check_file_drop`, `test_ryos::TestFileDropAndCardDetails::test_drop_plan` |
+| **GR-35** A group tab's "Make all in this group available to agents…" lists only the new ones and asks, worded as the command line; nothing new or an empty group says so; it rebuilds no rows. | W · Sc P | `session_smoke::step_agents_for_a_group`, `test_ryos::TestGroupExposure` |
 
 ## 4. Select mode
 
@@ -162,6 +163,7 @@ and the test that guards it, or **untested**.
 | **SM-11** The session test ticks a pipeline row by clicking it and runs it. | S N · P | `session_smoke::step_quick_run_search_select` |
 | **SM-12** The menu entry flips to "Cancel select" while the mode is on. | S W | `session_smoke::step_keyboard_and_menu` |
 | **SM-13** Select mode on compact rows, on the maximised list and with a search active: ticking, Select All, Run selected. | S C D | **untested** |
+| **SM-14** Make available / unavailable to agents act on every ticked script and pipeline: on lists only what changes and asks once, off doesn't ask; ticks stay; hidden without agents. | S N C · Sc P | `session_smoke::step_agents_for_a_group`, `test_ryos::TestGroupExposure` |
 
 ## 5. Quick Run
 
@@ -307,7 +309,7 @@ and the test that guards it, or **untested**.
 | Behaviour | Surfaces | Guarded by |
 | --- | --- | --- |
 | **CLI-01** `ryos` alone opens the window; `--version` and `--help` work; a bad command line is refused. | CLI | `test_cli::TestWhichCommandLines` |
-| **CLI-02** `list` shows scripts and pipelines with their full names and ids, without their environment, and says what agents may run; `--json` too. | CLI · Sc P | `test_cli::TestList`, `test_cli::TestEditRemoveExpose::test_list_says_what_agents_may_run` |
+| **CLI-02** `list` shows scripts and pipelines with their full names and ids, without their environment, and says what agents may run; `--json` too. `list --group G` shows only that group and names what is not available to agents yet; an unknown group is refused (125) naming the groups. | CLI · Sc P | `test_cli::TestList`, `test_cli::TestEditRemoveExpose::test_list_says_what_agents_may_run`, `test_cli::TestList::test_one_group`, `test_cli::TestList::test_an_unknown_group` |
 | **CLI-03** A script is named by name, `group/name` or `#id`; an ambiguous name is refused listing the candidates; no match is refused. | CLI · Sc P | `test_headless::TestResolve` |
 | **CLI-04** `run` streams output, exits with the script's code (1 when it has none, 124 timed out, 125 refused), `--json` prints one result, `--params` and `--preset` choose the parameters. | CLI · Sc | `test_cli::TestRun`, `test_headless::TestRunningAScript` |
 | **CLI-05** Ctrl+C stops the run first and exits 130. | CLI | **untested** |
@@ -323,21 +325,22 @@ and the test that guards it, or **untested**.
 | **CLI-15** A run's output is kept in a bounded buffer, lines split across chunks, with old lines dropped and paging skipping them. | CLI MCP | `test_headless::TestRunOutput` |
 | **CLI-16** A run from the command line is recorded in History as `cli` and a stop ends it. | CLI · Sc P | `test_headless::TestRunningAScript::test_history_says_who_started_it`, `test_headless::TestRunningAScript::test_stop` |
 | **CLI-17** `ryos-cli version` prints where the logs are: the folder and each log this download writes (#29). | CLI | `test_cli::TestVersion::test_says_where_the_logs_are`, `test_ryos::TestBugReport::test_log_lines_per_download` |
+| **CLI-18** `expose --group G on` lists only what it would change and asks once (a terminal or `--yes`); with nothing new it says so and exits 0; run again, it asks only about what was added since; `off` turns them all off without asking; a script moved into the group later is not made available; an unknown group is refused (125) naming the groups; an empty group says so. | CLI · Sc P | `test_cli::TestExposeAGroup`, `test_ryos::TestGroupExposure` |
 
 ## 12. MCP (AI agents)
 
 | Behaviour | Surfaces | Guarded by |
 | --- | --- | --- |
 | **MCP-01** An agent sees only what is ticked "Available to agents"; anything else is "not found", never named; unticking takes effect at once; an unavailable twin does not make a name ambiguous. | MCP · Sc P | `test_agenttools::TestOnlyWhatWasMadeAvailable` |
-| **MCP-02** Nothing is available until a person says so: the migration, an import, a clone or a copy never turn it on. | MCP W CLI · Sc P | `test_ryos::TestAgentExposure` |
+| **MCP-02** Nothing is available until a person says so: the migration, an import, a clone or a copy never turn it on, nor does moving a script into a group that was exposed. | MCP W CLI · Sc P | `test_ryos::TestAgentExposure`, `test_cli::TestExposeAGroup::test_moving_in_later_grants_nothing` |
 | **MCP-03** An agent runs a script with its own parameters or a preset by label, never free text. | MCP · Sc | `test_agenttools::TestRunning::test_presets_by_label_and_nothing_else` |
 | **MCP-04** A run reports its output and outcome; a failure, a stop and a pipeline run work; a second run of the same item is refused; an unknown run id is named. | MCP · Sc P | `test_agenttools::TestRunning` |
 | **MCP-05** Output comes a page at a time with long lines capped; waiting returns as soon as there is news. | MCP | `test_agenttools::TestOutputInPages` |
 | **MCP-06** A finished agent run tells a running window to refresh its rows. | MCP W | `test_agenttools::TestRunning::test_a_running_window_is_told` |
 | **MCP-07** The real server lists six tools, serves only available items, runs one by preset and refuses an unavailable one with a readable message. | MCP | `test_mcpserver::TestMcpServer::test_the_tools` |
 | **MCP-08** The Windows download has no MCP server: `ryos-cli mcp` exits 125 saying which download has it; without the SDK it says how to get it. | MCP CLI | `test_cli::TestMcpInTheBuildWithoutIt`, `test_cli::TestMcpWithoutTheSdk`, `test_ryos::TestBuildInfo::test_which_builds_carry_mcp_and_offer_agents` |
-| **MCP-09** The "Available to agents" box is in the script dialog and the pipeline editor, off until ticked, hidden in the build without agents but its stored value untouched. | W · Sc P | `qt_smoke::check_script_dialog`, `qt_smoke::check_pipeline_editor`, `test_ryos::TestScriptFormLoadSave::test_agents_off_unless_ticked_and_untickable` |
-| **MCP-10** The command line shows which items agents may run, and exposing from it needs a person to confirm. | CLI | `test_cli::TestEditRemoveExpose::test_expose_on_and_off`, `test_cli::TestAdd::test_expose_needs_a_person` |
+| **MCP-09** The "Available to agents" box is in the script dialog and the pipeline editor, off until ticked, hidden in the build without agents but its stored value untouched; so are the group menu's and select mode's agent actions. | W · Sc P | `qt_smoke::check_script_dialog`, `qt_smoke::check_pipeline_editor`, `test_ryos::TestScriptFormLoadSave::test_agents_off_unless_ticked_and_untickable`, `test_ryos::TestCardMenu::test_group_menu_offers_agents_only_where_offered`, `session_smoke::step_agents_for_a_group` |
+| **MCP-10** The command line shows which items agents may run, and exposing from it, one item or a whole group, needs a person to confirm. | CLI | `test_cli::TestEditRemoveExpose::test_expose_on_and_off`, `test_cli::TestAdd::test_expose_needs_a_person`, `test_cli::TestExposeAGroup::test_refused_without_a_terminal_or_yes` |
 
 ## 13. Parameters, presets and how a script runs
 
@@ -430,7 +433,7 @@ breaks B" has happened. The table says which surfaces are unguarded.
 | Behaviour | Guarded on | Unguarded | Plan |
 | --- | --- | --- | --- |
 | Click Run / star on a row (RC-03, RC-09, RC-10, FV-05) | N C (a real click on Run: `session_smoke::step_run_click`, both layouts; C also for the overlap check) | F D: a click on the real button | -> 2.4 |
-| Select mode (SM-01 to SM-09) | N | C, D, with a search active, with a pipeline in the list on those layouts | -> 2.4 |
+| Select mode (SM-01 to SM-09, SM-14) | N | C, D, with a search active, with a pipeline in the list on those layouts; SM-14 on the All tab and D | -> 2.4 |
 | Keyboard through the list, F2, Menu key (RC-29) | N | C, D | -> 2.4 |
 | Right-click menu actions (RC-20 to RC-25) | N | C, F, D (three dots) | -> 2.4 |
 | Drag and drop (GR-14, GR-15) | N | C, D list | -> 2.4 |

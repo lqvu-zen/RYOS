@@ -87,6 +87,11 @@ SHAPES: dict[str, str] = {
             '<path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>'),
     # Between a pipeline's step cards: then the next one.
     "arrow-right": '<path d="M5 12h14M13 6l6 6-6 6"/>',
+    # Available to agents (the group menu, select mode): a robot's head.
+    "agent": ('<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4"/>'
+              '<circle cx="12" cy="3.5" r="1" fill="{c}"/>'
+              '<circle cx="9.3" cy="13" r="1.1" fill="{c}"/>'
+              '<circle cx="14.7" cy="13" r="1.1" fill="{c}"/>'),
     "settings": ('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/>'
                  '<circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
 }

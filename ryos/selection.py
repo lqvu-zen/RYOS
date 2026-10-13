@@ -21,6 +21,12 @@ NOTHING_TO_RUN = ("Nothing Selected",
 NOTHING_TO_DELETE = ("Nothing Selected",
                      "Tick the boxes next to the scripts or pipelines you want to delete.")
 
+#: The select bar's agent buttons (hidden in a build without agents).
+AGENTS_ON_LABEL = "Make available to agents"
+AGENTS_OFF_LABEL = "Make unavailable to agents"
+NOTHING_TO_EXPOSE = ("Nothing Selected",
+                     "Tick the boxes next to the scripts or pipelines agents may run.")
+
 
 def count_words(scripts: int, pipelines: int) -> str:
     """Like '2 scripts and 1 pipeline', '1 pipeline' or '3 scripts'."""

@@ -679,6 +679,143 @@ def step_quick_run_search_select(s: Session, project: Path) -> None:
        "select mode runs the ticked scripts and a ticked pipeline (row click)")
 
 
+def step_agents_for_a_group(s: Session, project: Path) -> None:
+    """A group tab's "Make all in this group available to agents..." and
+    select mode's two agent buttons: the same plan and wording as `ryos-cli
+    expose --group`, no rows rebuilt, hidden in the build without agents."""
+    from PySide6.QtCore import QPoint
+
+    from ryos import cardmenu
+    from ryos.qtui.menus import actions_by_key
+
+    win = s.win
+    notices: list[tuple[str, str]] = []
+    old_inform, old_popup = win.inform, win.popup
+    win.inform = lambda t, q: notices.append((t, q))
+    shown: list = []
+    win.popup = lambda menu, pos: shown.append(menu)
+    key = cardmenu.EXPOSE_GROUP
+    try:
+        # (1) The tab's menu has the entry.
+        win._show_group_menu("Project", QPoint(0, 0))
+        if not shown or key not in actions_by_key(shown[-1]):
+            problem("the group menu has no 'Make all in this group available to agents'")
+
+        def members():
+            scripts = {r[0] for r in s.db.list_all() if (r[8] or "") == "Project"}
+            pipes = {r[0] for r in s.db.list_pipelines("Project")}
+            return scripts, pipes
+
+        def exposed_in_group():
+            scripts, pipes = members()
+            return (scripts <= s.db.agent_exposed_ids("script")
+                    and pipes <= s.db.agent_exposed_ids("pipeline"))
+
+        outside = {r[0] for r in s.db.list_all() if (r[8] or "") != "Project"}
+        outside_before = s.db.agent_exposed_ids("script") & outside
+
+        # (2) Yes: everything in the group is available, nothing outside it.
+        card_before = s.card("Project", "Say hello")
+        asked = len(s.asked)
+        s.answer("yes_no", True)
+        win.on_group_menu("Project", key)
+        s.pump(0.2)
+        if len(s.asked) != asked + 1 or "Will make" not in s.asked[-1][1]:
+            problem(f"the group question was {s.asked[asked:]}")
+        if not exposed_in_group():
+            problem("the group menu left something in Project unavailable")
+        if s.db.agent_exposed_ids("script") & outside != outside_before:
+            problem("exposing Project touched a script outside it")
+        if not win.statusBar().currentMessage().startswith("Made "):
+            problem(f"status after exposing: {win.statusBar().currentMessage()!r}")
+        if s.card("Project", "Say hello") is not card_before:
+            problem("exposing a group rebuilt the rows")
+
+        # (3) Again: nothing new, and no question.
+        asked = len(s.asked)
+        notices.clear()
+        win.on_group_menu("Project", key)
+        if len(s.asked) != asked:
+            problem("a second run asked a question with nothing new")
+        if not notices or "already available to agents" not in notices[-1][1]:
+            problem(f"a second run said {notices}")
+
+        # (4) A script added since: the question names only it.
+        late = s.db.add("Late", str(project / "hello.py"), "", "", "Project")
+        asked = len(s.asked)
+        s.answer("yes_no", True)
+        win.on_group_menu("Project", key)
+        question = s.asked[-1][1] if len(s.asked) == asked + 1 else ""
+        if "Will make 1 available to agents: Project/Late." not in question:
+            problem(f"the refresh asked {question!r}")
+        if not s.db.is_agent_exposed("script", late):
+            problem("the refresh did not expose the new script")
+        win.reload()
+        win.show_group("Project")
+        s.pump(0.3)
+
+        # (5) Select mode: off asks nothing and keeps the ticks; on asks.
+        win.set_select_mode(True)
+        for name in ("Say hello", "Cleanup"):
+            s.card("Project", name).checkbox.setChecked(True)
+        ids = [s.script_id("Say hello"), s.script_id("Cleanup")]
+        asked = len(s.asked)
+        win.agents_off_button.click()
+        if len(s.asked) != asked:
+            problem("turning agents off from select mode asked a question")
+        if any(s.db.is_agent_exposed("script", i) for i in ids):
+            problem("select mode's off left a ticked script available")
+        if len(win.selected_cards()) != 2:
+            problem("select mode lost its ticks after the agent button")
+        asked = len(s.asked)
+        s.answer("yes_no", True)
+        win.agents_on_button.click()
+        if len(s.asked) != asked + 1 or "Will make 2" not in s.asked[-1][1]:
+            problem(f"select mode's on asked {s.asked[asked:]}")
+        if not all(s.db.is_agent_exposed("script", i) for i in ids):
+            problem("select mode's on left a ticked script unavailable")
+        if not (win.agents_on_button.isVisibleTo(win)
+                and win.agents_off_button.isVisibleTo(win)):
+            problem("the agent buttons are missing from select mode")
+
+        # (6) The build without agents hides both, and the menu entry.
+        import types
+        win.set_select_mode(False)
+        previous = sys.modules.get("ryos._build_info")
+        fake = types.ModuleType("ryos._build_info")
+        fake.VARIANT = "windows"          # type: ignore[attr-defined]
+        sys.modules["ryos._build_info"] = fake
+        try:
+            win.set_select_mode(True)
+            if (win.agents_on_button.isVisibleTo(win)
+                    or win.agents_off_button.isVisibleTo(win)):
+                problem("select mode shows agent buttons in the build without agents")
+            win.set_select_mode(False)
+            shown.clear()
+            win._show_group_menu("Project", QPoint(0, 0))
+            if not shown or key in actions_by_key(shown[-1]):
+                problem("the group menu offers agents in the build without them")
+        finally:
+            if previous is None:
+                sys.modules.pop("ryos._build_info", None)
+            else:
+                sys.modules["ryos._build_info"] = previous
+        if win.select_mode:
+            win.set_select_mode(False)
+    finally:
+        win.inform, win.popup = old_inform, old_popup
+    s.db.delete(late)
+    win.reload()
+    win.show_group("Project")
+    s.pump(0.3)
+    stray = [n for n in notices if "already available" not in n[1]]
+    if stray:
+        problem(f"unexpected notices: {stray}")
+    ok("a group tab's menu and select mode make scripts and pipelines available "
+       "to agents: asks about what is new, off asks nothing, nothing rebuilt, "
+       "hidden in the build without agents")
+
+
 def step_keyboard_and_menu(s: Session) -> None:
     """Esc clears the search (TW-14); the Select menu entry reads "Cancel
     select" while the mode is on (SM-12); Ctrl+V on a row pastes into that
@@ -1078,6 +1215,7 @@ def main() -> int:
              lambda: step_schedule(s),
              lambda: step_scheduled_outside(s),
              lambda: step_quick_run_search_select(s, project),
+             lambda: step_agents_for_a_group(s, project),
              lambda: step_keyboard_and_menu(s),
              lambda: step_help_and_log(s),
              lambda: step_favourite_and_delete(s),

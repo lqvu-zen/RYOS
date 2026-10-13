@@ -102,6 +102,35 @@ class TestList(_Base):
     def test_nothing_yet(self):
         self.assertIn("No scripts", self.ryos("list")[1])
 
+    def test_one_group(self):
+        a = self.script("build", "", group="A")
+        self.script("deploy", "", group="B")
+        pid = self.db.create_pipeline("ship", "A")
+        self.db.set_agent_exposed("script", a, True)
+        code, out, _ = self.ryos("list", "--group", "A")
+        self.assertEqual(code, 0)
+        self.assertIn("A/build", out)
+        self.assertNotIn("B/deploy", out)
+        self.assertIn("Not available to agents yet: A/ship (pipeline).", out)
+        self.assertIn("ryos-cli expose --group A on", out)
+        code, out, _ = self.ryos("list", "--group", "A", "--json")
+        listing = json.loads(out)
+        self.assertEqual([s["ref"] for s in listing["scripts"]], ["A/build"])
+        self.assertEqual([p["id"] for p in listing["pipelines"]], [pid])
+        self.db.set_agent_exposed("pipeline", pid, True)
+        self.assertIn("All 2 in A are available to agents.",
+                      self.ryos("list", "--group", "A")[1])
+        self.db.create_group("Empty")
+        self.assertIn("Empty has no scripts or pipelines yet.",
+                      self.ryos("list", "--group", "Empty")[1])
+
+    def test_an_unknown_group(self):
+        code, out, err = self.ryos("list", "--group", "Nope")
+        self.assertEqual((code, out), (cli.EXIT_REFUSED, ""))
+        self.assertIn("The groups are: A, B.", err)
+        code, out, _ = self.ryos("list", "--group", "Nope", "--json")
+        self.assertEqual((code, json.loads(out)["status"]), (cli.EXIT_REFUSED, "refused"))
+
 
 class TestRun(_Base):
     def test_a_pass_streams_its_output_and_tells_the_window(self):
@@ -363,6 +392,133 @@ class TestEditRemoveExpose(_Manage):
         out.flush()
         self.assertEqual(code, 0)
         self.assertIn(b"backup", raw.getvalue())
+
+
+class TestExposeAGroup(_Manage):
+    """`expose --group`: ticks "Available to agents" on what is in a group now."""
+
+    def setUp(self):
+        super().setUp()
+        self.db.create_group("Tools")
+        self.backup = self.script("backup", "", group="Tools")
+        self.sync = self.script("sync", "", group="Tools")
+        self.ship = self.db.create_pipeline("ship", "Tools")
+        self.other = self.script("other", "", group="A")
+
+    def exposed(self, kind="script"):
+        return self.db.agent_exposed_ids(kind)
+
+    def test_first_run_exposes_everything(self):
+        self.answer = True
+        code, out, _ = self.ryos("expose", "--group", "Tools", "on")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.exposed(), {self.backup, self.sync})
+        self.assertEqual(self.exposed("pipeline"), {self.ship})
+        self.assertEqual(len(self.questions), 1)
+        self.assertIn("Will make 3 available to agents: "
+                      "Tools/backup, Tools/sync, Tools/ship (pipeline).", self.questions[0])
+        self.assertNotIn("already", self.questions[0])
+        self.assertIn("Made 3 available to agents", out)
+        self.assertEqual(self.rebuilt, 1)
+        self.assertNotIn(self.other, self.exposed())
+
+    def test_a_second_run_asks_only_about_whats_new(self):
+        self.answer = True
+        self.ryos("expose", "--group", "Tools", "on")
+        x = self.script("x", "", group="Tools")
+        p2 = self.db.create_pipeline("p2", "Tools")
+        self.questions.clear()
+        code, out, _ = self.ryos("expose", "on", "--group", "Tools")
+        self.assertEqual(code, 0)
+        self.assertEqual(len(self.questions), 1)
+        self.assertIn("Will make 2 available to agents: Tools/x, Tools/p2 (pipeline).",
+                      self.questions[0])
+        self.assertIn("3 already are.", self.questions[0])
+        self.assertNotIn("Tools/backup", self.questions[0])
+        self.assertEqual(self.exposed(), {self.backup, self.sync, x})
+        self.assertEqual(self.exposed("pipeline"), {self.ship, p2})
+        self.assertIn("3 already were.", out)
+
+    def test_nothing_new_exits_0_without_asking(self):
+        self.answer = True
+        self.ryos("expose", "--group", "Tools", "on")
+        self.questions.clear()
+        self.rebuilt = 0
+        self.answer = None
+        code, out, _ = self.ryos("expose", "--group", "Tools", "on")
+        self.assertEqual(code, 0)
+        self.assertIn("All 3 in Tools are already available to agents", out)
+        self.assertEqual((self.questions, self.rebuilt), ([], 0))
+
+    def test_off_clears_them_all_without_asking(self):
+        self.answer = True
+        self.ryos("expose", "--group", "Tools", "on")
+        self.db.set_agent_exposed("script", self.other, True)
+        self.questions.clear()
+        self.answer = None
+        code, out, _ = self.ryos("expose", "--group", "Tools", "off")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.questions, [])
+        self.assertEqual(self.exposed(), {self.other})
+        self.assertEqual(self.exposed("pipeline"), set())
+        self.assertIn("3 in Tools are no longer available to agents.", out)
+        code, out, _ = self.ryos("expose", "--group", "Tools", "off")
+        self.assertEqual(code, 0)
+        self.assertIn("None in Tools was available to agents.", out)
+
+    def test_unknown_group_is_refused(self):
+        for name in ("Nope", "tools", "Ungrouped", ""):
+            with self.subTest(name):
+                code, out, err = self.ryos("expose", "--group", name, "on", "--yes")
+                self.assertEqual(code, cli.EXIT_REFUSED)
+                self.assertIn("The groups are: A, B, Tools.", err)
+                self.assertEqual(out, "")
+        self.assertEqual(self.exposed(), set())
+
+    def test_empty_group_says_so(self):
+        self.db.create_group("Empty")
+        code, out, _ = self.ryos("expose", "--group", "Empty", "on")
+        self.assertEqual(code, 0)
+        self.assertIn("Empty has no scripts or pipelines yet.", out)
+        self.assertEqual(self.questions, [])
+
+    def test_refused_without_a_terminal_or_yes(self):
+        code, _, err = self.ryos("expose", "--group", "Tools", "on")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("terminal", err)
+        self.assertEqual(self.exposed(), set())
+        self.answer = False
+        code, _, err = self.ryos("expose", "--group", "Tools", "on")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("Left as it was", err)
+        self.assertEqual(self.exposed(), set())
+        self.answer = None
+        self.assertEqual(self.ryos("expose", "--group", "Tools", "on", "--yes")[0], 0)
+        self.assertEqual(self.exposed(), {self.backup, self.sync})
+
+    def test_moving_in_later_grants_nothing(self):
+        self.answer = True
+        self.ryos("expose", "--group", "Tools", "on")
+        code, _, _ = self.ryos("edit", "A/other", "--group", "Tools")
+        self.assertEqual(code, 0)
+        self.assertNotIn(self.other, self.exposed())
+
+    def test_usage_errors(self):
+        err = io.StringIO()
+        sys_stderr, sys.stderr = sys.stderr, err
+        try:
+            for argv in (("expose", "Tools/backup", "on", "--group", "Tools"),
+                         ("expose", "--group", "Tools", "on", "--pipeline"),
+                         ("expose", "on")):
+                with self.subTest(argv):
+                    self.assertEqual(self.ryos(*argv)[0], cli.EXIT_USAGE)
+        finally:
+            sys.stderr = sys_stderr
+        self.assertIn("--group alone", err.getvalue())
+        self.assertIn("name a script or pipeline", err.getvalue())
+        self.assertEqual(self.ryos("expose", "Tools/backup", "on", "--yes")[0], 0)
+        self.assertEqual(self.exposed(), {self.backup})
+        self.assertEqual(self.ryos("expose", "Tools/ship", "on", "--pipeline", "--yes")[0], 0)
 
 
 class TestVersion(unittest.TestCase):
