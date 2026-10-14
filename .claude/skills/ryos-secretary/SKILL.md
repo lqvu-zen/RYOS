@@ -112,7 +112,7 @@ If `ryos-planner` isn't available, use `subagent_type: "general-purpose"` with `
   - `tests/release_check.py` as a hard gate;
   - an RC published as a GitHub pre-release;
   - the `ryos-tester` agent;
-  - Vũ using the RC for at least a day;
+  - Vũ using the RC and ticking his checklist (no minimum time);
   - then promoting the same commit.
 - **Every escaped bug adds its check:** a test, a map entry, or a `release_check.py` case.
 - **Dropped:** phone notifications, running RYOS from the phone, the `adb` device trigger, and a group-level "always exposed" flag. **Parked:** a license and Windows code signing. Don't bring these back unless Vũ does.

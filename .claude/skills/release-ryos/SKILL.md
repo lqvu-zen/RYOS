@@ -7,7 +7,7 @@ description: 'Cut a new GitHub release of the RYOS desktop app through a release
 
 RYOS ships as a GitHub release with four downloadable assets, built and checked by `build_release.py`: **`RYOS-windows.zip`** (`RYOS.exe` and the console `ryos-cli.exe`, **no** MCP server — variant `windows`), **`RYOS-windows-ai.zip`** (the same with the MCP server for AI agents — `windows-ai`), **`RYOS-agent.zip`** (`ryos-cli.exe` alone with MCP, no window and no Qt — RYOS Agent, `agent`) and **`RYOS-portable.zip`** (the source, run with uv via `run.bat`), plus `SHA256SUMS.txt`. Each build's update notice names its own zip (`ryos/buildinfo.py`), so these names and variant IDs must not change once released. The release is tagged in the repo `lqvu-zen/RYOS`, and the app's built-in update check (`ryos/notifications.py`) compares the running `__version__` against the latest GitHub release — so the tag, the assets, and `__version__` must all line up.
 
-Every release goes out in two parts. **A. A release candidate**: the downloads are built, pass `tests/release_check.py`, are published as a GitHub **pre-release** `vX.Y.Z-rcN`, are tested by the `ryos-tester` agent, and are used by Vũ on his real data for at least a day. **B. Promotion**: the same commit, with only the version line changed, is rebuilt, checked again, release-reviewed and published as `vX.Y.Z`. 2.3.0 was built and published in an hour, and #29 and #30 were found days later in normal use; the candidate phase is where those are meant to surface.
+Every release goes out in two parts. **A. A release candidate**: the downloads are built, pass `tests/release_check.py`, are published as a GitHub **pre-release** `vX.Y.Z-rcN`, are tested by the `ryos-tester` agent, and are used by Vũ on his real data until he has ticked his checklist (no minimum time). **B. Promotion**: the same commit, with only the version line changed, is rebuilt, checked again, release-reviewed and published as `vX.Y.Z`. 2.3.0 was built and published in an hour, and #29 and #30 were found days later in normal use; the candidate phase is where those are meant to surface.
 
 Releasing is **not a design problem** — it's a deterministic runbook, so there is no design subagent here, and you run the steps inline. The safety comes from **hard gates**: CI green on the commit you build, the build succeeding, `release_check.py` printing `RELEASE CHECK PASSED`, the tester reporting `TESTER: PASS`, every box of Vũ's checklist ticked, and the release review printing `READY TO PUBLISH`. Stop and report at any gate that fails rather than publishing. (Drafting release notes from the commit log is the one step you may hand to a cheap Haiku/Sonnet subagent if you like.)
 
@@ -111,11 +111,11 @@ Write the checklist into the release plan's Status table (`docs/plans/release-X.
 
 ### A8. Vũ uses the candidate
 
-Vũ uses it on his real data for **at least 24 hours** (he may waive that explicitly for a candidate that only carries a tiny fix; a waiver is his words, not an inference). Any bug found is fixed through `fix-ryos-bug`, and a new candidate starts from A2 with N+1. Between a candidate's tag and its promotion, **only `docs/`-only commits may land on `main`**; any other change means a new candidate.
+Vũ uses it on his real data and ticks his checklist. There is **no minimum time** on a candidate (Vũ's decision, 2026-10-14). Any bug found is fixed through `fix-ryos-bug`, and a new candidate starts from A2 with N+1. Between a candidate's tag and its promotion, **only `docs/`-only commits may land on `main`**; any other change means a new candidate.
 
 ## B. Promote
 
-Only when Vũ says so, at least 24 hours after the last candidate was published (unless he waived it), and with every checklist box ticked.
+Only when Vũ says so, with `release_check.py` passed, the tester's PASS in hand and every checklist box ticked. No minimum time since the candidate was published.
 
 ### B1. The candidate is what ships — hard gate
 

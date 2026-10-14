@@ -69,7 +69,7 @@ Your brief gives you:
    - the candidate tag exists and is published as a pre-release (`gh release view v<X.Y.Z>-rc<N> -R lqvu-zen/RYOS --json isPrerelease,publishedAt,tagName`);
    - the promotion diff lists only `ryos/__init__.py`, one line changed (`-rc<N>` dropped) -- anything else means it is a new candidate, not a promotion (run the diff yourself);
    - the tester's last report on that candidate ends `TESTER: PASS` and has no FAIL row;
-   - every box of Vũ's manual checklist is ticked (the release plan's Status table), and the candidate was published at least 24 hours ago unless Vũ waived that in writing;
+   - every box of Vũ's manual checklist is ticked (the release plan's Status table); there is no minimum time since the candidate was published;
    - `release_check.py` ended `RELEASE CHECK PASSED` on this build, with `build_commit` passing.
 9. **Done when:** for the release plan's final step, mark each item **met**, **not met** or **needs a human**, with evidence.
 
