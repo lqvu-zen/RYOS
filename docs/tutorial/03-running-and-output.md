@@ -28,7 +28,7 @@ Click **Show output** at the bottom to open the output panel.
 
 The line at the very bottom of the window says what RYOS last did: *Ready*, *Done*, *Failed*, *Stopped*.
 
-> In **Options → Options… → Output** you can have the panel open by itself when a run starts, clear it between runs, and get a notification when a run finishes.
+> In **Options → Options… → Output** you can have the panel open by itself when a run starts, clear the All tab between runs, and get a notification when a run finishes.
 
 ---
 [← Adding a script](02-adding-a-script.md) · [Contents](README.md) · [Next: Groups →](04-groups.md)

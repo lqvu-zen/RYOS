@@ -143,6 +143,10 @@ def closable(keys, running) -> list:
     return [k for k in keys if k != ALL and k not in running]
 
 
+def cleared_when_run_starts(keys, *, enabled: bool) -> list:
+    return [ALL] if enabled and ALL in keys else []
+
+
 # --- steps running side by side: their chips, prefix and filter ------------------
 
 #: A parallel step's state, as its chip shows it.

@@ -437,25 +437,60 @@ def step_status_line(s: Session) -> None:
 def step_output_options(s: Session) -> None:
     """"Clear output between runs" and "Scroll to the newest output" (OP-15).
 
-    Clearing has no effect in the window today (nothing reads the setting):
-    reported as a known app bug, not failed, so the map can say so."""
+    Clearing is asserted: with the option on, All holds only the newest run
+    while each run's own tab, finished or still running, keeps its output."""
     from ryos import outputpanel
     win = s.win
     all_pane = win._output_tabs[outputpanel.ALL]
+
+    def say_hello(why: str) -> None:
+        s.card("Project", "Say hello").run_button.click()
+        s.idle(why)
+        s.pump(0.2)
+
     win._settings["auto_clear_output"] = True
     try:
-        for _ in range(2):
-            s.card("Project", "Say hello").run_button.click()
-            s.idle("hello, clearing between runs")
-            s.pump(0.2)
+        say_hello("hello, clearing between runs")
+        say_hello("hello, clearing between runs")
         runs_shown = all_pane.plain_text().count("hello world")
+        if runs_shown != 1:
+            problem(f"with 'Clear output between runs' on, the All tab holds "
+                    f"{runs_shown} runs of hello, not 1 (OP-15)")
+        tabs = win.output_tabs
+        own = [tabs.widget(i).plain_text() for i in range(tabs.count())
+               if tabs.tabText(i).replace("&&", "&") == "Say hello"]
+        if len(own) < 2 or not all("hello world" in t for t in own[:2]):
+            problem("clearing All wiped a finished run's own tab (OP-15)")
+
+        s.card("Project", "Slow").run_button.click()
+        s.wait_for(lambda: "tick 2" in s.output("Slow"), "the slow script to tick")
+        def hello_tabs() -> int:
+            t = win.output_tabs
+            return sum(t.tabText(i).replace("&&", "&") == "Say hello"
+                       for i in range(t.count()))
+        seen = hello_tabs()
+        s.card("Project", "Say hello").run_button.click()
+        s.wait_for(lambda: hello_tabs() > seen
+                   and "hello world" in s.output("Say hello"),
+                   "hello beside a running script")
+        s.pump(0.2)
+        if "tick 0" not in s.output("Slow"):
+            problem("a new run wiped the running script's own tab (OP-15)")
+        if "tick 0" in all_pane.plain_text():
+            problem("the All tab still holds the earlier run's output (OP-15)")
+        rows = list(win.running._rows.values())
+        for row in rows:
+            row.stop_button.click()
+        s.idle("stop the slow script", timeout=10)
     finally:
         win._settings["auto_clear_output"] = False
-    if runs_shown != 1:
-        KNOWN_BUGS.append(f"OP-15: with 'Clear output between runs' on, the All tab "
-                          f"holds {runs_shown} runs of hello, not 1 (the setting is "
-                          f"read nowhere)")
-        print(f"  KNOWN BUG: {KNOWN_BUGS[-1]}")
+
+    before = all_pane.plain_text().count("hello world")
+    say_hello("hello, not clearing")
+    say_hello("hello, not clearing")
+    gained = all_pane.plain_text().count("hello world") - before
+    if gained != 2:
+        problem(f"with the option off All gained {gained} runs of hello, not 2")
 
     # Auto-scroll: off leaves the view where it was, on follows the newest line.
     win.set_output_expanded(True)
@@ -479,7 +514,7 @@ def step_output_options(s: Session) -> None:
     finally:
         win._settings["auto_scroll_output"] = True
         win.set_output_expanded(False)
-    ok("output options: auto-scroll follows or stays as set (clearing: see known bugs)")
+    ok("output options: auto-scroll follows or stays as set; clearing empties All, keeps run tabs")
 
 
 def step_run_click(s: Session) -> None:

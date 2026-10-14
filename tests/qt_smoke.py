@@ -3854,8 +3854,15 @@ def check_output_panel(app):
     reading = tabs.currentWidget()
     changes: list[int] = []
     tabs.currentChanged.connect(changes.append)
-    win._on_job_started(SimpleNamespace(tab_key="job:4", name="four"))
-    win._on_job_started(SimpleNamespace(tab_key="job:5", name="five"))
+    win._output_tabs[outputpanel.ALL].append("earlier run\n", 1000)
+    win._settings["auto_clear_output"] = True
+    try:
+        win._on_job_started(SimpleNamespace(tab_key="job:4", name="four"))
+        win._on_job_started(SimpleNamespace(tab_key="job:5", name="five"))
+    finally:
+        win._settings["auto_clear_output"] = False
+    if win._output_tabs[outputpanel.ALL].plain_text().strip():
+        PROBLEMS.append("'Clear output between runs' left text in the All tab (OP-15)")
     tabs.currentChanged.disconnect(changes.append)
     order = win._output_keys()
     if order != [outputpanel.ALL, "job:5", "job:4", "job:3"]:
@@ -5218,6 +5225,7 @@ def check_maximised_layout(app):
     fills the pane, a preset chip chooses what Run passes, and the pane's Run
     runs the row's script -- checked by what the script received.
     """
+    from ryos import outputpanel
     import sys as _sys
     import tempfile
     import time as _time
@@ -5329,8 +5337,18 @@ def check_maximised_layout(app):
                      if w.objectName() == "paramChip" and w.text() == "--fail"]
             chips[0].click()
             app.processEvents()
-            win.detail.run.click()
-            pump_until(lambda: len(bridge.registry) == 0)
+            fast_pane = win._output_of("script", sid)
+            win._settings["auto_clear_output"] = True
+            try:
+                win.detail.run.click()
+                pump_until(lambda: len(bridge.registry) == 0)
+            finally:
+                win._settings["auto_clear_output"] = False
+            if "ARGS=--fast" in win._output_tabs[outputpanel.ALL].plain_text():
+                PROBLEMS.append("maximised: All still holds the earlier run with "
+                                "'Clear output between runs' on")
+            if fast_pane is None or "ARGS=--fast" not in fast_pane.plain_text():
+                PROBLEMS.append("maximised: clearing All wiped the earlier run's own pane")
             pump_until(lambda: win.detail.run.text() == detail.run_label("error"), 5)
             if win.detail.run.text() != detail.run_label("error"):
                 PROBLEMS.append(f"after a failure the pane's Run read "

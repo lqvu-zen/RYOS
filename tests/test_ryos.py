@@ -7467,6 +7467,28 @@ class TestOutputRouting(unittest.TestCase):
                     keys = outputpanel.target_tabs(tab_key, active, self.OPEN)
                     self.assertEqual(len(keys), len(set(keys)))
 
+    def test_clearing_between_runs_empties_all(self):
+        self.assertEqual(
+            outputpanel.cleared_when_run_starts(self.OPEN, enabled=True),
+            [outputpanel.ALL])
+
+    def test_with_the_option_off_nothing_is_cleared(self):
+        self.assertEqual(
+            outputpanel.cleared_when_run_starts(self.OPEN, enabled=False), [])
+
+    def test_a_run_going_in_another_tab_is_not_wiped(self):
+        cleared = outputpanel.cleared_when_run_starts(self.OPEN, enabled=True)
+        self.assertNotIn("job:1", cleared)
+        self.assertNotIn("job:2", cleared)
+
+    def test_finished_run_tabs_are_kept(self):
+        self.assertEqual(outputpanel.cleared_when_run_starts(
+            ("all", "job:3", "job:1", "job:2"), enabled=True), ["all"])
+
+    def test_nothing_to_clear_without_all(self):
+        self.assertEqual(
+            outputpanel.cleared_when_run_starts(("job:1",), enabled=True), [])
+
     # -- the buffer cap ----------------------------------------------------
     def test_a_buffer_within_the_cap_is_not_trimmed(self):
         self.assertEqual(outputpanel.overflow_lines(50, 100), 0)

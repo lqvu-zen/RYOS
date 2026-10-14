@@ -824,11 +824,16 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(obj, event)
 
-    def clear_output(self) -> None:
-        pane = self.active_output_pane()
-        if pane is not None:
-            pane.clear()
+    def _clear_pane(self, key: str) -> None:
+        pane = self._output_tabs.get(key)
+        if pane is None:
+            return
+        pane.clear()
+        if pane is self.active_output_pane():
             self.output_matches.setText(pane.match_label())
+
+    def clear_output(self) -> None:
+        self._clear_pane(self.active_output_key() or "")
 
     def close_all_output(self) -> None:
         """Close every tab but All and those still running; clear All."""
@@ -2811,6 +2816,10 @@ class MainWindow(QMainWindow):
         bridge.notify.connect(self._on_job_notify)
 
     def _on_job_started(self, job) -> None:
+        for key in outputpanel.cleared_when_run_starts(
+                self._output_tabs,
+                enabled=bool(self._settings.get("auto_clear_output", False))):
+            self._clear_pane(key)
         self.add_output_tab(job.tab_key, job.name)
         kind = getattr(job, "kind", None)
         item = getattr(job, "pipeline_id" if kind == cardmenu.PIPELINE else "script_id", None)

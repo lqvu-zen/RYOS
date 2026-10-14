@@ -523,7 +523,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 
 | Step | State |
 | --- | --- |
-| 1 Fix OP-15 | — |
+| 1 Fix OP-15 | done: All tab emptied when a run starts with the option on; finished and running run tabs kept; `test_ryos::TestOutputRouting` (clearing, option off, running tab kept), `session_smoke::step_output_options`, `qt_smoke::check_maximised_layout` |
 | 2 Fix GR-33 | — |
 | 3 Fix SM-16 | — |
 | 4 A1 Find and download | — |
