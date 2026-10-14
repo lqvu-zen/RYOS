@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-13 21:30 (UTC+7).
+Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-14 19:45 (UTC+7).
 
 ## Roles
 
@@ -24,15 +24,21 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 | **2.3.1** (in progress) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/plans/release-2.3.1.md` (steps 1–15 committed) |
 | **2.4** | **A** self-update · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers | `docs/plans/release-2.4.0-brief.md`. The planner turns it into `release-2.4.0.md` after 2.3.1 ships. |
 
-## Where we are (21:20)
+## Where we are (2026-10-14 19:45)
 
-- **v2.3.0** is the latest release (2026-10-09).
-- **`main` = `origin/main` at `9c66086`** (20:50). Since `f5bf71b`:
-  - `1b6a100` **#29a fixed:** heavy output no longer freezes the window;
-  - `d7ca83a`, `df179db` **docs cleanup:** superseded docs removed, finished plans moved to `docs/archive/`, links fixed;
-  - `649dfa3` **#30 fixed:** a Quick Run of a new file shows its row again. The refresh had been lost in the Qt port of 2.0.0;
-  - `9c66086` **behaviour map** `docs/BEHAVIOUR.md` (266 entries, 16 areas), wired into the skills, agents and `CLAUDE.md`; `session_smoke` now runs both layouts.
-- **Uncommitted, being worked on:** most likely step 10 (log location) and step 14 (Suggest a feature). `bugreport.py`, `settings.py`, `cli.py` and the tests are modified.
+- **v2.3.0** is still the latest published release. **`v2.3.1-rc1`** is a pre-release (2026-10-14 00:32, from `4000e6d`): `release_check` passed (22 cases), `ryos-tester` **PASS**, Vũ ticked the whole checklist.
+- **`main` = `origin/main` at `ae8c470`.** Since `9c66086`:
+  - `d4cdced` **#29b:** Help → Open log folder; Report a bug shows the log's path (step 10);
+  - `2e15204`, `f9a96da` the secretary skill and planner agent are in the repo;
+  - `e4ed9f3` **Suggest a feature…** next to Report a bug… (step 14);
+  - `c080364` **publisher details** on both exes, the build's commit in `--version`, "Check your download" (step 7);
+  - `0caecbb` Vũ approved the behaviour map (step 13);
+  - `396931e` **expose a whole group** from the CLI, the group menu and select mode (step 8);
+  - `df0d4ef` **#31:** a run's output tab opens right after All (step 12);
+  - `49a3b64` **the release test phase:** `release_check.py`, the RC flow, `ryos-tester` (step 15);
+  - `5dd72c5` fix: the select bar stays readable with the agent buttons (the tester's first FAIL);
+  - `4000e6d` 2.3.1-rc1; `57364b2` **Release 2.3.1** (the version commit for promotion); `ae8c470` checklist ticked, 24 h waived.
+- **Next:** the coding session publishes `v2.3.1` from `57364b2` (no `v2.3.1` tag or GitHub release yet). Then close #29, #30, #31.
 
 ## v2.3.1, in working order
 
@@ -41,37 +47,34 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 | 1–5 | Vũ on 2.3.0; #26; #27; loose ends | ✅ |
 | 9 | #29a freeze | ✅ `1b6a100` |
 | 11 | #30 Quick Run | ✅ `649dfa3` |
-| 13 | Behaviour map | ✅ committed `9c66086`. **Waiting on Vũ's review of `docs/BEHAVIOUR.md`.** It found **two new bugs**, see below. |
-| 10 | #29b log easy to find | in progress? |
-| 14 | Suggest a feature… | in progress? |
-| 7 | Publisher details, build commit in `--version`, "Check your download" | — |
-| 8 | Expose a group | — |
-| 12 | #31 newest log tab first | — |
-| 15 | Release test phase (`release_check.py` gate, RC pre-release, `ryos-tester`, manual checklist, escape rule) | — |
-| 6 | Release 2.3.1 via the RC flow | needs 7–15 |
+| 13 | Behaviour map | ✅ `9c66086`, approved `0caecbb` |
+| 10 | #29b log easy to find | ✅ `d4cdced` |
+| 14 | Suggest a feature… | ✅ `e4ed9f3` |
+| 7 | Publisher details, build commit in `--version`, "Check your download" | ✅ `c080364` |
+| 8 | Expose a group | ✅ `396931e` |
+| 12 | #31 newest log tab first | ✅ `df0d4ef` |
+| 15 | Release test phase | ✅ `49a3b64` (+ fix `5dd72c5`) |
+| 6 | Release 2.3.1 via the RC flow | rc1 ✅ `4000e6d`; promotion commit `57364b2`, **publish pending** |
 
-## Secretary skill and planner agent (drafted 2026-10-13 21:30)
+## Secretary skill and planner agent
 
-Staged in `docs/plans/secretary/` (uncommitted). A coding session copies them into place by following its `APPLY.md`, after the current step:
-- `.claude/skills/ryos-secretary/SKILL.md`: this role, run as `/ryos-secretary` in its own Claude Code tab (Sonnet 5.5, Medium);
-- `.claude/agents/ryos-planner.md`: a read-only Opus planner at high effort, called by the skill for heavy planning.
-
-Once it works, `docs/STATUS.md` in the repo is the only master and the claude.ai project copy is deleted.
+In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secretary`) and `.claude/agents/ryos-planner.md`. `docs/STATUS.md` in the repo is now the master.
 
 ## Found by the behaviour map (not yet planned)
 
 - **OP-15:** the setting "Clear output between runs" does nothing.
 - **GR-33:** a scheduled run of a script outside its group's base folder adds the outside-folder note.
 
-**Vũ to decide:** fix both in 2.3.1 (suggested, as small `/fix-ryos-bug` steps), or move them to 2.4.
+**Vũ to decide:** 2.3.1 has shipped its RC without them, so they go to 2.4 unless Vũ wants a 2.3.2.
 
-## Open GitHub issues (checked 2026-10-13 19:30)
+## Open GitHub issues (checked 2026-10-14 19:45)
 
 | # | Title | Where |
 |---|---|---|
-| 29 | I can't find the app log to report bug (and the freeze) | 2.3.1 steps 9 ✅ and 10 |
+| 29 | I can't find the app log to report bug (and the freeze) | 2.3.1 steps 9 ✅ and 10 ✅ (close on release) |
 | 30 | Quick run function didn't auto add new script | 2.3.1 step 11 ✅ (close on release) |
-| 31 | Suggestion: reverse the order for the logs' tabs | 2.3.1 step 12 |
+| 31 | Suggestion: reverse the order for the logs' tabs | 2.3.1 step 12 ✅ (close on release) |
+| 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude) | **New, not triaged.** Suggested: 2.4 part C (agents read history and logs) |
 
 ## User feedback
 
@@ -108,13 +111,14 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-10-14 19:45: **No minimum time on a release candidate.** The 24 h of use is dropped for every release, not only waived for 2.3.1: an RC is promoted once `release_check` passes, `ryos-tester` passes and Vũ has ticked his checklist. The RC pre-release, the tester and the checklist stay. `release-ryos`, `ryos-reviewer` and `ryos-secretary` still say 24 h and need a coding session to change them.
 - 2026-10-13 21:21: **The secretary and planner become repo assets:** the `ryos-secretary` skill (talks to Vũ, keeps STATUS and the plans, commits only its own doc files, never pushes or writes code) and the `ryos-planner` agent (read-only, Opus at high effort, returns drafts and open questions).
 - 2026-10-13 21:15: **STATUS is mirrored into the repo as `docs/STATUS.md`** (the repo is public). The claude.ai project copy stays the master.
 - 2026-10-13 21:06: **Coding sessions run on Sonnet 5.5 at Medium,** with High for steps 15 and 6, and Opus 5.5 at High for planning. One fresh conversation per plan step.
 - 2026-10-13 20:04: **Docs cleanup:** superseded docs removed, finished plans archived, links fixed (done: `d7ca83a`, `df179db`).
 - 2026-10-13 19:48: **A release test phase, from 2.3.1 on (step 15).**
   - `release_check.py` is a hard gate.
-  - Releases go out first as `vX.Y.Z-rcN` pre-releases. `ryos-tester` drives the built app, and Vũ uses the RC for at least a day. Then the same commit is promoted.
+  - Releases go out first as `vX.Y.Z-rcN` pre-releases. `ryos-tester` drives the built app, and Vũ uses the RC for at least a day. Then the same commit is promoted. *(The one-day minimum was dropped on 2026-10-14, see above.)*
   - A pre-release compares as older than its final.
   - Every escaped bug adds its check.
 - 2026-10-13 19:44: **"Suggest a feature…" next to "Report a bug…"** (step 14).
