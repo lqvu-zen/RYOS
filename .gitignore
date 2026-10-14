@@ -18,6 +18,7 @@ tests/*
 !tests/test_cli.py
 !tests/test_agenttools.py
 !tests/test_mcpserver.py
+!tests/test_updates.py
 !tests/echo_args.bat
 !tests/uv_runner.bat
 !tests/uv_hello.py

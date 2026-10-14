@@ -34,7 +34,7 @@ flowchart TD
         rules["cardmenu · cardstyle · scriptform · pipelinesteps · sections · selection · outputpanel · configio · traypolicy"]
         quickrun["quickrun · quickrun_index · quickrun_actions"]
         misc["search · grouping · dragdrop · screens · marquee · history · themes · themeform · verdict"]
-        infra["notifications · logger · startup · single_instance · buildinfo"]
+        infra["notifications · updates · logger · startup · single_instance · buildinfo"]
     end
 
     ui --> core
@@ -68,9 +68,10 @@ without a display, and that is still where new logic belongs.
 | `ryos/agenttools.py` | `AgentTools` — what an AI agent may do, as plain methods (the MCP server's tools): list and run only items marked available to agents (`agent_exposed`, read on every call; anything else is "not found", never named), a preset by label but no free-text parameters, output in capped pages, `get_run` that can wait for news. One lock around the job engine, which its own pump thread drives; a finished run tells a running window (`RELOAD`). No MCP SDK needed. | yes (`tests/test_agenttools.py`) |
 | `ryos/mcpserver.py` | `ryos mcp`: publishes `AgentTools` over stdio with the official MCP Python SDK 2.x (`MCPServer`), an optional extra (`uv run --extra mcp ryos mcp`). Refusals become `ToolError`s with their message; tools are annotated read-only or acting. Logs to `ryos-mcp.log`; nothing may print to stdout, which carries the protocol. | yes (`tests/test_mcpserver.py`: a real client and server, skipped without the SDK; CI installs it) |
 | `ryos/interpreter.py` | Extension→interpreter detection, command building, working-directory selection, RYOS.exe self-relaunch guard. | yes |
-| `ryos/settings.py` | App-data paths, defaults, tolerant load/save. | yes |
+| `ryos/settings.py` | App-data paths, defaults, tolerant load/save; the updates folder (`updates_dir`: `%LOCALAPPDATA%\RYOS\updates\<version>\`, `XDG_CACHE_HOME` or `~/.cache` off Windows), read from the environment on each call so tests redirect `LOCALAPPDATA`. | yes |
 | `ryos/settings_schema.py` | Declarative description of the 31 settings the Options dialog shows — kind, label, tab, bounds, per-item tidying — plus `coerce()`, which turns a form's raw text into a usable value and never raises. The Options dialog is generated from it. | yes |
 | `ryos/notifications.py` | Windows toast (`RYOS_NO_TOASTS=1` blocks it; the smokes and the driver set it) + GitHub update check (`_parse_version`, `_fetch_latest_release`), and what a check's result means (`update_status`). | partial |
+| `ryos/updates.py` | This download's update, toolkit-free with the network passed in (`open_url`): `fetch_release` returns the release with its assets (`/releases/latest`, or every non-draft release on the pre-release channel), `pick_asset` this variant's zip (`buildinfo.DOWNLOADS`; none from source), and `download` fetches `SHA256SUMS.txt` and the zip into the updates folder, resuming a cut-off `.part` with `Range` (or restarting), checking the hash and deleting a mismatch, and refusing with words when the zip, the SUMS or its line is missing. `Release.check` keeps the `(tag, url)` shape `notifications.update_status` unpacks; `_fetch_latest_release` itself is unchanged. | yes (`tests/test_updates.py`, a local HTTP server on 127.0.0.1) |
 | `ryos/logger.py` | Rotating-file logger setup for the `ryos` namespace, plus a global excepthook. | — |
 | `ryos/startup.py` | Windows "run at login" registry entry. `RYOS_NO_REGISTRY=1` blocks writes (the smokes set it). | — |
 | `ryos/scheduling.py` | Recurring schedules as pure functions over naive local time: `normalize_spec`, `next_occurrence`, `preview`, `resolve_due`, `describe_spec`. Interval / daily / weekly, with a catch-up policy for time the app spent closed. | yes |

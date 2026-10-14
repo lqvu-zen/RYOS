@@ -37,6 +37,15 @@ for _fname in ("scripts.db", "settings.json"):
         shutil.move(str(_old), _new)
 
 
+def updates_root() -> Path:
+    local = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CACHE_HOME")
+    return Path(local or Path.home() / ".cache") / "RYOS" / "updates"
+
+
+def updates_dir(version: str) -> Path:
+    return updates_root() / version.lstrip("v")
+
+
 _SETTINGS_DEFAULTS: dict = {
     "remember_last_group":    True,
     "last_group":             None,
