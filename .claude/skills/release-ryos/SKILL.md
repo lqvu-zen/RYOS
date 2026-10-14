@@ -221,6 +221,28 @@ If X.Y.Z's `SCHEMA_VERSION` (`ryos/db.py`) is newer than every fixture's (`tests
 cd D:/Projects/RYOS && uv run python tests/fixtures/db/make_fixtures.py vX.Y.Z
 ```
 
-### B8. Report
+### B8. Archive the plan, only if it is complete
 
-Give the user the release URL (`gh` prints it), the version shipped, the candidate it promotes, the assets attached, and a one-line confirmation that `release_check.py` passed, the tester reported `TESTER: PASS`, the checklist is ticked and the release review printed `READY TO PUBLISH`. Note anything you skipped or that needs follow-up.
+The release is published, so its plan (and its brief, if one exists) leave `docs/plans/`. First set the plan's own release row to `done, vX.Y.Z published <date>` (a `docs/`-only edit), then check the plan is complete; the check, which reads only the rows of the `## Status` table, prints nothing when it is:
+
+```bash
+cd D:/Projects/RYOS && plan=docs/plans/release-X.Y.Z.md
+awk -F'|' '/^## Status/{t=1} t && /^\| [0-9]+ /{s=tolower($3); sub(/^ +/,"",s); if (s !~ /^(done|not needed)/) print "OPEN: " $2}' $plan
+grep -n -i '\[ \]\|needs a human' $plan
+```
+
+Any output means the plan is **not** complete: leave it in `docs/plans/`, skip the rest of B8, and list the open rows in B9. A `done` row that still names something to run or tick is also open; read the Status table, the check is only the floor.
+
+When it prints nothing:
+
+```bash
+cd D:/Projects/RYOS && git mv docs/plans/release-X.Y.Z.md docs/archive/release-X.Y.Z.md
+[ -f docs/plans/release-X.Y.Z-brief.md ] && git mv docs/plans/release-X.Y.Z-brief.md docs/archive/release-X.Y.Z-brief.md
+grep -rnF "release-X.Y.Z" --include=*.md --include=*.py . | grep -v "^./docs/archive/\|^./dist/\|^./docs/STATUS.md"
+```
+
+Point every hit at the archived path, so none dangle. `docs/STATUS.md` is left to the secretary. Commit only those paths, by path, as `docs: archive release-X.Y.Z plan`, and push. Only `docs/`-only paths may be in this commit.
+
+### B9. Report
+
+Give the user the release URL (`gh` prints it), the version shipped, the candidate it promotes, the assets attached, and a one-line confirmation that `release_check.py` passed, the tester reported `TESTER: PASS`, the checklist is ticked and the release review printed `READY TO PUBLISH`. Say whether the plan was archived, or which rows kept it in `docs/plans/`. Note anything you skipped or that needs follow-up.
