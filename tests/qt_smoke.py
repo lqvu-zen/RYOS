@@ -2288,6 +2288,37 @@ def check_select_mode(app):
     win.show_group("G")
     app.processEvents()
 
+    # -- a reload keeps the mode and the ticks (SM-16) -------------------------
+    for c in win.selectable_cards():
+        c.checkbox.setChecked(False)
+    first = win.selectable_cards()[0]
+    ticked = win._card_item(first)
+    first.checkbox.setChecked(True)
+    win._set_favorite(ticked[0], ticked[1], True)
+    for _ in range(3):
+        app.processEvents()
+    if (not win.select_mode or not win.select_bar.isVisible()
+            or [win._card_item(c) for c in win.selected_cards()] != [ticked]):
+        PROBLEMS.append("starring a ticked row left select mode or dropped the tick")
+    win._set_favorite(ticked[0], ticked[1], False)
+    for _ in range(3):
+        app.processEvents()
+    if (not win.select_mode
+            or [win._card_item(c) for c in win.selected_cards()] != [ticked]):
+        PROBLEMS.append("unstarring a ticked row left select mode or dropped the tick")
+    win.set_workspace(True)
+    for _ in range(3):
+        app.processEvents()
+    if (not win.select_mode
+            or [win._card_item(c) for c in win.selected_cards()] != [ticked]):
+        PROBLEMS.append("maximising lost select mode or the ticks")
+    win.set_workspace(False)
+    for _ in range(3):
+        app.processEvents()
+    if (not win.select_mode
+            or [win._card_item(c) for c in win.selected_cards()] != [ticked]):
+        PROBLEMS.append("restoring the window lost select mode or the ticks")
+
     # -- deleting ------------------------------------------------------------
     for c in win.selectable_cards():
         c.checkbox.setChecked(False)

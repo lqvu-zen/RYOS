@@ -525,7 +525,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 | --- | --- |
 | 1 Fix OP-15 | done: All tab emptied when a run starts with the option on; finished and running run tabs kept; `test_ryos::TestOutputRouting` (clearing, option off, running tab kept), `session_smoke::step_output_options`, `qt_smoke::check_maximised_layout` |
 | 2 Fix GR-33 | done: the outside note is decided by the run's trigger (`basefolder.notes_for`, only the window's manual runs note; script and pipeline-step paths); `test_ryos::TestBaseFolderNotes` (script and pipeline step by trigger, `test_only_a_window_run_notes`), `session_smoke::step_scheduled_outside` asserts no note |
-| 3 Fix SM-16 | — |
+| 3 Fix SM-16 | done: `load_from_db` keeps select mode and the ticked (kind, id) across a reload; Delete selected leaves the mode itself; `qt_smoke::check_select_mode` stars, unstars, maximises and restores with a tick |
 | 4 A1 Find and download | — |
 | 5 A1 Background download and setting | — |
 | 6 A2 Signature check and signing tool | — |

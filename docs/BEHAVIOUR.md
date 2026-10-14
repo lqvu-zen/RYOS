@@ -167,7 +167,7 @@ and the test that guards it, or **untested**.
 | **SM-13** Select mode on compact rows, on the maximised list and with a search active: ticking, Select All, Run selected. | S C D | `qt_smoke::check_select_bar_fits` (ticking and Select All on C and D, both builds); Run selected and Delete on C/D, and a search active: **untested** |
 | **SM-14** Make available / unavailable to agents act on every ticked script and pipeline: on lists only what changes and asks once, off doesn't ask; ticks stay; hidden without agents. | S N C · Sc P | `session_smoke::step_agents_for_a_group`, `test_ryos::TestGroupExposure` |
 | **SM-15** The select bar stays readable: every button's label whole and the count on one line, at the 480 px minimum, at 540 and in the maximised list, on full and compact rows, with and without agents. The count sits above the buttons, which wrap onto more lines rather than clip (2.3.1 release test). | S N C D · W | `qt_smoke::check_select_bar_fits`, `qt_smoke::check_output_panel` (minimum width) |
-| **SM-16** Starring or unstarring a row in select mode, or maximising the window with full rows, leaves select mode and drops the ticks (known since 2.3.0: every reload does). | S N D · Sc P | **untested (known)** |
+| **SM-16** Starring or unstarring a row in select mode, or maximising or restoring the window, keeps select mode and the ticked scripts and pipelines. Delete selected still leaves the mode (SM-09). | S N C D · Sc P | `qt_smoke::check_select_mode` |
 
 ## 5. Quick Run
 
@@ -419,6 +419,7 @@ added <test / map entry / release_check case>".
 - #30 (v2.3.0, since the Qt port in v2.0.0): a Quick Run of a new file did not show its row; should have been caught by a Quick Run check in every layout; added QR-08 and `qt_smoke::check_quick_run_shows_new_row`.
 - OP-15 (v2.3.1, since the tabbed output panel in v1.3.1): "Clear output between runs" did nothing; should have been caught by a check that runs twice with the option on and reads the All tab; added `test_ryos::TestOutputRouting` (`cleared_when_run_starts`: on, off, a running tab kept), `session_smoke::step_output_options` asserting it in both layouts, and a maximised-layout check in `qt_smoke::check_maximised_layout`.
 - GR-33 (v2.3.1, since the outside note in v2.2.0): a scheduled run of a script outside its base folder opened its output with the outside note; should have been caught by a unit test running an outside script through the window's host with a schedule trigger (the note was decided per host, not per run); added the `test_ryos::TestBaseFolderNotes` schedule, start-up and manual cases for a script and a pipeline step, `test_ryos::TestBaseFolderNotes::test_only_a_window_run_notes`, and `session_smoke::step_scheduled_outside` asserting no note in both layouts.
+- SM-16 (v2.3.0): starring a ticked row, or maximising with full rows, left select mode and dropped the ticks; should have been caught by a select-mode check that reloads the list with rows ticked; added a reload-keeps-ticks case in `qt_smoke::check_select_mode` (star, unstar, maximise, restore).
 
 ---
 
@@ -444,7 +445,6 @@ step 13; "-> 2.4" is left for 2.4.
 | **CLI-05** Ctrl+C exits 130 | needs a real interrupt signal | -> 2.4 |
 | **ST-13** The log-file options | not tested | -> 2.4 |
 | **TW-27** (part) The exe's version resource | the publisher constants are tested; the built exe's version resource is not read by any test (the release review reads it) | -> 2.4 |
-| **SM-16** Starring or maximising in select mode leaves it | `_set_favorite` -> `_defer_reload` -> `load_from_db` -> `set_select_mode(False)`; `set_workspace` reloads when rows are not compact | -> 2.4: keep the mode and the ticked (kind, id) across a reload, except after Delete selected (SM-09) |
 | **SM-13** (part) Run selected / Delete on C, D; a search active | not tested | -> 2.4 |
 
 ### Guarded on some surfaces only

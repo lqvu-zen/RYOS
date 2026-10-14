@@ -1348,6 +1348,8 @@ class MainWindow(QMainWindow):
         self._db = db
         first_load = self.group_tabs.count() == 0
         current = self.current_group()
+        kept_select = self.select_mode
+        kept_ticks = self._ticked_items() if kept_select else set()
         self.set_select_mode(False)
         self._clear_groups()
         statuses = db.last_pipeline_status()
@@ -1407,6 +1409,11 @@ class MainWindow(QMainWindow):
         if first_load:
             current = grouping.initial_group(self._settings, named)
         self.show_group(current)
+        if kept_select:
+            self.set_select_mode(True)
+            for card in self.selectable_cards():
+                if self._card_item(card) in kept_ticks:
+                    card.checkbox.setChecked(True)
         # The cards were all replaced: point the detail pane at the new one,
         # and filter them again -- a reload (a favourite, an edit) brought
         # every card back while the box still showed the search.
@@ -2242,6 +2249,15 @@ class MainWindow(QMainWindow):
             pages = [page] if page else []
         return [c for page in pages for c in page.cards]
 
+    @staticmethod
+    def _card_item(card) -> tuple:
+        if isinstance(card, PipelineCard):
+            return (cardmenu.PIPELINE, card.pipeline_id)
+        return (cardmenu.SCRIPT, card.script_id)
+
+    def _ticked_items(self) -> set:
+        return {self._card_item(c) for c in self.selected_cards()}
+
     def selected_cards(self) -> list:
         return [c for c in self.selectable_cards() if c.checkbox.isChecked()]
 
@@ -2346,6 +2362,7 @@ class MainWindow(QMainWindow):
             self._db.delete_pipeline(pid)
         if ids:
             self._db.delete_many(ids)
+        self.set_select_mode(False)
         self._defer_reload()
 
     # -- right-click menus ------------------------------------------------------
