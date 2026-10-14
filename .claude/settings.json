@@ -137,11 +137,22 @@
       "Bash(grep -c \"^mcp$\")",
       "Bash(rm -rf dist/* build && export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen && uv run python tests/session_smoke.py 2>&1 | tail -1 && uvx ruff check . && uvx mypy --platform linux 2>&1 | tail -1 && git status --short)",
       "Bash(S=\"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/rel230\" && uv run --no-project python - \"$S/notes-2.3.0.md\" <<'EOF' *)",
-      "Read(//c/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/rel230/**)"
+      "Read(//c/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/790bf629-c8bc-482b-bb0d-0229ab07f075/scratchpad/rel230/**)",
+      "Bash(grep -v \"^\\\\-\\\\-$\")",
+      "Bash(export PYTHONIOENCODING=utf-8 RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1)",
+      "Bash(export PYTHONIOENCODING=utf-8 RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen)",
+      "Bash(RYOS_NO_TOASTS=1 uv run --no-project --with pytest pytest -q -k \"OutputRouting or OutputPanel or OutputTab\")",
+      "Bash(export RYOS_NO_TOASTS=1 RYOS_NO_REGISTRY=1 QT_QPA_PLATFORM=offscreen PYTHONIOENCODING=utf-8)",
+      "Bash(RYOS_NO_TOASTS=1 uv run python -m pytest tests/test_ryos.py -q -k \"TestOutputRouting or TestOutputPanelRules or TestMaximisedLayout or TestRowWidthsArePinned\")",
+      "Bash(RYOS_NO_TOASTS=1 uv run python -m unittest tests.test_ryos.TestOutputRouting tests.test_ryos.TestOutputPanelRules tests.test_ryos.TestMaximisedLayout)",
+      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_TOASTS=1 uv run python tests/qt_smoke.py)",
+      "Bash(RYOS_NO_TOASTS=1 uv run python tests/session_smoke.py)",
+      "Bash(RYOS_NO_TOASTS=1 uv run python -m unittest discover -s tests -p \"test_*.py\")"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
-      "D:\\Projects\\RYOS\\dist"
+      "D:\\Projects\\RYOS\\dist",
+      "C:\\Users\\Admin\\.claude"
     ]
   }
 }

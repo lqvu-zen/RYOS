@@ -117,6 +117,10 @@ What must keep working, and **every surface** it shows up on (normal and compact
 
 Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` and drained every 80 ms by `JobHost.pump()` (`ryos/jobhost.py`) — on the UI thread by a `QTimer` in the window (`qtui/jobs.py`).
 
+## Code Style
+
+**DON'T ADD CODE COMMENTS.** Do not write comments (`#` lines, trailing comments, block comments) in new or changed code. Names, structure and tests carry the intent; why-it-exists notes belong in `docs/` and the commit message. Existing comments are left alone unless the line they sit on is being rewritten.
+
 ## Key Design Choices
 
 - **Thread-safe output**: worker thread puts lines into a `Queue`; the main loop polls it — never touch a widget from the worker.
