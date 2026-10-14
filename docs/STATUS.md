@@ -110,6 +110,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-10-14 21:45: **A finished plan and its brief are archived to `docs/archive/` once the release is published, not before.** The Status table is the live record until then; nothing is deleted. The `release-2.3.1.md` archive is a prompt for a coding session (the secretary doesn't move files outside `docs/plans/`); the 2.4 archive is now in step 30's "Done when".
 - 2026-10-14 20:50: **The 2.4 plan is approved as drafted** (`docs/plans/release-2.4.0.md`, 30 steps). Vũ accepted every planner recommendation:
   - the C2 on-failure step is dropped, because it has existed since v1.11.0;
   - OP-15, GR-33 and SM-16 are 2.4 steps 1–3, not a 2.3.2;

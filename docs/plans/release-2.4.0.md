@@ -484,7 +484,8 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - the release is published with the four zips, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`;
 - #32 is closed with a link;
 - the new schema's fixture is added (`make_fixtures.py`, `release-ryos` B7);
-- `dist/` is cleared.
+- `dist/` is cleared;
+- `release-2.4.0.md` and `release-2.4.0-brief.md` are moved to `docs/archive/` with their links fixed.
 
 ## Order
 
