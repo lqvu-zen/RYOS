@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 from . import buildinfo, settings
 from .logger import get_logger
-from .notifications import _parse_version
+from .notifications import NEWER, _parse_version, update_status
 
 _log = get_logger("updates")
 
@@ -195,12 +195,15 @@ def download(release: Release, which: str | None = None, *,
         return Outcome(False, f"{SUMS_NAME} for RYOS {release.tag} has no line "
                        f"for {name}, so it cannot be checked and was not downloaded.")
     target = folder / name
-    if target.exists():
-        if _sha256(target) == expected:
-            return Outcome(True, f"{name} for RYOS {release.tag} is already "
-                           "downloaded and checked.", target)
-        target.unlink()
     part = folder / (name + ".part")
+    try:
+        if target.exists():
+            if _sha256(target) == expected:
+                return Outcome(True, f"{name} for RYOS {release.tag} is already "
+                               "downloaded and checked.", target)
+            target.unlink()
+    except OSError as e:
+        return _unreadable(name, release.tag, e)
     for _ in range(max(1, attempts)):
         try:
             _fetch_into(open_url, asset, part)
@@ -213,10 +216,55 @@ def download(release: Release, which: str | None = None, *,
     else:
         return Outcome(False, f"The download of {name} kept being cut off; it "
                        "carries on from where it stopped next time.")
-    if _sha256(part) != expected:
+    try:
+        matches = _sha256(part) == expected
+    except OSError as e:
+        return _unreadable(name, release.tag, e)
+    if not matches:
         part.unlink(missing_ok=True)
         return Outcome(False, f"{name} for RYOS {release.tag} did not match its "
                        f"line in {SUMS_NAME}, so it was deleted.")
-    os.replace(part, target)
+    try:
+        os.replace(part, target)
+    except OSError as e:
+        return Outcome(False, f"Could not put {name} for RYOS {release.tag} in "
+                       f"place: {e}; it is tried again next time.")
     return Outcome(True, f"Downloaded {name} for RYOS {release.tag} and checked "
                    f"it against {SUMS_NAME}.", target)
+
+
+def _unreadable(name: str, tag: str, error: OSError) -> Outcome:
+    return Outcome(False, f"Could not check {name} for RYOS {tag}: {error}")
+
+
+def check_of(result) -> tuple[str, str] | None:
+    if isinstance(result, Release):
+        return result.check
+    return result
+
+
+def wants_download(result, current: str, *, allowed: bool,
+                   which: str | None = None) -> bool:
+    if not allowed or not isinstance(result, Release):
+        return False
+    if asset_name(which) is None:
+        return False
+    return update_status(result.check, current)[0] == NEWER
+
+
+def downloaded(tag: str, which: str | None = None) -> Path | None:
+    name = asset_name(which)
+    if name is None or not isinstance(tag, str) or not _TAG.fullmatch(tag):
+        return None
+    folder = settings.updates_dir(tag)
+    target = folder / name
+    try:
+        if not target.is_file():
+            return None
+        sums = (folder / SUMS_NAME).read_text(encoding="utf-8", errors="replace")
+        expected = parse_sums(sums).get(name)
+        if expected is None or _sha256(target) != expected:
+            return None
+    except OSError:
+        return None
+    return target

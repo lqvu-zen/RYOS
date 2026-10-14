@@ -7094,6 +7094,17 @@ class TestSettingsSchema(unittest.TestCase):
         keys = [f.key for f in settings_schema.FIELDS]
         self.assertEqual(len(keys), len(set(keys)))
 
+    def test_background_download_is_on_by_default_beside_the_check(self):
+        keys = [f.key for f in settings_schema.FIELDS]
+        field = settings_schema.BY_KEY["auto_download_update"]
+        self.assertEqual(keys.index("auto_download_update"),
+                         keys.index("auto_check_update") + 1)
+        self.assertEqual(field.kind, settings_schema.BOOL)
+        self.assertEqual(field.tab, settings_schema.LOGGING)
+        self.assertIs(field.default, True)
+        self.assertIn("still checks", field.help)
+        self.assertIn("never downloads", field.help)
+
     def test_a_choice_fields_default_is_one_of_its_choices(self):
         # Otherwise coerce() would reject the default and loop back to it.
         for f in settings_schema.FIELDS:

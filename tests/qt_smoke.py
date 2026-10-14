@@ -2790,6 +2790,113 @@ def check_tray_and_close(app):
 
 
 
+def check_update_downloads_in_the_background(app, pump_until):
+    import tempfile
+    import threading
+    from types import SimpleNamespace
+    from unittest import mock
+
+    from ryos import __version__, notifications, updates
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    release = updates.Release("v999.0.0", "https://example.invalid/r", False, {})
+
+    def window(layout, allowed=True):
+        tmp = Path(tempfile.mkdtemp())
+        db = ScriptDB(tmp / "u.db")
+        db.create_group("G", base_dir=str(tmp))
+        settings = {"quick_run_enabled": False, "compact_mode": layout == "compact",
+                    "auto_download_update": allowed}
+        seen = SimpleNamespace(fetched=[], downloads=[], finished=[], handled=[],
+                               opened=[], gate=threading.Event())
+
+        def fetch_release():
+            seen.fetched.append(threading.current_thread() is threading.main_thread())
+            return release
+
+        def download_update(r):
+            seen.downloads.append((r, threading.current_thread()
+                                   is threading.main_thread()))
+            seen.gate.wait(5)
+            return updates.Outcome(True, "fake", tmp / "RYOS-windows.zip")
+
+        win = MainWindow(REFERENCE["dark"], settings=settings,
+                         fetch_release=fetch_release, download_update=download_update)
+        win.open_url = seen.opened.append
+        win.inform = lambda *_a: None
+        win.load_from_db(db)
+        if layout == "maximised":
+            win.set_workspace(True)
+        win.show()
+        real_result = win._update_result
+        win._update_result = lambda result, manual: (
+            real_result(result, manual), seen.handled.append(manual))
+        real_done = win._update_downloaded
+        win._update_downloaded = lambda outcome: (
+            seen.finished.append(threading.current_thread()
+                                 is threading.main_thread()),
+            real_done(outcome))
+        return win, seen
+
+    def checked_twice(win, seen):
+        win.check_for_updates()
+        win.check_for_updates()
+        if not pump_until(lambda: len(seen.handled) == 2):
+            PROBLEMS.append("background download: the checks never reported back")
+        seen.gate.set()
+        pump_until(lambda: seen.finished, timeout=3.0)
+        for _ in range(5):
+            app.processEvents()
+
+    with mock.patch.dict(sys.modules,
+                         {"ryos._build_info": SimpleNamespace(VARIANT="windows")}):
+        for layout in ("normal", "compact", "maximised"):
+            win, seen = window(layout)
+            checked_twice(win, seen)
+            where = f"background download ({layout})"
+            if win.update_banner is None or not win.update_banner.isVisible():
+                PROBLEMS.append(f"{where}: no visible banner")
+                win.close()
+                continue
+            if "RYOS-windows.zip" not in win.update_label.text():
+                PROBLEMS.append(f"{where}: banner said {win.update_label.text()!r}")
+            if seen.fetched != [False, False]:
+                PROBLEMS.append(f"{where}: fetch threads {seen.fetched}")
+            if [d[1] for d in seen.downloads] != [False]:
+                PROBLEMS.append(f"{where}: downloads {seen.downloads} (want one, "
+                                "off the UI thread)")
+            elif seen.downloads[0][0] is not release:
+                PROBLEMS.append(f"{where}: downloaded the wrong release")
+            if seen.finished != [True]:
+                PROBLEMS.append(f"{where}: download result handled {seen.finished}")
+            if win.update_staged is None or win._update_download_running:
+                PROBLEMS.append(f"{where}: finished download not recorded")
+            win.update_download.click()
+            if seen.opened != ["https://example.invalid/r"]:
+                PROBLEMS.append(f"{where}: Download opened {seen.opened}")
+            win.close()
+
+        win, seen = window("normal")
+        win._settings["auto_download_update"] = False
+        checked_twice(win, seen)
+        if win.update_banner is None:
+            PROBLEMS.append("background download off: the check showed no banner")
+        if seen.downloads:
+            PROBLEMS.append(f"background download off: downloaded {seen.downloads}")
+        win.close()
+
+    win, seen = window("normal")
+    checked_twice(win, seen)
+    if win.update_banner is None or win.update_label.text() != notifications.banner_text(
+            "v999.0.0", __version__, "RYOS-portable.zip"):
+        PROBLEMS.append("from source: the banner changed")
+    if seen.downloads:
+        PROBLEMS.append(f"from source: downloaded {seen.downloads}")
+    win.close()
+
+
 def check_updates_and_notify(app):
     """The update banner and notices, and job-finished toasts.
 
@@ -2824,7 +2931,9 @@ def check_updates_and_notify(app):
 
     toasts: list = []
     settings = {"quick_run_enabled": False, "notify_on_complete": True}
+    bare_downloads: list = []
     win = MainWindow(REFERENCE["dark"], settings=settings, fetch_release=fetch,
+                     download_update=bare_downloads.append,
                      notifier=lambda title, body: toasts.append(title))
     told: list = []
     win.inform = lambda title, text: told.append(title)
@@ -2884,6 +2993,10 @@ def check_updates_and_notify(app):
     app.processEvents()
     if told:
         PROBLEMS.append("an automatic check that failed said something")
+    if bare_downloads:
+        PROBLEMS.append(f"a bare (tag, url) check downloaded {bare_downloads}")
+
+    check_update_downloads_in_the_background(app, pump_until)
 
     # -- a finished job toasts, unless the setting is off ----------------------------
     tmp = Path(tempfile.mkdtemp())
@@ -5950,6 +6063,9 @@ def check_copy_paste_between_groups(app):
 
 def main() -> int:
     print("RYOS Qt smoke starting...")
+    import os
+    import tempfile
+    os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="ryos-local-")
     real_log = _real_log_state()
     app = QApplication(sys.argv)
     global SMOKE_ORIGIN

@@ -113,7 +113,8 @@ class Check:
 
     @staticmethod
     def env(appdata: Path) -> dict:
-        return dict(REAL_ENV, APPDATA=str(appdata), RYOS_NO_REGISTRY="1",
+        return dict(REAL_ENV, APPDATA=str(appdata),
+                    LOCALAPPDATA=str(appdata / "local"), RYOS_NO_REGISTRY="1",
                     RYOS_NO_TOASTS="1", RYOS_ALLOW_MULTIPLE="1",
                     QT_QPA_PLATFORM="offscreen")
 
@@ -603,6 +604,7 @@ def main() -> int:
 # under APPDATA, and this process's own must be a throwaway one too.
 SELF_APPDATA = tempfile.mkdtemp(prefix="ryos-release-check-self-")
 os.environ["APPDATA"] = SELF_APPDATA
+os.environ["LOCALAPPDATA"] = os.path.join(SELF_APPDATA, "local")
 atexit.register(shutil.rmtree, SELF_APPDATA, ignore_errors=True)
 sys.path[:0] = [str(ROOT), str(TESTS)]
 import build_release  # noqa: E402

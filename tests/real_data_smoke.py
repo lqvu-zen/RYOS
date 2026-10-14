@@ -190,6 +190,7 @@ def main() -> int:
     # Everything below reads and writes the copy: ryos works out its data
     # folder from APPDATA when it is first imported.
     os.environ["APPDATA"] = str(tmp)
+    os.environ["LOCALAPPDATA"] = str(tmp / "local")
     os.environ["RYOS_NO_REGISTRY"] = "1"
     os.environ["RYOS_NO_TOASTS"] = "1"
     if not args.visible:

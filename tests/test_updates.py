@@ -70,6 +70,19 @@ def _OPEN(request, timeout=None):
     raise AssertionError("unreachable")
 
 
+def _STREAM(request, timeout=None):
+    for attempt in range(5):
+        try:
+            return _OPENER.open(request, timeout=min(timeout or 5, 5))
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, *_LOOPBACK_FLAKES) as e:
+            flaky = isinstance(getattr(e, "reason", e), _LOOPBACK_FLAKES)
+            if not flaky or attempt == 4:
+                raise
+    raise AssertionError("unreachable")
+
+
 def _payload(name: str) -> bytes:
     return (name.encode() + b"-") * 5000
 
@@ -375,11 +388,108 @@ class TestDownloading(_Base):
         self.assertIn("not a version", outcome.message)
         self.assertFalse((self.tmp / "RYOS").exists())
 
+    def test_a_cut_off_download_resumes_with_the_real_streaming_opener(self):
+        path = f"/dl/{self.tag}/RYOS-windows.zip"
+        self.server.cut_when[path] = lambda wanted: wanted is None
+        outcome = updates.download(self.fetch(), buildinfo.WINDOWS, open_url=_STREAM)
+        self.assertTrue(outcome.ok, outcome.message)
+        self.assertEqual(outcome.path.read_bytes(), _payload("RYOS-windows.zip"))
+        ranges = [r for p, r in self.seen() if p == path]
+        self.assertIsNone(ranges[0])
+        self.assertTrue(ranges[-1].startswith("bytes="))
+        self.assertNotEqual(ranges[-1], "bytes=0-")
+
+    def test_a_hash_check_that_cannot_read_is_refused_with_words(self):
+        release = self.fetch()
+        with mock.patch.object(updates, "_sha256",
+                               side_effect=PermissionError("locked")):
+            outcome = self.download(buildinfo.WINDOWS, release=release)
+        self.assertFalse(outcome.ok)
+        self.assertIn("Could not check RYOS-windows.zip", outcome.message)
+        self.assertIn("locked", outcome.message)
+
+    def test_a_rename_that_fails_keeps_the_checked_part_for_next_time(self):
+        name = "RYOS-windows.zip"
+        release = self.fetch()
+        with mock.patch.object(updates.os, "replace",
+                               side_effect=PermissionError("in use")):
+            outcome = self.download(buildinfo.WINDOWS, release=release)
+        self.assertFalse(outcome.ok)
+        self.assertIn(f"Could not put {name}", outcome.message)
+        self.assertIn("tried again next time", outcome.message)
+        self.assertTrue((self.folder() / (name + ".part")).exists())
+        self.server.requests.clear()
+        outcome = self.download(buildinfo.WINDOWS, release=release)
+        self.assertTrue(outcome.ok, outcome.message)
+        self.assertEqual(self.asset_requests(), [])
+        self.assertEqual(outcome.path.read_bytes(), _payload(name))
+
     def test_sums_lines_parse_like_sha256sum(self):
         digest = "a" * 64
         self.assertEqual(updates.parse_sums(f"{digest}  RYOS-windows.zip\n"
                                             f"{digest.upper()} *RYOS-agent.zip\njunk\n"),
                          {"RYOS-windows.zip": digest, "RYOS-agent.zip": digest})
+
+
+class TestWhenToDownload(unittest.TestCase):
+    release = updates.Release("v9.9.9", "https://example.invalid/r", False, {})
+
+    def wants(self, result, current="1.0.0", allowed=True, which=buildinfo.WINDOWS):
+        return updates.wants_download(result, current, allowed=allowed, which=which)
+
+    def test_a_newer_release_of_a_windows_download_is_wanted(self):
+        for which in (buildinfo.WINDOWS, buildinfo.WINDOWS_AI, buildinfo.AGENT):
+            self.assertTrue(self.wants(self.release, which=which))
+
+    def test_with_the_setting_off_nothing_is_wanted(self):
+        self.assertFalse(self.wants(self.release, allowed=False))
+
+    def test_from_source_nothing_is_wanted(self):
+        self.assertFalse(self.wants(self.release, which=buildinfo.PORTABLE))
+
+    def test_the_same_or_an_older_release_is_not_wanted(self):
+        self.assertFalse(self.wants(self.release, current="9.9.9"))
+        self.assertFalse(self.wants(self.release, current="10.0.0"))
+
+    def test_a_bare_check_or_nothing_is_not_wanted(self):
+        self.assertFalse(self.wants(self.release.check))
+        self.assertFalse(self.wants(None))
+
+    def test_check_of_gives_the_tag_and_url(self):
+        self.assertEqual(updates.check_of(self.release),
+                         ("v9.9.9", "https://example.invalid/r"))
+        self.assertEqual(updates.check_of(("v1", "u")), ("v1", "u"))
+        self.assertIsNone(updates.check_of(None))
+
+
+class TestDownloaded(_Base):
+    def test_found_after_a_download(self):
+        outcome = self.download(buildinfo.WINDOWS)
+        self.assertTrue(outcome.ok, outcome.message)
+        self.assertEqual(updates.downloaded(self.tag, buildinfo.WINDOWS), outcome.path)
+
+    def test_nothing_before_a_download(self):
+        self.assertIsNone(updates.downloaded(self.tag, buildinfo.WINDOWS))
+
+    def test_a_tampered_zip_is_not_counted(self):
+        self.assertTrue(self.download(buildinfo.WINDOWS).ok)
+        (self.folder() / "RYOS-windows.zip").write_bytes(b"tampered")
+        self.assertIsNone(updates.downloaded(self.tag, buildinfo.WINDOWS))
+
+    def test_a_tag_that_is_not_a_version_is_none(self):
+        self.assertIsNone(updates.downloaded("../../evil", buildinfo.WINDOWS))
+
+    def test_from_source_is_none(self):
+        self.assertTrue(self.download(buildinfo.WINDOWS).ok)
+        self.assertIsNone(updates.downloaded(self.tag, buildinfo.PORTABLE))
+
+    def test_reads_no_network(self):
+        self.assertTrue(self.download(buildinfo.WINDOWS).ok)
+        self.server.requests.clear()
+        with mock.patch.object(updates, "_open",
+                               side_effect=AssertionError("network")):
+            self.assertIsNotNone(updates.downloaded(self.tag, buildinfo.WINDOWS))
+        self.assertEqual(self.server.requests, [])
 
 
 if __name__ == "__main__":

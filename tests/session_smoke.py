@@ -1170,6 +1170,7 @@ def main() -> int:
     real_before = _snapshot(real)
     tmp = Path(tempfile.mkdtemp(prefix="ryos-session-"))
     os.environ["APPDATA"] = str(tmp)
+    os.environ["LOCALAPPDATA"] = str(tmp / "local")
     os.environ["RYOS_NO_REGISTRY"] = "1"
     os.environ["RYOS_NO_TOASTS"] = "1"
     os.environ["RYOS_ALLOW_MULTIPLE"] = "1"
@@ -1179,7 +1180,8 @@ def main() -> int:
     from ryos import settings as settings_mod
     for label, path in (("database", settings_mod.DB_PATH),
                         ("settings", settings_mod._SETTINGS_PATH),
-                        ("log", settings_mod.LOG_PATH)):
+                        ("log", settings_mod.LOG_PATH),
+                        ("updates folder", settings_mod.updates_root())):
         if tmp not in Path(path).resolve().parents:
             print(f"Refusing to run: the {label} would be {path}, outside {tmp}")
             return 2

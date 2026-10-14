@@ -116,12 +116,16 @@ def banner_text(tag: str, current: str, download: str = "") -> str:
 
 
 def version_check_text(status: str, tag: str, url: str, current: str,
-                       download: str) -> str:
+                       download: str, *, downloaded=None,
+                       updates_itself: bool = False) -> str:
     """What `ryos-cli version --check` says: RYOS Agent has no window for a
     banner."""
     if status == NEWER:
-        return (f"RYOS {tag.lstrip('v')} is out (you have {current}). "
-                f"Download {download} from {url}")
+        out = f"RYOS {tag.lstrip('v')} is out (you have {current}). "
+        if downloaded is not None:
+            return out + f"{download} is downloaded and checked: {downloaded}"
+        out += f"Download {download} from {url}"
+        return out + " Not downloaded yet." if updates_itself else out
     if status == CURRENT:
         return f"Up to date: RYOS {current} is the latest."
     return UNREACHABLE_NOTICE[1]

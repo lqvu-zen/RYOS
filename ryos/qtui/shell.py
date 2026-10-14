@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
 from .. import activity, basefolder, bugreport, buildinfo, suggestion
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                manage, notifications, outputpanel, pipelinesteps, screens, scriptform,
-               search, sections, selection, traypolicy)
+               search, sections, selection, traypolicy, updates)
 from . import placement
 from ..themes import REFERENCE, readable_highlight, step_colour
 from .cards import PipelineCard, ScriptCard
@@ -361,6 +361,7 @@ class MainWindow(QMainWindow):
                  save_settings: Callable[[dict], None] | None = None,
                  notifier: Callable[[str, str], None] | None = None,
                  fetch_release: Callable[[], object] | None = None,
+                 download_update: Callable[[object], object] | None = None,
                  startup=None,
                  configure_logging: Callable[[bool, str], None] | None = None):
         super().__init__()
@@ -372,6 +373,9 @@ class MainWindow(QMainWindow):
         # ones, so tests pop no toasts and make no network calls.
         self._notifier = notifier or (lambda _t, _b: None)
         self._fetch_release = fetch_release or (lambda: None)
+        self._download_update = download_update or (lambda _r: None)
+        self._update_download_running = False
+        self.update_staged = None
         self.open_url: Callable[[str], None] = self._open_url
         self.open_folder: Callable[[str], object] = self._open_folder
         self.update_banner = None
@@ -1763,13 +1767,49 @@ class MainWindow(QMainWindow):
         threading.Thread(target=work, daemon=True).start()
 
     def _update_result(self, result, manual: bool) -> None:
-        status, tag, url = notifications.update_status(result, __version__)
+        status, tag, url = notifications.update_status(
+            updates.check_of(result), __version__)
         if status == notifications.NEWER:
             self.show_update_banner(tag, url)
         elif manual:
             self.inform(*(notifications.UNREACHABLE_NOTICE
                           if status == notifications.UNREACHABLE
                           else notifications.up_to_date_notice(__version__)))
+        allowed = bool(self._settings.get("auto_download_update", True))
+        if (updates.wants_download(result, __version__, allowed=allowed)
+                and not self._update_download_running):
+            self._start_update_download(result)
+
+    def _start_update_download(self, release) -> None:
+        self._update_download_running = True
+        if not hasattr(self, "_update_invoker"):
+            self._update_invoker = MainThreadInvoker(self)
+
+        def work():
+            outcome = None
+            try:
+                outcome = self._download_update(release)
+            except Exception as e:
+                from ..logger import get_logger
+                get_logger("qtui.shell").warning(
+                    "The update download failed: %s", e, exc_info=True)
+            finally:
+                self._update_invoker(lambda: self._update_downloaded(outcome))
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_downloaded(self, outcome) -> None:
+        self._update_download_running = False
+        from ..logger import get_logger
+        log = get_logger("qtui.shell")
+        if outcome is None:
+            log.warning("The update download stopped without saying why.")
+            return
+        if outcome.ok:
+            self.update_staged = outcome.path
+            log.info("%s", outcome.message)
+        else:
+            log.warning("%s", outcome.message)
 
     def show_update_banner(self, tag: str, url: str) -> None:
         if self.update_banner is not None:

@@ -56,7 +56,8 @@ class TestMcpServer(unittest.TestCase):
     def call(self, steps):
         params = StdioServerParameters(
             command=sys.executable, args=["-m", "ryos", "mcp"], cwd=str(ROOT),
-            env={**os.environ, "APPDATA": str(self.appdata), "RYOS_NO_REGISTRY": "1",
+            env={**os.environ, "APPDATA": str(self.appdata),
+                 "LOCALAPPDATA": str(self.appdata / "local"), "RYOS_NO_REGISTRY": "1",
                  "RYOS_NO_TOASTS": "1", "PYTHONPATH": str(ROOT)})
 
         async def session():

@@ -254,7 +254,8 @@ def _agent_smoke(exe: Path) -> int:
     tmp = Path(tempfile.mkdtemp(prefix="ryos-agent-"))
     data = tmp / "RYOS"
     data.mkdir()
-    env = dict(os.environ, APPDATA=str(tmp), RYOS_NO_REGISTRY="1", RYOS_NO_TOASTS="1")
+    env = dict(os.environ, APPDATA=str(tmp), LOCALAPPDATA=str(tmp / "local"),
+               RYOS_NO_REGISTRY="1", RYOS_NO_TOASTS="1")
     print(f"RYOS agent smoke: {exe}\n  (data in {data}; registry writes off)")
     problems: list = []
     version = subprocess.run([str(exe), "--version"], env=env, capture_output=True,
@@ -386,8 +387,8 @@ def main() -> int:
             settings["window_geometry"] = geometry
     (data / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
 
-    env = dict(os.environ, APPDATA=str(tmp), RYOS_NO_REGISTRY="1", RYOS_NO_TOASTS="1",
-               RYOS_ALLOW_MULTIPLE="1")
+    env = dict(os.environ, APPDATA=str(tmp), LOCALAPPDATA=str(tmp / "local"),
+               RYOS_NO_REGISTRY="1", RYOS_NO_TOASTS="1", RYOS_ALLOW_MULTIPLE="1")
     if not args.visible:
         env["QT_QPA_PLATFORM"] = "offscreen"
     cmd = [str(Path(args.exe).resolve())] if args.exe else [sys.executable, "-m", "ryos"]

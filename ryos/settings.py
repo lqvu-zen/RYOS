@@ -73,6 +73,7 @@ _SETTINGS_DEFAULTS: dict = {
     "auto_clear_output":      False,
     "auto_scroll_output":     True,
     "auto_check_update":      True,
+    "auto_download_update":   True,
     "notify_on_complete":     True,
     # Ask before a run from the window whose script is outside its group's
     # base folder (ryos/basefolder.py); the box in that warning turns it off.

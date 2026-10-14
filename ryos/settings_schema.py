@@ -155,6 +155,9 @@ FIELDS: tuple[Field, ...] = (
           labels=("Debug", "Info", "Warning", "Error")),
     Field("log_runs_output", BOOL, "Log script output too", LOGGING),
     Field("auto_check_update", BOOL, "Check for updates on start", LOGGING),
+    Field("auto_download_update", BOOL, "Download updates in the background", LOGGING,
+          help="Off: RYOS still checks and shows the banner, but downloads "
+               "nothing. RYOS from source never downloads."),
 )
 
 BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}

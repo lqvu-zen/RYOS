@@ -502,8 +502,15 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         from . import notifications
         fetch = fetch_release or notifications._fetch_latest_release
         status, tag, url = notifications.update_status(fetch(), __version__)
-        print(notifications.version_check_text(status, tag, url, __version__,
-                                               buildinfo.download_name()), file=out)
+        staged = None
+        updates_itself = False
+        if status == notifications.NEWER:
+            from . import updates
+            staged = updates.downloaded(tag)
+            updates_itself = updates.asset_name() is not None
+        print(notifications.version_check_text(
+            status, tag, url, __version__, buildinfo.download_name(),
+            downloaded=staged, updates_itself=updates_itself), file=out)
         return EXIT_FAILED if status == notifications.UNREACHABLE else EXIT_OK
     if args.command == "mcp":
         # Its own start-up: it logs to ryos-mcp.log, and it is long-lived.

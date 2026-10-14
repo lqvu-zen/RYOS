@@ -12,6 +12,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -522,6 +523,14 @@ class TestExposeAGroup(_Manage):
 
 
 class TestVersion(unittest.TestCase):
+    def setUp(self):
+        from unittest import mock
+        self.local = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.local, ignore_errors=True)
+        env = mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.local)})
+        env.start()
+        self.addCleanup(env.stop)
+
     def run_version(self, *argv, fetch=None):
         out = io.StringIO()
         code = cli.main(["version", *argv], db=None, settings={}, out=out,
@@ -578,6 +587,42 @@ class TestVersion(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_FAILED)
         self.assertIn("Could not reach GitHub", out)
 
+    def test_check_says_whether_it_is_downloaded(self):
+        import hashlib
+        import types
+        from unittest import mock
+        from ryos import settings
+        fetch = lambda: ("v99.0.0", "https://x/r")  # noqa: E731
+        build = types.SimpleNamespace(VARIANT="windows")
+        with mock.patch.dict(sys.modules, {"ryos._build_info": build}):
+            code, out = self.run_version("--check", fetch=fetch)
+            self.assertEqual(code, 0)
+            self.assertIn("Download RYOS-windows.zip from https://x/r", out)
+            self.assertIn("Not downloaded yet.", out)
+            folder = settings.updates_dir("v99.0.0")
+            folder.mkdir(parents=True)
+            body = b"the new RYOS"
+            (folder / "RYOS-windows.zip").write_bytes(body)
+            (folder / "SHA256SUMS.txt").write_text(
+                f"{hashlib.sha256(body).hexdigest()}  RYOS-windows.zip\n")
+            code, out = self.run_version("--check", fetch=fetch)
+        self.assertEqual(code, 0)
+        self.assertIn("RYOS-windows.zip is downloaded and checked", out)
+        self.assertIn(str(folder / "RYOS-windows.zip"), out)
+        self.assertNotIn("Not downloaded yet", out)
+
+    def test_check_from_source_keeps_todays_notice(self):
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}):
+            code, out = self.run_version(
+                "--check", fetch=lambda: ("v99.0.0", "https://x/r"))
+        self.assertEqual(code, 0)
+        self.assertIn("RYOS 99.0.0 is out (you have", out)
+        self.assertIn("Download RYOS-portable.zip from https://x/r", out)
+        self.assertNotIn("Not downloaded yet", out)
+        self.assertNotIn("downloaded and checked", out)
+        self.assertFalse((self.local / "RYOS").exists())
+
 
 class TestMcpInTheBuildWithoutIt(unittest.TestCase):
     def test_says_which_download_has_it_and_exits_refused(self):
@@ -617,8 +662,8 @@ class TestTheRealEntryPoint(unittest.TestCase):
             "code = m.main()\n"
             "print('QT' if 'PySide6' in sys.modules else 'NOQT', code)\n"
         )
-        env = {**os.environ, "APPDATA": str(data), "RYOS_NO_REGISTRY": "1",
-               "RYOS_NO_TOASTS": "1"}
+        env = {**os.environ, "APPDATA": str(data), "LOCALAPPDATA": str(data / "local"),
+               "RYOS_NO_REGISTRY": "1", "RYOS_NO_TOASTS": "1"}
         proc = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env,
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(proc.returncode, 0, proc.stderr)

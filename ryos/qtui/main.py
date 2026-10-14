@@ -73,7 +73,8 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
     from ..db import ScriptDB
     from ..history import prune_run_history
     from ..logger import setup_logging
-    from ..notifications import _fetch_latest_release, _show_notification
+    from .. import updates
+    from ..notifications import _show_notification
     from ..settings import _BASE, _save_settings
     from ..themes import (load_user_themes, migrate_legacy_custom_themes,
                           palette_for, resolve_user_themes_dir)
@@ -115,7 +116,8 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
 
     win = MainWindow(palette, settings=settings, save_settings=_save_settings,
                      notifier=_show_notification,
-                     fetch_release=_fetch_latest_release,
+                     fetch_release=updates.fetch_release,
+                     download_update=updates.download,
                      startup=RegistryStartup(),
                      configure_logging=setup_logging)
     win._set_customs(customs)
