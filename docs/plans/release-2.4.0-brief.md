@@ -1,6 +1,6 @@
 # RYOS 2.4 — Brief for the planner
 
-_Written 2026-10-13 by the secretary session from Vũ's decisions. The planner turns this into **one** plan, `docs/plans/release-2.4.0.md`; Vũ wants as few release plans as possible. 2.4 starts **after 2.3.1 ships** (`release-2.3.1.md`)._
+_Written 2026-10-13 by the secretary session from Vũ's decisions. The planner turns this into **one** plan, `docs/plans/release-2.4.0.md`; Vũ wants as few release plans as possible. 2.4 starts **after 2.3.1 ships** (`docs/archive/release-2.3.1.md`)._
 
 ## What 2.4 is
 

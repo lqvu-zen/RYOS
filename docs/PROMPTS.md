@@ -83,7 +83,7 @@ prompt for the coding session.
 **Turn the 2.4 brief into a plan** (planning tab on Opus High, or the secretary calling `ryos-planner`):
 ```
 Turn docs/plans/release-2.4.0-brief.md into docs/plans/release-2.4.0.md, in
-the format of release-2.3.1.md. Check every step against the code and
+the format of docs/archive/release-2.3.1.md. Check every step against the code and
 docs/BEHAVIOUR.md. Give me the open questions, each with your recommended
 answer, before writing the file.
 ```

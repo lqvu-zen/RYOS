@@ -20,7 +20,7 @@ Use Bash only to read: `git log`, `git show`, `git diff`, `gh issue view`, `gh i
 
 ## What a good plan looks like
 
-Follow `docs/plans/release-2.3.1.md`:
+Follow `docs/archive/release-2.3.1.md`:
 
 - **A header** with the release, when it was created and from what, and what it replaces, if anything.
 - **Goals:** a short numbered list.

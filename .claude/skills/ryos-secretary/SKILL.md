@@ -60,7 +60,7 @@ Things that are decisions: what goes in which release, dropping or parking an id
 
 ## Adding a plan step
 
-Plans live in `docs/plans/release-X.Y.Z.md` and use the format of `release-2.3.1.md`. A new step needs **all** of the following:
+Plans live in `docs/plans/release-X.Y.Z.md` and use the format of `docs/archive/release-2.3.1.md`. A new step needs **all** of the following:
 
 1. **A new number** (never renumber existing steps), a heading `### N — <short title>`, and an italic line saying where it came from: `_Added YYYY-MM-DD from issue #N / Vũ's decision / user feedback._`
 2. **What and why,** with facts the team needs: files and modules if you know them, related `docs/BEHAVIOUR.md` entries and their surfaces, earlier commits. Don't prescribe the design; that's the designer's job.
