@@ -147,7 +147,22 @@
       "Bash(RYOS_NO_TOASTS=1 uv run python -m unittest tests.test_ryos.TestOutputRouting tests.test_ryos.TestOutputPanelRules tests.test_ryos.TestMaximisedLayout)",
       "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_TOASTS=1 uv run python tests/qt_smoke.py)",
       "Bash(RYOS_NO_TOASTS=1 uv run python tests/session_smoke.py)",
-      "Bash(RYOS_NO_TOASTS=1 uv run python -m unittest discover -s tests -p \"test_*.py\")"
+      "Bash(RYOS_NO_TOASTS=1 uv run python -m unittest discover -s tests -p \"test_*.py\")",
+      "Bash(sed -e 's#REPO = Path\\(r\"d:\\\\\\\\Projects\\\\\\\\RYOS\"\\)#REPO = Path\\(r\"C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/1b5e4440-6f86-4ccd-b0ff-bab95f6cb7fa/scratchpad/copy\"\\)#' -e /list_runs/d C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/1b5e4440-6f86-4ccd-b0ff-bab95f6cb7fa/scratchpad/test_gr33.py)",
+      "Bash(RYOS_NO_TOASTS=1 QT_QPA_PLATFORM=offscreen uv run --project /d/Projects/RYOS python C:/Users/Admin/AppData/Local/Temp/claude/d--Projects-RYOS/1b5e4440-6f86-4ccd-b0ff-bab95f6cb7fa/scratchpad/test_gr33_fixed.py)",
+      "Bash(RYOS_NO_TOASTS=1 QT_QPA_PLATFORM=offscreen uv run --project /d/Projects/RYOS python -m pytest -q -p no:cacheprovider tests/test_ryos.py -k \"BaseFolderNotes or JobController or OutsideWarning or ScheduleRunner or RowWidths or Basefolder or BaseFolder\" tests/test_headless.py tests/test_cli.py)",
+      "Bash(RYOS_NO_TOASTS=1 QT_QPA_PLATFORM=offscreen uv run --project /d/Projects/RYOS python -m unittest -q tests.test_headless tests.test_cli)",
+      "Bash(RYOS_NO_TOASTS=1 QT_QPA_PLATFORM=offscreen uv run --project /d/Projects/RYOS python -c ' *)",
+      "Bash(RYOS_NO_TOASTS=1 QT_QPA_PLATFORM=offscreen uv run --project /d/Projects/RYOS python -m unittest -q tests.test_ryos)",
+      "Bash(RYOS_NO_TOASTS=1 uv run --no-project --with pytest pytest -q tests/test_ryos.py -k \"TestBaseFolderNotes\")",
+      "Bash(export RYOS_NO_TOASTS=1 PYTHONIOENCODING=utf-8)",
+      "Bash(QT_QPA_PLATFORM=offscreen uv run --no-project --with PySide6 python tests/qt_smoke.py)",
+      "Bash(QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 uv run python tests/session_smoke.py)",
+      "Bash(export RYOS_NO_TOASTS=1 PYTHONIOENCODING=utf-8 QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1)",
+      "Read(//tmp/**)",
+      "Bash(RYOS_NO_TOASTS=1 uv run python -m pytest tests/test_ryos.py -q -k \"TestBaseFolderNotes or TestRowWidthsArePinned or TestOutsideWarning\")",
+      "Bash(RYOS_NO_TOASTS=1 uv run python -m unittest tests.test_ryos.TestBaseFolderNotes tests.test_ryos.TestOutsideWarning tests.test_ryos.TestRowWidthsArePinned)",
+      "Bash(RYOS_NO_TOASTS=1 QT_QPA_PLATFORM=offscreen uv run python -m unittest tests.test_ryos tests.test_cli tests.test_headless)"
     ],
     "additionalDirectories": [
       "D:\\Projects\\RYOS\\.claude\\discarded",
