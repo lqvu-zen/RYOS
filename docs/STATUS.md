@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-14 20:30 (UTC+7).
+Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-14 20:50 (UTC+7).
 
 ## Roles
 
@@ -22,7 +22,7 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 | Release | What | Plan |
 |---|---|---|
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/plans/release-2.3.1.md` |
-| **2.4** | **A** self-update · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers | `docs/plans/release-2.4.0-brief.md`. The planner turns it into `release-2.4.0.md` after 2.3.1 ships. |
+| **2.4** | **A** self-update · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers | `docs/plans/release-2.4.0.md` (30 steps, approved 2026-10-14; from `release-2.4.0-brief.md`) |
 
 ## Where we are (2026-10-14 19:45)
 
@@ -39,7 +39,7 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
   - `5dd72c5` fix: the select bar stays readable with the agent buttons (the tester's first FAIL);
   - `4000e6d` 2.3.1-rc1; `57364b2` **Release 2.3.1** (the version commit for promotion); `ae8c470` checklist ticked, 24 h waived.
 - **Update 2026-10-14 (later):** **`v2.3.1` is published** (GitHub "Latest", 2026-10-14 12:48 UTC, from `57364b2`); #26, #27, #29, #30, #31 are closed. `main` is at `2088a68` (docs only since).
-- **Next:** the 2.4 plan. The planner is turning `release-2.4.0-brief.md` into `docs/plans/release-2.4.0.md`; its open questions go to Vũ before the plan is written.
+- **Next:** 2.4 step 1 (fix OP-15), in a fresh coding session. `docs/plans/release-2.4.0.md` is written and approved; steps 1–3 are fixes, 4–12 part A with an early candidate, then backlog, B/C, D, release.
 
 ## v2.3.1, in working order
 
@@ -55,24 +55,23 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 | 8 | Expose a group | ✅ `396931e` |
 | 12 | #31 newest log tab first | ✅ `df0d4ef` |
 | 15 | Release test phase | ✅ `49a3b64` (+ fix `5dd72c5`) |
-| 6 | Release 2.3.1 via the RC flow | rc1 ✅ `4000e6d`; promotion commit `57364b2`, **publish pending** |
+| 6 | Release 2.3.1 via the RC flow | ✅ rc1 `4000e6d`; `v2.3.1` published from `57364b2` |
 
 ## Secretary skill and planner agent
 
 In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secretary`) and `.claude/agents/ryos-planner.md`. `docs/STATUS.md` in the repo is now the master.
 
-## Found by the behaviour map (not yet planned)
+## Found by the behaviour map (planned)
 
-- **OP-15:** the setting "Clear output between runs" does nothing.
-- **GR-33:** a scheduled run of a script outside its group's base folder adds the outside-folder note.
-
-**Vũ to decide:** 2.3.1 has shipped its RC without them, so they go to 2.4 unless Vũ wants a 2.3.2.
+- **OP-15:** the setting "Clear output between runs" does nothing → 2.4 step 1.
+- **GR-33:** a scheduled run outside its group's base folder adds the outside-folder note → 2.4 step 2.
+- **SM-16:** starring, or maximising with full rows, leaves select mode → 2.4 step 3.
 
 ## Open GitHub issues (checked 2026-10-14 19:45)
 
 | # | Title | Where |
 |---|---|---|
-| 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude); owner adds "anything to show in the RYOS app?" | **Open, not yet in a plan.** Proposed: 2.4 part C (agents read history and logs) plus something visible in the window. Vũ to confirm. |
+| 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude); owner adds "anything to show in the RYOS app?" | 2.4 steps 20 (keep run output), 21 (agents read history, progress) and 22 (CLI and agent runs show in the window) |
 
 Issues 29, 30 and 31 closed 2026-10-14 with v2.3.1.
 
@@ -111,6 +110,17 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-10-14 20:50: **The 2.4 plan is approved as drafted** (`docs/plans/release-2.4.0.md`, 30 steps). Vũ accepted every planner recommendation:
+  - the C2 on-failure step is dropped, because it has existed since v1.11.0;
+  - OP-15, GR-33 and SM-16 are 2.4 steps 1–3, not a 2.3.2;
+  - #32 gets stored run output, richer `get_run`, and CLI and agent runs shown read-only in the window;
+  - Ed25519 is pure Python in every download;
+  - the helper is the new build's `ryos-cli.exe apply-update`;
+  - Vũ signs each candidate himself, with an extra `SHA256SUMS.txt.sig` asset;
+  - an "Offer release candidates" option, and an early candidate after part A;
+  - file triggers drop "run another";
+  - agents never pass free text to pipeline parameters;
+  - exports carry secret names, never values.
 - 2026-10-14 19:45: **No minimum time on a release candidate.** The 24 h of use is dropped for every release, not only waived for 2.3.1: an RC is promoted once `release_check` passes, `ryos-tester` passes and Vũ has ticked his checklist. The RC pre-release, the tester and the checklist stay. `release-ryos`, `ryos-reviewer` and `ryos-secretary` still say 24 h and need a coding session to change them.
 - 2026-10-13 21:21: **The secretary and planner become repo assets:** the `ryos-secretary` skill (talks to Vũ, keeps STATUS and the plans, commits only its own doc files, never pushes or writes code) and the `ryos-planner` agent (read-only, Opus at high effort, returns drafts and open questions).
 - 2026-10-13 21:15: **STATUS is mirrored into the repo as `docs/STATUS.md`** (the repo is public). The claude.ai project copy stays the master.
