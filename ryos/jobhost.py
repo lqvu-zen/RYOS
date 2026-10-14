@@ -153,7 +153,8 @@ class JobHost:
         """Start a script, or report why not. The job when it started."""
         plan = self.controller.plan_script(
             script_id, path, params, interpreter,
-            max_jobs=self._max_jobs(), active_group=active_group)
+            max_jobs=self._max_jobs(), active_group=active_group,
+            trigger=trigger)
         if not plan.ok:
             if on_refusal is not None:
                 on_refusal(plan.refusal)

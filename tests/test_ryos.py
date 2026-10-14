@@ -10614,7 +10614,7 @@ class TestBaseFolderNotes(unittest.TestCase):
         self.assertIn(f"(working folder: {self.away})", self.out[0][1])
         self.drain(host)
 
-    def _pipeline(self, host, *, together=False):
+    def _pipeline(self, host, *, together=False, trigger=SOURCE_MANUAL):
         inside, ipath = self.script(self.base)
         outside = self.db.add("o", str(self.away / "o.py"), "", sys.executable, "G")
         (self.away / "o.py").write_text("print('o')\n", encoding="utf-8")
@@ -10623,7 +10623,7 @@ class TestBaseFolderNotes(unittest.TestCase):
         s2 = self.db.add_pipeline_step(pid, outside)
         if together:
             self.db.set_step_trigger_mode(s2, TRIGGER_WITH)
-        return host.run_pipeline(pid, "P", active_group="G")
+        return host.run_pipeline(pid, "P", active_group="G", trigger=trigger)
 
     def test_a_pipeline_notes_only_the_outside_step(self):
         host = self.host(base_notes=True)
@@ -10643,6 +10643,41 @@ class TestBaseFolderNotes(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertEqual(notes[0][3], (2, "o"))
         self.assertTrue(notes[0][1].startswith("[o] Note: runs outside the group's base folder"))
+
+    def test_a_script_notes_only_when_started_from_the_window(self):
+        from ryos.db import SOURCE_SCHEDULE, SOURCE_STARTUP
+        for trigger, noted in ((SOURCE_MANUAL, True), (SOURCE_SCHEDULE, False),
+                               (SOURCE_STARTUP, False)):
+            with self.subTest(trigger=trigger):
+                self.out.clear()
+                host = self.host(base_notes=True)
+                sid, path = self.script(self.away)
+                host.run_script(sid, "s", path, "", sys.executable, trigger=trigger)
+                self.drain(host)
+                self.assertEqual(any(o[1].startswith("Note:") for o in self.out), noted)
+                self.assertIn("out", "".join(o[1] for o in self.out))
+
+    def test_a_pipeline_step_notes_only_when_started_from_the_window(self):
+        from ryos.db import SOURCE_SCHEDULE, SOURCE_STARTUP
+        for trigger, noted in ((SOURCE_MANUAL, True), (SOURCE_SCHEDULE, False),
+                               (SOURCE_STARTUP, False)):
+            for together in (False, True):
+                with self.subTest(trigger=trigger, together=together):
+                    self.out.clear()
+                    host = self.host(base_notes=True)
+                    self._pipeline(host, together=together, trigger=trigger)
+                    self.drain(host)
+                    self.assertEqual(sum("Note:" in o[1] for o in self.out),
+                                     1 if noted else 0)
+
+    def test_only_a_window_run_notes(self):
+        from ryos import basefolder
+        from ryos.db import SOURCE_AGENT, SOURCE_CLI, SOURCE_SCHEDULE, SOURCE_STARTUP
+        self.assertTrue(basefolder.notes_for(SOURCE_MANUAL))
+        for trigger in (SOURCE_SCHEDULE, SOURCE_STARTUP, SOURCE_PIPELINE,
+                        SOURCE_CLI, SOURCE_AGENT, "trigger", ""):
+            with self.subTest(trigger=trigger):
+                self.assertFalse(basefolder.notes_for(trigger))
 
     def test_a_pipeline_by_default_has_no_note(self):
         host = self.host()

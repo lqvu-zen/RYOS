@@ -9,10 +9,17 @@ the strings only and never touches the disk.
 
 from __future__ import annotations
 
+from .db import SOURCE_MANUAL
 from .quickrun import _is_inside
 
 FILE = "file"
 WORKING_FOLDER = "working folder"
+
+NOTED_SOURCES = frozenset({SOURCE_MANUAL})
+
+
+def notes_for(trigger: str) -> bool:
+    return trigger in NOTED_SOURCES
 
 
 def outside_parts(path: str, work_dir: str, base: str) -> tuple[str, ...]:

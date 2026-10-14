@@ -187,9 +187,13 @@ class JobController:
         """True when a positive cap is set and the registry is already that full."""
         return max_jobs > 0 and len(self._registry) >= max_jobs
 
+    def _notes_for(self, trigger: str) -> bool:
+        return self._base_notes and basefolder.notes_for(trigger)
+
     def plan_script(self, script_id: int, path: str, params: str,
                     interpreter: str, *, max_jobs: int,
-                    active_group: str | None) -> LaunchPlan:
+                    active_group: str | None,
+                    trigger: str = SOURCE_MANUAL) -> LaunchPlan:
         """Decide whether a script can run, and with what.
 
         Every refusal the UI can show for an ad-hoc run is decided here, in
@@ -213,7 +217,7 @@ class JobController:
                               work_dir=(rec[8] if rec else "") or "",
                               env_vars=rec[7] if rec else None)
         note = ""
-        if self._base_notes:
+        if self._notes_for(trigger):
             base = self._db.get_group_base_dir(group)
             work_dir = (rec[8] if rec else "") or ""
             note = basefolder.run_note(
@@ -439,7 +443,7 @@ class JobController:
     def _step_notes(self, job: Job, prepared) -> list[tuple[int, str]]:
         """(token, note) for each step of a group that is outside the base
         folder. Said once, as the group starts: a retry does not repeat it."""
-        if not self._base_notes:
+        if not self._notes_for(job.trigger):
             return []
         base = self._db.get_group_base_dir(job.group)
         out = []

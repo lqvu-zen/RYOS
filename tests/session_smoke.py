@@ -621,9 +621,9 @@ def step_schedule(s: Session) -> None:
 
 
 def step_scheduled_outside(s: Session) -> None:
-    """A scheduled run of a script outside the base folder never asks and
-    never asks (GR-33, the schedule half; the "no note" half is a known bug). Any question or dialog it
-    raised would be reported as unexpected."""
+    """A scheduled run of a script outside the base folder never asks and adds
+    no outside note (GR-33). Any question or dialog it raised would be reported
+    as unexpected."""
     away = s.work / "away_sched.py"
     away.write_text("print('scheduled from away')\n", encoding="utf-8")
     sid = s.db.add("AwayTimer", str(away), "", sys.executable, "Project")
@@ -642,18 +642,15 @@ def step_scheduled_outside(s: Session) -> None:
     from ryos.db import SOURCE_SCHEDULE
     if [r[2] for r in s.runs(script_id=sid)] != [SOURCE_SCHEDULE]:
         problem(f"the outside script's runs: {s.runs(script_id=sid)}")
-    first = s.output("AwayTimer").split("\n")[0]
-    if first.startswith("Note:"):
-        # GR-33 says a schedule adds no note; it does. Reported, not failed.
-        KNOWN_BUGS.append("GR-33: a scheduled run of an outside script opens its "
-                          "output with the outside-folder note (the map says none)")
-        print(f"  KNOWN BUG: {KNOWN_BUGS[-1]}")
+    if "Note: runs outside" in s.output("AwayTimer"):
+        problem(f"a scheduled outside run opened its output with the outside note: "
+                f"{s.output('AwayTimer').split(chr(10))[0]!r}")
     if len(s.asked) != asked:
         problem(f"a scheduled run asked {s.asked[asked:]}")
     s.db.delete(sid)
     s.win.reload()
     s.win.show_group("Project")
-    ok("a scheduled run of an outside script starts at once, with no question")
+    ok("a scheduled run of an outside script starts at once, with no question and no note")
 
 
 def step_quick_run_search_select(s: Session, project: Path) -> None:
