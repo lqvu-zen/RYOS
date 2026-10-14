@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-14 19:45 (UTC+7).
+Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-14 20:30 (UTC+7).
 
 ## Roles
 
@@ -21,7 +21,7 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 
 | Release | What | Plan |
 |---|---|---|
-| **2.3.1** (in progress) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/plans/release-2.3.1.md` (steps 1–15 committed) |
+| **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/plans/release-2.3.1.md` |
 | **2.4** | **A** self-update · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers | `docs/plans/release-2.4.0-brief.md`. The planner turns it into `release-2.4.0.md` after 2.3.1 ships. |
 
 ## Where we are (2026-10-14 19:45)
@@ -38,7 +38,8 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
   - `49a3b64` **the release test phase:** `release_check.py`, the RC flow, `ryos-tester` (step 15);
   - `5dd72c5` fix: the select bar stays readable with the agent buttons (the tester's first FAIL);
   - `4000e6d` 2.3.1-rc1; `57364b2` **Release 2.3.1** (the version commit for promotion); `ae8c470` checklist ticked, 24 h waived.
-- **Next:** the coding session publishes `v2.3.1` from `57364b2` (no `v2.3.1` tag or GitHub release yet). Then close #29, #30, #31.
+- **Update 2026-10-14 (later):** **`v2.3.1` is published** (GitHub "Latest", 2026-10-14 12:48 UTC, from `57364b2`); #26, #27, #29, #30, #31 are closed. `main` is at `2088a68` (docs only since).
+- **Next:** the 2.4 plan. The planner is turning `release-2.4.0-brief.md` into `docs/plans/release-2.4.0.md`; its open questions go to Vũ before the plan is written.
 
 ## v2.3.1, in working order
 
@@ -71,10 +72,9 @@ In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secre
 
 | # | Title | Where |
 |---|---|---|
-| 29 | I can't find the app log to report bug (and the freeze) | 2.3.1 steps 9 ✅ and 10 ✅ (close on release) |
-| 30 | Quick run function didn't auto add new script | 2.3.1 step 11 ✅ (close on release) |
-| 31 | Suggestion: reverse the order for the logs' tabs | 2.3.1 step 12 ✅ (close on release) |
-| 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude) | **New, not triaged.** Suggested: 2.4 part C (agents read history and logs) |
+| 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude); owner adds "anything to show in the RYOS app?" | **Open, not yet in a plan.** Proposed: 2.4 part C (agents read history and logs) plus something visible in the window. Vũ to confirm. |
+
+Issues 29, 30 and 31 closed 2026-10-14 with v2.3.1.
 
 ## User feedback
 
