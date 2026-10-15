@@ -2897,6 +2897,313 @@ def check_update_downloads_in_the_background(app, pump_until):
     win.close()
 
 
+def check_restart_to_update(app, pump_until=None):
+    """Restart to update and Help -> Roll back, in normal, compact and
+    maximised, with a fake Updater: a temporary install, the helper's spawn
+    recorded instead of run, and the process probe and write probe given."""
+    import os
+    import queue
+    import shutil
+    import sqlite3
+    import sys as _sys
+    import tempfile
+    import threading
+    import time as _time
+    import zipfile
+    from contextlib import closing
+    from types import SimpleNamespace
+    from unittest import mock
+
+    from PySide6.QtCore import QPoint
+
+    from ryos import __version__, selfupdate, swap, updates
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    if pump_until is None:
+        def pump_until(predicate, timeout=20.0):
+            end = _time.time() + timeout
+            while _time.time() < end and not predicate():
+                app.processEvents()
+                _time.sleep(0.02)
+            return predicate()
+
+    old = {"RYOS.exe": b"old window", "ryos-cli.exe": b"old cli", "lib/a.pyc": b"old"}
+    new = {"RYOS.exe": b"new window", "ryos-cli.exe": b"new cli!", "lib/a.pyc": b"new a"}
+    release = updates.Release("v999.0.0", "https://example.invalid/r", False, {})
+
+    made: list = []
+
+    def window(layout, *, blockers=(), problem=None, inert=False):
+        tmp = Path(tempfile.mkdtemp())
+        made.append(tmp)
+        install = tmp / "apps" / "RYOS"
+        for name, body in old.items():
+            (install / name).parent.mkdir(parents=True, exist_ok=True)
+            (install / name).write_bytes(body)
+        zip_path = tmp / "RYOS-windows.zip"
+        with zipfile.ZipFile(zip_path, "w") as z:
+            for name, body in new.items():
+                z.writestr(name, body)
+        slow = tmp / "slow.py"
+        slow.write_text("import time\ntime.sleep(1.5)\n", encoding="utf-8")
+        db = ScriptDB(tmp / "u.db")
+        db.create_group("G", base_dir=str(tmp))
+        sid = db.add("slow", str(slow), "", _sys.executable, "G")
+        seen = SimpleNamespace(spawned=[], quits=[], asked=[], told=[], opened=[],
+                               answers=[], released=[], install=install, zip=zip_path,
+                               db=db, sid=sid, slow=slow, gate=threading.Event())
+        seen.gate.set()
+
+        def staged(tag):
+            seen.gate.wait(10)
+            return zip_path if tag == "v999.0.0" else None
+        updater = selfupdate.Updater(
+            install=install, which="windows",
+            running_from=lambda _f: list(blockers), write_problem=lambda _i: problem,
+            staged=staged,
+            spawn=lambda argv, cwd: seen.spawned.append(list(argv)),
+            effects=swap.Effects(wait_for_exit=lambda p, t: True,
+                                 spawn=lambda a, c: None, sleep=lambda s: None))
+        settings = {"quick_run_enabled": False, "compact_mode": layout == "compact"}
+        win = MainWindow(REFERENCE["dark"], settings=settings,
+                         fetch_release=lambda: release,
+                         download_update=lambda r: updates.Outcome(True, "fake", zip_path),
+                         updater=None if inert else updater)
+        win.on_quit = lambda: seen.quits.append(True)
+        win.open_url = seen.opened.append
+        win.inform = lambda title, text: seen.told.append(text)
+        win.warn = lambda title, text: seen.told.append(text)
+
+        def ask(title, question):
+            seen.asked.append(question)
+            return seen.answers.pop(0) if seen.answers else True
+        win.ask_yes_no = ask
+        bridge = JobBridge(db, {"max_parallel_jobs": 4})
+        win.attach_jobs(bridge)
+        bridge.start()
+        win.load_from_db(db)
+        if layout == "maximised":
+            win.set_workspace(True)
+        win.show()
+        win.attach_instance(SimpleNamespace(signals=queue.Queue(),
+                                            release=lambda: seen.released.append(True)),
+                            interval_ms=50)
+        app.processEvents()
+        return win, seen, bridge
+
+    def ready(win, where):
+        win.check_for_updates()
+        if not pump_until(lambda: win._update_state == "ready", 10):
+            PROBLEMS.append(f"{where}: a finished download never showed Ready "
+                            f"(state {win._update_state})")
+            return False
+        return True
+
+    def visible_and_whole(win, where, *widgets):
+        for _ in range(5):
+            app.processEvents()
+        bar = win.update_banner.mapTo(win, QPoint(0, 0))
+        for w in widgets:
+            if not w.isVisible():
+                PROBLEMS.append(f"{where}: {w.text()!r} is not visible")
+            elif w.width() < w.sizeHint().width() or \
+                    w.mapTo(win, QPoint(w.width(), 0)).x() > win.width():
+                PROBLEMS.append(f"{where}: {w.text()!r} is clipped ({w.width()} of "
+                                f"{w.sizeHint().width()} wide, right edge at "
+                                f"{w.mapTo(win, QPoint(w.width(), 0)).x()} of {win.width()})")
+        if bar.x() < 0 or win.update_banner.width() > win.width():
+            PROBLEMS.append(f"{where}: the banner does not fit the window")
+
+    def done(win, bridge):
+        bridge.stop()
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+    with mock.patch.dict(sys.modules,
+                         {"ryos._build_info": SimpleNamespace(VARIANT="windows")}):
+        for layout in ("normal", "compact", "maximised"):
+            where = f"restart to update ({layout})"
+
+            win, seen, bridge = window(layout)
+            if ready(win, where):
+                want = selfupdate.ready_text("v999.0.0", __version__)
+                if win.update_label.text() != want:
+                    PROBLEMS.append(f"{where}: Ready said {win.update_label.text()!r}")
+                if win.update_restart.text() != selfupdate.RESTART_LABEL \
+                        or win.update_later.text() != selfupdate.LATER_LABEL:
+                    PROBLEMS.append(f"{where}: Ready buttons "
+                                    f"{win.update_restart.text()!r}/{win.update_later.text()!r}")
+                if win.update_download.isVisible():
+                    PROBLEMS.append(f"{where}: Ready still shows Download")
+                visible_and_whole(win, where, win.update_restart, win.update_later)
+                win.update_later.click()
+                app.processEvents()
+                if win.update_banner is not None:
+                    PROBLEMS.append(f"{where}: Later did not hide the banner")
+                win.check_for_updates()
+                pump_until(lambda: win.update_banner is not None, 5)
+                for _ in range(10):
+                    app.processEvents()
+                if win._update_state == "ready":
+                    PROBLEMS.append(f"{where}: Ready came back after Later")
+            done(win, bridge)
+
+            win, seen, bridge = window(layout)
+            if ready(win, where):
+                seen.gate.clear()
+                win.update_restart.click()
+                app.processEvents()
+                if win._update_state != "staging" or win.update_label.text() !=                         selfupdate.staging_text("v999.0.0"):
+                    PROBLEMS.append(f"{where}: not staging: {win._update_state} "
+                                    f"{win.update_label.text()!r}")
+                if win.update_restart.isEnabled() or win.update_later.isEnabled()                         or win.update_close.isVisible():
+                    PROBLEMS.append(f"{where}: staging leaves Restart, Later or the "
+                                    "close button usable")
+                if seen.asked or seen.spawned:
+                    PROBLEMS.append(f"{where}: staging asked {seen.asked} or spawned "
+                                    f"{seen.spawned} before the helper was ready")
+                seen.gate.set()
+                if not pump_until(lambda: seen.quits, 10) or len(seen.spawned) != 1:
+                    PROBLEMS.append(f"{where}: after staging spawned {seen.spawned}, "
+                                    f"quit {seen.quits}")
+            done(win, bridge)
+
+            win, seen, bridge = window(layout)
+            if ready(win, where):
+                bridge.run_script(seen.sid, "slow", str(seen.slow), "", _sys.executable)
+                pump_until(lambda: len(bridge.registry) == 1, 5)
+                win.update_restart.click()
+                app.processEvents()
+                if not seen.asked or "1 run is going" not in seen.asked[0]:
+                    PROBLEMS.append(f"{where}: with a run going it asked {seen.asked}")
+                if win._update_state != "waiting" or win.update_label.text() != \
+                        selfupdate.waiting_text(1):
+                    PROBLEMS.append(f"{where}: not waiting: {win.update_label.text()!r}")
+                elif not win.update_later.isVisible() or \
+                        win.update_later.text() != selfupdate.CANCEL_LABEL:
+                    PROBLEMS.append(f"{where}: waiting has no Cancel")
+                else:
+                    win.update_later.click()
+                    app.processEvents()
+                    if win._update_state != "ready" or win.update_label.text() !=                             selfupdate.ready_text("v999.0.0", __version__):
+                        PROBLEMS.append(f"{where}: Cancel while waiting left "
+                                        f"{win._update_state}")
+                    win.update_restart.click()
+                    app.processEvents()
+                    if win._update_state != "waiting":
+                        PROBLEMS.append(f"{where}: waiting again after Cancel: "
+                                        f"{win._update_state}")
+                if seen.spawned:
+                    PROBLEMS.append(f"{where}: spawned the helper while a run was going")
+                if not pump_until(lambda: seen.quits, 20):
+                    PROBLEMS.append(f"{where}: never restarted once the run finished")
+                elif len(seen.spawned) != 1:
+                    PROBLEMS.append(f"{where}: spawned {seen.spawned}")
+                else:
+                    argv = seen.spawned[0]
+                    if argv[argv.index("--wait-pid") + 1] != str(os.getpid()) \
+                            or "--restart" not in argv \
+                            or argv[argv.index("--version") + 1] != "v999.0.0":
+                        PROBLEMS.append(f"{where}: helper line {argv}")
+                if len(seen.asked) != 2:
+                    PROBLEMS.append(f"{where}: asked other than once per click, or again "
+                                    f"after the run: {seen.asked}")
+                if seen.quits != [True] or seen.released != [True] or win.isVisible():
+                    PROBLEMS.append(f"{where}: shut down {seen.quits}, instance "
+                                    f"released {seen.released}")
+            done(win, bridge)
+
+            win, seen, bridge = window(layout, blockers=[selfupdate.Process(31337,
+                                                                            "ryos-cli.exe")])
+            if ready(win, where):
+                win.update_restart.click()
+                app.processEvents()
+                if not seen.asked or "ryos-cli.exe (process 31337)" not in seen.asked[0] \
+                        or "next time RYOS starts" not in seen.asked[0]:
+                    PROBLEMS.append(f"{where}: blocked asked {seen.asked}")
+                if selfupdate.pending_at_start(seen.install) != "v999.0.0":
+                    PROBLEMS.append(f"{where}: yes did not ask for the next start")
+                if win.update_label.text() != selfupdate.at_start_text("v999.0.0") \
+                        or not win.update_restart.isVisible():
+                    PROBLEMS.append(f"{where}: at-next-start banner "
+                                    f"{win.update_label.text()!r}")
+                if seen.spawned or seen.quits:
+                    PROBLEMS.append(f"{where}: blocked, yet it went ahead")
+            done(win, bridge)
+
+            problem = "RYOS cannot write in C:\\Program Files (Access is denied)."
+            win, seen, bridge = window(layout, problem=problem)
+            if ready(win, where):
+                win.update_restart.click()
+                app.processEvents()
+                if not any(problem in t for t in seen.told):
+                    PROBLEMS.append(f"{where}: not writable told {seen.told}")
+                if seen.opened != ["https://example.invalid/r"]:
+                    PROBLEMS.append(f"{where}: not writable opened {seen.opened}")
+                if win._update_state != "available" or not win.update_download.isVisible():
+                    PROBLEMS.append(f"{where}: not writable left state {win._update_state}")
+                if seen.spawned:
+                    PROBLEMS.append(f"{where}: not writable spawned {seen.spawned}")
+            done(win, bridge)
+
+            win, seen, bridge = window(layout, inert=True)
+            win.help_menu.aboutToShow.emit()
+            if win.rollback_action.isEnabled() or \
+                    win.rollback_action.text() != selfupdate.rollback_label(None):
+                PROBLEMS.append(f"{where}: inert Roll back is {win.rollback_action.text()!r}, "
+                                f"enabled {win.rollback_action.isEnabled()}")
+            win.check_for_updates()
+            pump_until(lambda: win.update_banner is not None, 5)
+            for _ in range(10):
+                app.processEvents()
+            if win._update_state != "available" or not win.update_download.isVisible():
+                PROBLEMS.append(f"{where}: an inert updater left Available "
+                                f"({win._update_state})")
+            done(win, bridge)
+
+            win, seen, bridge = window(layout)
+            win.help_menu.aboutToShow.emit()
+            if win.rollback_action.isEnabled():
+                PROBLEMS.append(f"{where}: Roll back enabled with nothing to roll back to")
+            result = swap.apply_update(seen.install, seen.zip, version="v999.0.0",
+                                       from_version="1.0.0", which="windows",
+                                       effects=win.updater.effects, from_compatible=1)
+            if result.code != swap.DONE:
+                PROBLEMS.append(f"{where}: could not set up a previous build: "
+                                f"{result.message}")
+            with closing(sqlite3.connect(seen.db.db_path)) as conn:
+                conn.execute("UPDATE meta SET value='2' WHERE key='compatible_from'")
+                conn.commit()
+            win.help_menu.aboutToShow.emit()
+            if not win.rollback_action.isEnabled() or \
+                    win.rollback_action.text() != "Roll back to RYOS 1.0.0\u2026":
+                PROBLEMS.append(f"{where}: Roll back is {win.rollback_action.text()!r}, "
+                                f"enabled {win.rollback_action.isEnabled()}")
+            seen.answers.append(False)
+            win.rollback_action.trigger()
+            app.processEvents()
+            if not seen.asked or "layout 2" not in seen.asked[0] \
+                    or "Roll back RYOS to 1.0.0? RYOS restarts." not in seen.asked[0]:
+                PROBLEMS.append(f"{where}: the rollback warning asked {seen.asked}")
+            if seen.spawned:
+                PROBLEMS.append(f"{where}: No to the warning still rolled back")
+            win.rollback_action.trigger()
+            if not pump_until(lambda: seen.quits, 10) or len(seen.spawned) != 1 \
+                    or "--rollback" not in seen.spawned[0]:
+                PROBLEMS.append(f"{where}: rolling back spawned {seen.spawned}")
+            done(win, bridge)
+
+    for folder in made:
+        shutil.rmtree(folder, ignore_errors=True)
+    print("  [ok] restart to update: Ready, Later, Staging, wait for runs (Cancel, again) then restart, "
+          "blocked asks for the next start, not writable opens the page, "
+          "Help -> Roll back with its warning, in normal, compact and maximised")
+
+
 def check_updates_and_notify(app):
     """The update banner and notices, and job-finished toasts.
 
@@ -5173,7 +5480,7 @@ def check_suggestion(app):
             PROBLEMS.append(f"suggesting did not say what happened: "
                             f"{bar.currentMessage()!r}")
         texts = [a.text() for a in win.menuBar().actions()[-1].menu().actions()]
-        want = [win.update_action.text(), suggestion.MENU_LABEL,
+        want = [win.update_action.text(), win.rollback_action.text(), suggestion.MENU_LABEL,
                 win.report_bug_action.text(), win.open_log_action.text()]
         if texts != want:
             PROBLEMS.append(f"the Help menu order is {texts}, not {want}")
@@ -6102,6 +6409,7 @@ def main() -> int:
     check_group_management(app)
     check_tray_and_close(app)
     check_updates_and_notify(app)
+    check_restart_to_update(app)
     check_window_placement(app)
     check_mixed_dpi_placement(app)
     check_sections_and_favorites(app)

@@ -43,12 +43,13 @@ def _tray_wanted() -> bool:
 
 
 def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None,
-        argv=None) -> int:
+        argv=None, start_notes=()) -> int:
     """Start RYOS and run until it quits."""
     from ..db import NewerDatabaseError
     try:
         app, _win = build(settings=settings, launched_at_startup=launched_at_startup,
-                          instance_lock=instance_lock, argv=argv)
+                          instance_lock=instance_lock, argv=argv,
+                          start_notes=start_notes)
     except NewerDatabaseError as e:
         # No window without the data: say why, and stop. The application
         # already exists (build made it before opening the database). Logged
@@ -61,7 +62,7 @@ def run(*, settings: dict, launched_at_startup: bool = False, instance_lock=None
 
 
 def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=None,
-          argv=None, show: bool = True):
+          argv=None, show: bool = True, start_notes=()):
     """Everything start-up does, short of the event loop: (app, window).
 
     Split from `run` so a test can take the exact start-up path -- the real
@@ -73,7 +74,7 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
     from ..db import ScriptDB
     from ..history import prune_run_history
     from ..logger import setup_logging
-    from .. import updates
+    from .. import selfupdate, updates
     from ..notifications import _show_notification
     from ..settings import _BASE, _save_settings
     from ..themes import (load_user_themes, migrate_legacy_custom_themes,
@@ -119,7 +120,8 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
                      fetch_release=updates.fetch_release,
                      download_update=updates.download,
                      startup=RegistryStartup(),
-                     configure_logging=setup_logging)
+                     configure_logging=setup_logging,
+                     updater=selfupdate.real())
     win._set_customs(customs)
     win.setWindowTitle(TITLE)
     win.setMinimumSize(MainWindow.MIN_WIDTH, MIN_HEIGHT)
@@ -154,6 +156,7 @@ def build(*, settings: dict, launched_at_startup: bool = False, instance_lock=No
         win.apply_placement(launched_at_startup=launched_at_startup)
         win.apply_start()
         _log.info("Window shown at %s", win.geometry_string())
+        win.show_start_notes(start_notes)
     if settings.get("auto_check_update", True):
         win.check_for_updates()
     win.bridge = bridge

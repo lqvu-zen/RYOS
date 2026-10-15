@@ -90,7 +90,7 @@ class _Case(unittest.TestCase):
 
     @property
     def jdir(self) -> Path:
-        return settings.updates_root()
+        return swap.journal_dir_for(self.install)
 
     def effects(self, **over) -> swap.Effects:
         def wait(pid, timeout):
@@ -451,7 +451,7 @@ class TestJournal(_Case):
             self.assertFalse((self.install.parent / name).exists(), name)
         if (self.jdir / swap.JOURNAL_NAME).exists():
             self.assertIn(self.journal()["state"], (swap.DONE, swap.UNDONE))
-        self.assertIsNone(swap.recover(effects=self.effects()))
+        self.assertIsNone(swap.recover(self.jdir, effects=self.effects()))
 
     def test_crash_at_every_effect_call_is_finished_or_undone(self):
         total = self.total(lambda e: self.update(e, wait_pids=[7]))
@@ -460,7 +460,7 @@ class TestJournal(_Case):
             with self.subTest(kind="update", at=at):
                 self.fresh()
                 self.crash(lambda e: self.update(e, wait_pids=[7]), at)
-                self.check_settled(swap.recover(effects=self.effects()), rollback=False)
+                self.check_settled(swap.recover(self.jdir, effects=self.effects()), rollback=False)
 
     def test_crash_at_every_effect_call_of_a_rollback_is_finished_or_undone(self):
         def total_rollback():
@@ -476,7 +476,7 @@ class TestJournal(_Case):
                 self.fresh()
                 self.updated()
                 self.crash(lambda e: self.roll_back(e), at)
-                self.check_settled(swap.recover(effects=self.effects()), rollback=True)
+                self.check_settled(swap.recover(self.jdir, effects=self.effects()), rollback=True)
 
     def test_settle_at_start_never_moves_the_install(self):
         total = self.total(lambda e: self.update(e))
@@ -527,14 +527,14 @@ class TestJournal(_Case):
         release = swap._hold_lock(self.jdir / swap.LOCK_NAME)
         self.assertIsNotNone(release)
         try:
-            self.assertIsNone(swap.recover(effects=self.effects()))
+            self.assertIsNone(swap.recover(self.jdir, effects=self.effects()))
             refused = self.update()
             self.assertEqual(refused.code, swap.REFUSED)
             self.assertEqual(refused.message, swap.IN_PROGRESS)
             self.assertEqual(sorted(os.listdir(self.install.parent)), before)
         finally:
             release()
-        result = swap.recover(effects=self.effects())
+        result = swap.recover(self.jdir, effects=self.effects())
         self.assertEqual(result.code, swap.UNDONE, result.message)
         self.assertEqual(self.whole(), "old")
         self.assertEqual(self.beside(), ["RYOS"])
@@ -544,7 +544,7 @@ class TestJournal(_Case):
         path = self.jdir / swap.JOURNAL_NAME
         for text in (json.dumps({**self.journal(), "format": 99}), "not json {"):
             path.write_text(text, encoding="utf-8")
-            self.assertIsNone(swap.recover(effects=self.effects()))
+            self.assertIsNone(swap.recover(self.jdir, effects=self.effects()))
             self.assertIsNone(swap.settle_at_start(self.install, effects=self.effects()))
             self.assertEqual(path.read_text(encoding="utf-8"), text)
             self.assertFalse(self.install.exists())
@@ -552,7 +552,7 @@ class TestJournal(_Case):
     def test_inconsistent_folders_are_stuck_with_words(self):
         self.crashed_mid_swap()
         shutil.rmtree(self.folders.previous)
-        result = swap.recover(effects=self.effects())
+        result = swap.recover(self.jdir, effects=self.effects())
         self.assertEqual(result.code, swap.STUCK)
         for words in (str(self.install), str(self.folders.incoming),
                       str(self.folders.previous), "antivirus", "--recover"):
@@ -566,6 +566,97 @@ class TestJournal(_Case):
         self.assertEqual(result.code, swap.DONE, result.message)
         self.assertEqual(self.whole(), "new")
         self.assertEqual(self.whole(self.folders.previous), "old")
+
+
+class TestPerInstall(_Case):
+    def test_two_installs_keep_their_own_journal_and_rollback(self):
+        first = self.install
+        second = self.base / "other" / "RYOS"
+        write_tree(second, OLD)
+        self.assertNotEqual(swap.journal_dir_for(first), swap.journal_dir_for(second))
+        self.assertEqual(self.update().code, swap.DONE)
+        self.assertEqual(swap.rollback_available(first), "1.0.0")
+        self.assertIsNone(swap.rollback_available(second))
+        self.assertFalse(swap.journal_dir_for(second).exists())
+        result = swap.apply_update(second, self.zip, version="v8.0.0", from_version="0.9.0",
+                                   which="windows", effects=self.effects())
+        self.assertEqual(result.code, swap.DONE, result.message)
+        self.assertEqual(swap.rollback_available(first), "1.0.0")
+        self.assertEqual(swap.rollback_available(second), "0.9.0")
+        self.assertEqual(swap.read_journal(swap.journal_dir_for(first))["version"], "v9.0.0")
+        self.assertEqual(swap.read_journal(swap.journal_dir_for(second))["version"], "v8.0.0")
+
+    def test_the_journal_folder_name_is_pinned(self):
+        root = Path(os.environ["LOCALAPPDATA"]) / "RYOS" / "updates" / "installs"
+        if os.name == "nt":
+            install, key = "C:\\RYOS-pin\\RYOS", "ec08ba2cf753afe1"
+        else:
+            install, key = "/opt/ryos-pin/RYOS", "fd819466f1ddb9e2"
+        self.assertEqual(swap.journal_dir_for(install), root / key)
+
+    def test_previous_json_fields_are_pinned(self):
+        self.assertEqual(self.update(from_compatible=2).code, swap.DONE)
+        record = json.loads((self.jdir / swap.PREVIOUS_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(sorted(record), ["compatible_from", "files", "format", "install",
+                                          "version"])
+        self.assertEqual((record["format"], record["version"], record["compatible_from"]),
+                         (1, "1.0.0", 2))
+
+    def test_one_install_spelled_two_ways_has_one_journal(self):
+        other = self.install.parent / "x" / ".." / self.install.name
+        self.assertEqual(swap.journal_dir_for(self.install), swap.journal_dir_for(other))
+        if os.name == "nt":
+            self.assertEqual(swap.journal_dir_for(self.install),
+                             swap.journal_dir_for(str(self.install).upper()))
+
+    def test_previous_records_compatible_from(self):
+        self.assertEqual(self.update(from_compatible=2).code, swap.DONE)
+        self.assertEqual(swap.previous_build(self.install), swap.PreviousBuild("1.0.0", 2))
+        self.assertEqual(self.roll_back(from_compatible=3).code, swap.DONE)
+        self.assertEqual(swap.previous_build(self.install), swap.PreviousBuild("9.0.0", 3))
+        path = self.jdir / swap.PREVIOUS_NAME
+        record = json.loads(path.read_text(encoding="utf-8"))
+        del record["compatible_from"]
+        path.write_text(json.dumps(record), encoding="utf-8")
+        self.assertEqual(swap.previous_build(self.install), swap.PreviousBuild("9.0.0", 1))
+
+    def test_previous_build_lists_the_files_only_when_asked(self):
+        self.assertIsNone(swap.previous_build(self.install))
+        self.assertEqual(self.update().code, swap.DONE)
+        (self.folders.previous / "extra").write_bytes(b"x")
+        self.assertIsNone(swap.previous_build(self.install))
+        self.assertEqual(swap.previous_build(self.install, check_files=False).version, "1.0.0")
+
+    def test_settle_at_start_will_not_accept_an_unverified_build(self):
+        for state in ("swap", "unswap"):
+            with self.subTest(state=state):
+                self.place(self.tmp / state)
+
+                def rename(src, dst):
+                    swap._rename(src, dst)
+                    if Path(src) == self.folders.incoming and Path(dst) == self.install:
+                        (self.install / "lib" / "python.dll").unlink()
+                        raise _Crash()
+                with self.assertRaises(_Crash):
+                    self.update(self.effects(rename=rename))
+                journal = self.journal()
+                journal["state"] = state
+                (self.jdir / swap.JOURNAL_NAME).write_text(json.dumps(journal),
+                                                           encoding="utf-8")
+                before = sorted(os.listdir(self.install.parent))
+                result = swap.settle_at_start(self.install, effects=self.effects())
+                self.assertEqual(result.code, swap.STUCK, result.message)
+                self.assertEqual(sorted(os.listdir(self.install.parent)), before)
+                self.assertFalse((self.install / "lib" / "python.dll").exists())
+
+    def test_the_restart_step_carries_the_result(self):
+        seen = []
+
+        def spawn(argv, cwd):
+            seen.append(self.journal())
+        self.assertEqual(self.update(self.effects(spawn=spawn)).code, swap.DONE)
+        self.assertEqual(seen[0]["state"], "restart")
+        self.assertIn("is now v9.0.0", seen[0]["message"])
 
 
 class TestStaging(_Case):
@@ -584,7 +675,8 @@ class TestStaging(_Case):
 
     def test_stage_rollback_helper(self):
         exe = swap.stage_rollback_helper(self.install, self.effects())
-        self.assertEqual(exe, settings.updates_root() / "rollback-helper" / "ryos-cli.exe")
+        self.assertEqual(exe, swap.journal_dir_for(self.install) / "rollback-helper"
+                         / "ryos-cli.exe")
         self.assertEqual(read_tree(exe.parent), OLD)
         self.assertEqual(swap.stage_rollback_helper(self.install, self.effects()), exe)
 
@@ -608,6 +700,17 @@ class TestStaging(_Case):
                              restart=True)[2:])
         self.assertEqual((args.install, args.tag, args.wait_pid, args.restart),
                          ("C:/Apps/RYOS", "v9.0.0", [5], True))
+
+    def test_helper_argv_carries_from_compatible(self):
+        exe = Path("C:/u/helper/ryos-cli.exe")
+        argv = swap.helper_argv(exe, "C:/Apps/RYOS", version="v9.0.0", from_version="1.0.0",
+                                wait_pids=[5], restart=True, from_compatible=3)
+        self.assertEqual(argv[argv.index("--from-compatible") + 1], "3")
+        from ryos import cli
+        args = cli._apply_update_parser().parse_args(argv[2:])
+        self.assertEqual(args.from_compatible, 3)
+        self.assertNotIn("--from-compatible",
+                         swap.helper_argv(exe, "C:/Apps/RYOS", rollback=True))
 
     def test_a_drive_root_is_refused(self):
         root = Path(os.path.abspath(os.sep))

@@ -51,6 +51,7 @@ uv run ryos expose --group <group> on|off [--yes]   # a group's scripts and pipe
 uv run ryos list --group <group>                     # what is in it, and what is not available yet
 uv run ryos preset add|remove <script> <label> [--params="..."] | history [<script>] [--json]
 uv run ryos verify <zip>         # a zip downloaded by hand; SHA256SUMS.txt and its .sig beside it
+uv run ryos update [--rollback] [--yes]   # install the newer release (or go back) once it ends; refused from source
 uv run --extra mcp ryos mcp      # MCP server over stdio, for AI agents
 ```
 
@@ -79,6 +80,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Ed25519 signature check (verify only)          | `ryos/ed25519.py`       |
 | `SHA256SUMS.txt.sig` format and its check      | `ryos/signature.py`     |
 | Apply / roll back an update: swap plan, journal | `ryos/swap.py`         |
+| When to update: verdicts, words, start-up settle | `ryos/selfupdate.py`  |
 | Which download this is (windows/agent/source)  | `ryos/buildinfo.py`     |
 | `ScriptDB` (all SQLite logic)                  | `ryos/db.py`            |
 | `detect_interpreter`, `build_command`          | `ryos/interpreter.py`   |

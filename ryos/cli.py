@@ -14,6 +14,7 @@ the window.
     ryos history [<script>] [--pipeline] [--limit N] [--json]
     ryos version [--check]
     ryos verify <zip>                         (a zip downloaded by hand, with SHA256SUMS.txt and its .sig beside it)
+    ryos update [--rollback] [--yes]          (download, check and install the newer release, or roll back)
 
 Adding, editing, removing and exposing follow the script dialog's own rules
 (``ryos/manage.py``). Letting agents run something, and removing, ask at
@@ -57,7 +58,7 @@ from .jobs import STOPPED
 
 COMMANDS = ("list", "run", "pipeline", "mcp",
             "add", "edit", "remove", "expose", "preset", "history", "version",
-            "verify")
+            "verify", "update")
 HIDDEN_COMMANDS = ("apply-update",)
 
 EXIT_OK = 0
@@ -183,6 +184,14 @@ def _parser() -> argparse.ArgumentParser:
                                         "SHA256SUMS.txt and SHA256SUMS.txt.sig, from "
                                         "the same release, go beside it.")
     vz.add_argument("zip", metavar="ZIP")
+
+    up = sub.add_parser("update", help="Download, check and install the newer release of "
+                                        "this RYOS once this command ends; --rollback "
+                                        "goes back to the build it replaced.")
+    up.add_argument("--rollback", action="store_true",
+                    help="Go back to the build the last update replaced.")
+    up.add_argument("--yes", action="store_true",
+                    help="Don't ask (a warning about your data is still printed).")
 
     hi = sub.add_parser("history", help="What has run, newest first.")
     hi.add_argument("ref", nargs="?", metavar="SCRIPT")
@@ -496,6 +505,7 @@ def _apply_update_parser() -> argparse.ArgumentParser:
     how.add_argument("--rollback", action="store_true")
     how.add_argument("--recover", action="store_true")
     p.add_argument("--from-version", metavar="V")
+    p.add_argument("--from-compatible", type=int, metavar="N")
     p.add_argument("--wait-pid", type=int, action="append", default=[], metavar="PID")
     p.add_argument("--restart", action="store_true")
     return p
@@ -508,8 +518,8 @@ def _helper_dir() -> Path:
 
 
 def _inside(path: Path, folder: Path) -> bool:
-    a = os.path.normcase(os.path.abspath(path))
-    b = os.path.normcase(os.path.abspath(folder))
+    a = os.path.normcase(os.path.realpath(path))
+    b = os.path.normcase(os.path.realpath(folder))
     try:
         return os.path.commonpath([a, b]) == b
     except ValueError:
@@ -521,17 +531,36 @@ def _apply_update(argv: list[str], out: TextIO, err: TextIO, effects) -> int:
         args = _apply_update_parser().parse_args(argv)
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else EXIT_OK
-
-    def refuse(message: str) -> int:
-        print(f"ryos: {message}", file=err)
-        return EXIT_REFUSED
     if buildinfo.variant() == buildinfo.PORTABLE:
-        return refuse("RYOS from source does not update itself.")
+        print("ryos: RYOS from source does not update itself.", file=err)
+        return EXIT_REFUSED
     from . import swap
+    from .logger import get_logger
+    log = get_logger("cli")
+    effects = effects or swap.Effects()
     try:
         folders = swap.folders_for(args.install)
     except ValueError as e:
-        return refuse(str(e))
+        print(f"ryos: {e}", file=err)
+        return EXIT_REFUSED
+
+    def start_ryos_again() -> None:
+        if not args.restart:
+            return
+        if not all(effects.wait_for_exit(pid, swap.WAIT_SECONDS) for pid in args.wait_pid):
+            return
+        exe = folders.install / swap.WINDOW_EXE
+        if exe.is_file():
+            try:
+                effects.spawn([str(exe)], folders.install)
+            except OSError as e:
+                log.warning("Could not start %s again: %s", exe, e)
+
+    def refuse(message: str) -> int:
+        print(f"ryos: {message}", file=err)
+        log.info("apply-update refused: %s", message)
+        start_ryos_again()
+        return EXIT_REFUSED
     helper = _helper_dir()
     for folder in (folders.install, folders.previous, folders.incoming,
                    folders.incoming_part, folders.outgoing):
@@ -545,16 +574,20 @@ def _apply_update(argv: list[str], out: TextIO, err: TextIO, effects) -> int:
     setup_logging(settings.get("logging_enabled", True),
                   settings.get("log_level", "INFO"), CLI_LOG_PATH)
     if args.recover:
-        result = swap.recover(effects=effects)
+        result = swap.recover(swap.journal_dir_for(folders.install), effects=effects)
         if result is None:
             print("There is no unfinished update to finish.", file=out)
             return EXIT_OK
     elif args.rollback:
         result = swap.roll_back(folders.install, wait_pids=args.wait_pid,
                                 restart=args.restart, from_version=args.from_version,
-                                effects=effects)
+                                effects=effects, from_compatible=args.from_compatible)
     else:
         from . import updates
+        from .selfupdate import is_newer
+        if args.from_version and not is_newer(args.tag, args.from_version):
+            return refuse(f"RYOS {args.from_version} is already installed in "
+                          f"{folders.install}; {args.tag} is not newer.")
         zip_path = updates.downloaded(args.tag)
         if zip_path is None:
             return refuse(f"RYOS {args.tag} is not downloaded and checked, so it "
@@ -562,12 +595,114 @@ def _apply_update(argv: list[str], out: TextIO, err: TextIO, effects) -> int:
         result = swap.apply_update(folders.install, zip_path, version=args.tag,
                                    from_version=args.from_version,
                                    wait_pids=args.wait_pid, restart=args.restart,
-                                   effects=effects)
+                                   effects=effects, from_compatible=args.from_compatible)
+    log.info("apply-update %s: %s", result.code, result.message)
     if result.code == swap.DONE:
         print(result.message, file=out)
         return EXIT_OK
     print(f"ryos: {result.message}", file=err)
-    return EXIT_REFUSED if result.code == swap.REFUSED else EXIT_FAILED
+    if result.code == swap.REFUSED:
+        if result.message != swap.IN_PROGRESS and result.state != swap.NOT_EXITED:
+            start_ryos_again()
+        return EXIT_REFUSED
+    return EXIT_FAILED
+
+
+def _update(args, out: TextIO, err: TextIO, ask, fetch_update, download_update,
+            updater) -> int:
+    """``ryos update [--rollback] [--yes]``: no lock, no Qt, no database
+    opened; the swap itself runs in a helper once this command ends."""
+    from . import selfupdate, swap, updates
+    from .db import COMPATIBLE_FROM, read_compatible_from
+    from .logger import get_logger
+    from .notifications import NEWER, UNREACHABLE_NOTICE, update_status
+    from .settings import CLI_LOG_PATH, DB_PATH
+    for stream in (out, err):
+        _readable(stream)
+    if updater is None:
+        from .logger import setup_logging
+        from .settings import _load_settings
+        settings = _load_settings()
+        setup_logging(settings.get("logging_enabled", True),
+                      settings.get("log_level", "INFO"), CLI_LOG_PATH)
+        updater = selfupdate.real()
+    log = get_logger("cli")
+    kind = selfupdate.ROLLBACK if args.rollback else selfupdate.UPDATE
+
+    def refuse(message: str) -> int:
+        print(f"ryos: {message}", file=err)
+        log.info("update refused: %s", message)
+        return EXIT_REFUSED
+    install = updater.install
+    if install is None or updater.which == buildinfo.PORTABLE:
+        return refuse(updates.FROM_SOURCE)
+    if _inside(Path(os.getcwd()), install):
+        return refuse(f"This terminal is in {install}, which the update moves: "
+                      "cd out of it, then run `ryos-cli update` again.")
+    previous = None
+    if kind == selfupdate.ROLLBACK:
+        previous = swap.previous_build(install, check_files=True)
+        if previous is None:
+            return refuse("There is no earlier build of RYOS to roll back to beside "
+                          f"{install}.")
+    blockers = updater.blockers()
+    problem = updater.problem()
+    stop = selfupdate.obstacle(kind, where=selfupdate.CLI, install=install,
+                               blockers=blockers, write_problem=problem)
+    if stop is not None:
+        return refuse(stop.text)
+    if kind == selfupdate.UPDATE:
+        release = (fetch_update or updates.fetch_release)()
+        status, tag, _url = update_status(updates.check_of(release), __version__)
+        if release is None:
+            print(f"ryos: {UNREACHABLE_NOTICE[1]}", file=err)
+            return EXIT_FAILED
+        if status != NEWER:
+            print(f"Up to date: RYOS {__version__} is the latest.", file=out)
+            return EXIT_OK
+        outcome = (download_update or updates.download)(release)
+        if not outcome.ok:
+            if outcome.message == updates.NO_KEY:
+                return refuse(outcome.message)
+            print(f"ryos: {outcome.message}", file=err)
+            return EXIT_FAILED
+        target: str | None = tag
+        db_needs: int | None = 1
+        previous_accepts = 1
+    else:
+        assert previous is not None
+        target = previous.version
+        db_needs = read_compatible_from(DB_PATH)
+        previous_accepts = previous.compatible_from
+    decision = selfupdate.decide(
+        kind, where=selfupdate.CLI, which=updater.which, install=install,
+        current=__version__, target=target, blockers=blockers,
+        write_problem=problem, active_runs=0, due=0,
+        db_needs=db_needs, previous_accepts=previous_accepts)
+    if decision.verdict != selfupdate.GO:
+        return refuse(decision.text)
+    question = decision.text
+    if decision.warning:
+        if args.yes:
+            print(f"ryos: warning: {decision.warning}", file=err)
+        question = f"{decision.warning} {question}"
+    try:
+        _agreed(question, args.yes, ask, "Updating RYOS")
+    except manage.ManageError as e:
+        return refuse(str(e))
+    try:
+        argv, cwd = selfupdate.prepare(updater, kind, tag=target, current=__version__,
+                                       compatible_from=COMPATIBLE_FROM, restart=False)
+        updater.spawn(argv, cwd)
+    except (swap.SwapError, OSError) as e:
+        print(f"ryos: {e}", file=err)
+        log.warning("update could not start: %s", e)
+        return EXIT_FAILED
+    log.info("update started: %s", argv)
+    becomes = "goes back to" if kind == selfupdate.ROLLBACK else "becomes"
+    print(f"RYOS in {install} {becomes} {str(target).lstrip('v')} once this command "
+          f"ends; what happened goes to {CLI_LOG_PATH}.", file=out)
+    return EXIT_OK
 
 
 def _notify_running_window() -> None:
@@ -586,7 +721,9 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
          rebuild_window: Callable[[], object] | None = None,
          ask: Callable[[str], bool | None] | None = None,
          fetch_release: Callable[[], object] | None = None,
-         swap_effects=None) -> int:
+         swap_effects=None, updater=None,
+         fetch_update: Callable[[], object] | None = None,
+         download_update: Callable[[object], object] | None = None) -> int:
     """Run one command. Everything with an effect outside this process is an
     argument, so tests pass throwaway ones; the defaults are the real ones."""
     out = out if out is not None else sys.stdout
@@ -624,6 +761,9 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         return EXIT_FAILED if status == notifications.UNREACHABLE else EXIT_OK
     if args.command == "verify":
         return _verify(args.zip, out, err)
+    if args.command == "update":
+        return _update(args, out, err, ask or _ask_at_terminal, fetch_update,
+                       download_update, updater)
     if args.command == "mcp":
         # Its own start-up: it logs to ryos-mcp.log, and it is long-lived.
         from .mcpserver import serve

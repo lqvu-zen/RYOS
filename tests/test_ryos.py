@@ -1932,6 +1932,23 @@ class TestCompatibleFrom(unittest.TestCase):
         self.assertEqual(code, _cli.EXIT_REFUSED)
         self.assertIn("newer RYOS", err.getvalue())
 
+    def test_read_compatible_from_reads_without_writing(self):
+        from ryos.db import read_compatible_from
+        missing = Path(tempfile.mkdtemp()) / "nothing.db"
+        self.assertEqual(read_compatible_from(missing), 1)
+        self.assertFalse(missing.exists())
+        path = self._db_at("4")
+        before = (path.read_bytes(), path.stat().st_mtime_ns)
+        self.assertEqual(read_compatible_from(path), 4)
+        self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
+        with sqlite3.connect(path) as conn:
+            conn.execute("DROP TABLE meta")
+        self.assertEqual(read_compatible_from(path), 1)
+        garbage = Path(tempfile.mkdtemp()) / "garbage.db"
+        garbage.write_bytes(b"this is not a database, " * 100)
+        self.assertIsNone(read_compatible_from(garbage))
+        self.assertEqual(garbage.read_bytes(), b"this is not a database, " * 100)
+
 
 FIXTURE_DBS = Path(__file__).resolve().parent / "fixtures" / "db"
 FIXTURE_TABLES = ("groups", "scripts", "pipelines", "pipeline_steps",

@@ -306,6 +306,27 @@ def _compatible_from(conn) -> int:
         return 1
 
 
+def read_compatible_from(path) -> int | None:
+    """The ``meta.compatible_from`` of the database at ``path``, read only:
+    1 for a missing file (never created) or a database from before it
+    existed; None when the file is there but cannot be read."""
+    path = Path(path)
+    if not path.exists():
+        return 1
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    except (OSError, sqlite3.Error) as e:
+        _log.warning("Could not read %s to check its layout: %s", path, e)
+        return None
+    try:
+        return _compatible_from(conn)
+    except (OSError, sqlite3.Error) as e:
+        _log.warning("Could not read %s to check its layout: %s", path, e)
+        return None
+    finally:
+        conn.close()
+
+
 def _run_migrations(conn, migrations: dict, target_version: int) -> int:
     """Apply pending migrations in ascending order, advancing user_version.
 

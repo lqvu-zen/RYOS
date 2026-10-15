@@ -166,6 +166,9 @@ def _fetch_into(open_url: OpenUrl | None, asset: Asset, part: Path) -> None:
         raise _CutOff("the connection closed early")
 
 
+FROM_SOURCE = ("RYOS from source does not update itself: get the new version "
+               "with git pull or a fresh RYOS-portable.zip.")
+
 NO_KEY = ("This RYOS carries no release key, so it cannot check an update's "
           "signature and downloads nothing: get the new version from the release page.")
 
@@ -186,8 +189,7 @@ def download(release: Release, which: str | None = None, *,
     which = which or buildinfo.variant()
     name = asset_name(which)
     if name is None:
-        return Outcome(False, "RYOS from source does not update itself: get the "
-                       "new version with git pull or a fresh RYOS-portable.zip.")
+        return Outcome(False, FROM_SOURCE)
     if not isinstance(release.tag, str) or not _TAG.fullmatch(release.tag):
         return Outcome(False, f"The release tag {release.tag!r} is not a version "
                        "RYOS can use, so nothing was downloaded.")

@@ -56,9 +56,21 @@ def main():
 
     log.info("RYOS %s starting (startup=%s, ui=qt)", __version__, launched_at_startup)
     try:
+        notes: tuple = ()
+        try:
+            from . import selfupdate
+            from .db import COMPATIBLE_FROM
+            started = selfupdate.at_start(__version__, selfupdate.real(),
+                                          compatible_from=COMPATIBLE_FROM)
+            if started.applying:
+                log.info("Installing the update asked for at start; exiting for it")
+                return 0
+            notes = started.notes
+        except Exception:
+            log.exception("The start-up update check failed; starting as usual")
         from .qtui.main import run
         run(settings=settings, launched_at_startup=launched_at_startup,
-            instance_lock=lock)
+            instance_lock=lock, start_notes=notes)
     except Exception:
         log.exception("Fatal error in the main loop")
         raise

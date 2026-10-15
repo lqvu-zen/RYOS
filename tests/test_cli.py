@@ -778,7 +778,7 @@ class TestApplyUpdate(unittest.TestCase):
         (folder / "SHA256SUMS.txt.sig").write_bytes(
             sig_file(TEST_SEED, tag.lstrip("v"), sums.encode()))
 
-    def apply(self, *argv, build="default", **over):
+    def apply(self, *argv, build="default", install=None, **over):
         from unittest import mock
 
         from ryos import swap
@@ -794,7 +794,7 @@ class TestApplyUpdate(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         build = self.build if build == "default" else build
         with mock.patch.dict(sys.modules, {"ryos._build_info": build}):
-            code = cli.main(["apply-update", "--install", str(self.install), *argv],
+            code = cli.main(["apply-update", "--install", str(install or self.install), *argv],
                             db=None, settings=None, out=out, err=err,
                             swap_effects=effects)
         return code, out.getvalue(), err.getvalue()
@@ -861,6 +861,100 @@ class TestApplyUpdate(unittest.TestCase):
         self.assertIn("antivirus", err)
         self.assertEqual(self.read(), self.OLD)
 
+    def test_an_update_already_installed_is_refused(self):
+        self.stage()
+        code, _out, err = self.apply("--version", "v99.0.0", "--from-version", "99.0.0")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("already installed", err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_recover_uses_that_installs_journal(self):
+        from ryos import swap
+        self.stage()
+        other = self.tmp / "other" / "RYOS"
+        self.write(other, self.OLD)
+        renames: list = []
+
+        class Crash(BaseException):
+            pass
+
+        def rename(src, dst):
+            renames.append(src)
+            if len(renames) == 3:
+                raise Crash()
+            swap._rename(src, dst)
+        from ryos import updates
+        with self.assertRaises(Crash):
+            swap.apply_update(self.install, updates.downloaded("v99.0.0", key=bytes.fromhex(
+                self.build.RELEASE_KEY), which="windows"), version="v99.0.0",
+                which="windows", effects=swap.Effects(rename=rename))
+        self.assertFalse(self.install.exists())
+        code, out, _err = self.apply("--recover", install=other)
+        self.assertEqual(code, cli.EXIT_OK)
+        self.assertIn("no unfinished update", out)
+        self.assertFalse(self.install.exists())
+        code, _out, err = self.apply("--recover")
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn("undone", err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_a_refusal_with_restart_starts_ryos_again(self):
+        code, _out, err = self.apply("--version", "v99.0.0", "--wait-pid", "5", "--restart")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("not downloaded and checked", err)
+        self.assertEqual(self.waited, [5])
+        self.assertEqual(self.spawned, [[str(self.install / "RYOS.exe")]])
+        self.spawned.clear()
+        code, _out, _err = self.apply("--rollback", "--restart")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertEqual(self.spawned, [[str(self.install / "RYOS.exe")]])
+
+    def test_a_refusal_before_waiting_waits_then_starts_ryos_again(self):
+        from ryos import swap
+        self.NEW = {"ryos-cli.exe": b"new cli only", "lib/a.pyc": b"new a"}
+        self.stage()
+        waits: list = []
+
+        def wait(pid, timeout):
+            waits.append((pid, timeout))
+            return True
+        code, _out, err = self.apply("--version", "v99.0.0", "--wait-pid", "5", "--restart",
+                                     wait_for_exit=wait)
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("RYOS.exe", err)
+        self.assertEqual(waits, [(5, swap.WAIT_SECONDS)])
+        self.assertEqual(self.spawned, [[str(self.install / "RYOS.exe")]])
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_ryos_that_did_not_exit_is_not_started_again(self):
+        self.stage()
+        code, _out, err = self.apply("--version", "v99.0.0", "--wait-pid", "5", "--restart",
+                                     wait_for_exit=lambda pid, t: False)
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("did not exit", err)
+        self.assertEqual(self.spawned, [])
+
+    def test_a_swap_in_progress_starts_nothing(self):
+        from ryos import swap
+        self.stage()
+        jdir = swap.journal_dir_for(self.install)
+        jdir.mkdir(parents=True, exist_ok=True)
+        release = swap._hold_lock(jdir / swap.LOCK_NAME)
+        try:
+            code, _out, err = self.apply("--version", "v99.0.0", "--restart")
+        finally:
+            release()
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn(swap.IN_PROGRESS, err)
+        self.assertEqual(self.spawned, [])
+
+    def test_the_result_is_logged(self):
+        self.stage()
+        with self.assertLogs("ryos.cli", level="INFO") as logs:
+            code, _out, err = self.apply("--version", "v99.0.0", "--from-version", "1.0.0")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertTrue(any("now v99.0.0" in line for line in logs.output), logs.output)
+
     def test_a_bad_command_line_exits_2(self):
         for argv in ([], ["--version", "v1", "--rollback"], ["--wait-pid", "x", "--recover"]):
             err = io.StringIO()
@@ -868,6 +962,225 @@ class TestApplyUpdate(unittest.TestCase):
                 code = cli.main(["apply-update", *argv], db=None, settings=None)
             self.assertEqual(code, cli.EXIT_USAGE, argv)
             self.assertIn("ryos apply-update", err.getvalue())
+
+
+class TestUpdate(unittest.TestCase):
+    OLD = {"RYOS.exe": b"old window", "ryos-cli.exe": b"old cli", "lib/a.pyc": b"old"}
+    NEW = {"RYOS.exe": b"new window", "ryos-cli.exe": b"new cli!", "lib/a.pyc": b"new a"}
+
+    def setUp(self):
+        import zipfile
+        from unittest import mock
+
+        from ryos import logger, settings, swap, updates
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.addCleanup(os.chdir, os.getcwd())
+        self.db_path = self.tmp / "data" / "scripts.db"
+        for patch in (mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.tmp / "local")}),
+                      mock.patch.object(logger, "setup_logging", lambda *a, **k: None),
+                      mock.patch.object(settings, "DB_PATH", self.db_path)):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.install = self.tmp / "apps" / "RYOS"
+        TestApplyUpdate.write(self.install, self.OLD)
+        self.zip = self.tmp / "RYOS-windows.zip"
+        with zipfile.ZipFile(self.zip, "w") as z:
+            for name, body in self.NEW.items():
+                z.writestr(name, body)
+        self.release = updates.Release("v99.0.0", "https://x/r", False, {})
+        self.spawned: list = []
+        self.downloads: list = []
+        self.asked: list = []
+        self.blockers: list = []
+        self.problem = None
+        self.swap = swap
+
+    def updater(self, **over):
+        from ryos import selfupdate
+        base = dict(install=self.install, which="windows",
+                    running_from=lambda _f: list(self.blockers),
+                    write_problem=lambda _i: self.problem,
+                    staged=lambda tag: self.zip if tag == "v99.0.0" else None,
+                    spawn=lambda argv, cwd: self.spawned.append(list(argv)),
+                    effects=self.swap.Effects(wait_for_exit=lambda p, t: True,
+                                              spawn=lambda a, c: None,
+                                              sleep=lambda s: None),
+                    pid=4242)
+        base.update(over)
+        return selfupdate.Updater(**base)
+
+    def update(self, *argv, updater="default", fetch="default", download=None, answer=None):
+        from ryos import updates
+        out, err = io.StringIO(), io.StringIO()
+
+        def ask(question):
+            self.asked.append(question)
+            return answer
+
+        def fake_download(release):
+            self.downloads.append(release.tag)
+            return updates.Outcome(True, "ok", self.zip)
+        code = cli.main(["update", *argv], db=None, settings=None, out=out, err=err,
+                        ask=ask, updater=self.updater() if updater == "default" else updater,
+                        fetch_update=(lambda: self.release) if fetch == "default" else fetch,
+                        download_update=download or fake_download)
+        return code, out.getvalue(), err.getvalue()
+
+    def refused(self, *words, argv=(), **kw):
+        code, out, err = self.update(*argv, **kw)
+        self.assertEqual(code, cli.EXIT_REFUSED, err)
+        for said in words:
+            self.assertIn(said, err)
+        self.assertEqual(self.spawned, [])
+        return err
+
+    def updated_once(self, from_compatible=1):
+        result = self.swap.apply_update(self.install, self.zip, version="v99.0.0",
+                                        from_version="1.0.0", which="windows",
+                                        effects=self.updater().effects,
+                                        from_compatible=from_compatible)
+        self.assertEqual(result.code, self.swap.DONE, result.message)
+
+    def test_is_listed(self):
+        self.assertIn("update", cli.COMMANDS)
+        self.assertTrue(cli.is_cli(["update", "--rollback"]))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["--help"], db=None, settings={}), 0)
+        self.assertIn("update", out.getvalue())
+
+    def test_from_source(self):
+        from ryos import selfupdate
+        self.refused("from source does not update itself", updater=selfupdate.Updater())
+        self.assertEqual(self.downloads, [])
+
+    def test_a_terminal_inside_the_install(self):
+        os.chdir(self.install / "lib")
+        try:
+            self.refused("cd out of it", argv=("--yes",))
+        finally:
+            os.chdir(ROOT)
+
+    def test_the_window_open(self):
+        self.blockers.append(self.swap_process(77, "RYOS.exe"))
+        self.refused("RYOS is open (process 77)", "Restart to update", argv=("--yes",))
+        self.assertEqual(self.downloads, [])
+
+    @staticmethod
+    def swap_process(pid, name):
+        from ryos.selfupdate import Process
+        return Process(pid, name)
+
+    def test_an_agents_mcp_server_open(self):
+        self.blockers.append(self.swap_process(31337, "ryos-cli.exe"))
+        self.refused("process 31337", "MCP server", "Close the agent", argv=("--yes",))
+        self.blockers[:] = [self.swap_process(4242, "ryos-cli.exe")]
+        code, _out, err = self.update("--yes")
+        self.assertEqual(code, cli.EXIT_OK, err)
+
+    def test_not_writable(self):
+        from ryos.notifications import _RELEASES_PAGE
+        self.problem = f"RYOS cannot write in {self.install.parent} (Access is denied)."
+        self.refused("Access is denied", _RELEASES_PAGE, argv=("--yes",))
+        self.assertEqual(self.downloads, [])
+        self.assertFalse((self.tmp / "local").exists())
+
+    def test_up_to_date(self):
+        from ryos import updates
+        code, out, _err = self.update(
+            "--yes", fetch=lambda: updates.Release(f"v{__version__}", "u", False, {}))
+        self.assertEqual(code, cli.EXIT_OK)
+        self.assertIn("Up to date", out)
+        self.assertEqual((self.downloads, self.spawned), ([], []))
+
+    def test_unreachable(self):
+        code, _out, err = self.update("--yes", fetch=lambda: None)
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn("Could not reach GitHub", err)
+        self.assertEqual(self.spawned, [])
+
+    def test_a_download_that_fails(self):
+        from ryos import updates
+        code, _out, err = self.update(
+            "--yes", download=lambda r: updates.Outcome(False, "cut off"))
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn("cut off", err)
+        self.refused("carries no release key", argv=("--yes",),
+                     download=lambda r: updates.Outcome(False, updates.NO_KEY))
+
+    def test_needs_a_terminal_or_yes_then_starts_the_helper(self):
+        self.refused("needs you at a terminal")
+        self.assertEqual(self.asked, [f"Update RYOS in {self.install} from {__version__} "
+                                      "to 99.0.0?"])
+        self.refused("Left as it was", answer=False)
+        code, out, err = self.update("--yes")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertEqual(len(self.spawned), 1)
+        argv = self.spawned[0]
+        self.assertEqual(argv[1:], ["apply-update", "--install", str(self.install),
+                                    "--version", "v99.0.0", "--from-version", __version__,
+                                    "--from-compatible", "1", "--wait-pid", "4242"])
+        self.assertNotIn("--restart", argv)
+        self.assertTrue(Path(argv[0]).is_file())
+        self.assertIn("becomes 99.0.0 once this command ends", out)
+        self.assertIn("ryos-cli.log", out)
+
+    def test_rollback_with_nothing(self):
+        self.refused("no earlier build", argv=("--rollback", "--yes"))
+
+    def test_rollback(self):
+        self.updated_once()
+        code, out, err = self.update("--rollback", "--yes")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertEqual(self.downloads, [])
+        argv = self.spawned[0]
+        self.assertIn("--rollback", argv)
+        self.assertNotIn("--restart", argv)
+        self.assertEqual(argv[argv.index("--wait-pid") + 1], "4242")
+        self.assertIn("goes back to 1.0.0", out)
+        self.assertNotIn("warning", err)
+
+    def test_rollback_across_a_raised_compatible_from_warns(self):
+        import sqlite3
+        self.updated_once(from_compatible=1)
+        self.db_path.parent.mkdir(parents=True)
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT INTO meta VALUES ('compatible_from', '2')")
+            conn.commit()
+        self.refused("needs you at a terminal", argv=("--rollback",))
+        self.assertIn("layout 2", self.asked[0])
+        code, _out, err = self.update("--rollback", "--yes")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertIn("warning", err)
+        self.assertIn("layout 2", err)
+        self.assertEqual(len(self.spawned), 1)
+
+    def test_rollback_with_unreadable_data_warns(self):
+        self.updated_once()
+        self.db_path.parent.mkdir(parents=True)
+        self.db_path.write_bytes(b"this is not a database, " * 100)
+        self.refused("needs you at a terminal", argv=("--rollback",))
+        self.assertIn("could not read your data", self.asked[0])
+        code, _out, err = self.update("--rollback", "--yes")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertIn("could not read your data", err)
+
+    def test_a_newer_database_does_not_block_it(self):
+        import sqlite3
+        from unittest import mock
+        self.db_path.parent.mkdir(parents=True)
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT INTO meta VALUES ('compatible_from', '99')")
+            conn.commit()
+
+        def boom(*_a, **_k):
+            raise AssertionError("update must not open the database")
+        with mock.patch.object(cli, "ScriptDB", boom):
+            code, _out, err = self.update("--yes")
+        self.assertEqual(code, cli.EXIT_OK, err)
 
 
 class TestMcpInTheBuildWithoutIt(unittest.TestCase):
@@ -942,6 +1255,28 @@ class TestTheRealEntryPoint(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout.strip().splitlines()[-1], f"NOQT {cli.EXIT_REFUSED}")
         self.assertIn("from source", proc.stderr)
+
+    def test_update_takes_no_lock_writes_no_startup_entry_and_imports_no_qt(self):
+        data = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, data, ignore_errors=True)
+        probe = (
+            "import sys\n"
+            "import ryos.__main__ as m\n"
+            "def boom(*a, **k): raise AssertionError('not for the CLI')\n"
+            "m.single_instance.acquire = boom\n"
+            "m._sync_startup_command = boom\n"
+            "sys.argv = ['ryos', 'update', '--yes']\n"
+            "code = m.main()\n"
+            "print('QT' if 'PySide6' in sys.modules else 'NOQT', code)\n"
+        )
+        env = {**os.environ, "APPDATA": str(data), "LOCALAPPDATA": str(data / "local"),
+               "RYOS_NO_REGISTRY": "1", "RYOS_NO_TOASTS": "1"}
+        proc = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env,
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip().splitlines()[-1], f"NOQT {cli.EXIT_REFUSED}")
+        self.assertIn("from source does not update itself", proc.stderr)
+        self.assertFalse((data / "RYOS" / "scripts.db").exists())
 
 
 if __name__ == "__main__":

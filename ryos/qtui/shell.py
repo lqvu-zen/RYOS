@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QTabBar,
 from .. import activity, basefolder, bugreport, buildinfo, suggestion
 from .. import (__version__, cardmenu, cardstyle, configio, detail, grouping,
                manage, notifications, outputpanel, pipelinesteps, screens, scriptform,
-               search, sections, selection, traypolicy, updates)
+               search, sections, selection, selfupdate, swap, traypolicy, updates)
 from . import placement
 from ..themes import REFERENCE, readable_highlight, step_colour
 from .cards import PipelineCard, ScriptCard
@@ -363,8 +363,17 @@ class MainWindow(QMainWindow):
                  fetch_release: Callable[[], object] | None = None,
                  download_update: Callable[[object], object] | None = None,
                  startup=None,
-                 configure_logging: Callable[[bool, str], None] | None = None):
+                 configure_logging: Callable[[bool, str], None] | None = None,
+                 updater: selfupdate.Updater | None = None):
         super().__init__()
+        self.updater = updater or selfupdate.Updater()
+        self._update_tag: str | None = None
+        self._update_url: str | None = None
+        self._update_state: str | None = None
+        self._update_dismissed = False
+        self._update_waiting: str | None = None
+        self._update_before: str | None = None
+        self._update_target: str | None = None
         # Run-at-login lives in the Windows registry, not in settings. Like
         # the other real effects it is passed in; the default does nothing,
         # so no test can change the user's login entry.
@@ -956,6 +965,13 @@ class MainWindow(QMainWindow):
             lambda: self.check_for_updates(manual=True))
         self._menu_icon(self.update_action, "import")
         help_menu.addAction(self.update_action)
+        self.rollback_action = QAction(selfupdate.rollback_label(None), self)
+        self.rollback_action.triggered.connect(self.roll_back_update)
+        self._menu_icon(self.rollback_action, "retry")
+        help_menu.addAction(self.rollback_action)
+        help_menu.aboutToShow.connect(self._refresh_rollback_action)
+        self.help_menu = help_menu
+        self._refresh_rollback_action()
         self.suggest_action = QAction(suggestion.MENU_LABEL, self)
         self.suggest_action.triggered.connect(self.suggest_feature)
         self._menu_icon(self.suggest_action, "lightbulb")
@@ -1808,35 +1824,287 @@ class MainWindow(QMainWindow):
         if outcome.ok:
             self.update_staged = outcome.path
             log.info("%s", outcome.message)
+            self._offer_restart()
         else:
             log.warning("%s", outcome.message)
+
+    def _offer_restart(self) -> None:
+        install, tag = self.updater.install, self._update_tag
+        if (install is None or tag is None or self._update_dismissed
+                or self._update_state not in (None, "available")):
+            return
+        if selfupdate.pending_at_start(install) == tag:
+            self._show_update_state("at_start")
+        else:
+            self._show_update_state("ready")
 
     def show_update_banner(self, tag: str, url: str) -> None:
         if self.update_banner is not None:
             return
+        self._update_tag, self._update_url = tag, url
+        self._show_update_state("available")
+
+    def _build_update_banner(self) -> None:
         banner = QFrame()
         banner.setObjectName("updateBanner")
-        row = QHBoxLayout(banner)
-        row.setContentsMargins(10, 4, 6, 4)
-        self.update_label = QLabel(notifications.banner_text(
-            tag, __version__, buildinfo.download_name()))
+        stack = QVBoxLayout(banner)
+        stack.setContentsMargins(10, 4, 6, 4)
+        stack.setSpacing(4)
+        row = QHBoxLayout()
+        stack.addLayout(row)
+        self.update_label = QLabel()
+        self.update_label.setWordWrap(True)
         row.addWidget(self.update_label, 1)
         self.update_download = QPushButton("Download")
         self.update_download.setObjectName("primary")
-        self.update_download.clicked.connect(lambda: self.open_url(url))
+        self.update_download.clicked.connect(
+            lambda: self.open_url(self._update_url or notifications._RELEASES_PAGE))
         row.addWidget(self.update_download)
         dismiss = IconButton("close", role="ink", size=14)
         dismiss.setObjectName("quiet")
         set_tooltip(dismiss, "Dismiss")
         dismiss.clicked.connect(self.dismiss_update_banner)
         row.addWidget(dismiss)
+        self.update_close = dismiss
+        self.update_actions = QWidget()
+        actions = QHBoxLayout(self.update_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.addStretch(1)
+        self.update_restart = QPushButton(selfupdate.RESTART_LABEL)
+        self.update_restart.setObjectName("primary")
+        self.update_restart.clicked.connect(self.restart_to_update)
+        actions.addWidget(self.update_restart)
+        self.update_later = QPushButton(selfupdate.LATER_LABEL)
+        self.update_later.clicked.connect(self._update_later_clicked)
+        actions.addWidget(self.update_later)
+        stack.addWidget(self.update_actions)
+        for button in (self.update_download, self.update_restart, self.update_later):
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._top_col.insertWidget(0, banner)
         self.update_banner = banner
 
+    def _set_banner(self, text: str, primary: str | None, secondary: str | None) -> None:
+        if self.update_banner is None:
+            self._build_update_banner()
+        self.update_label.setText(text)
+        self.update_download.setVisible(primary == "download")
+        self.update_restart.setVisible(primary == "restart")
+        self.update_later.setVisible(secondary is not None)
+        if secondary is not None:
+            self.update_later.setText(secondary)
+        self.update_close.setVisible(secondary is None)
+        self.update_actions.setVisible(primary == "restart" or secondary is not None)
+        self.update_restart.setEnabled(True)
+        self.update_later.setEnabled(True)
+
+    def _show_update_state(self, state: str | None) -> None:
+        self._update_state = state
+        tag = self._update_tag or ""
+        if state is None:
+            if self.update_banner is not None:
+                self.update_banner.deleteLater()
+                self.update_banner = None
+        elif state == "available":
+            self._set_banner(notifications.banner_text(
+                tag, __version__, buildinfo.download_name()), "download", None)
+        elif state == "ready":
+            self._set_banner(selfupdate.ready_text(tag, __version__), "restart",
+                             selfupdate.LATER_LABEL)
+        elif state == "at_start":
+            self._set_banner(selfupdate.at_start_text(tag), "restart",
+                             selfupdate.LATER_LABEL)
+        elif state == "staging":
+            self._set_banner(selfupdate.staging_text(self._update_target or tag),
+                             "restart", selfupdate.LATER_LABEL)
+            self.update_restart.setEnabled(False)
+            self.update_later.setEnabled(False)
+        elif state == "waiting":
+            running = len(self._bridge.registry) if self._bridge is not None else 0
+            self._set_banner(selfupdate.waiting_text(
+                running, self._update_waiting or selfupdate.UPDATE),
+                None, selfupdate.CANCEL_LABEL)
+
     def dismiss_update_banner(self) -> None:
-        if self.update_banner is not None:
-            self.update_banner.deleteLater()
-            self.update_banner = None
+        self._update_dismissed = True
+        self._show_update_state(None)
+
+    def _update_later_clicked(self) -> None:
+        if self._update_state == "waiting":
+            self._update_waiting = None
+            self._show_update_state(self._update_before)
+        else:
+            self.dismiss_update_banner()
+
+    def _bring_up(self) -> None:
+        if self.isHidden() or self.isMinimized():
+            self.restore_from_tray()
+
+    def _decide(self, kind: str) -> selfupdate.Decision:
+        from datetime import datetime
+
+        from ..db import read_compatible_from
+        updater = self.updater
+        target = None
+        db_needs: int | None = 1
+        previous_accepts = 1
+        if kind == selfupdate.UPDATE:
+            target = self._update_tag if self.update_staged is not None else None
+        elif updater.install is not None:
+            previous = swap.previous_build(updater.install, check_files=False)
+            if previous is not None:
+                target, previous_accepts = previous.version, previous.compatible_from
+            if self._db is not None:
+                db_needs = read_compatible_from(self._db.db_path)
+        active = len(self._bridge.registry) if self._bridge is not None else 0
+        due = selfupdate.due_soon(self._db, datetime.now()) if self._db is not None else 0
+        return selfupdate.decide(
+            kind, where=selfupdate.WINDOW, which=updater.which, install=updater.install,
+            current=__version__, target=target, blockers=updater.blockers(),
+            write_problem=updater.problem(), active_runs=active, due=due,
+            db_needs=db_needs, previous_accepts=previous_accepts)
+
+    def restart_to_update(self) -> None:
+        self._update_before = self._update_state
+        self._update_target = self._update_tag
+        self._act(selfupdate.UPDATE, self._decide(selfupdate.UPDATE))
+
+    def roll_back_update(self) -> None:
+        decision = self._decide(selfupdate.ROLLBACK)
+        self._bring_up()
+        if decision.verdict in (selfupdate.PORTABLE, selfupdate.NOTHING):
+            self.inform(decision.title, decision.text)
+            return
+        previous = swap.previous_build(self.updater.install, check_files=False) \
+            if self.updater.install is not None else None
+        version = previous.version if previous is not None else ""
+        question = selfupdate.rollback_question(version)
+        if decision.warning:
+            question = f"{decision.warning}\n\n{question}"
+        if not self.ask_yes_no(selfupdate.ROLLBACK_TITLE, question):
+            return
+        self._update_before = self._update_state
+        self._update_target = version
+        self._act(selfupdate.ROLLBACK, decision)
+
+    def _act(self, kind: str, decision: selfupdate.Decision) -> None:
+        verdict = decision.verdict
+        if verdict != selfupdate.GO:
+            self._bring_up()
+        if verdict in (selfupdate.PORTABLE, selfupdate.NOTHING):
+            self.inform(decision.title, decision.text)
+        elif verdict == selfupdate.NOT_WRITABLE:
+            self.inform(decision.title, decision.text)
+            self.open_url(self._update_url or notifications._RELEASES_PAGE)
+            if kind == selfupdate.UPDATE and self._update_tag:
+                self._show_update_state("available")
+        elif verdict == selfupdate.BLOCKED:
+            if kind == selfupdate.ROLLBACK:
+                self.inform(decision.title, decision.text)
+            elif self.ask_yes_no(decision.title, decision.text):
+                self._ask_at_next_start()
+        elif verdict == selfupdate.BUSY:
+            if self.ask_yes_no(decision.title, decision.text):
+                self._wait_for_runs(kind)
+        elif verdict == selfupdate.DUE and not self.ask_yes_no(decision.title, decision.text):
+            return
+        else:
+            self._prepare_in_background(kind)
+
+    def _ask_at_next_start(self) -> None:
+        install, tag = self.updater.install, self._update_tag
+        if install is None or tag is None:
+            return
+        try:
+            selfupdate.request_at_start(install, tag)
+        except OSError as e:
+            self.warn(selfupdate.UPDATE_TITLE, f"RYOS could not remember to update: {e}")
+            return
+        self._show_update_state("at_start")
+
+    def _wait_for_runs(self, kind: str) -> None:
+        self._update_waiting = kind
+        self._show_update_state("waiting")
+
+    def _update_on_job_change(self, _job=None) -> None:
+        if self._update_waiting is None:
+            return
+        if self._bridge is not None and len(self._bridge.registry):
+            self._show_update_state("waiting")
+        else:
+            QTimer.singleShot(0, self._resume_after_wait)
+
+    def _resume_after_wait(self) -> None:
+        kind = self._update_waiting
+        if kind is None or (self._bridge is not None and len(self._bridge.registry)):
+            return
+        decision = self._decide(kind)
+        if decision.verdict == selfupdate.BUSY:
+            self._show_update_state("waiting")
+            return
+        self._update_waiting = None
+        if decision.verdict in (selfupdate.GO, selfupdate.DUE):
+            self._prepare_in_background(kind)
+            return
+        self._show_update_state(self._update_before)
+        self._act(kind, decision)
+
+    def _prepare_in_background(self, kind: str) -> None:
+        import threading
+
+        from ..db import COMPATIBLE_FROM
+        self._show_update_state("staging")
+        if not hasattr(self, "_update_invoker"):
+            self._update_invoker = MainThreadInvoker(self)
+        updater, target = self.updater, self._update_target
+
+        def work():
+            result: object
+            try:
+                result = selfupdate.prepare(updater, kind, tag=target, current=__version__,
+                                            compatible_from=COMPATIBLE_FROM, restart=True)
+            except (swap.SwapError, OSError) as e:
+                result = e
+            except Exception as e:
+                from ..logger import get_logger
+                get_logger("qtui.shell").warning(
+                    "Getting the update ready failed: %s", e, exc_info=True)
+                result = swap.SwapError(f"RYOS could not get the update ready: {e}")
+            self._update_invoker(lambda: self._launch_helper(kind, result))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _launch_helper(self, kind: str, result) -> None:
+        title = selfupdate.ROLLBACK_TITLE if kind == selfupdate.ROLLBACK \
+            else selfupdate.UPDATE_TITLE
+        if isinstance(result, Exception):
+            self._show_update_state(self._update_before)
+            self._bring_up()
+            self.warn(title, str(result))
+            return
+        if self._bridge is not None and len(self._bridge.registry):
+            self._show_update_state(self._update_before)
+            self._act(kind, self._decide(kind))
+            return
+        argv, cwd = result
+        try:
+            self.updater.spawn(argv, cwd)
+        except OSError as e:
+            self._show_update_state(self._update_before)
+            self._bring_up()
+            self.warn(title, f"RYOS could not start the update: {e}")
+            return
+        QTimer.singleShot(0, self._shut_down)
+
+    def _refresh_rollback_action(self) -> None:
+        install = self.updater.install
+        previous = (swap.previous_build(install, check_files=False)
+                    if install is not None else None)
+        self.rollback_action.setText(selfupdate.rollback_label(
+            previous.version if previous is not None else None))
+        self.rollback_action.setEnabled(previous is not None)
+
+    def show_start_notes(self, notes) -> None:
+        for level, title, text in notes:
+            (self.warn if level == "warning" else self.inform)(title, text)
 
     def suggest_feature(self) -> None:
         """Open a new GitHub issue with a few questions. Nothing is sent, and
@@ -2026,6 +2294,10 @@ class MainWindow(QMainWindow):
                 self.restore_from_tray()    # the question needs a window
             if not self.ask_yes_no(*prompt):
                 return False
+        self._shut_down()
+        return True
+
+    def _shut_down(self) -> None:
         if self._bridge is not None:
             self._bridge.stop()             # terminates what is still running
         grouping.remember_group(self._settings, self.current_group())
@@ -2044,7 +2316,6 @@ class MainWindow(QMainWindow):
         self._quitting = True
         self.close()
         self.on_quit()
-        return True
 
     # -- running with parameters ---------------------------------------------------
     def run_script_card(self, card, rec: dict) -> None:
@@ -2871,6 +3142,8 @@ class MainWindow(QMainWindow):
         for sig in (bridge.started, bridge.finished, bridge.renamed):
             sig.connect(lambda _job: self._sync_tray())
         bridge.notify.connect(self._on_job_notify)
+        bridge.started.connect(self._update_on_job_change)
+        bridge.finished.connect(self._update_on_job_change)
 
     def _on_job_started(self, job) -> None:
         for key in outputpanel.cleared_when_run_starts(
