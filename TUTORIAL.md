@@ -19,8 +19,9 @@ RYOS is not code-signed yet, so check what you downloaded before you run it:
 
 1. Download only from [github.com/lqvu-zen/RYOS/releases](https://github.com/lqvu-zen/RYOS/releases).
 2. In PowerShell, in the folder you downloaded to, run `Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256` (or the zip you downloaded). The result must match that zip's line in the release's `SHA256SUMS.txt`. Capital or small letters do not matter.
-3. Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details. The company reads **Zenitus (Lê Quang Vũ)**.
-4. Windows SmartScreen will say "Unknown publisher"; that is expected for an unsigned app. Choose **More info -> Run anyway** only for a download that passed the check.
+3. Optional, and the strongest check: put `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` from the release beside the zip and, with an RYOS you already trust, run `ryos-cli.exe verify .\RYOS-windows-ai.zip`. It must succeed. RYOS makes the same check itself before it installs an update.
+4. Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details. The company reads **Zenitus (Lê Quang Vũ)**.
+5. Windows SmartScreen will say "Unknown publisher"; that is expected for an unsigned app. Choose **More info -> Run anyway** only for a download that passed the check.
 
 ### Option B — Portable (run from source)
 1. Download and extract `RYOS-portable.zip`.

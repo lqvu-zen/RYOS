@@ -62,6 +62,16 @@ cd D:/Projects/RYOS && uv run --extra mcp --with cx_Freeze python build_release.
 
 It builds the three frozen variants from clean folders, zips all four downloads, checks what each holds and must not hold, and writes `SHA256SUMS.txt`. It ends with `build_release done`; on any problem (an exe missing, the MCP SDK in the build without it or missing from one with it, Qt or the window in the agent build, a `__pycache__` or `_build_info.py` in the source) it exits 1. **If it fails, stop and report.** Don't package anything by hand (`Compress-Archive` swept 95 stale bytecode files into 2.0.0's first portable zip). `build.bat` / `build_cxfreeze.bat` build only the `windows` variant, for development.
 
+### A3b. Vũ signs — hard gate
+
+Stop and ask Vũ to sign the build's checksums himself. The key and its passphrase stay with him; never ask for either, never look for the key file, never sign for him:
+
+```bash
+uv run --with cryptography python tools/sign_release.py sign <his key file> --sums dist/SHA256SUMS.txt
+```
+
+It writes `dist/SHA256SUMS.txt.sig` for the version in `ryos/__init__.py`. Wait for him to say it is done, and check the file exists. Every rebuild (A3 again, B3) changes `SHA256SUMS.txt`, so it is signed again; a `.sig` left over from an earlier build is deleted first. If the key or its passphrase is lost, a new key pair means every installed RYOS needs one manual update to a build carrying the new public key (`docs/CONTRIBUTING.md`).
+
 ### A4. Release check — hard gate
 
 Quit any RYOS running on this machine first (the window, the tray icon, an MCP server a client started): the check's `real_folder_untouched` case compares the real `%APPDATA%\RYOS` before and after, and a running RYOS writes to it. Run nothing else that touches it meanwhile (the unit suite and `qt_smoke.py` both do).
@@ -70,7 +80,7 @@ Quit any RYOS running on this machine first (the window, the tray icon, an MCP s
 cd D:/Projects/RYOS && uv run python tests/release_check.py 2>&1 | tail -40
 ```
 
-One script over all four zips, on throwaway data, with nothing opening on the first screen. It checks the zips and checksums; that each exe's `--version` names HEAD with no `-dirty`; `launch_smoke` on every download (and on the second screen when there is one); the portable zip is exactly the tracked source and runs with uv; the command line's management commands; MCP over plain JSON-RPC (list, run, poll, stop, refusals) and the 125 refusal of the build without agents; `session_smoke` in both layouts; an upgrade from a fixture database of every past release (`tests/fixtures/db/`); the same data used by RYOS Agent and the Windows builds in both orders; the "compatible from" guard in every download; and that the real `%APPDATA%\RYOS` is unchanged. It must end with `RELEASE CHECK PASSED`. **Any `[FAIL]` is a stop**: fix it (with `fix-ryos-bug`), and start again from A2 with N+1. A `[SKIP] launch_visible: skipped (one monitor)` is fine.
+One script over all four zips, on throwaway data, with nothing opening on the first screen. It checks the zips and checksums; that each exe's `--version` names HEAD with no `-dirty`; `launch_smoke` on every download (and on the second screen when there is one); the portable zip is exactly the tracked source and runs with uv; the command line's management commands; MCP over plain JSON-RPC (list, run, poll, stop, refusals) and the 125 refusal of the build without agents; `session_smoke` in both layouts; an upgrade from a fixture database of every past release (`tests/fixtures/db/`); the same data used by RYOS Agent and the Windows builds in both orders; the `signature` case (each frozen build's own `ryos-cli verify` accepts its zip with `SHA256SUMS.txt.sig`, and refuses a signature made with the test key or a changed `SHA256SUMS.txt`); the "compatible from" guard in every download; and that the real `%APPDATA%\RYOS` is unchanged. It must end with `RELEASE CHECK PASSED`. **Any `[FAIL]` is a stop**: fix it (with `fix-ryos-bug`), and start again from A2 with N+1. A `[SKIP] launch_visible: skipped (one monitor)` is fine.
 
 Recommended too, before Vũ uses the candidate: check his real data on a copy (`uv run python tests/real_data_smoke.py`; `--db <backup>` for an older backup). A count that drops is a stop until you know why.
 
@@ -80,7 +90,7 @@ Only once CI is green on the candidate commit. Write the notes to a file in the 
 
 ```bash
 cd D:/Projects/RYOS && gh release create vX.Y.Z-rcN dist/RYOS-windows.zip dist/RYOS-windows-ai.zip \
-  dist/RYOS-agent.zip dist/RYOS-portable.zip dist/SHA256SUMS.txt \
+  dist/RYOS-agent.zip dist/RYOS-portable.zip dist/SHA256SUMS.txt dist/SHA256SUMS.txt.sig \
   -R lqvu-zen/RYOS --prerelease --latest=false --target <full sha of HEAD> \
   --title "vX.Y.Z-rcN" --notes-file <notes.md> 2>&1
 ```
@@ -137,7 +147,7 @@ Wait for CI to go green on it.
 
 ### B3. Rebuild and check again — hard gate
 
-A3 and A4 again, on this commit, with any running RYOS quit first as in A4: `build_release.py`, then `release_check.py` must print `RELEASE CHECK PASSED`.
+A3, A3b and A4 again, on this commit, with any running RYOS quit first as in A4: `build_release.py`, Vũ signs the new `SHA256SUMS.txt` (the candidate's `.sig` is for another version and another build), then `release_check.py` must print `RELEASE CHECK PASSED`.
 
 ### B4. Release review — hard gate
 
@@ -169,9 +179,10 @@ Expected lineup (**update this table whenever the downloads change**, together w
 | `RYOS-portable.zip` | source | the source, `ryos/__init__.py`, `run.bat`, `install_uv.bat` | `__pycache__`, `_build_info.py` |
 | all | | | `scripts.db`, a settings file, `__pycache__` in the source |
 
-`SHA256SUMS.txt` lists exactly these four zips. Two more things the lineup must show (the build puts them in; `buildinfo.COMPANY`, `COPYRIGHT`):
+`SHA256SUMS.txt` lists exactly these four zips, and `SHA256SUMS.txt.sig` sits beside it. Three more things the lineup must show (the build puts them in; `buildinfo.COMPANY`, `COPYRIGHT`):
 
 - **Both exes carry the publisher.** `RYOS.exe` and `ryos-cli.exe` (only the latter in the agent build) show company `Zenitus (Lê Quang Vũ)` and copyright `© 2026 Lê Quang Vũ (Zenitus)` in Properties -> Details (`(Get-Item <exe>).VersionInfo`).
+- **The signature checks with each build's own tool.** For `windows`, `windows-ai` and `agent`, `ryos-cli.exe verify <its zip>` from that build's folder, with `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` beside the zip, exits 0 and names the version being released.
 - **Each build's `--version` names HEAD's short commit with no `-dirty`, and HEAD is the commit to be tagged** (`release_check`'s `build_commit` case).
 
 If the reviewer reports BLOCKERS, fix them — a fix to anything outside `docs/` is a new candidate (A2) — and review again. Go on only on `READY TO PUBLISH`. Show the user every **needs a human** item it listed that the checklist does not already cover, and **wait for them to confirm each one** before publishing.
@@ -180,7 +191,7 @@ If the reviewer reports BLOCKERS, fix them — a fix to anything outside `docs/`
 
 ```bash
 cd D:/Projects/RYOS && gh release create vX.Y.Z dist/RYOS-windows.zip dist/RYOS-windows-ai.zip \
-  dist/RYOS-agent.zip dist/RYOS-portable.zip dist/SHA256SUMS.txt \
+  dist/RYOS-agent.zip dist/RYOS-portable.zip dist/SHA256SUMS.txt dist/SHA256SUMS.txt.sig \
   -R lqvu-zen/RYOS --latest --target <full sha of HEAD> --title "vX.Y.Z" --notes-file <notes.md> 2>&1
 ```
 
@@ -195,14 +206,16 @@ Include the download guidance in the notes so users know which asset to grab:
 - **RYOS-agent.zip** — RYOS Agent: just `ryos-cli.exe`, for letting Claude run an allow-list of your scripts without the app. See the guide's RYOS Agent page.
 - **RYOS-portable.zip** — run from source: extract and double-click `run.bat` (needs uv; run `install_uv.bat` first if needed).
 - **SHA256SUMS.txt** — checksums of the four zips.
+- **SHA256SUMS.txt.sig** — the signature of `SHA256SUMS.txt`: RYOS checks it before it installs an update, and `ryos-cli verify` checks a zip you downloaded by hand.
 
 All four keep your data in the same place, so you can move between them; each one's update notice names its own zip.
 
 ## Check your download
 1. Download only from https://github.com/lqvu-zen/RYOS/releases.
 2. In PowerShell: `Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256` (or the zip you downloaded). The hash must match that zip's line in `SHA256SUMS.txt` (letter case does not matter).
-3. Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
-4. SmartScreen's "Unknown publisher" is expected: RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check.
+3. Keep `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` beside the zip and run `ryos-cli.exe verify .\RYOS-windows-ai.zip` from an RYOS you already trust: it must exit 0.
+4. Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
+5. SmartScreen's "Unknown publisher" is expected: RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check.
 ```
 
 ### B6. Clear `dist/`

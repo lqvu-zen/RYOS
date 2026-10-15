@@ -8513,6 +8513,26 @@ class TestBuildInfo(unittest.TestCase):
             self.assertIsNone(buildinfo.release_key())
         self.assertNotIn("RELEASE_KEY", buildinfo.build_info_source("windows", "1a2b3c4"))
 
+    def test_a_build_carries_the_release_key_the_project_publishes(self):
+        from ryos import buildinfo
+        text = buildinfo.build_info_source("agent", "1a2b3c4", buildinfo.RELEASE_PUBLIC_KEY)
+        namespace = {}
+        exec(text, namespace)
+        self.assertEqual(namespace["RELEASE_KEY"], buildinfo.RELEASE_PUBLIC_KEY)
+        fake = types.SimpleNamespace(**{k: namespace[k] for k in ("VARIANT", "RELEASE_KEY")})
+        with mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+            self.assertEqual(buildinfo.release_key(),
+                             bytes.fromhex(buildinfo.RELEASE_PUBLIC_KEY))
+        self.assertEqual(len(bytes.fromhex(buildinfo.RELEASE_PUBLIC_KEY)), 32)
+        for bad in ("", "ab" * 31, "AB" * 32, "zz" * 32):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                buildinfo.build_info_source("agent", None, bad)
+
+    def test_setup_embeds_the_release_key(self):
+        source = (Path(__file__).resolve().parents[1] / "setup_cxfreeze.py").read_text(
+            encoding="utf-8")
+        self.assertIn("buildinfo.RELEASE_PUBLIC_KEY", source)
+
     def test_from_source_without_a_builds_file(self):
         from ryos import buildinfo
         with mock.patch.dict(sys.modules, {"ryos._build_info": None}):

@@ -127,3 +127,16 @@ uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 Output lands in `dist/cxfreeze/` (`RYOS.exe` plus DLLs). Bump `__version__` in
 `ryos/__init__.py` before tagging a release — `pyproject.toml` reads the
 version from there.
+
+### The release key
+
+Every build trusts one Ed25519 public key (`buildinfo.RELEASE_PUBLIC_KEY`, written into the build by
+`setup_cxfreeze.py`). The maintainer signs each release's `SHA256SUMS.txt` with the private key
+(`tools/sign_release.py sign`) after `build_release.py` and before `release_check.py`; the key file
+lives outside the repository, protected by a passphrase, and `.gitignore` refuses key files.
+
+**If the key file or its passphrase is lost,** nothing already installed can be updated to a build
+signed with a new key: make a new pair (`tools/sign_release.py new`), put its public key in
+`buildinfo.RELEASE_PUBLIC_KEY`, and tell users to update by hand once to a build carrying it. If the
+key may have leaked, do the same and say so in the release notes.
+

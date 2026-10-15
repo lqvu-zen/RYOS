@@ -57,8 +57,9 @@ Before you run what you downloaded:
    ```
 
    (or the zip you downloaded). The hash must match that zip's line in the release's `SHA256SUMS.txt`; letter case does not matter, since `Get-FileHash` prints uppercase and the file lowercase. To let PowerShell compare: `(Get-FileHash .\RYOS-windows-ai.zip -Algorithm SHA256).Hash -eq '<hash from SHA256SUMS.txt>'` (`True` is a match).
-3. **Look at the publisher.** Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
-4. **"Unknown publisher" from SmartScreen is expected**, because RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check above.
+3. **Check the signature** (optional, and the strongest check). Put `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` from the release beside the zip and, with an RYOS you already trust, run `ryos-cli.exe verify .\RYOS-windows-ai.zip`. It must exit 0. RYOS does the same check itself before it installs an update.
+4. **Look at the publisher.** Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
+5. **"Unknown publisher" from SmartScreen is expected**, because RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check above.
 
 ## Getting Started
 

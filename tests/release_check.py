@@ -10,6 +10,9 @@ then a total and RELEASE CHECK PASSED / FAILED (exit 1). Cases:
 
 * zips, build_commit -- the four zips and SHA256SUMS.txt; each exe names the
   commit at HEAD (a clean tree) and the source's version;
+* signature -- SHA256SUMS.txt.sig, made by Vu with tools/sign_release.py, is
+  accepted by each frozen build's own `ryos-cli verify` for its own zip, and
+  refused when made with the test key or when SHA256SUMS.txt was changed;
 * launch_* -- tests/launch_smoke.py on each built download (launch_visible
   on a second screen, when there is one);
 * portable -- the source zip is exactly the tracked ryos/ at HEAD, and runs
@@ -229,6 +232,43 @@ class Check:
             if f"RYOS {version} (" not in said or not said.endswith(f", {head})"):
                 problems.append(f"{variant} says {said!r}, not RYOS {version} at {head}")
         need(not problems, "; ".join(problems))
+
+    def signature(self) -> None:
+        sums = self.dist / "SHA256SUMS.txt"
+        sig = self.dist / "SHA256SUMS.txt.sig"
+        need(sig.exists(), "no SHA256SUMS.txt.sig in dist/: sign SHA256SUMS.txt with "
+             "tools/sign_release.py after the build, before this check")
+        by_variant = {variant: name for name, variant in ZIPS.items()}
+        problems = []
+        for variant in ("windows", "windows-ai", "agent"):
+            zip_path = self.dist / by_variant[variant]
+            got = self.cli(variant, self.appdata("verify"), "verify", str(zip_path))
+            if got.returncode != 0:
+                problems.append(f"{variant} refused {zip_path.name} (exit {got.returncode}): "
+                                f"{(got.stdout + got.stderr)[-200:]!r}")
+        need(not problems, "; ".join(problems))
+        zip_path = self.dist / by_variant["agent"]
+        version = launch_smoke._source_version()
+        planted = {
+            "signed with the test key": (
+                sums.read_bytes(),
+                ed25519_signer.sig_file(ed25519_signer.TEST_SEED, version, sums.read_bytes())),
+            "changed": (sums.read_bytes().replace(b"0", b"1", 1), sig.read_bytes()),
+        }
+        for number, (what, (planted_sums, planted_sig)) in enumerate(planted.items()):
+            folder = self.root / f"planted-{number}"
+            folder.mkdir()
+            try:
+                os.link(zip_path, folder / zip_path.name)
+            except OSError:
+                shutil.copy2(zip_path, folder / zip_path.name)
+            (folder / "SHA256SUMS.txt").write_bytes(planted_sums)
+            (folder / "SHA256SUMS.txt.sig").write_bytes(planted_sig)
+            got = self.cli("agent", self.appdata("planted"), "verify",
+                           str(folder / zip_path.name))
+            need(got.returncode == 125,
+                 f"the agent build did not refuse a zip with SHA256SUMS.txt {what} "
+                 f"(exit {got.returncode}): {(got.stdout + got.stderr)[-200:]!r}")
 
     def smoke(self, *args) -> None:
         got = launch_smoke.run_bounded([sys.executable, str(TESTS / "launch_smoke.py"), *args],
@@ -568,6 +608,7 @@ def main() -> int:
 
     check.case("zips", check.zips)
     check.case("build_commit", check.build_commit)
+    check.case("signature", check.signature)
     check.case("launch_windows", check.smoke, "--exe", str(check.exe("windows", "RYOS.exe")))
     check.case("launch_windows_ai", check.smoke, "--exe",
                str(check.exe("windows-ai", "RYOS.exe")))
@@ -608,6 +649,7 @@ os.environ["LOCALAPPDATA"] = os.path.join(SELF_APPDATA, "local")
 atexit.register(shutil.rmtree, SELF_APPDATA, ignore_errors=True)
 sys.path[:0] = [str(ROOT), str(TESTS)]
 import build_release  # noqa: E402
+import ed25519_signer  # noqa: E402
 import launch_smoke  # noqa: E402
 from ryos.db import SCHEMA_VERSION, ScriptDB  # noqa: E402
 

@@ -27,6 +27,8 @@ COPYRIGHT = "© 2026 Lê Quang Vũ (Zenitus)"
 _COMMIT = re.compile(r"[0-9a-f]{7,40}(-dirty)?")
 _RELEASE_KEY = re.compile(r"[0-9a-f]{64}")
 
+RELEASE_PUBLIC_KEY = "3448252042d2cd24b977ba0688acf6c3d4ca914aaf4f7df80cbac399008006a8"
+
 WINDOWS = "windows"             # RYOS.exe + ryos-cli.exe, no MCP server
 WINDOWS_AI = "windows-ai"       # RYOS.exe + ryos-cli.exe with the MCP server
 AGENT = "agent"                 # ryos-cli.exe alone, with the MCP server, no Qt
@@ -143,7 +145,8 @@ def git_commit(root, run=None) -> str | None:
     return found
 
 
-def build_info_source(which: str, commit: str | None = None) -> str:
+def build_info_source(which: str, commit: str | None = None,
+                      release_key: str | None = None) -> str:
     """The text of ``ryos/_build_info.py`` for a build of ``which``."""
     if which not in BUILD_FOLDERS:
         raise ValueError(f"unknown build variant {which!r}")
@@ -154,4 +157,8 @@ def build_info_source(which: str, commit: str | None = None) -> str:
         if not _COMMIT.fullmatch(commit):
             raise ValueError(f"not a commit: {commit!r}")
         text += f"COMMIT = {commit!r}\n"
+    if release_key is not None:
+        if not _RELEASE_KEY.fullmatch(release_key):
+            raise ValueError(f"not a public key: {release_key!r}")
+        text += f"RELEASE_KEY = {release_key!r}\n"
     return text

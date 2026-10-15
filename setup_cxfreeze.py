@@ -141,7 +141,8 @@ if VARIANT == buildinfo.AGENT:
     })
     EXECUTABLES = [e for e in EXECUTABLES if e.target_name == "ryos-cli.exe"]
 
-BUILD_INFO.write_text(buildinfo.build_info_source(VARIANT, COMMIT), encoding="utf-8")
+BUILD_INFO.write_text(buildinfo.build_info_source(
+    VARIANT, COMMIT, buildinfo.RELEASE_PUBLIC_KEY), encoding="utf-8")
 try:
     setup(
         name="RYOS",
