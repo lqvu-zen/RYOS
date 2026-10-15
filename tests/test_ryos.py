@@ -8478,9 +8478,40 @@ class TestReleaseZipChecks(unittest.TestCase):
                                    ["pyproject.toml", "run.bat", "install_uv.bat", "icon.ico",
                                     "ryos/__init__.py", "ryos/__pycache__/db.pyc"]))
 
+    def test_the_build_without_agents_carries_no_cryptography(self):
+        good = ["RYOS.exe", "ryos-cli.exe", "lib/PySide6/Qt6Core.dll"]
+        self.assertEqual(self.check("RYOS-windows.zip",
+                                    good + ["lib/cryptography/__init__.pyc"]),
+                         ["cryptography is in the build without AI agents"])
+        self.assertEqual(self.check("RYOS-windows-ai.zip",
+                                    good + ["lib/mcp/__init__.pyc",
+                                            "lib/cryptography/__init__.pyc"]), [])
+
 
 class TestBuildInfo(unittest.TestCase):
     """Which download this RYOS is (ryos/buildinfo.py)."""
+
+    def test_release_key_comes_only_from_the_build(self):
+        from ryos import buildinfo
+        key = "ab" * 32
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}):
+            self.assertIsNone(buildinfo.release_key())
+        for fake, want in (
+                (types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=key), bytes.fromhex(key)),
+                (types.SimpleNamespace(VARIANT="agent", RELEASE_KEY=key), bytes.fromhex(key)),
+                (types.SimpleNamespace(VARIANT="windows"), None),
+                (types.SimpleNamespace(VARIANT="portable", RELEASE_KEY=key), None),
+                (types.SimpleNamespace(VARIANT="odd", RELEASE_KEY=key), None),
+                (types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=key.upper()), None),
+                (types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=key[:-2]), None),
+                (types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=bytes.fromhex(key)), None)):
+            with self.subTest(fake=fake), \
+                    mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+                self.assertEqual(buildinfo.release_key(), want)
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}), \
+                mock.patch.dict(os.environ, {"RYOS_RELEASE_KEY": key}):
+            self.assertIsNone(buildinfo.release_key())
+        self.assertNotIn("RELEASE_KEY", buildinfo.build_info_source("windows", "1a2b3c4"))
 
     def test_from_source_without_a_builds_file(self):
         from ryos import buildinfo

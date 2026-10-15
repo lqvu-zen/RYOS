@@ -25,6 +25,7 @@ COMPANY = "Zenitus (Lê Quang Vũ)"
 COPYRIGHT = "© 2026 Lê Quang Vũ (Zenitus)"
 
 _COMMIT = re.compile(r"[0-9a-f]{7,40}(-dirty)?")
+_RELEASE_KEY = re.compile(r"[0-9a-f]{64}")
 
 WINDOWS = "windows"             # RYOS.exe + ryos-cli.exe, no MCP server
 WINDOWS_AI = "windows-ai"       # RYOS.exe + ryos-cli.exe with the MCP server
@@ -90,6 +91,20 @@ def commit() -> str | None:
         return None
     if isinstance(found, str) and _COMMIT.fullmatch(found):
         return found
+    return None
+
+
+def release_key() -> bytes | None:
+    """The Ed25519 public key a build trusts for its updates' signatures;
+    None from source or when the build file carries none."""
+    if variant() == PORTABLE:
+        return None
+    try:
+        found = importlib.import_module("ryos._build_info").RELEASE_KEY
+    except (ImportError, AttributeError):
+        return None
+    if isinstance(found, str) and _RELEASE_KEY.fullmatch(found):
+        return bytes.fromhex(found)
     return None
 
 

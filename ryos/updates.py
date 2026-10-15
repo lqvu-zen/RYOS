@@ -1,5 +1,7 @@
 """Find this download's update on GitHub and download it, checked against
-SHA256SUMS.txt, into the updates folder (``settings.updates_dir``).
+SHA256SUMS.txt and its signature (``signature``), into the updates folder
+(``settings.updates_dir``); and check a zip downloaded by hand
+(``verify_zip``).
 
 Toolkit-free; the network is passed in as ``open_url`` (``urllib.request.urlopen``
 unless a caller gives another), so tests serve releases from 127.0.0.1.
@@ -18,9 +20,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import buildinfo, settings
+from . import __version__, buildinfo, settings, signature
 from .logger import get_logger
 from .notifications import NEWER, _parse_version, update_status
+from .signature import SIG_NAME
 
 _log = get_logger("updates")
 
@@ -163,8 +166,23 @@ def _fetch_into(open_url: OpenUrl | None, asset: Asset, part: Path) -> None:
         raise _CutOff("the connection closed early")
 
 
+NO_KEY = ("This RYOS carries no release key, so it cannot check an update's "
+          "signature and downloads nothing: get the new version from the release page.")
+
+
+def _fetch_small(open_url: OpenUrl | None, asset: Asset, limit: int | None = None) -> bytes:
+    with _open(open_url, asset.url, 30) as resp:
+        return resp.read() if limit is None else resp.read(limit)
+
+
+def _read_small(path: Path, limit: int) -> bytes:
+    with open(path, "rb") as f:
+        return f.read(limit)
+
+
 def download(release: Release, which: str | None = None, *,
-             open_url: OpenUrl | None = None, attempts: int = 3) -> Outcome:
+             open_url: OpenUrl | None = None, attempts: int = 3,
+             key: bytes | None = None, current: str | None = None) -> Outcome:
     which = which or buildinfo.variant()
     name = asset_name(which)
     if name is None:
@@ -173,6 +191,9 @@ def download(release: Release, which: str | None = None, *,
     if not isinstance(release.tag, str) or not _TAG.fullmatch(release.tag):
         return Outcome(False, f"The release tag {release.tag!r} is not a version "
                        "RYOS can use, so nothing was downloaded.")
+    key = key or buildinfo.release_key()
+    if key is None:
+        return Outcome(False, NO_KEY)
     asset = release.assets.get(name)
     if asset is None:
         return Outcome(False, f"RYOS {release.tag} has no {name}, so there is "
@@ -181,14 +202,31 @@ def download(release: Release, which: str | None = None, *,
     if sums_asset is None:
         return Outcome(False, f"RYOS {release.tag} has no {SUMS_NAME}, so its "
                        f"{name} cannot be checked and was not downloaded.")
+    sig_asset = release.assets.get(SIG_NAME)
+    if sig_asset is None:
+        return Outcome(False, f"RYOS {release.tag} has no {SIG_NAME}, so its "
+                       f"{name} cannot be checked and was not downloaded.")
+    try:
+        sums_bytes = _fetch_small(open_url, sums_asset)
+    except (OSError, http.client.HTTPException) as e:
+        return Outcome(False, f"Could not download {SUMS_NAME} for RYOS "
+                       f"{release.tag}: {e}")
+    try:
+        sig_bytes = _fetch_small(open_url, sig_asset, signature.MAX_SIZE + 1)
+    except (OSError, http.client.HTTPException) as e:
+        return Outcome(False, f"Could not download {SIG_NAME} for RYOS "
+                       f"{release.tag}: {e}")
+    checked = signature.check(sums_bytes, sig_bytes, key, version=release.tag,
+                              current=current or __version__)
+    if not checked.ok:
+        return Outcome(False, f"RYOS {release.tag} was not downloaded: {checked.message}")
     folder = settings.updates_dir(release.tag)
     try:
         folder.mkdir(parents=True, exist_ok=True)
-        with _open(open_url, sums_asset.url, 30) as resp:
-            sums_bytes = resp.read()
         (folder / SUMS_NAME).write_bytes(sums_bytes)
-    except (OSError, http.client.HTTPException) as e:
-        return Outcome(False, f"Could not download {SUMS_NAME} for RYOS "
+        (folder / SIG_NAME).write_bytes(sig_bytes)
+    except OSError as e:
+        return Outcome(False, f"Could not save {SUMS_NAME} for RYOS "
                        f"{release.tag}: {e}")
     expected = parse_sums(sums_bytes.decode("utf-8", "replace")).get(name)
     if expected is None:
@@ -230,7 +268,7 @@ def download(release: Release, which: str | None = None, *,
         return Outcome(False, f"Could not put {name} for RYOS {release.tag} in "
                        f"place: {e}; it is tried again next time.")
     return Outcome(True, f"Downloaded {name} for RYOS {release.tag} and checked "
-                   f"it against {SUMS_NAME}.", target)
+                   f"it against its signed {SUMS_NAME}.", target)
 
 
 def _unreadable(name: str, tag: str, error: OSError) -> Outcome:
@@ -252,19 +290,66 @@ def wants_download(result, current: str, *, allowed: bool,
     return update_status(result.check, current)[0] == NEWER
 
 
-def downloaded(tag: str, which: str | None = None) -> Path | None:
+def downloaded(tag: str, which: str | None = None, *,
+               key: bytes | None = None) -> Path | None:
     name = asset_name(which)
     if name is None or not isinstance(tag, str) or not _TAG.fullmatch(tag):
+        return None
+    key = key or buildinfo.release_key()
+    if key is None:
         return None
     folder = settings.updates_dir(tag)
     target = folder / name
     try:
         if not target.is_file():
             return None
-        sums = (folder / SUMS_NAME).read_text(encoding="utf-8", errors="replace")
-        expected = parse_sums(sums).get(name)
+        sums = (folder / SUMS_NAME).read_bytes()
+        sig = _read_small(folder / SIG_NAME, signature.MAX_SIZE + 1)
+        if not signature.check(sums, sig, key, version=tag).ok:
+            return None
+        expected = parse_sums(sums.decode("utf-8", "replace")).get(name)
         if expected is None or _sha256(target) != expected:
             return None
     except OSError:
         return None
     return target
+
+
+def verify_zip(path: str | os.PathLike, *, key: bytes | None = None,
+               current: str | None = None) -> Outcome:
+    """Check a zip downloaded by hand, with the SHA256SUMS.txt and its
+    signature from the same release beside it."""
+    path = Path(path)
+    if not path.is_file():
+        return Outcome(False, f"There is no file at {path}.")
+    key = key or buildinfo.release_key()
+    if key is None:
+        return Outcome(False, "This RYOS carries no release key (it runs from source "
+                       "or was built without one), so it cannot check a download's "
+                       "signature.")
+    sums_path = path.with_name(SUMS_NAME)
+    sig_path = path.with_name(SIG_NAME)
+    if not sums_path.is_file():
+        return Outcome(False, f"There is no {SUMS_NAME} beside {path.name}: download "
+                       f"it from the same release into {path.parent}.")
+    try:
+        sums = sums_path.read_bytes()
+        sig = _read_small(sig_path, signature.MAX_SIZE + 1) if sig_path.is_file() else None
+    except OSError as e:
+        return Outcome(False, f"Could not read {SUMS_NAME} or {SIG_NAME}: {e}")
+    checked = signature.check(sums, sig, key, current=current or __version__)
+    if not checked.ok:
+        return Outcome(False, f"{path.name} was not verified: {checked.message}")
+    expected = parse_sums(sums.decode("utf-8", "replace")).get(path.name)
+    if expected is None:
+        return Outcome(False, f"{SUMS_NAME} has no line for {path.name}, so it "
+                       "cannot be checked.")
+    try:
+        matches = _sha256(path) == expected
+    except OSError as e:
+        return Outcome(False, f"Could not read {path.name}: {e}")
+    if not matches:
+        return Outcome(False, f"{path.name} does not match its line in {SUMS_NAME}: "
+                       "it has been changed, or it is not this release's file.")
+    return Outcome(True, f"{path.name} is RYOS {checked.version}: signed with this "
+                   f"RYOS's release key and matching {SUMS_NAME}.", path)

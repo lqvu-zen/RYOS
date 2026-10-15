@@ -75,6 +75,8 @@ def problems_in(name: str, entries: list[str]) -> list[str]:
         found += [f"no {exe}" for exe in ("RYOS.exe", "ryos-cli.exe") if exe not in files]
         if has_mcp:
             found.append("the MCP SDK is in the build without AI agents")
+        if any(e.startswith("lib/cryptography/") for e in entries):
+            found.append("cryptography is in the build without AI agents")
     elif name == "RYOS-windows-ai.zip":
         found += [f"no {exe}" for exe in ("RYOS.exe", "ryos-cli.exe") if exe not in files]
         if not has_mcp:

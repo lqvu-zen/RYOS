@@ -21,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from ryos import __version__, cli  # noqa: E402
 from ryos.db import FAIL_STOP, SOURCE_CLI, ScriptDB  # noqa: E402
@@ -593,7 +594,8 @@ class TestVersion(unittest.TestCase):
         from unittest import mock
         from ryos import settings
         fetch = lambda: ("v99.0.0", "https://x/r")  # noqa: E731
-        build = types.SimpleNamespace(VARIANT="windows")
+        from ed25519_signer import TEST_PUBLIC, TEST_SEED, sig_file
+        build = types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=TEST_PUBLIC.hex())
         with mock.patch.dict(sys.modules, {"ryos._build_info": build}):
             code, out = self.run_version("--check", fetch=fetch)
             self.assertEqual(code, 0)
@@ -603,8 +605,9 @@ class TestVersion(unittest.TestCase):
             folder.mkdir(parents=True)
             body = b"the new RYOS"
             (folder / "RYOS-windows.zip").write_bytes(body)
-            (folder / "SHA256SUMS.txt").write_text(
-                f"{hashlib.sha256(body).hexdigest()}  RYOS-windows.zip\n")
+            sums = f"{hashlib.sha256(body).hexdigest()}  RYOS-windows.zip\n".encode()
+            (folder / "SHA256SUMS.txt").write_bytes(sums)
+            (folder / "SHA256SUMS.txt.sig").write_bytes(sig_file(TEST_SEED, "99.0.0", sums))
             code, out = self.run_version("--check", fetch=fetch)
         self.assertEqual(code, 0)
         self.assertIn("RYOS-windows.zip is downloaded and checked", out)
@@ -622,6 +625,105 @@ class TestVersion(unittest.TestCase):
         self.assertNotIn("Not downloaded yet", out)
         self.assertNotIn("downloaded and checked", out)
         self.assertFalse((self.local / "RYOS").exists())
+
+
+class TestVerify(unittest.TestCase):
+    def setUp(self):
+        import hashlib
+        import types
+        from ed25519_signer import TEST_PUBLIC, TEST_SEED, sig_file
+        self.seed, self.sig_file = TEST_SEED, sig_file
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.zip = self.tmp / "RYOS-windows.zip"
+        self.zip.write_bytes(b"the new RYOS")
+        self.sums = (hashlib.sha256(b"the new RYOS").hexdigest().encode()
+                     + b"  RYOS-windows.zip\n")
+        self.sign("99.0.0")
+        self.build = types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=TEST_PUBLIC.hex())
+
+    def sign(self, version, seed=None, sums=None):
+        sums = self.sums if sums is None else sums
+        (self.tmp / "SHA256SUMS.txt").write_bytes(sums)
+        (self.tmp / "SHA256SUMS.txt.sig").write_bytes(
+            self.sig_file(seed or self.seed, version, sums))
+
+    def verify(self, path=None, build="default"):
+        from unittest import mock
+        out, err = io.StringIO(), io.StringIO()
+        build = self.build if build == "default" else build
+        with mock.patch.dict(sys.modules, {"ryos._build_info": build}):
+            code = cli.main(["verify", str(path or self.zip)], db=None, settings=None,
+                            out=out, err=err)
+        return code, out.getvalue(), err.getvalue()
+
+    def refused(self, *words, **kw):
+        code, out, err = self.verify(**kw)
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertEqual(out, "")
+        self.assertTrue(err.startswith("ryos: "), err)
+        for said in words:
+            self.assertIn(said, err)
+        return err
+
+    def test_verify_is_a_command(self):
+        self.assertIn("verify", cli.COMMANDS)
+        self.assertTrue(cli.is_cli(["verify", "x.zip"]))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["--help"], db=None, settings={}), 0)
+        self.assertIn("verify", out.getvalue())
+
+    def test_a_good_zip_exits_0_naming_its_version(self):
+        code, out, err = self.verify()
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.strip(), "RYOS-windows.zip is RYOS 99.0.0: signed with this "
+                                      "RYOS's release key and matching SHA256SUMS.txt.")
+        self.assertEqual(err, "")
+
+    def test_a_tampered_zip_is_refused_with_125(self):
+        self.zip.write_bytes(b"the new RYOS, changed")
+        self.refused("does not match its line in SHA256SUMS.txt")
+
+    def test_a_tampered_sums_is_refused_with_125(self):
+        (self.tmp / "SHA256SUMS.txt").write_bytes(self.sums + b"0" * 64 + b"  x.zip\n")
+        self.refused("has been changed")
+
+    def test_a_missing_signature_is_refused_with_125(self):
+        (self.tmp / "SHA256SUMS.txt.sig").unlink()
+        self.refused("there is no SHA256SUMS.txt.sig")
+
+    def test_a_wrong_key_is_refused_with_125(self):
+        from ed25519_signer import OTHER_SEED
+        self.sign("99.0.0", seed=OTHER_SEED)
+        self.refused("different key")
+
+    def test_a_signed_older_version_is_refused_with_125(self):
+        self.sign("1.0.0")
+        self.refused("RYOS 1.0.0, older than this RYOS")
+
+    def test_without_a_release_key_it_says_so(self):
+        import types
+        self.refused("carries no release key", build=None)
+        self.refused("carries no release key", build=types.SimpleNamespace(VARIANT="windows"))
+
+    def test_a_missing_zip_is_refused(self):
+        self.refused("There is no file at", path=self.tmp / "nothing.zip")
+        (self.tmp / "SHA256SUMS.txt").unlink()
+        self.refused("There is no SHA256SUMS.txt beside RYOS-windows.zip")
+
+    def test_needs_no_database_or_settings(self):
+        from unittest import mock
+
+        from ryos import logger, settings
+
+        def boom(*_a, **_k):
+            raise AssertionError("verify must not need this")
+        with mock.patch.object(cli, "ScriptDB", boom), \
+                mock.patch.object(settings, "_load_settings", boom), \
+                mock.patch.object(logger, "setup_logging", boom):
+            code, _out, err = self.verify()
+        self.assertEqual(code, 0, err)
 
 
 class TestMcpInTheBuildWithoutIt(unittest.TestCase):

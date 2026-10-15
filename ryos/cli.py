@@ -13,6 +13,7 @@ the window.
     ryos preset add <script> <label> --params="..."   |   ryos preset remove <script> <label>
     ryos history [<script>] [--pipeline] [--limit N] [--json]
     ryos version [--check]
+    ryos verify <zip>                         (a zip downloaded by hand, with SHA256SUMS.txt and its .sig beside it)
 
 Adding, editing, removing and exposing follow the script dialog's own rules
 (``ryos/manage.py``). Letting agents run something, and removing, ask at
@@ -53,7 +54,8 @@ from .headless import (PIPELINE, SCRIPT, TIMEOUT, HeadlessError, HeadlessRunner,
 from .jobs import STOPPED
 
 COMMANDS = ("list", "run", "pipeline", "mcp",
-            "add", "edit", "remove", "expose", "preset", "history", "version")
+            "add", "edit", "remove", "expose", "preset", "history", "version",
+            "verify")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -173,6 +175,11 @@ def _parser() -> argparse.ArgumentParser:
                                          "--check asks GitHub whether a newer one is out.")
     ve.add_argument("--check", action="store_true",
                     help="Check for a newer release, and name the file to download.")
+
+    vz = sub.add_parser("verify", help="Check a RYOS zip downloaded by hand: its "
+                                        "SHA256SUMS.txt and SHA256SUMS.txt.sig, from "
+                                        "the same release, go beside it.")
+    vz.add_argument("zip", metavar="ZIP")
 
     hi = sub.add_parser("history", help="What has run, newest first.")
     hi.add_argument("ref", nargs="?", metavar="SCRIPT")
@@ -463,6 +470,18 @@ def _readable(stream: TextIO) -> None:
             pass
 
 
+def _verify(path: str, out: TextIO, err: TextIO) -> int:
+    from . import updates
+    for stream in (out, err):
+        _readable(stream)
+    outcome = updates.verify_zip(path)
+    if not outcome.ok:
+        print(f"ryos: {outcome.message}", file=err)
+        return EXIT_REFUSED
+    print(outcome.message, file=out)
+    return EXIT_OK
+
+
 def _notify_running_window() -> None:
     from .single_instance import RELOAD, signal_running
     signal_running(RELOAD)
@@ -512,6 +531,8 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
             status, tag, url, __version__, buildinfo.download_name(),
             downloaded=staged, updates_itself=updates_itself), file=out)
         return EXIT_FAILED if status == notifications.UNREACHABLE else EXIT_OK
+    if args.command == "verify":
+        return _verify(args.zip, out, err)
     if args.command == "mcp":
         # Its own start-up: it logs to ryos-mcp.log, and it is long-lived.
         from .mcpserver import serve
