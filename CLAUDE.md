@@ -78,6 +78,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Find, download and check this download's update | `ryos/updates.py`     |
 | Ed25519 signature check (verify only)          | `ryos/ed25519.py`       |
 | `SHA256SUMS.txt.sig` format and its check      | `ryos/signature.py`     |
+| Apply / roll back an update: swap plan, journal | `ryos/swap.py`         |
 | Which download this is (windows/agent/source)  | `ryos/buildinfo.py`     |
 | `ScriptDB` (all SQLite logic)                  | `ryos/db.py`            |
 | `detect_interpreter`, `build_command`          | `ryos/interpreter.py`   |

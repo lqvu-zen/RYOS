@@ -42,8 +42,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Callable, TextIO
 
 from . import __version__, buildinfo, manage
@@ -56,6 +58,7 @@ from .jobs import STOPPED
 COMMANDS = ("list", "run", "pipeline", "mcp",
             "add", "edit", "remove", "expose", "preset", "history", "version",
             "verify")
+HIDDEN_COMMANDS = ("apply-update",)
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -75,7 +78,7 @@ DEFAULT_TAIL = 50
 def is_cli(argv: list[str]) -> bool:
     """Whether a command line is for the CLI rather than the window. Plain
     ``ryos`` (and ``ryos --startup``) still opens the window."""
-    return bool(argv) and (argv[0] in COMMANDS
+    return bool(argv) and (argv[0] in COMMANDS + HIDDEN_COMMANDS
                            or argv[0] in ("-h", "--help", "--version"))
 
 
@@ -482,6 +485,91 @@ def _verify(path: str, out: TextIO, err: TextIO) -> int:
     return EXIT_OK
 
 
+def _apply_update_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="ryos apply-update",
+        description="Swap a downloaded, checked update into place, roll back, or "
+                    "finish a swap a crash left behind. Run by RYOS itself.")
+    p.add_argument("--install", required=True, metavar="DIR")
+    how = p.add_mutually_exclusive_group(required=True)
+    how.add_argument("--version", dest="tag", metavar="TAG")
+    how.add_argument("--rollback", action="store_true")
+    how.add_argument("--recover", action="store_true")
+    p.add_argument("--from-version", metavar="V")
+    p.add_argument("--wait-pid", type=int, action="append", default=[], metavar="PID")
+    p.add_argument("--restart", action="store_true")
+    return p
+
+
+def _helper_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[1]
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    a = os.path.normcase(os.path.abspath(path))
+    b = os.path.normcase(os.path.abspath(folder))
+    try:
+        return os.path.commonpath([a, b]) == b
+    except ValueError:
+        return False
+
+
+def _apply_update(argv: list[str], out: TextIO, err: TextIO, effects) -> int:
+    try:
+        args = _apply_update_parser().parse_args(argv)
+    except SystemExit as e:
+        return e.code if isinstance(e.code, int) else EXIT_OK
+
+    def refuse(message: str) -> int:
+        print(f"ryos: {message}", file=err)
+        return EXIT_REFUSED
+    if buildinfo.variant() == buildinfo.PORTABLE:
+        return refuse("RYOS from source does not update itself.")
+    from . import swap
+    try:
+        folders = swap.folders_for(args.install)
+    except ValueError as e:
+        return refuse(str(e))
+    helper = _helper_dir()
+    for folder in (folders.install, folders.previous, folders.incoming,
+                   folders.incoming_part, folders.outgoing):
+        if _inside(helper, folder):
+            return refuse(f"This ryos-cli runs from {helper}, inside {folder}, which "
+                          "the swap moves; run the copy in the updates folder.")
+    os.chdir(helper)
+    from .logger import setup_logging
+    from .settings import CLI_LOG_PATH, _load_settings
+    settings = _load_settings()
+    setup_logging(settings.get("logging_enabled", True),
+                  settings.get("log_level", "INFO"), CLI_LOG_PATH)
+    if args.recover:
+        result = swap.recover(effects=effects)
+        if result is None:
+            print("There is no unfinished update to finish.", file=out)
+            return EXIT_OK
+    elif args.rollback:
+        result = swap.roll_back(folders.install, wait_pids=args.wait_pid,
+                                restart=args.restart, from_version=args.from_version,
+                                effects=effects)
+    else:
+        from . import updates
+        zip_path = updates.downloaded(args.tag)
+        if zip_path is None:
+            return refuse(f"RYOS {args.tag} is not downloaded and checked, so it "
+                          "cannot be applied.")
+        result = swap.apply_update(folders.install, zip_path, version=args.tag,
+                                   from_version=args.from_version,
+                                   wait_pids=args.wait_pid, restart=args.restart,
+                                   effects=effects)
+    if result.code == swap.DONE:
+        print(result.message, file=out)
+        return EXIT_OK
+    print(f"ryos: {result.message}", file=err)
+    return EXIT_REFUSED if result.code == swap.REFUSED else EXIT_FAILED
+
+
 def _notify_running_window() -> None:
     from .single_instance import RELOAD, signal_running
     signal_running(RELOAD)
@@ -497,11 +585,14 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
          notify_window: Callable[[], object] | None = None,
          rebuild_window: Callable[[], object] | None = None,
          ask: Callable[[str], bool | None] | None = None,
-         fetch_release: Callable[[], object] | None = None) -> int:
+         fetch_release: Callable[[], object] | None = None,
+         swap_effects=None) -> int:
     """Run one command. Everything with an effect outside this process is an
     argument, so tests pass throwaway ones; the defaults are the real ones."""
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
+    if argv and argv[0] == "apply-update":
+        return _apply_update(argv[1:], out, err, swap_effects)
     try:
         args = _parse(argv)
     except SystemExit as e:             # --help, --version, or a bad line

@@ -726,6 +726,150 @@ class TestVerify(unittest.TestCase):
         self.assertEqual(code, 0, err)
 
 
+class TestApplyUpdate(unittest.TestCase):
+    OLD = {"RYOS.exe": b"old window", "ryos-cli.exe": b"old cli", "lib/a.pyc": b"old"}
+    NEW = {"RYOS.exe": b"new window", "ryos-cli.exe": b"new cli!", "lib/a.pyc": b"new a"}
+
+    def setUp(self):
+        import types
+        from unittest import mock
+
+        from ed25519_signer import TEST_PUBLIC
+
+        from ryos import logger
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.addCleanup(os.chdir, os.getcwd())
+        for patch in (mock.patch.dict(os.environ, {"LOCALAPPDATA": str(self.tmp / "local")}),
+                      mock.patch.object(logger, "setup_logging", lambda *a, **k: None)):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.install = self.tmp / "apps" / "RYOS"
+        self.write(self.install, self.OLD)
+        self.build = types.SimpleNamespace(VARIANT="windows", RELEASE_KEY=TEST_PUBLIC.hex())
+        self.spawned: list = []
+        self.waited: list = []
+
+    @staticmethod
+    def write(folder, files):
+        for name, body in files.items():
+            (folder / name).parent.mkdir(parents=True, exist_ok=True)
+            (folder / name).write_bytes(body)
+
+    def read(self):
+        return {p.relative_to(self.install).as_posix(): p.read_bytes()
+                for p in self.install.rglob("*") if p.is_file()}
+
+    def stage(self, tag="v99.0.0"):
+        import hashlib
+        import zipfile
+
+        from ed25519_signer import TEST_SEED, sig_file
+
+        from ryos import settings
+        folder = settings.updates_dir(tag)
+        folder.mkdir(parents=True)
+        zip_path = folder / "RYOS-windows.zip"
+        with zipfile.ZipFile(zip_path, "w") as z:
+            for name, body in self.NEW.items():
+                z.writestr(name, body)
+        sums = f"{hashlib.sha256(zip_path.read_bytes()).hexdigest()}  RYOS-windows.zip\n"
+        (folder / "SHA256SUMS.txt").write_bytes(sums.encode())
+        (folder / "SHA256SUMS.txt.sig").write_bytes(
+            sig_file(TEST_SEED, tag.lstrip("v"), sums.encode()))
+
+    def apply(self, *argv, build="default", **over):
+        from unittest import mock
+
+        from ryos import swap
+
+        def wait(pid, timeout):
+            self.waited.append(pid)
+            return True
+
+        def spawn(argv, cwd):
+            self.spawned.append(list(argv))
+        effects = swap.Effects(**{"wait_for_exit": wait, "spawn": spawn,
+                                  "sleep": lambda s: None, **over})
+        out, err = io.StringIO(), io.StringIO()
+        build = self.build if build == "default" else build
+        with mock.patch.dict(sys.modules, {"ryos._build_info": build}):
+            code = cli.main(["apply-update", "--install", str(self.install), *argv],
+                            db=None, settings=None, out=out, err=err,
+                            swap_effects=effects)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_is_a_hidden_cli_command(self):
+        self.assertTrue(cli.is_cli(["apply-update", "--recover"]))
+        self.assertNotIn("apply-update", cli.COMMANDS)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cli.main(["--help"], db=None, settings={}), 0)
+        self.assertNotIn("apply-update", out.getvalue())
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(cli.main(["frobnicate"], db=None, settings={}), cli.EXIT_USAGE)
+        self.assertNotIn("apply-update", err.getvalue())
+
+    def test_refused_from_source(self):
+        code, _out, err = self.apply("--version", "v99.0.0", build=None)
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("from source", err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_refused_when_the_tag_is_not_downloaded(self):
+        code, _out, err = self.apply("--version", "v99.0.0")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("not downloaded and checked", err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_refused_when_the_helper_runs_inside_the_install(self):
+        from unittest import mock
+        self.stage()
+        with mock.patch.object(cli, "_helper_dir", lambda: self.install / "lib"):
+            code, _out, err = self.apply("--version", "v99.0.0")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("inside", err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_applies_a_downloaded_update_and_rolls_back(self):
+        self.stage()
+        code, out, err = self.apply("--version", "v99.0.0", "--from-version", "1.0.0",
+                                    "--wait-pid", "4242", "--restart")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertIn("now v99.0.0", out)
+        self.assertEqual(self.read(), self.NEW)
+        self.assertEqual(self.waited, [4242])
+        self.assertEqual(self.spawned, [[str(self.install / "RYOS.exe")]])
+        code, out, err = self.apply("--rollback", "--from-version", "99.0.0")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertEqual(self.read(), self.OLD)
+        code, out, _err = self.apply("--recover")
+        self.assertEqual(code, cli.EXIT_OK)
+        self.assertIn("no unfinished update", out)
+
+    def test_a_failed_swap_exits_1_and_nothing_to_roll_back_125(self):
+        code, _out, err = self.apply("--rollback")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertIn("no earlier build", err)
+        self.stage()
+
+        def extract(*_a):
+            raise OSError(5, "Access is denied")
+        code, _out, err = self.apply("--version", "v99.0.0", extract=extract)
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn("antivirus", err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_a_bad_command_line_exits_2(self):
+        for argv in ([], ["--version", "v1", "--rollback"], ["--wait-pid", "x", "--recover"]):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = cli.main(["apply-update", *argv], db=None, settings=None)
+            self.assertEqual(code, cli.EXIT_USAGE, argv)
+            self.assertIn("ryos apply-update", err.getvalue())
+
+
 class TestMcpInTheBuildWithoutIt(unittest.TestCase):
     def test_says_which_download_has_it_and_exits_refused(self):
         import types
@@ -776,6 +920,28 @@ class TestTheRealEntryPoint(unittest.TestCase):
         logs = data / "RYOS" / "logs"
         self.assertTrue((logs / "ryos-cli.log").exists())
         self.assertFalse((logs / "ryos.log").exists())
+
+    def test_apply_update_takes_no_lock_writes_no_startup_entry_and_imports_no_qt(self):
+        data = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, data, ignore_errors=True)
+        probe = (
+            "import sys\n"
+            "import ryos.__main__ as m\n"
+            "def boom(*a, **k): raise AssertionError('not for the CLI')\n"
+            "m.single_instance.acquire = boom\n"
+            "m._sync_startup_command = boom\n"
+            f"sys.argv = ['ryos', 'apply-update', '--install', {str(data / 'RYOS')!r}, "
+            "'--recover']\n"
+            "code = m.main()\n"
+            "print('QT' if 'PySide6' in sys.modules else 'NOQT', code)\n"
+        )
+        env = {**os.environ, "APPDATA": str(data), "LOCALAPPDATA": str(data / "local"),
+               "RYOS_NO_REGISTRY": "1", "RYOS_NO_TOASTS": "1"}
+        proc = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, env=env,
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.strip().splitlines()[-1], f"NOQT {cli.EXIT_REFUSED}")
+        self.assertIn("from source", proc.stderr)
 
 
 if __name__ == "__main__":

@@ -85,6 +85,7 @@ files = [
     "ryos/updates.py",
     "ryos/ed25519.py",
     "ryos/signature.py",
+    "ryos/swap.py",
     "ryos/logger.py",
     "ryos/search.py",
     "ryos/dragdrop.py",
