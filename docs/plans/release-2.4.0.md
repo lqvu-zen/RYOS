@@ -1,6 +1,6 @@
 # RYOS v2.4.0 (working name): self-update, smarter runs, agents and pipelines, automation
 
-_Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the secretary, 2026-10-13, from Vũ's decisions), after v2.3.1 shipped. Approved by Vũ 2026-10-14 ("all good": every planner recommendation accepted). Steps 31–36 added and step 29 amended 2026-10-19 from the improvement plan, approved by Vũ ("approve all the recommendations"). Step 37 added 2026-10-19 from Vũ's decision (red CI). This is the only plan after 2.3.1. The version number is Vũ's: "2.4.0" is a working name. Each code step goes through the `ryos-*` agent team via its skill, in a fresh conversation._
+_Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the secretary, 2026-10-13, from Vũ's decisions), after v2.3.1 shipped. Approved by Vũ 2026-10-14 ("all good": every planner recommendation accepted). Steps 31–36 added and step 29 amended 2026-10-19 from the improvement plan, approved by Vũ ("approve all the recommendations"). Step 37 added 2026-10-19 from Vũ's decision (red CI). Step 38 added 2026-10-19 from Vũ's decision (claim a step). This is the only plan after 2.3.1. The version number is Vũ's: "2.4.0" is a working name. Each code step goes through the `ryos-*` agent team via its skill, in a fresh conversation._
 
 ## Goals
 
@@ -10,7 +10,7 @@ _Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the
 4. **B. Smarter runs:** failure patterns, time left, stats.
 5. **C. Agents and pipelines:** agents read history and past output, and see a long run's progress (#32). The window shows runs started by the CLI or agents. Pipeline parameters, and values passed between steps.
 6. **D. Automation:** secrets in Windows Credential Manager, then file triggers.
-7. **Harden how the team works** (steps 31–36): enforce the safety rules in the harness, give the step loop a stop rule, make the plan an explicit graph, and check frozen builds and the window code in CI.
+7. **Harden how the team works** (steps 31–36, 38): enforce the safety rules in the harness, give the step loop a stop rule, make the plan an explicit graph, have each session claim its step, and check frozen builds and the window code in CI.
 8. Ship **2.4** through the test phase: `release_check.py` hard gate, RC pre-release, `ryos-tester`, Vũ's checklist with no minimum time, then promote the same commit.
 
 ## Decisions
@@ -85,6 +85,7 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 35 Tech-debt review of the Qt app | coding session (Opus, High) | the "Tech debt check-in" prompt; no code |
 | 36 Type checks over the window, extract what you touch | the B, C and D coding sessions | inside their own steps |
 | 37 Fix the qt-smoke crash on CI | coding session (Opus if the cause is in threads or Qt object lifetime) | `/fix-ryos-bug` |
+| 38 Claim a step when you start | coding session | `/add-ryos-feature`; skill, hook and eval edits |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -251,7 +252,7 @@ _Planner proposal, accepted by Vũ._ `/release-ryos` part A (A1–A8) only, for 
 - `ryos-tester` PASS on the update flow;
 - Vũ runs it.
 
-**Needs:** 1–11, 37 (green CI)
+**Needs:** 1–11, 37 (green CI), 38
 **Gate:** Vũ names the version, installs the candidate by hand and runs it.
 
 ### 13 — Backlog: checks without a window
@@ -484,7 +485,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - a slow copy from USB or a network share into a watched folder.
 
 **Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist, including the two RC-to-RC updates, is in the Status table.
-**Needs:** 11, 13–28, 37
+**Needs:** 11, 13–28, 37, 38
 **Gate:** Vũ ticks the checklist.
 
 ### 30 — Release 2.4
@@ -590,10 +591,24 @@ _Added 2026-10-19 from Vũ's decision (red CI on `afa32f5`)._ CI's `qt-smoke (ub
 
 **Needs:** —
 
+### 38 — Claim a step when you start
+_Added 2026-10-19 from Vũ's decision ("other sessions should tell us which task is in progress")._ Since 2026-10-19 several tabs work at once (37 and 35 beside the secretary's 33). A coding session writes to the Status table only when it finishes, so nothing shows a step is taken, and two tabs given the continue prompt both pick the same step. `.claude/hooks/session_start.py` already prints "Also started" for rows whose state begins `started` or `in progress` (`started()`), but `next_open()` still counts those rows as open, so the "Next open step" it prints can be a step another tab holds.
+**Files:** `.claude/skills/add-ryos-feature/SKILL.md`, `.claude/skills/fix-ryos-bug/SKILL.md`, `.claude/skills/release-ryos/SKILL.md`, `.claude/hooks/session_start.py` (`next_open`, `plan_lines`), `tests/test_harness.py` (`TestSessionStart`), `docs/PROMPTS.md`, `.claude/skills/*/evals/`.
+**Done when:**
+- the three coding skills, before any other work, set their step's Status row to `in progress (YYYY-MM-DD HH:MM)`, and commit and push that one line on its own, by path;
+- the continue prompt's "next open step in Order" skips a step already in progress, and the session-start hook prints the steps in progress and a next step that isn't one of them (`TestSessionStart` cases: one claimed, all claimed, a `started` row);
+- a session that stops without finishing (Still red, a `**Gate:**`, a second BLOCKERS) writes why in its row, so no claim goes stale;
+- a tab given a named step that is already claimed says so and stops;
+- each coding skill gains an eval for claiming, and `fix-ryos-bug` one for refusing a claimed step;
+- `docs/PROMPTS.md` says how to start a second tab beside another.
+
+**Needs:** 37 (green CI).
+
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
    - **37** (the qt-smoke crash, added 2026-10-19) is next after 32, before 12: CI must be green before a candidate.
+   - **38** (claim a step, added 2026-10-19) right after 37, before 12: parallel tabs need it.
 2. **Harness and loop rules, before step 11** (added 2026-10-19): 31, then 32. 33 runs alongside (docs only).
 3. **Part A**, the riskiest and the one that changes the release process:
    1. 4 and 6 can run in parallel;
@@ -678,3 +693,4 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 35 Tech-debt review of the Qt app | done 2026-10-19: `docs/tech-debt-2026-10-19.md` (11 items scored by (Impact + Risk) × (6 − Effort), the old register's six items accounted for, top three, remediation by step). Top three: split `handle_step_done` (190 lines, was 156) before step 23; extract the card/group menu dispatch from `shell.py` at step 14 and put the `qtui` files steps 16–28 change into `mypy` at step 36; settle the jobs/Activity boundary at step 22's design. Extraction candidates named for steps 14, 15, 18, 22, 23, 24, 26, 28. `tech-debt-2026-09-21.md` marked superseded; links fixed in `README.md`, `docs/README.md`, `docs/PROMPTS.md`. Not changed: the docstring in `ryos/scriptform.py` that cites the old review (no code changes; the old file stays). No code, no tests run |
 | 36 Type checks over the window | — |
 | 37 Fix the qt-smoke crash on CI | — |
+| 38 Claim a step when you start | — |
