@@ -6368,6 +6368,46 @@ def check_copy_paste_between_groups(app):
           "Copy to for a pipeline that reuses the script already there")
 
 
+def close_down(app) -> list[str]:
+    import shiboken6
+    from PySide6.QtCore import QCoreApplication, QEvent, QObject
+    from ryos.qtui.jobs import JobBridge
+
+    keeper = getattr(app, "_smoke_keeper", None)
+    if keeper is not None:
+        app.removeEventFilter(keeper.filter)
+        keeper.filter.deleteLater()
+        app._smoke_keeper = None
+
+    def deliver_deletes():
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
+
+    for _ in range(5):
+        tops = app.topLevelWidgets()
+        if not tops:
+            break
+        for widget in tops:
+            bridge = getattr(widget, "_bridge", None)
+            if isinstance(bridge, JobBridge):
+                bridge.stop()
+            widget.hide()
+            widget.deleteLater()
+        deliver_deletes()
+    for obj in shiboken6.getAllValidWrappers():
+        if (isinstance(obj, QObject) and obj is not app
+                and shiboken6.ownedByPython(obj) and obj.parent() is None):
+            if isinstance(obj, JobBridge):
+                obj.stop()
+            obj.deleteLater()
+    deliver_deletes()
+    left = [type(w).__name__ for w in app.topLevelWidgets()]
+    left += [type(o).__name__ for o in shiboken6.getAllValidWrappers()
+             if isinstance(o, QObject) and o is not app
+             and shiboken6.ownedByPython(o) and o.parent() is None]
+    return left
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     import os
@@ -6437,14 +6477,17 @@ def main() -> int:
     check_maximised_layout(app)
     check_heavy_output_stays_responsive(app)
     check_ampersands_show(app)
+    left = close_down(app)
+    if left:
+        PROBLEMS.append(f"still alive after closing down: {sorted(set(left))}")
     if _real_log_state() != real_log:
         PROBLEMS.append("the user's own RYOS log was written during the smoke")
-    print()
+    print(flush=True)
     if PROBLEMS:
         for p in PROBLEMS:
-            print("  PROBLEM:", p)
+            print("  PROBLEM:", p, flush=True)
         return 1
-    print("RYOS Qt smoke PASSED")
+    print("RYOS Qt smoke PASSED", flush=True)
     return 0
 
 

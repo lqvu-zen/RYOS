@@ -39,6 +39,8 @@ jobs:
       # smoke and the launch smoke both pass on it; checks that need two real
       # screens say they were skipped.
       QT_QPA_PLATFORM: offscreen
+      PYTHONFAULTHANDLER: "1"
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v6
 
