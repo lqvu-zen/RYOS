@@ -693,4 +693,4 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 35 Tech-debt review of the Qt app | done 2026-10-19: `docs/tech-debt-2026-10-19.md` (11 items scored by (Impact + Risk) × (6 − Effort), the old register's six items accounted for, top three, remediation by step). Top three: split `handle_step_done` (190 lines, was 156) before step 23; extract the card/group menu dispatch from `shell.py` at step 14 and put the `qtui` files steps 16–28 change into `mypy` at step 36; settle the jobs/Activity boundary at step 22's design. Extraction candidates named for steps 14, 15, 18, 22, 23, 24, 26, 28. `tech-debt-2026-09-21.md` marked superseded; links fixed in `README.md`, `docs/README.md`, `docs/PROMPTS.md`. Not changed: the docstring in `ryos/scriptform.py` that cites the old review (no code changes; the old file stays). No code, no tests run |
 | 36 Type checks over the window | — |
 | 37 Fix the qt-smoke crash on CI | — |
-| 38 Claim a step when you start | — |
+| 38 Claim a step when you start | in progress (2026-10-19 23:30) |
