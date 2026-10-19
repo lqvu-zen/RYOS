@@ -27,7 +27,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 ## Where we are (2026-10-19 14:30)
 
 - **v2.3.1** is the latest release (2026-10-14). No 2.4 candidate yet.
-- **`main` = `origin/main` at `ef7600d`** (2026-10-15 22:37). Vũ's PC wasn't reachable on 10-19, so anything uncommitted there is unknown. Since `2088a68`:
+- **`main` = `origin/main` at `d900395`** (2026-10-19). Vũ's PC wasn't reachable on 10-19, so anything uncommitted there is unknown. Since `2088a68`:
   - `7a125c9` the 2.4 plan written and approved;
   - `685d5aa` **OP-15:** "Clear output between runs" now empties the All tab (step 1);
   - `2e9867c` **GR-33:** a scheduled outside run no longer gets the outside note (step 2);
@@ -41,9 +41,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
   - `e853e87` the release key embedded, signing in the release process, `release_check` signature case (step 8);
   - `a6deea9` apply and roll back an update (step 9);
   - `ef7600d` Restart to update, roll back, edge cases, `ryos-cli update` (step 10).
-- **Step 11 is in progress, uncommitted** (seen in the working tree 10-19 11:54): `release_check.py` self-update cases, `docs/tutorial/15-updating.md`, README, TUTORIAL and BEHAVIOUR edits.
-- **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox; step 12 relies on it.
-- **Next:** step 31 (harness), then 32 (loop rules), both before step 11. Step 33 (the plan as a graph) runs alongside in a secretary session with `ryos-planner`.
+- `d900395` **self-update cases in `release_check`** over each frozen download; tutorial page 15 "Updating", README, release-notes line (step 11). It landed before 31 and 32, which the Order puts first. `signature` and `build_commit` fail until step 12 (no `.sig`, dirty tree).
+- **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox; step 12 relies on it. **On hold (Vũ, 2026-10-19):** where to plan it waits; step 12 can't start without it.
+- **Next:** step 31 (harness), then 32 (loop rules). Step 33 (the plan as a graph) runs alongside in a secretary session with `ryos-planner`.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
