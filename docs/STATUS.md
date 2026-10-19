@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 14:30 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 21:40 (UTC+7).
 
 ## Roles
 
@@ -22,12 +22,12 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | Release | What | Plan |
 |---|---|---|
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/archive/release-2.3.1.md` |
-| **2.4** (in progress, 10 of 36 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
+| **2.4** (in progress, 12 of 36 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
 
-## Where we are (2026-10-19 14:30)
+## Where we are (2026-10-19 21:40)
 
 - **v2.3.1** is the latest release (2026-10-14). No 2.4 candidate yet.
-- **`main` = `origin/main` at `d900395`** (2026-10-19). Vũ's PC wasn't reachable on 10-19, so anything uncommitted there is unknown. Since `2088a68`:
+- **`main` = `origin/main` at `96405b6`** (2026-10-19 21:24). Since `2088a68`:
   - `7a125c9` the 2.4 plan written and approved;
   - `685d5aa` **OP-15:** "Clear output between runs" now empties the All tab (step 1);
   - `2e9867c` **GR-33:** a scheduled outside run no longer gets the outside note (step 2);
@@ -42,8 +42,10 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
   - `a6deea9` apply and roll back an update (step 9);
   - `ef7600d` Restart to update, roll back, edge cases, `ryos-cli update` (step 10).
 - `d900395` **self-update cases in `release_check`** over each frozen download; tutorial page 15 "Updating", README, release-notes line (step 11). It landed before 31 and 32, which the Order puts first. `signature` and `build_commit` fail until step 12 (no `.sig`, dirty tree).
+- `96405b6` **the harness** (step 31): `ask` for release commands and forced pushes, `deny` for reverting STATUS/plans and for the key, `guard.py` and `session_start.py` hooks, `env` block, 89 stable allow rules, CI `harness` job (version bump, new comments). CI all green on `96405b6`, `harness` job included.
+- **CI on `d900395` failed:** `qt-smoke (ubuntu)` crashed with exit 139 (segfault) after the output-panel check; it passed on `96405b6` with no fix in between, so it looks flaky. Watch for a repeat.
 - **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox; step 12 relies on it. **On hold (Vũ, 2026-10-19):** where to plan it waits; step 12 can't start without it.
-- **Next:** step 31 (harness), then 32 (loop rules). Step 33 (the plan as a graph) runs alongside in a secretary session with `ryos-planner`.
+- **Next:** step 32 (loop rules); it also commits `docs/MCP_CLEAN_TEST.md`, still untracked. Step 33 (the plan as a graph) runs alongside in a secretary session with `ryos-planner`.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -53,7 +55,8 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 1–3 | OP-15, GR-33, SM-16 | ✅ `685d5aa`, `2e9867c`, `2a9c973` |
 | 4–10 | A: find, download, verify, apply, roll back, Restart to update | ✅ `754568b` … `ef7600d` |
 | 11 | A in `release_check`, docs | ✅ `d900395` |
-| 31, 32 | Harness; loop rules | next |
+| 31 | Harness | ✅ `96405b6` |
+| 32 | Loop rules | next |
 | 33 | The plan as a graph | started 10-19 (Gate lines, Needs, merge rules); Files lines to do |
 | 12 | The early candidate (Vũ's gate) | waits for P7 (on hold) |
 | 13–15, 34, 35 | Backlog; frozen builds in CI; tech-debt review | — |
@@ -64,7 +67,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 ## Vũ to do
 
 - [ ] **Back up the release key** in a second place, and put its passphrase in a password manager (left over from step 7).
-- [ ] At step 31: approve the final `ask` and `deny` lists.
+- [ ] Step 31 left checks for you: approve the `ask`/`deny` lists as committed in `96405b6`; confirm a fresh session runs one command from each skill without a prompt; confirm auto-memory still works now that `C:\Users\Admin\.claude` is out of `additionalDirectories`. (The `gh release create` ask is seen at the next candidate.)
 - [ ] At step 33: decide whether B and C run in parallel.
 
 ## Secretary skill and planner agent
