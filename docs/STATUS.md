@@ -52,9 +52,10 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 |---|---|---|
 | 1–3 | OP-15, GR-33, SM-16 | ✅ `685d5aa`, `2e9867c`, `2a9c973` |
 | 4–10 | A: find, download, verify, apply, roll back, Restart to update | ✅ `754568b` … `ef7600d` |
-| 31, 32 | Harness; loop rules | next, before 11 |
+| 11 | A in `release_check`, docs | ✅ `d900395` |
+| 31, 32 | Harness; loop rules | next |
 | 33 | The plan as a graph | started 10-19 (Gate lines, Needs, merge rules); Files lines to do |
-| 11, 12 | A in `release_check`; the early candidate (Vũ's gate) | — |
+| 12 | The early candidate (Vũ's gate) | waits for P7 (on hold) |
 | 13–15, 34, 35 | Backlog; frozen builds in CI; tech-debt review | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
 | 25–28 | D: secrets, then triggers | — |
