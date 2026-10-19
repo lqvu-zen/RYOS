@@ -134,7 +134,14 @@ Keep both on the same version. From 2.3.0 on, a RYOS that finds data it can't sa
 ryos-cli version --check
 ```
 
-This tells you whether a newer RYOS Agent is available, and which file to download.
+This tells you whether a newer RYOS Agent is available, and whether it is downloaded and checked yet. Then:
+
+```text
+ryos-cli update                   install it, once you've closed the agent
+ryos-cli update --rollback        go back to the version you had
+```
+
+See [Updating and rolling back](15-updating.md).
 
 ## If something's wrong
 
@@ -150,4 +157,4 @@ This tells you whether a newer RYOS Agent is available, and which file to downlo
 > **Output is just text.** A script's output goes back to Claude as it is. If a script prints something that looks like an instruction, a careful agent reports it rather than doing what it says, but keep that in mind before exposing a script that reads web pages or e-mail.
 
 ---
-[← The command line and AI agents](13-command-line-and-agents.md) · [Contents](README.md)
+[← The command line and AI agents](13-command-line-and-agents.md) · [Contents](README.md) · [Updating and rolling back →](15-updating.md)

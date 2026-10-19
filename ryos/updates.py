@@ -96,7 +96,8 @@ def _release_from(data: dict) -> Release:
 
 
 def fetch_release(prereleases: bool = False, *, open_url: OpenUrl | None = None,
-                  api: str = RELEASES_API) -> Release | None:
+                  api: str | None = None) -> Release | None:
+    api = api or buildinfo.test_releases_api() or RELEASES_API
     url = api if prereleases else api + "/latest"
     try:
         with _open(open_url, url, 8) as resp:

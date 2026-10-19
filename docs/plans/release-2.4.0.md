@@ -1,6 +1,6 @@
 # RYOS v2.4.0 (working name): self-update, smarter runs, agents and pipelines, automation
 
-_Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the secretary, 2026-10-13, from Vũ's decisions), after v2.3.1 shipped. Approved by Vũ 2026-10-14 ("all good": every planner recommendation accepted). This is the only plan after 2.3.1. The version number is Vũ's: "2.4.0" is a working name. Each code step goes through the `ryos-*` agent team via its skill, in a fresh conversation._
+_Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the secretary, 2026-10-13, from Vũ's decisions), after v2.3.1 shipped. Approved by Vũ 2026-10-14 ("all good": every planner recommendation accepted). Steps 31–36 added and step 29 amended 2026-10-19 from the improvement plan, approved by Vũ ("approve all the recommendations"). This is the only plan after 2.3.1. The version number is Vũ's: "2.4.0" is a working name. Each code step goes through the `ryos-*` agent team via its skill, in a fresh conversation._
 
 ## Goals
 
@@ -10,7 +10,8 @@ _Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the
 4. **B. Smarter runs:** failure patterns, time left, stats.
 5. **C. Agents and pipelines:** agents read history and past output, and see a long run's progress (#32). The window shows runs started by the CLI or agents. Pipeline parameters, and values passed between steps.
 6. **D. Automation:** secrets in Windows Credential Manager, then file triggers.
-7. Ship **2.4** through the test phase: `release_check.py` hard gate, RC pre-release, `ryos-tester`, Vũ's checklist with no minimum time, then promote the same commit.
+7. **Harden how the team works** (steps 31–36): enforce the safety rules in the harness, give the step loop a stop rule, make the plan an explicit graph, and check frozen builds and the window code in CI.
+8. Ship **2.4** through the test phase: `release_check.py` hard gate, RC pre-release, `ryos-tester`, Vũ's checklist with no minimum time, then promote the same commit.
 
 ## Decisions
 
@@ -25,7 +26,7 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | P3 | What runs the helper | The **new** build's `ryos-cli.exe apply-update`, from its verified, extracted copy in the updates folder. Rollback runs from a fresh copy of the installed build's folder. Never from a folder being swapped | A cx_Freeze exe can't start without its `lib/`; no toolchain for a tiny exe; one more unsigned binary for antivirus |
 | P4 | Antivirus during the swap | No exclusions. Check the extracted tree against the zip's file list and sizes. Retry renames with backoff (~60 s). Keep a journal so a crash mid-swap is finished or undone at the next start. Any failure restores the old folder and the message names antivirus as a likely cause | Never leave half of each version |
 | P5 | Where updates are staged | `%LOCALAPPDATA%\RYOS\updates\<version>\`, defined once in `settings.py`. Every harness redirects `LOCALAPPDATA` as it does `APPDATA` | Nothing redirects `LOCALAPPDATA` today |
-| P6 | Testing self-update without the private key in a session | In the RC flow Vũ signs **before** `release_check`. While step 11 is built, a test public key goes into `_build_info.py` only through an explicit build option; `build_release.py` and the release review refuse any zip that doesn't carry Vũ's key. The installed side is made to think it's older through a test-only override | A runtime switch that adds trusted keys would be a hole |
+| P6 | Testing self-update without the private key in a session | In the RC flow Vũ signs **before** `release_check`. While step 11 is built, **amended by Vũ 2026-10-19:** `release_check` copies each shipped build and swaps only `lib/ryos/_build_info.pyc` to carry the test key and a `TEST_UPDATES` mark (no build option, no extra builds); a marked build alone reads `RYOS_TEST_RELEASES_API`, only for `http://127.0.0.1`; the local source serves `v99.0.0`, so no version override. `build_release.py` and the release review refuse any zip that lacks Vũ's key or carries the mark | A runtime switch that adds trusted keys would be a hole |
 | P7 | Pre-release channel | Options → "Offer release candidates (for testing)", off by default; reads `/releases` instead of `/releases/latest` | The only way rcN → rcN+1 goes through self-update for real on Vũ's PC |
 | P8 | Early candidate after part A | Yes, step 12: a `-rc1` with A and the fixes, never promoted itself | Real use of the riskiest part for weeks |
 | P9 | Failure patterns: where, and the common set | Per script. "Also use the common patterns (`error:`, `FAILED`, `Traceback`)" is a tick box, off by default | Existing scripts behave exactly as before |
@@ -77,6 +78,12 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 28 D2 File triggers: dialog, badge, Up next | coding session | `/add-ryos-feature` |
 | 29 The 2.4 release test phase | coding session (High) | `/add-ryos-feature` for `release_check.py`; tester and checklist by hand |
 | 30 Release 2.4 | coding session (High) + Vũ | `/release-ryos`; Vũ names the version |
+| 31 Harness: permissions, hooks and checks | coding session (Opus, security) + Vũ | `/add-ryos-feature`; Vũ approves the ask and deny lists |
+| 32 Loop rules | coding session | `/add-ryos-feature`; skill and agent edits |
+| 33 The plan as a graph | secretary + `ryos-planner` + Vũ | `/ryos-secretary`; docs only |
+| 34 Frozen builds in CI | coding session (Opus, packaging) | `/add-ryos-feature` |
+| 35 Tech-debt review of the Qt app | coding session (Opus, High) | the "Tech debt check-in" prompt; no code |
+| 36 Type checks over the window, extract what you touch | the B, C and D coding sessions | inside their own steps |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -244,6 +251,7 @@ _Planner proposal, accepted by Vũ._ `/release-ryos` part A (A1–A8) only, for 
 - Vũ runs it.
 
 **Needs:** 1–11
+**Gate:** Vũ names the version, installs the candidate by hand and runs it.
 
 ### 13 — Backlog: checks without a window
 _Behaviour map backlog._
@@ -302,7 +310,7 @@ _Brief, part B1; P9, P10._ Per-script regex rules in a new table (`_MIGRATIONS`,
 - the migration upgrades every fixture (`TestFixtureUpgrades`) and changes no existing outcome;
 - HI and PL entries are updated.
 
-**Needs:** —
+**Needs:** 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 **Escalation:** DB and threading: Opus at medium.
 
 ### 17 — B1: failure patterns: editor, highlights, CLI
@@ -314,7 +322,7 @@ _Brief, part B1._ The script dialog edits the rules and the common-set tick box.
 - clone, copy and export keep the rules;
 - `test_cli` covers `--fail-on`.
 
-**Needs:** 16
+**Needs:** 16, 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 
 ### 18 — B2: time left
 _Brief, part B2; P11._ A toolkit-free estimate from history: median of the last 10 successful runs, shown from 3, with "taking longer than usual" past it. Surfaces: the Running list and status bar, the detail pane, the Activity bar, the tray tooltip, MCP `get_run`.
@@ -324,7 +332,7 @@ _Brief, part B2; P11._ A toolkit-free estimate from history: median of the last 
 - it is drawn in normal, compact and maximised, and in the tray tooltip;
 - new OP and TW entries are added.
 
-**Needs:** —
+**Needs:** 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 
 ### 19 — B3: stats
 _Brief, part B3; P12._ A toolkit-free module over existing history: success rate, duration trend, and the pipeline step that fails most. Shown in the History dialog's summary (HI-03), the detail pane, and `ryos-cli history <item> --stats`.
@@ -335,7 +343,7 @@ _Brief, part B3; P12._ A toolkit-free module over existing history: success rate
 - `test_cli` covers `--stats`;
 - HI entries are added.
 
-**Needs:** —
+**Needs:** 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 
 ### 20 — C1: keep each run's output
 _Needed by C1 and #32; P13._ Every run's output is written to `%APPDATA%\RYOS\runs\` as it arrives, capped and pruned with history retention. A history row links to it by a key known **at start**: `runs` rows are written only at completion (`db.py:115`), so this goes through a migration and a new accessor. The window, CLI and MCP share the writer through `JobHost`. Off in Options stops writing.
@@ -373,7 +381,7 @@ _Issue #32, owner's comment "can we have anything to show in the RYOS app?"; P14
 - they leave the list when they end, or when their process dies;
 - new OP and TW entries are added.
 
-**Needs:** 20
+**Needs:** 20, 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 **Escalation:** cross-process and threading: Opus at medium.
 
 ### 23 — C2: pipeline parameters
@@ -387,7 +395,7 @@ _Brief, part C2; P16._ Named parameters with defaults on a pipeline (`_MIGRATION
 - every existing pipeline runs exactly as before (fixture upgrade plus `TestJobController`);
 - PL entries are added.
 
-**Needs:** —
+**Needs:** 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 **Escalation:** DB: Opus at medium.
 
 ### 24 — C2: passing a value between steps
@@ -430,7 +438,7 @@ _Brief, part D1; P18._
 - `test_cli` covers `secret`;
 - the MCP tool list is unchanged.
 
-**Needs:** 25
+**Needs:** 25, 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 **Escalation:** security: Opus at medium.
 
 ### 27 — D2: file triggers: rules, storage, firing
@@ -455,7 +463,7 @@ _Brief, part D2._ A dialog to add, edit and remove a trigger. Where it is reache
 - `session_smoke` drops a file and sees the run, in both layouts;
 - RC and TR entries are updated.
 
-**Needs:** 27
+**Needs:** 27, 14, 15 (rows, the pane or the Running list; added 2026-10-19)
 
 ### 29 — The 2.4 release test phase
 _Standing rule: every release goes through the test phase._ New `release_check.py` cases on each built download:
@@ -466,7 +474,7 @@ _Standing rule: every release goes through the test phase._ New `release_check.p
 - `session_smoke` with a trigger in both layouts.
 
 The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
-- a real update from GitHub, RC to RC, through the pre-release channel;
+- two real updates in a row from GitHub through the app, RC to RC (for example rc1 → rc2 → rc3), in the window build and with RYOS Agent's `ryos-cli update` (amended 2026-10-19: once 2.4 ships, a bug in its downloader or signature check can only be fixed by a manual update);
 - a rollback;
 - the swap with Defender's real-time protection on;
 - the update while Claude holds `ryos-cli mcp` open;
@@ -474,11 +482,13 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - the secret in the Windows Credential Manager UI, gone after delete;
 - a slow copy from USB or a network share into a watched folder.
 
-**Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist is in the Status table.
+**Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist, including the two RC-to-RC updates, is in the Status table.
 **Needs:** 11, 13–28
+**Gate:** Vũ ticks the checklist.
 
 ### 30 — Release 2.4
 **Needs:** 29, green CI.
+**Gate:** Vũ names the version and confirms each "needs a human" item before publishing.
 `/release-ryos`, and **Vũ names the version**. The order: build, Vũ signs, `release_check`, an RC pre-release, `ryos-tester` PASS, Vũ's checklist ticked, then promote the same commit with the release review printing `READY TO PUBLISH`. The release notes say 2.3.x users update by hand once, and name #32.
 **Done when:**
 - the release is published with the four zips, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`;
@@ -487,21 +497,116 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - `dist/` is cleared;
 - `release-2.4.0.md` and `release-2.4.0-brief.md` are moved to `docs/archive/` with their links fixed.
 
+### 31 — Harness: permissions, hooks and checks
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Harness")._ The rules that protect a release, Vũ's data and the secretary's edits live only in skills and `CLAUDE.md`, and two have already been broken: a test wrote into the real `%APPDATA%\RYOS` on 10-09, and a secretary edit was reverted on 10-13. `.claude/settings.json` holds 162 allow rules, saved one click at a time: 23 point at scratch folders of finished sessions and 11 are one-off `sed -i` edits. It has no `ask` or `deny` rules, no `env` block and no hooks. Some allows are wider than the skills permit: `gh release *`, `uv run *`, `xargs -r git checkout --`, `Read(//c/Users/Admin/.claude/**)` (Claude's own sign-in files) and `Read(//c/Users/Admin/Downloads/**)`.
+
+Fixed by Vũ:
+- `ask` for `gh release create`, `edit` and `delete`, and for `git push --force`;
+- `deny` for `git checkout --`, `git restore` and `git reset --hard` on `docs/STATUS.md` and `docs/plans/`, and for reading or writing the signing-key folder and `*.pem`, `*.key`, `*.p8` files;
+- an `env` block for `PYTHONIOENCODING=utf-8`, `RYOS_NO_TOASTS=1` and `RYOS_NO_REGISTRY=1`;
+- a `PreToolUse` hook that refuses a command writing into the real `%APPDATA%\RYOS`;
+- a `SessionStart` hook that prints the branch, uncommitted files, CI on HEAD and the next open step of the current plan;
+- two CI checks instead of hooks, because CI also sees commits made outside Claude: `__version__` changes only in a commit titled `Release candidate …` or `Release …`, and no new comment lines in changed code under `ryos/`.
+
+The hooks run on Vũ's Windows setup; the designer picks their language (Python through `uv` is already everywhere).
+**Files:** `.claude/settings.json`, `.claude/hooks/` (new), `.github/workflows/ci.yml`, `tools/` (the two checks), `docs/BEHAVIOUR.md` (§ Harness escapes), `CLAUDE.md` (one paragraph on the harness).
+**Done when:**
+- the allow list holds only stable patterns (tests, smokes, ruff, mypy, the `run-ryos` and audit drivers, `uv run python tests/*`), with no scratch paths, one-off edits, `.claude` reads beyond the skills folder, or Downloads read;
+- every command `add-ryos-feature`, `fix-ryos-bug`, `run-ryos`, `review-ryos-ui`, `ryos-tutorial-generator` and the `ryos-*` agents run still runs without a prompt, and `release-ryos`'s `gh release` calls ask;
+- the hook script is tested with a refused command (a write into the real data folder, a read of the key folder) and an allowed one (a throwaway `APPDATA`);
+- each CI check fails a planted commit and passes a clean one;
+- `docs/BEHAVIOUR.md` has a **Harness escapes** list with the 10-09 and 10-13 incidents, and the rule: a session that breaks a process rule adds the hook or deny rule that would have stopped it.
+
+**Needs:** —
+**Gate:** Vũ approves the final `ask` and `deny` lists before the commit; they change what every session may do.
+**Escalation:** security: Opus at medium.
+
+### 32 — Loop rules: a stop rule, CI in the loop, one continue prompt
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Loops")._ The implementer fixes "until clean" with no limit, only `release-ryos` checks CI, and the continue prompt in `docs/STATUS.md` still names `release-2.3.1.md`. Only `add-ryos-feature` has behaviour evals.
+**Files:** `.claude/skills/add-ryos-feature/SKILL.md`, `.claude/skills/fix-ryos-bug/SKILL.md`, `.claude/agents/ryos-implementer.md`, `.claude/skills/*/evals/`, `docs/PROMPTS.md`, `docs/MCP_CLEAN_TEST.md` (staged uncommitted by the secretary on 2026-10-19).
+**Done when:**
+- the implementer stops after two fix rounds following the first run and reports what is still red; a reviewer BLOCKERS verdict gets one more round, then the skill stops and reports to Vũ;
+- both coding skills stop at a step's `**Gate:**` line and say what Vũ has to do;
+- both coding skills check CI on HEAD before starting, and after pushing watch the run (`gh run watch --exit-status`); a red run makes the fix the next step;
+- `docs/PROMPTS.md`'s continue prompt is the one below, and names no plan file;
+- `docs/MCP_CLEAN_TEST.md` is committed as the manual check against real Claude Desktop and Claude Code (what `release_check`'s plain JSON-RPC can't show), brought up to date (its title and the `--version` line name the current release), and `docs/PROMPTS.md` points at it instead of the claude.ai project;
+- `fix-ryos-bug` gains behaviour evals; `release-ryos` gains at least three (stops on a failed `release_check`, waits for the version number, waits for Vũ's signature); `ryos-secretary` gains at least two (never edits code, never pushes).
+
+> Read docs/STATUS.md to find the current plan, then continue with its next open step in Order. Update the Status table when it's done.
+
+**Needs:** 31 (the `SessionStart` hook and the `ask` rules).
+
+### 33 — The plan as a graph: Files lines and the parallel lanes
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Graphs")._ The secretary added the `**Gate:**` lines (12, 29, 30, 31), the 13–15 Needs on the steps that change rows, the pane or the Running list, and the merge rules ("Parallel lanes and merging", below). What remains needs the code: a `**Files:**` line for each open step, so the lanes' collisions are visible before B and C start. Known hot spots: `ryos/db.py` `_MIGRATIONS` (16, 20, 23, 24, 27), `ryos/qtui/shell.py` (3,475 lines at `ef7600d`), `docs/BEHAVIOUR.md` and this plan's Status table.
+**Who:** the secretary with `ryos-planner`; docs only.
+**Done when:**
+- steps 11 and 13–30 each have a `**Files:**` line checked against the code;
+- "Parallel lanes and merging" lists which B and C steps share files, and proposes which may run in parallel;
+- Vũ decides parallel or in sequence, and the Order says which.
+
+**Needs:** —
+**Gate:** Vũ decides parallel or in sequence.
+
+### 34 — Frozen builds in CI
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Code and test health")._ The four downloads are built and checked only on Vũ's PC, by `release-ryos`. A Windows CI job that runs `build_release.py` and `release_check.py` finds packaging faults before a candidate. The signature case needs Vũ's key, so the designer proposes either a build carrying the test key (`tests/ed25519_signer.py`) or skipping that one case in CI with the reason printed. `release_check` on Vũ's PC stays the release gate.
+**Files:** `.github/workflows/` (a new job or workflow), `tests/release_check.py` (a CI mode, if needed), `build_release.py` (only if the test-key build needs it).
+**Done when:**
+- a `workflow_dispatch` and nightly Windows job builds all four zips and runs `release_check.py`;
+- the signature case is handled as the designer proposed, and the job says so;
+- a planted packaging fault (a missing exe, or the MCP SDK in `RYOS-windows.zip`) fails the job;
+- `session_smoke` also runs on `windows-latest`, or the step records why it can't headless there.
+
+**Needs:** 11
+**Escalation:** packaging: Opus at medium.
+
+### 35 — A tech-debt review of the Qt app
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Code and test health")._ `docs/tech-debt-2026-09-21.md` describes the Tk app at 1.11.2 (`app.py`, `dialogs.py`). Since the Qt port the biggest file is `ryos/qtui/shell.py` (3,475 lines at `ef7600d`); `ryos/` is 78 modules and 23,647 lines, and `mypy` covers 61% of them. Use the "Tech debt check-in" prompt in `docs/PROMPTS.md`. No code changes.
+**Files:** `docs/tech-debt-2026-MM-DD.md` (new), `docs/tech-debt-2026-09-21.md` (marked superseded), links to it.
+**Done when:**
+- the new review uses the same scoring (priority = (Impact + Risk) × (6 − Effort));
+- it names extraction candidates in the files steps 16–28 change;
+- the old review is marked superseded and every link to it is fixed.
+
+**Needs:** —
+
+### 36 — Type checks over the window, and extract what you touch
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Code and test health")._ A rolling step that rides along with B, C and D. The typecheck job leaves `ryos/qtui/` out because it doesn't install PySide6. No big refactor in 2.4: a step that changes `shell.py` moves the part it touches into its own module, where step 35 names it as a candidate.
+**Files:** `.github/workflows/ci.yml` (typecheck job), `pyproject.toml` (`[tool.mypy] files`), `ryos/qtui/*`, the Architecture tables in `CLAUDE.md` and `docs/ARCHITECTURE.md`.
+**Done when:**
+- the typecheck job installs PySide6, and every `qtui` file a B, C or D step changed is in `[tool.mypy] files` and clean on Linux;
+- `shell.py` is shorter at step 29 than its 3,475 lines at `ef7600d`;
+- each new module has its Architecture rows.
+
+**Needs:** 35
+
 ## Order
 
-1. **Fixes** 1, 2, 3 (small, independent).
-2. **Part A**, the riskiest and the one that changes the release process:
+1. **Fixes** 1, 2, 3 (small, independent). Done.
+2. **Harness and loop rules, before step 11** (added 2026-10-19): 31, then 32. 33 runs alongside (docs only).
+3. **Part A**, the riskiest and the one that changes the release process:
    1. 4 and 6 can run in parallel;
    2. then 5, 7, 8, 9, 10, 11;
    3. then **12**, the early candidate, so A gets real use for the rest of 2.4.
-3. **Backlog** 13, 14, 15, before B and C touch rows, the pane and the Running list. Step 13 may run beside part A in its own worktree.
-4. **B and C in parallel worktrees:**
+4. **Backlog** 13, 14, 15, before B and C touch rows, the pane and the Running list. Step 13 may run beside part A in its own worktree. 34 (frozen builds in CI, after 11) and 35 (the tech-debt review) run beside the backlog.
+5. **B and C**, in parallel worktrees where step 33 shows their files don't overlap, otherwise in sequence:
    - B: 16 → 17, 18, 19;
    - C: 20 → 21 → 22, and 23 → 24.
 
-   Steps with migrations (16, 20, 23, 24) take their `_MIGRATIONS` number when they merge (P22).
-5. **Part D:** 25 → 26 → 27 → 28 (secrets before triggers).
-6. **Release:** 29, the test phase, then 30.
+   Steps with migrations (16, 20, 23, 24) take their `_MIGRATIONS` number when they merge (P22). Step 36 rides along with every B, C and D step that changes `ryos/qtui/`. Two lanes cross: 21 needs 18, and 25 needs 20.
+6. **Part D:** 25 → 26 → 27 → 28 (secrets before triggers).
+7. **Release:** 29, the test phase, then 30.
+
+## Parallel lanes and merging
+
+_Added 2026-10-19 from Vũ's decision (the improvement plan, "Graphs")._ Until now every commit went straight onto `main`, one after another. When two lanes run at once:
+
+1. One worktree and branch per lane (`lane/b`, `lane/c`), each made from `main`.
+2. A lane edits only its own rows of the Status table, and only its own new `docs/BEHAVIOUR.md` entries.
+3. To merge, the lane rebases on `main` and takes the next `_MIGRATIONS` number (P22). It runs the full suite and `session_smoke`, pushes the branch and waits for green CI.
+4. Vũ approves each merge. Merges are fast-forward only, one lane at a time.
+5. After a merge, the other lane rebases before its next step.
+
+Run at most two lanes, and only where step 33's Files lines don't overlap: one maintainer reviews every merge.
 
 ## Risks in the code the plan works around
 
@@ -530,11 +635,11 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 | 4 A1 Find and download | done: `ryos/updates.py` (`fetch_release` with the pre-release channel, `pick_asset`, `download` with resume and SHA-256 check; `_fetch_latest_release` unchanged), `settings.updates_dir`; `tests/test_updates.py` against a 127.0.0.1 server; UP-01…UP-06. Not run against real GitHub. Left for step 5: test the cut-off with the real streaming opener, catch `OSError` from the hash check and rename, send `LOCALAPPDATA` to the harnesses |
 | 5 A1 Background download and setting | done: the window fetches with `updates.fetch_release` and, on a newer release of its own zip with "Download updates in the background" on (`auto_download_update`, default on, Logging tab), downloads on a second worker through `MainThreadInvoker` (`updates.wants_download`, `check_of`, `downloaded`; `download()` now catches `OSError` from the hash check and rename); `ryos-cli version --check` says "Not downloaded yet." or "is downloaded and checked: <path>" (UP-08); portable keeps today's notice; every harness redirects `LOCALAPPDATA`; `test_updates::TestWhenToDownload`/`TestDownloaded`, `test_cli::TestVersion`, `qt_smoke::check_update_downloads_in_the_background` (normal, compact, maximised); UP-07, UP-08. Not run against real GitHub or a frozen build. P7 "Offer release candidates" not added: still to place before step 12 |
 | 6 A2 Signature check and signing tool | done: `ryos/ed25519.py` (pure-Python verify-only Ed25519, RFC 8032 §5.1.7 cofactorless, about 2.5 ms a check) and `ryos/signature.py` (`SHA256SUMS.txt.sig` format; `check`: missing, malformed, different key, changed, another version, older than this RYOS); `updates.download` needs `buildinfo.release_key()` and checks SUMS + `.sig` in memory before staging either or fetching the zip; `downloaded` re-checks the staged signature; `updates.verify_zip` and `ryos-cli verify <zip>` (0, or 125 with words; no database or settings); `build_release.problems_in` refuses `lib/cryptography/` in `RYOS-windows.zip`; `tools/sign_release.py new / sign` (key outside the repository, passphrase-protected PKCS8 PEM, `uv run --with cryptography`); `.gitignore` guards `*.pem`, `*.key`, `*.p8`; `tests/ed25519_signer.py` signs with the RFC 8032 test keys; `test_updates::TestEd25519`/`TestReleaseSignature`/`TestVerifyZip`/`TestSigningTool` and the new `TestDownloading`/`TestDownloaded` cases, `test_cli::TestVerify`, `test_ryos::TestBuildInfo::test_release_key_comes_only_from_the_build`, `TestReleaseZipChecks::test_the_build_without_agents_carries_no_cryptography`; UP-09…UP-13, UP-03/05/08, CLI-13, MCP-08. Step 8 embeds the key (`RELEASE_KEY` in `_build_info.py`); until then every build says it "carries no release key" and downloads nothing. Not run against real GitHub or a frozen build; no real release key made |
-| 7 Vũ makes the signing key | done 2026-10-15: key made with `tools/sign_release.py new`, kept outside the repo (`%USERPROFILE%yos-keysyos-release.pem`); public key `3448252042d2cd24b977ba0688acf6c3d4ca914aaf4f7df80cbac399008006a8` for step 8. Still for Vũ: a backup of the key file in a second place, and the passphrase in a password manager |
+| 7 Vũ makes the signing key | done 2026-10-15: key made with `tools/sign_release.py new`, kept outside the repo (`%USERPROFILE%\ryos-keys\ryos-release.pem`); public key `3448252042d2cd24b977ba0688acf6c3d4ca914aaf4f7df80cbac399008006a8` for step 8. Still for Vũ: a backup of the key file in a second place, and the passphrase in a password manager |
 | 8 A2 Signing in the release process | done: the build embeds `buildinfo.RELEASE_PUBLIC_KEY` (`build_info_source(..., release_key)`, passed by `setup_cxfreeze.py`), so a build now downloads and verifies; `release_check::signature` (each frozen build's own `ryos-cli verify` accepts its zip with dist's `SHA256SUMS.txt.sig`; planted: signed with the test key, changed SUMS, both refused with 125); `release-ryos` A3b "Vũ signs" between build and check (and again in B3), `.sig` joins both `gh release create`, the lineup and notes template; `ryos-reviewer` item 5a; README, TUTORIAL "Check your download" gain `ryos-cli verify`; key-lost note in `docs/CONTRIBUTING.md` and `release-ryos`; UP-20. Not run: `release_check` needs a build and Vũ's signature, first at step 11/12 |
 | 9 A3 Apply and roll back | done: `ryos/swap.py` (`apply_update`, `roll_back`, `recover`, `settle_at_start`, `rollback_available`, `stage_helper`, `stage_rollback_helper`, `helper_argv`; journal `swap.json`, `swap.lock`, `previous.json` in the updates folder), hidden `ryos-cli apply-update` (argv v1); `tests/test_swap.py` (update and rollback on real folders, a failure at each step, real locked files on Windows, a crash at every effect call recovered, unsafe zips) and `test_cli::TestApplyUpdate`, `TestTheRealEntryPoint`; UP-14…UP-19, CLI-11/TW-06/TW-16 notes. Rollback settles `.outgoing` into `.previous` after the restart, not before verify. `ryos/swap.py` is in `[tool.mypy] files`. Left for step 10: `previous.json` and the journal are one per updates folder, not per install (mixed installs share them); `--recover` ignores `--install`; `settle_at_start` is not wired and accepts an unverified build after an interrupted unswap; refuse an update already installed; compare with `realpath`. Not tried: a frozen build, real antivirus (step 11) |
 | 10 A3/A4 Restart to update, edge cases | done: `ryos/selfupdate.py` (pure `decide`: from source, nothing, not writable, blocked, busy, due, go, with the window's and the CLI's words and the `compatible_from` rollback warning; `running_from` (Windows process list), `write_problem` (probe folder beside the install, probe file in it), `due_soon` (5 minutes), `Updater`/`real()`, `prepare`, `at_start` with `at-start.json`); window banner states Available / Ready ("Update ready — RYOS X (you have vY)", Restart to update, Later) / Staging / Waiting (Cancel) / At next start, Help → Roll back to RYOS X…, `quit_app` split into `_shut_down`, helper staged off the UI thread through `MainThreadInvoker`; `ryos-cli update [--rollback] [--yes]` (no lock, no Qt, no database; 0 started or up to date, 1 unreachable/download/prepare failed, 125 refused); `__main__` runs `at_start` after the instance lock and before Qt; swap: journal per install (`journal_dir_for`), `--from-compatible` kept in `previous.json`, `previous_build`, the start-up settle accepts a new build only when its files are the zip's, `recover` needs its journal folder (`--recover` uses the install's), apply-update refuses an update already installed, logs its result and starts RYOS again after a refusal (not while another swap runs); `db.read_compatible_from` (read only). Tests: `tests/test_selfupdate.py`, `test_swap::TestPerInstall`, `test_cli::TestUpdate`, `TestApplyUpdate` additions, `TestTheRealEntryPoint::test_update_…`, `test_ryos::TestCompatibleFrom::test_read_compatible_from_reads_without_writing`, `qt_smoke::check_restart_to_update` (normal, compact, maximised). Decisions applied: no "stop runs and restart" (wait or not now); a dismissed Available banner does not come back as Ready that session; Later in the at-next-start state keeps the request; RYOS Agent with its MCP server open is refused 125 with no at-start request; `--yes` accepts the rollback warning, printed to stderr; with background download off the banner stays Available. Not tried: a frozen build end to end, real antivirus, a real agent holding `ryos-cli.exe mcp` open (the probe is unit-tested on this process only). Deferred: no Repair button (9), `folders_for` stays on `abspath` (10), the last update's result is not in `version` (11); no on-demand download when background download is off (8). |
-| 11 A Self-update in release_check, docs | — |
+| 11 A Self-update in release_check, docs | done 2026-10-19: `release_check` cases `self_update_windows`/`_windows_ai`/`_agent` (update and roll back from a signed source on 127.0.0.1: exe path unchanged, data, pipeline and exposure intact, `ryos-cli`, MCP and the window answer; planted unsigned and other-key releases refused; helper killed mid-swap and a held file leave the old build whole), `self_update_newer_database`, `self_update_portable`, `shipped_builds_ignore_the_test_source`; P6 amended (pyc swap in a copy, see P6); `buildinfo.test_updates`/`test_releases_api`, `build_release.release_key_problems` (also in `zips` and the reviewer); `swap._save_json` retries a refused journal replace (found by the cases; `test_swap::TestJournal`); UP-28…UP-30; tutorial page 15, README, TUTORIAL, release-notes "Updating". Planted-fault runs were made before the `_save_json` fix. `signature` and `build_commit` fail until step 12 (no `.sig`, dirty tree). Not run: a real release, real Defender |
 | 12 Early candidate after part A | — |
 | 13 Backlog: no window | — |
 | 14 Backlog: pane, dialogs, menus | — |
@@ -554,3 +659,9 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 | 28 D2 Triggers: dialog, badge | — |
 | 29 2.4 release test phase | — |
 | 30 Release 2.4 | — |
+| 31 Harness: permissions, hooks, checks | — |
+| 32 Loop rules | — |
+| 33 The plan as a graph | started 2026-10-19: Gate lines, 14–15 Needs and the merge rules added by the secretary; Files lines to do |
+| 34 Frozen builds in CI | — |
+| 35 Tech-debt review of the Qt app | — |
+| 36 Type checks over the window | — |

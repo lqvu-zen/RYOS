@@ -11,8 +11,9 @@ Writes:
 * ``SHA256SUMS.txt``      -- a checksum line per zip.
 
 Each zip is checked for what it must hold and must not; a missing exe, Qt
-in the agent build or a ``__pycache__`` in the source stops the script with
-exit 1 before anything is published. It does not smoke-test the builds --
+in the agent build, a frozen build without the release key or with the
+test-build mark (``TEST_UPDATES``), or a ``__pycache__`` in the source stops
+the script with exit 1 before anything is published. It does not smoke-test the builds --
 ``tests/launch_smoke.py`` does that (``--exe`` and ``--cli-only``).
 """
 
@@ -25,6 +26,7 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parent
 DIST = ROOT / "dist"
@@ -98,6 +100,26 @@ def problems_in(name: str, entries: list[str]) -> list[str]:
     return found
 
 
+BUILD_INFO_ENTRY = "lib/ryos/_build_info.pyc"
+
+
+def release_key_problems(name: str, read: Callable[[str], bytes]) -> list[str]:
+    """Whether a frozen download trusts the release key, and is not one of
+    release_check's test builds; ``read`` gives a zip entry's bytes."""
+    if name == "RYOS-portable.zip":
+        return []
+    try:
+        data = read(BUILD_INFO_ENTRY)
+    except KeyError:
+        return [f"no {BUILD_INFO_ENTRY}, so its release key cannot be checked"]
+    found = []
+    if buildinfo.RELEASE_PUBLIC_KEY.encode("ascii") not in data:
+        found.append("it does not carry the release key")
+    if buildinfo.TEST_UPDATES_NAME.encode("ascii") in data:
+        found.append("it is a test build (TEST_UPDATES)")
+    return found
+
+
 def main() -> int:
     try:
         import mcp  # noqa: F401
@@ -115,6 +137,8 @@ def main() -> int:
     for name, entries in zips.items():
         found = problems_in(name, entries)
         path = DIST / name
+        with zipfile.ZipFile(path) as z:
+            found += release_key_problems(name, z.read)
         size = path.stat().st_size / 2**20
         print(f"  {name:<18} {size:5.1f} MB  {len(entries)} files"
               + (f"  PROBLEM: {'; '.join(found)}" if found else ""))

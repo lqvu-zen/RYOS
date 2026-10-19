@@ -8495,6 +8495,41 @@ class TestReleaseZipChecks(unittest.TestCase):
                                    ["pyproject.toml", "run.bat", "install_uv.bat", "icon.ico",
                                     "ryos/__init__.py", "ryos/__pycache__/db.pyc"]))
 
+    def test_each_frozen_zip_carries_the_release_key_and_no_test_mark(self):
+        import marshal
+
+        import build_release
+        from ryos import buildinfo
+        test_key = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+
+        def reader(text):
+            entries = {build_release.BUILD_INFO_ENTRY: b"\0" * 16 + marshal.dumps(
+                compile(text, "_build_info.py", "exec"))}
+            return entries.__getitem__
+
+        good = reader(buildinfo.build_info_source("agent", "1a2b3c4",
+                                                  buildinfo.RELEASE_PUBLIC_KEY))
+        check = build_release.release_key_problems
+        for name in ("RYOS-windows.zip", "RYOS-windows-ai.zip", "RYOS-agent.zip"):
+            with self.subTest(name=name):
+                self.assertEqual(check(name, good), [])
+        self.assertEqual(check("RYOS-agent.zip",
+                               reader(buildinfo.build_info_source("agent", None, test_key))),
+                         ["it does not carry the release key"])
+        self.assertEqual(
+            check("RYOS-agent.zip", reader(buildinfo.build_info_source(
+                "agent", None, test_key, test_updates=True))),
+            ["it does not carry the release key", "it is a test build (TEST_UPDATES)"])
+        marked = reader(buildinfo.build_info_source("agent", None,
+                                                    buildinfo.RELEASE_PUBLIC_KEY)
+                        + "TEST_UPDATES = True\n")
+        self.assertEqual(check("RYOS-windows.zip", marked),
+                         ["it is a test build (TEST_UPDATES)"])
+        self.assertEqual(check("RYOS-windows.zip", {}.__getitem__),
+                         [f"no {build_release.BUILD_INFO_ENTRY}, so its release key "
+                          "cannot be checked"])
+        self.assertEqual(check("RYOS-portable.zip", {}.__getitem__), [])
+
     def test_the_build_without_agents_carries_no_cryptography(self):
         good = ["RYOS.exe", "ryos-cli.exe", "lib/PySide6/Qt6Core.dll"]
         self.assertEqual(self.check("RYOS-windows.zip",
@@ -8544,6 +8579,71 @@ class TestBuildInfo(unittest.TestCase):
         for bad in ("", "ab" * 31, "AB" * 32, "zz" * 32):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 buildinfo.build_info_source("agent", None, bad)
+
+    def test_test_updates_only_in_a_marked_build(self):
+        from ryos import buildinfo
+        for which in ("windows", "windows-ai", "agent"):
+            fake = types.SimpleNamespace(VARIANT=which, TEST_UPDATES=True)
+            with self.subTest(which=which), \
+                    mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+                self.assertTrue(buildinfo.test_updates())
+        for fake in (types.SimpleNamespace(VARIANT="agent"),
+                     types.SimpleNamespace(VARIANT="portable", TEST_UPDATES=True),
+                     types.SimpleNamespace(VARIANT="agent", TEST_UPDATES="1"),
+                     types.SimpleNamespace(VARIANT="agent", TEST_UPDATES=1)):
+            with self.subTest(fake=fake), \
+                    mock.patch.dict(sys.modules, {"ryos._build_info": fake}):
+                self.assertFalse(buildinfo.test_updates())
+        with mock.patch.dict(sys.modules, {"ryos._build_info": None}):
+            self.assertFalse(buildinfo.test_updates())
+
+    def test_the_test_releases_source_needs_the_mark_and_loopback(self):
+        from ryos import buildinfo
+        marked = types.SimpleNamespace(VARIANT="agent", TEST_UPDATES=True)
+        unmarked = types.SimpleNamespace(VARIANT="agent")
+        good = "http://127.0.0.1:8123/releases"
+
+        def source(fake, url):
+            with mock.patch.dict(sys.modules, {"ryos._build_info": fake}), \
+                    mock.patch.dict(os.environ, {buildinfo.TEST_RELEASES_ENV: url}):
+                return buildinfo.test_releases_api()
+
+        self.assertEqual(source(marked, good), good)
+        self.assertEqual(source(marked, good + "/"), good)
+        self.assertIsNone(source(unmarked, good))
+        self.assertIsNone(source(None, good))
+        for bad in ("https://127.0.0.1:8123/releases", "http://localhost:8123/releases",
+                    "http://127.0.0.1:1@evil/", "http://127.0.0.1/releases",
+                    "http://127.0.0.1:8123/releases?x=1", ""):
+            with self.subTest(bad=bad):
+                self.assertIsNone(source(marked, bad))
+        with mock.patch.dict(sys.modules, {"ryos._build_info": marked}), \
+                mock.patch.dict(os.environ):
+            os.environ.pop(buildinfo.TEST_RELEASES_ENV, None)
+            self.assertIsNone(buildinfo.test_releases_api())
+
+    def test_a_test_build_never_carries_the_release_key(self):
+        from ryos import buildinfo
+        test_key = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+        for key in (buildinfo.RELEASE_PUBLIC_KEY, None):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                buildinfo.build_info_source("agent", "1a2b3c4", key, test_updates=True)
+        text = buildinfo.build_info_source("agent", "1a2b3c4", test_key, test_updates=True)
+        self.assertIn("TEST_UPDATES = True", text)
+        namespace: dict = {}
+        exec(text, namespace)
+        self.assertIs(namespace["TEST_UPDATES"], True)
+        self.assertEqual(namespace["RELEASE_KEY"], test_key)
+        self.assertNotIn("TEST_UPDATES",
+                         buildinfo.build_info_source("agent", "1a2b3c4", test_key))
+        self.assertNotIn("TEST_UPDATES", buildinfo.build_info_source(
+            "agent", "1a2b3c4", buildinfo.RELEASE_PUBLIC_KEY))
+
+    def test_setup_never_marks_a_test_build(self):
+        source = (Path(__file__).resolve().parents[1] / "setup_cxfreeze.py").read_text(
+            encoding="utf-8")
+        self.assertNotIn("test_updates", source)
+        self.assertNotIn("TEST_UPDATES", source)
 
     def test_setup_embeds_the_release_key(self):
         source = (Path(__file__).resolve().parents[1] / "setup_cxfreeze.py").read_text(

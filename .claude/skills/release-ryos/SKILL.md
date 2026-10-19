@@ -60,7 +60,7 @@ Stage deliberately — **never** `dist/`, `build/`, `scripts.db`, or `__pycache_
 cd D:/Projects/RYOS && uv run --extra mcp --with cx_Freeze python build_release.py 2>&1 | tail -8
 ```
 
-It builds the three frozen variants from clean folders, zips all four downloads, checks what each holds and must not hold, and writes `SHA256SUMS.txt`. It ends with `build_release done`; on any problem (an exe missing, the MCP SDK in the build without it or missing from one with it, Qt or the window in the agent build, a `__pycache__` or `_build_info.py` in the source) it exits 1. **If it fails, stop and report.** Don't package anything by hand (`Compress-Archive` swept 95 stale bytecode files into 2.0.0's first portable zip). `build.bat` / `build_cxfreeze.bat` build only the `windows` variant, for development.
+It builds the three frozen variants from clean folders, zips all four downloads, checks what each holds and must not hold, and writes `SHA256SUMS.txt`. It ends with `build_release done`; on any problem (an exe missing, the MCP SDK in the build without it or missing from one with it, Qt or the window in the agent build, a frozen build whose `lib/ryos/_build_info.pyc` lacks the release key (`buildinfo.RELEASE_PUBLIC_KEY`) or carries the test-build mark `TEST_UPDATES`, a `__pycache__` or `_build_info.py` in the source) it exits 1. **If it fails, stop and report.** Don't package anything by hand (`Compress-Archive` swept 95 stale bytecode files into 2.0.0's first portable zip). `build.bat` / `build_cxfreeze.bat` build only the `windows` variant, for development.
 
 ### A3b. Vũ signs — hard gate
 
@@ -80,7 +80,7 @@ Quit any RYOS running on this machine first (the window, the tray icon, an MCP s
 cd D:/Projects/RYOS && uv run python tests/release_check.py 2>&1 | tail -40
 ```
 
-One script over all four zips, on throwaway data, with nothing opening on the first screen. It checks the zips and checksums; that each exe's `--version` names HEAD with no `-dirty`; `launch_smoke` on every download (and on the second screen when there is one); the portable zip is exactly the tracked source and runs with uv; the command line's management commands; MCP over plain JSON-RPC (list, run, poll, stop, refusals) and the 125 refusal of the build without agents; `session_smoke` in both layouts; an upgrade from a fixture database of every past release (`tests/fixtures/db/`); the same data used by RYOS Agent and the Windows builds in both orders; the `signature` case (each frozen build's own `ryos-cli verify` accepts its zip with `SHA256SUMS.txt.sig`, and refuses a signature made with the test key or a changed `SHA256SUMS.txt`); the "compatible from" guard in every download; and that the real `%APPDATA%\RYOS` is unchanged. It must end with `RELEASE CHECK PASSED`. **Any `[FAIL]` is a stop**: fix it (with `fix-ryos-bug`), and start again from A2 with N+1. A `[SKIP] launch_visible: skipped (one monitor)` is fine.
+One script over all four zips, on throwaway data, with nothing opening on the first screen. It checks the zips and checksums; that each exe's `--version` names HEAD with no `-dirty`; `launch_smoke` on every download (and on the second screen when there is one); the portable zip is exactly the tracked source and runs with uv; the command line's management commands; MCP over plain JSON-RPC (list, run, poll, stop, refusals) and the 125 refusal of the build without agents; `session_smoke` in both layouts; an upgrade from a fixture database of every past release (`tests/fixtures/db/`); the same data used by RYOS Agent and the Windows builds in both orders; the `signature` case (each frozen build's own `ryos-cli verify` accepts its zip with `SHA256SUMS.txt.sig`, and refuses a signature made with the test key or a changed `SHA256SUMS.txt`); the "compatible from" guard in every download; the self-update cases (`self_update_windows`, `_windows_ai`, `_agent`: a copy of each frozen build, marked `TEST_UPDATES` with the RFC 8032 test key, updates from a release served on 127.0.0.1 and rolls back, refusing an unsigned or wrongly signed release and keeping the old build whole when the helper is killed mid-swap or a file is held open; `self_update_newer_database`; `self_update_portable`; and `shipped_builds_ignore_the_test_source`); and that the real `%APPDATA%\RYOS` and `%LOCALAPPDATA%\RYOS\updates` are unchanged. It must end with `RELEASE CHECK PASSED`. **Any `[FAIL]` is a stop**: fix it (with `fix-ryos-bug`), and start again from A2 with N+1. A `[SKIP] launch_visible: skipped (one monitor)` is fine.
 
 Recommended too, before Vũ uses the candidate: check his real data on a copy (`uv run python tests/real_data_smoke.py`; `--db <backup>` for an older backup). A count that drops is a stop until you know why.
 
@@ -169,7 +169,7 @@ The brief starts with **"Release mode."** and includes, verbatim:
 - the B1 diff;
 - the release plan's final step with its "Done when" items, if there is one.
 
-Expected lineup (**update this table whenever the downloads change**, together with `problems_in()` in `build_release.py`):
+Expected lineup (**update this table whenever the downloads change**, together with `problems_in()` and `release_key_problems()` in `build_release.py`):
 
 | Zip | Variant | Must contain | Must not contain |
 |---|---|---|---|
@@ -177,6 +177,7 @@ Expected lineup (**update this table whenever the downloads change**, together w
 | `RYOS-windows-ai.zip` | `windows-ai` | `RYOS.exe`, `ryos-cli.exe`, the `mcp` package (`lib/mcp/`) | — |
 | `RYOS-agent.zip` | `agent` | `ryos-cli.exe`, the `mcp` package (`lib/mcp/`) | `RYOS.exe`, `qtui`, Qt / PySide6 / shiboken6 |
 | `RYOS-portable.zip` | source | the source, `ryos/__init__.py`, `run.bat`, `install_uv.bat` | `__pycache__`, `_build_info.py` |
+| all frozen | | `lib/ryos/_build_info.pyc` carrying `RELEASE_PUBLIC_KEY` | `TEST_UPDATES` in `lib/ryos/_build_info.pyc` |
 | all | | | `scripts.db`, a settings file, `__pycache__` in the source |
 
 `SHA256SUMS.txt` lists exactly these four zips, and `SHA256SUMS.txt.sig` sits beside it. Three more things the lineup must show (the build puts them in; `buildinfo.COMPANY`, `COPYRIGHT`):
@@ -209,6 +210,9 @@ Include the download guidance in the notes so users know which asset to grab:
 - **SHA256SUMS.txt.sig** — the signature of `SHA256SUMS.txt`: RYOS checks it before it installs an update, and `ryos-cli verify` checks a zip you downloaded by hand.
 
 All four keep your data in the same place, so you can move between them; each one's update notice names its own zip.
+
+## Updating
+Coming from 2.3.x or earlier? Download this release by hand once (your data stays in %APPDATA%\RYOS); from then on RYOS updates itself (Restart to update in the window, `ryos-cli update` for RYOS Agent).
 
 ## Check your download
 1. Download only from https://github.com/lqvu-zen/RYOS/releases.

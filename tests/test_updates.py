@@ -301,6 +301,58 @@ class TestFindingTheRelease(_Base):
             open_url=_OPEN, api="http://127.0.0.1:9/api/releases"))
 
 
+class TestTestSource(_Base):
+    """Only release_check's test build (TEST_UPDATES) reads releases from
+    RYOS_TEST_RELEASES_API, and only from 127.0.0.1 (UP-30)."""
+
+    marked = SimpleNamespace(VARIANT="agent", RELEASE_KEY=TEST_PUBLIC.hex(),
+                             TEST_UPDATES=True)
+    unmarked = SimpleNamespace(VARIANT="agent", RELEASE_KEY=TEST_PUBLIC.hex())
+
+    def build(self, fake, env):
+        return mock.patch.dict(sys.modules, {"ryos._build_info": fake}), \
+            mock.patch.dict(os.environ, {buildinfo.TEST_RELEASES_ENV: env})
+
+    def recorded(self, fake, env):
+        seen = []
+
+        def open_url(request, timeout=None):
+            seen.append(request.full_url)
+            raise urllib.error.URLError("not here")
+        modules, environ = self.build(fake, env)
+        with modules, environ:
+            self.assertIsNone(updates.fetch_release(open_url=open_url))
+        return seen
+
+    def test_fetch_uses_the_test_source_only_in_a_marked_build(self):
+        env = f"{self.server.base}/api/releases"
+        self.assertEqual(self.recorded(self.unmarked, env),
+                         [updates.RELEASES_API + "/latest"])
+        self.assertEqual(self.recorded(self.marked, env), [env + "/latest"])
+        self.assertEqual(self.recorded(self.marked, "https://example.com/releases"),
+                         [updates.RELEASES_API + "/latest"])
+        modules, environ = self.build(self.marked, env)
+        with modules, environ, mock.patch.object(urllib.request, "urlopen", _OPEN):
+            release = updates.fetch_release()
+        self.assertEqual(release.tag, self.tag)
+        self.assertEqual(self.server.requests[-1][0], "/api/releases/latest")
+
+    def test_the_version_check_reads_the_same_source(self):
+        env = f"{self.server.base}/api/releases"
+        for fake, want in ((self.unmarked, notifications._RELEASES_API),
+                           (self.marked, env + "/latest")):
+            seen = []
+
+            def urlopen(request, timeout=None):
+                seen.append(request.full_url)
+                raise urllib.error.URLError("not here")
+            modules, environ = self.build(fake, env)
+            with self.subTest(fake=fake), modules, environ, \
+                    mock.patch.object(urllib.request, "urlopen", urlopen):
+                self.assertIsNone(notifications._fetch_latest_release())
+            self.assertEqual(seen, [want])
+
+
 class TestDownloading(_Base):
     def test_each_download_gets_its_own_zip_verified(self):
         for which in (buildinfo.WINDOWS, buildinfo.WINDOWS_AI, buildinfo.AGENT):

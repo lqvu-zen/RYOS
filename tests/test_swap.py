@@ -418,6 +418,33 @@ class TestJournal(_Case):
         super().setUp()
         self.n = 0
 
+    def test_a_journal_write_waits_out_a_reader_holding_the_file(self):
+        path = self.tmp / "swap.json"
+        path.write_text("{}", encoding="utf-8")
+        real = os.replace
+        refusals = []
+
+        def held(src, dst):
+            if len(refusals) < 3:
+                refusals.append(dst)
+                raise PermissionError(13, "Access is denied", str(dst))
+            real(src, dst)
+        with mock.patch.object(swap.os, "replace", held), \
+                mock.patch.object(swap.time, "sleep"):
+            swap._save_json(path, {"state": "swap"})
+        self.assertEqual(len(refusals), 3)
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"state": "swap"})
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows sharing rules")
+    def test_a_journal_write_survives_a_real_reader_on_windows(self):
+        import threading
+        path = self.tmp / "swap.json"
+        path.write_text("{}", encoding="utf-8")
+        reader = open(path, "rb")
+        threading.Timer(0.3, reader.close).start()
+        swap._save_json(path, {"state": "unswap"})
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"state": "unswap"})
+
     def fresh(self):
         self.n += 1
         self.place(self.tmp / f"n{self.n}")

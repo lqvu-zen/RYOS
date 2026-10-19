@@ -30,7 +30,7 @@ Built with Python + Qt (PySide6). Ships as a standalone `.exe` (no Python requir
 - **Drag & drop** — drop script files on the window to add them; drag rows to reorder or onto a group to move them.
 - **Command line** — `ryos-cli list`, `run` and `pipeline` run any script or pipeline from a terminal, Task Scheduler or a git hook, with JSON output and meaningful exit codes.
 - **AI agents (MCP)** — let Claude Code, Claude Desktop or another MCP client run the scripts you tick **Available to agents**, with their own parameters or a saved preset, and read the output.
-- **Tray, notifications, updates** — keep running in the tray, a Windows toast when a run finishes, and a check for new releases.
+- **Tray, notifications, updates** — keep running in the tray, a Windows toast when a run finishes, and updates that download, check their signature and install when you say so, with one step back.
 - **Themes** — one set of drawn icons that follows the theme; Light and Dark built in, a theme creator (7 colours + live preview), import/export, and more in the [theme gallery](theme-gallery/GALLERY.md). Every colour follows the theme and is checked for contrast.
 - **Multi-monitor aware** — opens on the monitor under the cursor; at login, on the last screen you used.
 
@@ -60,6 +60,10 @@ Before you run what you downloaded:
 3. **Check the signature** (optional, and the strongest check). Put `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` from the release beside the zip and, with an RYOS you already trust, run `ryos-cli.exe verify .\RYOS-windows-ai.zip`. It must exit 0. RYOS does the same check itself before it installs an update.
 4. **Look at the publisher.** Right-click `RYOS.exe` (or `ryos-cli.exe`) -> Properties -> Details: the company is **Zenitus (Lê Quang Vũ)**.
 5. **"Unknown publisher" from SmartScreen is expected**, because RYOS is not code-signed. Choose **More info -> Run anyway** only for a download that passed the check above.
+
+## Updating
+
+From 2.4 on, RYOS updates itself: it downloads the new version of your download in the background, checks its signature, and installs it when you choose **Restart to update** (RYOS Agent: `ryos-cli update`); **Help → Roll back** (`ryos-cli update --rollback`) takes you back one version. Coming from 2.3.x or earlier? Download 2.4 by hand once; your data stays in `%APPDATA%\RYOS`. See [Updating and rolling back](docs/tutorial/15-updating.md).
 
 ## Getting Started
 

@@ -9,7 +9,7 @@ The full guide, with real screenshots of every screen, is the **[illustrated use
 ## Installation
 
 ### Option A — Standalone executable
-Download `RYOS-windows.zip` from the latest release, extract it, and double-click `RYOS.exe`. No installation required. `ryos-cli.exe` beside it is the command line. For AI agents (Claude), download `RYOS-windows-ai.zip` instead: the same app with the MCP server built in.
+Download `RYOS-windows.zip` from the latest release, extract it, and double-click `RYOS.exe`. No installation required. `ryos-cli.exe` beside it is the command line. For AI agents (Claude), download `RYOS-windows-ai.zip` instead: the same app with the MCP server built in. From 2.4 on, RYOS updates itself; see [Updating and rolling back](docs/tutorial/15-updating.md).
 
 ### Only want Claude to run your scripts?
 Download `RYOS-agent.zip` instead: just `ryos-cli.exe`, no window. See [RYOS Agent](docs/tutorial/14-ryos-agent.md).
@@ -48,3 +48,4 @@ RYOS is not code-signed yet, so check what you downloaded before you run it:
 12. [Tips](docs/tutorial/12-tips.md) — compact rows, select mode, and small time-savers.
 13. [The command line and AI agents](docs/tutorial/13-command-line-and-agents.md) — running scripts from a terminal, and letting Claude run the ones you choose.
 14. [RYOS Agent](docs/tutorial/14-ryos-agent.md) — RYOS without the window: add your scripts, choose what Claude may run, connect it.
+15. [Updating and rolling back](docs/tutorial/15-updating.md) — Restart to update, Help → Roll back, `ryos-cli update`, and what to do when an update fails.

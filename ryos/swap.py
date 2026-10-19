@@ -42,6 +42,7 @@ UPDATE = "update"
 ROLLBACK = "rollback"
 
 RENAME_DELAYS = (0.25, 0.5, 1, 2, 4, 8, 15, 15, 15)
+SAVE_DELAYS = (0.05, 0.1, 0.25, 0.5, 1, 2)
 WAIT_SECONDS = 120.0
 
 WINDOW_EXE = "RYOS.exe"
@@ -261,7 +262,14 @@ def _save_json(path: Path, data: dict) -> None:
         json.dump(data, fh, indent=1)
         fh.flush()
         os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    for delay in (*SAVE_DELAYS, None):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if delay is None:
+                raise
+            time.sleep(delay)
 
 
 def _hold_lock(path: Path) -> Callable[[], None] | None:

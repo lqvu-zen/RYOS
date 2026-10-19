@@ -16,6 +16,7 @@ a build carrying them is released (2.3.0 is the first).
 from __future__ import annotations
 
 import importlib
+import os
 import re
 
 #: Shown in Properties -> Details of both exes (setup_cxfreeze.py). NFC
@@ -28,6 +29,10 @@ _COMMIT = re.compile(r"[0-9a-f]{7,40}(-dirty)?")
 _RELEASE_KEY = re.compile(r"[0-9a-f]{64}")
 
 RELEASE_PUBLIC_KEY = "3448252042d2cd24b977ba0688acf6c3d4ca914aaf4f7df80cbac399008006a8"
+
+TEST_UPDATES_NAME = "TEST_UPDATES"
+TEST_RELEASES_ENV = "RYOS_TEST_RELEASES_API"
+_LOOPBACK_API = re.compile(r"http://127\.0\.0\.1:\d{1,5}(/[A-Za-z0-9._~/-]*)?")
 
 WINDOWS = "windows"             # RYOS.exe + ryos-cli.exe, no MCP server
 WINDOWS_AI = "windows-ai"       # RYOS.exe + ryos-cli.exe with the MCP server
@@ -110,6 +115,31 @@ def release_key() -> bytes | None:
     return None
 
 
+def test_updates() -> bool:
+    """Whether this is a test build release_check made from a copy of a
+    shipped one (``TEST_UPDATES = True``, the RFC 8032 test key in place of
+    the release key); never a build anyone downloads."""
+    if variant() == PORTABLE:
+        return False
+    try:
+        found = getattr(importlib.import_module("ryos._build_info"), TEST_UPDATES_NAME)
+    except (ImportError, AttributeError):
+        return False
+    return found is True
+
+
+def test_releases_api() -> str | None:
+    """Where a test build looks for releases instead of GitHub: the
+    ``RYOS_TEST_RELEASES_API`` address, only on 127.0.0.1 over http, and
+    only in a test build; None everywhere else."""
+    if not test_updates():
+        return None
+    url = os.environ.get(TEST_RELEASES_ENV, "")
+    if not _LOOPBACK_API.fullmatch(url):
+        return None
+    return url.rstrip("/")
+
+
 def describe_build(which: str | None = None) -> str:
     """``describe()`` plus the build's commit, for ``--version`` and the bug
     report ('Windows build with AI agents, 1a2b3c4'). From source, exactly
@@ -146,10 +176,14 @@ def git_commit(root, run=None) -> str | None:
 
 
 def build_info_source(which: str, commit: str | None = None,
-                      release_key: str | None = None) -> str:
-    """The text of ``ryos/_build_info.py`` for a build of ``which``."""
+                      release_key: str | None = None, test_updates: bool = False) -> str:
+    """The text of ``ryos/_build_info.py`` for a build of ``which``; with
+    ``test_updates``, release_check's test build, which must carry a key
+    other than the release key."""
     if which not in BUILD_FOLDERS:
         raise ValueError(f"unknown build variant {which!r}")
+    if test_updates and (release_key is None or release_key == RELEASE_PUBLIC_KEY):
+        raise ValueError("a test build carries a test key, never the release key")
     text = ('"""Written by setup_cxfreeze.py for the length of a build; see '
             'ryos/buildinfo.py."""\n'
             f"VARIANT = {which!r}\n")
@@ -161,4 +195,6 @@ def build_info_source(which: str, commit: str | None = None,
         if not _RELEASE_KEY.fullmatch(release_key):
             raise ValueError(f"not a public key: {release_key!r}")
         text += f"RELEASE_KEY = {release_key!r}\n"
+    if test_updates:
+        text += f"{TEST_UPDATES_NAME} = True\n"
     return text

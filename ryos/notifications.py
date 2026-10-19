@@ -6,6 +6,7 @@ import sys
 import urllib.error
 import urllib.request
 
+from . import buildinfo
 from .logger import get_logger
 
 _log = get_logger("notifications")
@@ -69,9 +70,11 @@ def _parse_version(tag: str) -> tuple[tuple[int, ...], int, int]:
 
 
 def _fetch_latest_release() -> tuple[str, str] | None:
+    test = buildinfo.test_releases_api()
+    url = f"{test}/latest" if test else _RELEASES_API
     try:
         req = urllib.request.Request(
-            _RELEASES_API, headers={"User-Agent": "RYOS-update-check"})
+            url, headers={"User-Agent": "RYOS-update-check"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read())
         return data["tag_name"], data["html_url"]
