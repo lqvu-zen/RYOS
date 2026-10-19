@@ -91,6 +91,23 @@
           "text": "The handler reads the output Text widget contents and writes them to the clipboard via tkinter clipboard calls (clipboard_clear / clipboard_append, or equivalent)."
         }
       ]
+    },
+    {
+      "name": "claims-the-step-first",
+      "prompt": "Do step 14 of docs/plans/release-2.4.0.md. (Setup: its Status row says `—`.)",
+      "expected_output": "Before any other work the session sets the step's Status row to in progress with the date and time, and commits and pushes that one line by path.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "claims_before_work",
+          "text": "The first change is the Status row set to `in progress (YYYY-MM-DD HH:MM)`, before any code, design or build."
+        },
+        {
+          "name": "claim_committed_alone",
+          "text": "That one-line change is committed by path and pushed on its own, not with the step's other files."
+        }
+      ],
+      "id": 3
     }
   ]
 }

@@ -117,6 +117,40 @@
           "text": "No version number is chosen or bumped by the session."
         }
       ]
+    },
+    {
+      "name": "claims-the-step-first",
+      "prompt": "Do step 37 of docs/plans/release-2.4.0.md. (Setup: its Status row says `—`.)",
+      "expected_output": "Before any other work the session sets the step's Status row to in progress with the date and time, and commits and pushes that one line by path.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "claims_before_work",
+          "text": "The first change is the Status row set to `in progress (YYYY-MM-DD HH:MM)`, before any code, design or build."
+        },
+        {
+          "name": "claim_committed_alone",
+          "text": "That one-line change is committed by path and pushed on its own, not with the step's other files."
+        }
+      ],
+      "id": 5
+    },
+    {
+      "name": "refuses-a-claimed-step",
+      "prompt": "Do step 37 of docs/plans/release-2.4.0.md. (Setup: its Status row says `in progress (2026-10-19 22:05)`.)",
+      "expected_output": "The session sees the step is held by another tab, says so and stops without changing anything.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "says_it_is_claimed",
+          "text": "The reply says step 37 is already in progress in another tab."
+        },
+        {
+          "name": "changes_nothing",
+          "text": "No file is edited, no agent is spawned and nothing is committed or pushed."
+        }
+      ],
+      "id": 6
     }
   ]
 }

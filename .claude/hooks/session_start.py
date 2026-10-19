@@ -211,20 +211,21 @@ def _in_order(order: list[int], states: dict[int, tuple[str, str]]) -> list[int]
     return known + [n for n in states if n not in known]
 
 
+def is_claimed(state: str) -> bool:
+    lowered = state.strip().lower()
+    return lowered.startswith("started") or lowered.startswith("in progress")
+
+
 def next_open(order: list[int], states: dict[int, tuple[str, str]]) -> int | None:
     for number in _in_order(order, states):
-        if is_open(states[number][1]):
+        state = states[number][1]
+        if is_open(state) and not is_claimed(state):
             return number
     return None
 
 
-def started(order: list[int], states: dict[int, tuple[str, str]], skip: int | None) -> list[int]:
-    found = []
-    for number in _in_order(order, states):
-        state = states[number][1].strip().lower()
-        if number != skip and (state.startswith("started") or state.startswith("in progress")):
-            found.append(number)
-    return found
+def started(order: list[int], states: dict[int, tuple[str, str]]) -> list[int]:
+    return [n for n in _in_order(order, states) if is_claimed(states[n][1])]
 
 
 def plan_lines(plan: str | None, plan_md: str | None) -> list[str]:
@@ -239,13 +240,17 @@ def plan_lines(plan: str | None, plan_md: str | None) -> list[str]:
     if not order or not states:
         return lines + [f"Next step: couldn't read the Order and Status of {plan}; "
                         "read docs/STATUS.md."]
+    claimed = started(order, states)
     number = next_open(order, states)
-    if number is None:
+    if number is not None:
+        lines.append(f"Next open step in Order: {number} {states[number][0]}")
+    elif not claimed:
         return lines + [f"Every step of {plan} is done."]
-    lines.append(f"Next open step in Order: {number} {states[number][0]}")
-    also = started(order, states, number)
-    if also:
-        lines.append("Also started: " + "; ".join(f"{n} {states[n][0]}" for n in also))
+    else:
+        lines.append("Next open step in Order: none; every open step is in progress.")
+    if claimed:
+        lines.append("In progress (claimed by another tab, don't take): "
+                     + "; ".join(f"{n} {states[n][0]}" for n in claimed))
     return lines
 
 

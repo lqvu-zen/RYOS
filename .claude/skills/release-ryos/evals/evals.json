@@ -76,6 +76,23 @@
           "text": "The session stops at the CI check, names the failed run and does not build or version anything."
         }
       ]
+    },
+    {
+      "name": "claims-the-step-first",
+      "prompt": "/release-ryos Cut rc1 for 2.4.0 (step 12). (Setup: its Status row says `—`.)",
+      "expected_output": "Before any other work the session sets the step's Status row to in progress with the date and time, and commits and pushes that one line by path.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "claims_before_work",
+          "text": "The first change is the Status row set to `in progress (YYYY-MM-DD HH:MM)`, before any code, design or build."
+        },
+        {
+          "name": "claim_committed_alone",
+          "text": "That one-line change is committed by path and pushed on its own, not with the step's other files."
+        }
+      ],
+      "id": 4
     }
   ]
 }

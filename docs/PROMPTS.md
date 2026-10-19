@@ -32,7 +32,14 @@ for anything newer, and tell me where we are.
 
 **Coding: continue the plan** (one fresh tab per step):
 ```
-Read docs/STATUS.md to find the current plan, then continue with its next open step in Order. Update the Status table when it's done.
+Read docs/STATUS.md to find the current plan, then continue with its next open step in Order that is not already in progress. Claim it first, and update the Status table when it's done.
+```
+
+**Coding: a second tab beside another** (the session-start hook lists what is in progress):
+```
+Do step {N} of docs/plans/release-{X.Y.Z}.md. If its Status row says in progress or
+started, stop and tell me. Otherwise claim it first, work only in the files its
+"Files" line names, commit only those files, and update the Status table when it's done.
 ```
 
 **Coding: one specific step:**

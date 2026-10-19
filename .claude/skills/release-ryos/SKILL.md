@@ -33,6 +33,8 @@ If you're somewhere without a display or without Windows (e.g. a Linux sandbox),
 
 ## A. Release candidate
 
+**Claim your step before anything else.** When the release is a step of a release plan (`docs/plans/*.md`), read its Status row first. A row that says `in progress` or starts `started` is held by another tab: say so and stop, unless Vũ says the claim is stale. Otherwise set the row to `in progress (YYYY-MM-DD HH:MM)`, commit that one line alone, by path (`git add docs/plans/<plan>.md`, then `git commit -m "Status: <release> step N in progress" -- docs/plans/<plan>.md`), and push it, before any other work. Keep the file's CRLF line endings (`git diff --stat` shows one changed line). A session that stops without finishing ("Still red", a `**Gate:**`, a second BLOCKERS) rewrites the row to say why it stopped and what is left, so no claim goes stale; a finished step's row says `done` as usual.
+
 ### A1. Check CI, then ask for the version and draft notes
 
 ```bash

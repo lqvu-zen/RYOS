@@ -99,6 +99,8 @@ These are the invariants that make RYOS work. Most "looked fine, broke in practi
 
 ## Before you start, and where you stop
 
+**Claim your step before anything else.** When the work is a step of a release plan (`docs/plans/*.md`), read its Status row first. A row that says `in progress` or starts `started` is held by another tab: say so and stop, unless Vũ says the claim is stale. Otherwise set the row to `in progress (YYYY-MM-DD HH:MM)`, commit that one line alone, by path (`git add docs/plans/<plan>.md`, then `git commit -m "Status: <release> step N in progress" -- docs/plans/<plan>.md`), and push it, before any other work. Keep the file's CRLF line endings (`git diff --stat` shows one changed line). A session that stops without finishing ("Still red", a `**Gate:**`, a second BLOCKERS) rewrites the row to say why it stopped and what is left, so no claim goes stale; a finished step's row says `done` as usual.
+
 **Check CI on HEAD first.** `cd D:/Projects/RYOS && gh run list -L 3 --json conclusion,status,headSha,displayTitle` (compare `headSha` with `git rev-parse HEAD`). If the run on HEAD is red, the fix for it is the next step, ahead of the one you were asked for: say so, and carry on only when Vũ agrees. A run still in progress is not a failure: wait for it (`gh run watch <id> --exit-status`) before you build on it.
 
 **Stop at a `**Gate:**` line.** When the plan step carries one, do the work up to the gate, then stop and tell Vũ in plain words what he has to do (name the version, sign, install a build, tick a checklist, approve a list) before anything is committed, pushed or published past it. Never decide a gate's question yourself.

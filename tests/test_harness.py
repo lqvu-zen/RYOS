@@ -462,7 +462,7 @@ class TestSessionStart(unittest.TestCase):
         states = session_start.step_states(PLAN)
         self.assertEqual(states[31], ("Harness: permissions, hooks, checks", "—"))
         self.assertEqual(session_start.next_open(order, states), 31)
-        self.assertEqual(session_start.started(order, states, 31), [33])
+        self.assertEqual(session_start.started(order, states), [33])
 
     def test_rows_missing_from_the_order_come_last(self):
         plan = "## Order\n\n1. 1, then 2.\n\n## Status\n\n| 1 A | done |\n| 9 C | — |\n| 2 B | done |\n"
@@ -474,8 +474,30 @@ class TestSessionStart(unittest.TestCase):
         self.assertEqual(lines, [
             "Plan: docs/plans/release-2.4.0.md",
             "Next open step in Order: 31 Harness: permissions, hooks, checks",
-            "Also started: 33 The plan as a graph",
+            "In progress (claimed by another tab, don't take): 33 The plan as a graph",
         ])
+
+    def test_a_claimed_step_is_skipped(self):
+        plan = PLAN.replace("| 31 Harness: permissions, hooks, checks | — |",
+                            "| 31 Harness: permissions, hooks, checks | in progress (2026-10-19 23:30) |")
+        lines = session_start.plan_lines("docs/plans/release-2.4.0.md", plan)
+        self.assertEqual(lines[1], "Next open step in Order: 32 Loop rules")
+        self.assertEqual(lines[2], "In progress (claimed by another tab, don't take): "
+                                   "31 Harness: permissions, hooks, checks; 33 The plan as a graph")
+
+    def test_a_started_row_counts_as_claimed(self):
+        plan = "\n".join(["## Order", "", "1. 1 then 2.", "", "## Status", "",
+                          "| 1 A | started 2026-10-19 |", "| 2 B | — |"])
+        lines = session_start.plan_lines("docs/plans/x.md", plan)
+        self.assertEqual(lines[1], "Next open step in Order: 2 B")
+        self.assertEqual(lines[2], "In progress (claimed by another tab, don't take): 1 A")
+
+    def test_every_open_step_claimed(self):
+        plan = "\n".join(["## Order", "", "1. 1 then 2 then 3.", "", "## Status", "",
+                          "| 1 A | done |", "| 2 B | in progress (x) |", "| 3 C | started |"])
+        lines = session_start.plan_lines("docs/plans/x.md", plan)
+        self.assertEqual(lines[1], "Next open step in Order: none; every open step is in progress.")
+        self.assertEqual(lines[2], "In progress (claimed by another tab, don't take): 2 B; 3 C")
 
     def test_fallbacks(self):
         lines = session_start.plan_lines("docs/plans/x.md", "garbage, no sections at all")
