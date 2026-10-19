@@ -212,7 +212,7 @@ in both layouts and two themes. Findings first; change nothing until I agree.
 
 **Tech debt check-in:**
 ```
-Compare docs/tech-debt-2026-09-21.md with the code today. What's fixed,
+Compare the newest docs/tech-debt-*.md (2026-10-19) with the code today. What's fixed,
 what's new, and the top three worth doing next. Write it as a new dated
 tech-debt doc and mark the old one superseded.
 ```

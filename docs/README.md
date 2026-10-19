@@ -8,7 +8,7 @@
 | [API_REFERENCE.md](API_REFERENCE.md) | Contributors | Public surface of each core module (`db`, `interpreter`, `runner`, `jobs`, `quickrun`, `settings`, …). |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | Environment setup, running tests/lint, conventions, release builds. |
 | [STATUS.md](STATUS.md) | Maintainers | Where the project stands: current plan step, open issues, decisions. Kept by the `ryos-secretary` skill; coding sessions read it. |
-| [tech-debt-2026-09-21.md](tech-debt-2026-09-21.md) | Maintainers | **Current** debt register: ranked findings, what's healthy, phased plan. |
+| [tech-debt-2026-10-19.md](tech-debt-2026-10-19.md) | Maintainers | **Current** debt register for the Qt app: ranked findings, what's healthy, top three, remediation by plan step. Supersedes [tech-debt-2026-09-21.md](tech-debt-2026-09-21.md) (the Tk app at 1.11.2). |
 | [archive/qt-migration.md](archive/qt-migration.md) | Maintainers | **Completed**: the Tk → Qt (PySide6) migration — extract first, then port alongside. Kept for its measurements and reasoning; the Tk interface has been removed. |
 | [archive/agent-support.md](archive/agent-support.md), [archive/release-2.3.0.md](archive/release-2.3.0.md) | Maintainers | **Completed**: the CLI and MCP server plan, and the 2.3.0 release plan. Kept because their decisions (A1–A8) are still cited. |
 

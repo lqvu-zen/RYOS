@@ -156,4 +156,4 @@ Execution runs in a `threading.Thread`; output is piped through a `queue.Queue` 
 - [Architecture](docs/ARCHITECTURE.md) — module map, threading model, data flow.
 - [Module reference](docs/API_REFERENCE.md) — public API of the core modules.
 - [Contributing](docs/CONTRIBUTING.md) — dev setup, conventions, build steps.
-- [Tech debt](docs/tech-debt-2026-09-21.md) — known rough edges.
+- [Tech debt](docs/tech-debt-2026-10-19.md) — known rough edges.
