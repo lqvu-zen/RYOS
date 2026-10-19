@@ -458,6 +458,14 @@ added <test / map entry / release_check case>".
 - GR-33 (v2.3.1, since the outside note in v2.2.0): a scheduled run of a script outside its base folder opened its output with the outside note; should have been caught by a unit test running an outside script through the window's host with a schedule trigger (the note was decided per host, not per run); added the `test_ryos::TestBaseFolderNotes` schedule, start-up and manual cases for a script and a pipeline step, `test_ryos::TestBaseFolderNotes::test_only_a_window_run_notes`, and `session_smoke::step_scheduled_outside` asserting no note in both layouts.
 - SM-16 (v2.3.0): starring a ticked row, or maximising with full rows, left select mode and dropped the ticks; should have been caught by a select-mode check that reloads the list with rows ticked; added a reload-keeps-ticks case in `qt_smoke::check_select_mode` (star, unstar, maximise, restore).
 
+## Harness escapes
+
+A process rule broken by a session (not a bug in RYOS) gets one line here: what happened, and the hook case or permission rule that now stops it. **A session that breaks a process rule adds, in the same change, the hook case or `deny` / `ask` rule that would have stopped it**, with its test in `tests/test_harness.py`; a new `deny` or `ask` rule needs Vũ's approval.
+
+- 2026-10-09 (testing the MCP builds): a PowerShell `set APPDATA=…` set no environment variable, so test scripts ran against the real `%APPDATA%\RYOS`, landed in the real data and upgraded it to schema v10. Now `.claude/hooks/guard.py` refuses starting RYOS without pointing `APPDATA` elsewhere in the same command, a `set APPDATA=` outside `cmd /c`, and any write into the real folder; `test_harness::TestGuardRefuses`.
+- 2026-10-13: a coding session reverted an uncommitted secretary edit to `docs/STATUS.md` / `docs/plans/`. Now `deny` rules stop `git checkout` / `git restore` on those paths and `git reset --hard`, and `guard.py` refuses whole-tree discards while they hold uncommitted changes; `test_harness::TestGuardRefuses`.
+- PR #14 (v2.0.x): bumped `__version__` to 2.0.1 in a feature commit. Now CI's `harness` job fails any commit that changes `__version__` unless titled `Release candidate X.Y.Z-rcN` or `Release X.Y.Z`; `test_harness::TestVersionCheck`.
+
 ---
 
 ## Untested: backlog

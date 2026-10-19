@@ -67,6 +67,10 @@ The maintainer chooses the version number. Before a release, ask for it and wait
 
 **The escape rule.** Every bug found after a release gets one line in `docs/BEHAVIOUR.md` § Escapes: "#NN (vX.Y.Z): should have been caught by <check>; added <test / map entry / release_check case>". The fix's commit adds that line and that check.
 
+## Harness
+
+`.claude/settings.json` turns the process rules into checks for every session. Its `env` block sets `PYTHONIOENCODING=utf-8`, `RYOS_NO_TOASTS=1` and `RYOS_NO_REGISTRY=1`, so commands don't prefix them (`QT_QPA_PLATFORM=offscreen` is still written out where needed). `gh release create/edit/delete/upload` and a forced `git push` ask Vũ; reverting `docs/STATUS.md` or `docs/plans/` (`git checkout`, `git restore`, `git reset --hard`) and reading or writing the signing key (`~/ryos-keys`, `*.pem`, `*.key`, `*.p8`) are denied. `.claude/hooks/guard.py` refuses a write into the real `%APPDATA%\RYOS` or `%LOCALAPPDATA%\RYOS`, starting RYOS without pointing `APPDATA` at a throwaway folder in the same command, and any command touching the key; `.claude/hooks/session_start.py` prints the branch, uncommitted files, CI on HEAD and the plan's next open step. CI's `harness` job (`tools/harness_checks.py`) fails a commit that changes `__version__` unless it is titled `Release candidate X.Y.Z-rcN` or `Release X.Y.Z` (a `Revert "Release …"` commit that changes it fails too), and any new comment line under `ryos/`. The allow list holds stable patterns only, never scratch paths or one-off edits. A session that breaks a process rule adds the rule or hook case that would have stopped it (`docs/BEHAVIOUR.md` § Harness escapes); changing `ask` or `deny` needs Vũ's approval.
+
 ## Architecture
 
 Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules and data in the top-level modules, the interface in `ryos/qtui/`. Entry point is `ryos.__main__:main`, exposed as the `ryos` console-script via `pyproject.toml`.

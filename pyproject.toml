@@ -33,7 +33,8 @@ testpaths = ["tests"]
 # sample script used as a subprocess fixture, not a test.
 python_files = ["test_ryos.py", "test_headless.py", "test_cli.py",
                 "test_agenttools.py", "test_mcpserver.py",
-                "test_updates.py", "test_swap.py", "test_selfupdate.py"]
+                "test_updates.py", "test_swap.py", "test_selfupdate.py",
+                "test_harness.py"]
 
 [tool.ruff]
 target-version = "py310"

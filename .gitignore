@@ -21,6 +21,7 @@ tests/*
 !tests/test_updates.py
 !tests/test_swap.py
 !tests/test_selfupdate.py
+!tests/test_harness.py
 !tests/echo_args.bat
 !tests/uv_runner.bat
 !tests/uv_hello.py
