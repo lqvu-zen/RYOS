@@ -607,8 +607,8 @@ _Added 2026-10-19 from Vũ's decision ("other sessions should tell us which task
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
-   - **37** (the qt-smoke crash, added 2026-10-19) is next after 32, before 12: CI must be green before a candidate.
-   - **38** (claim a step, added 2026-10-19) right after 37, before 12: parallel tabs need it.
+   - **37** (the qt-smoke crash, added 2026-10-19) comes next (CI must be green before a candidate).
+   - **38** (claim a step, added 2026-10-19) right after it (parallel tabs need it).
 2. **Harness and loop rules, before step 11** (added 2026-10-19): 31, then 32. 33 runs alongside (docs only).
 3. **Part A**, the riskiest and the one that changes the release process:
    1. 4 and 6 can run in parallel;
