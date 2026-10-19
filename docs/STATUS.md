@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 23:00 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 23:40 (UTC+7).
 
 ## Roles
 
@@ -12,7 +12,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 ## Working practices
 
 - **Coding sessions:** one fresh conversation per plan step (`Ctrl+Shift+Esc`, *Open in New Tab*), on **Sonnet 5.5, Medium**; **High** for the release test phase and the release. Planning sessions run on **Opus 5.5, High**. The agents' models come from `.claude/agents/`, whatever the main thread uses. The prompt to continue, which names no plan file:
-  > Read docs/STATUS.md to find the current plan, then continue with its next open step in Order. Update the Status table when it's done.
+  > Read docs/STATUS.md to find the current plan, then continue with its next open step in Order that is not already in progress. Claim it first, and update the Status table when it's done.
+
+  A second tab beside another uses the "second tab" prompt in `docs/PROMPTS.md`, which names its step.
 - **The secretary:** run `/ryos-secretary` at the start of each working day, so this file catches up with the plans' Status tables and the git log (decided 2026-10-19). Start a fresh secretary conversation when the current one gets long, or after a release.
 - **Paste-ready prompts** for every kind of session are in `docs/PROMPTS.md`.
 - **Secretary edits to repo files** (`docs/plans/*.md`, `docs/STATUS.md`) may arrive uncommitted. Coding sessions commit them with their next change and never revert them. One edit was reverted on 10-13; step 31 makes that a `deny` rule.
@@ -22,9 +24,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | Release | What | Plan |
 |---|---|---|
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/archive/release-2.3.1.md` |
-| **2.4** (in progress, 14 of 38 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
+| **2.4** (in progress, 15 of 38 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
 
-## Where we are (2026-10-19 23:00)
+## Where we are (2026-10-19 23:40)
 
 - **v2.3.1** is the latest release (2026-10-14). No 2.4 candidate yet.
 - **`main` = `origin/main` at `afa32f5`** (2026-10-19 21:33). Since `2088a68`:
@@ -47,8 +49,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - **CI is red on `afa32f5`: a recurring crash, not flaky noise.** `qt-smoke (ubuntu, offscreen)` exits 139 (segfault) right after its last check (`check_ampersands_show`, the last line before the summary), so at the end of the run or at exit. It has done this in 10 of the last ~20 runs since 2026-10-13 (`d900395`, `e853e87`, `a6deea9`, `754568b` among them), always at the same point; Windows and the unit tests pass. Under step 32's rule a coding session now fixes red CI first. Now **step 37** (Vũ, 22:05).
 - **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox; step 12 relies on it. **On hold (Vũ, 2026-10-19):** where to plan it waits; step 12 can't start without it.
 - `de6108a` **tech-debt review of the Qt app** (step 35): `docs/tech-debt-2026-10-19.md`, 11 items; top three: split `handle_step_done` before step 23, extract the card/group menu dispatch from `shell.py` at step 14, settle the jobs/Activity boundary at step 22. The 09-21 review is marked superseded.
-- **In progress:** step 37 (the qt-smoke crash) in a coding tab; step 33 here, with `ryos-planner` drafting the Files lines.
-- **Next:** 37, then **38** (claim a step when you start), then 12 once P7 is placed. Until 38 lands, a tab marks its own Status row `in progress` by hand.
+- `e39e71a` **claim a step when you start** (step 38): the coding skills mark their Status row `in progress` and push it first, and stop on a claimed step; the session-start hook skips claimed steps and lists them; a second-tab prompt in `docs/PROMPTS.md`. CI green on `e39e71a`, but qt-smoke still fails about half the time, so one green run doesn't prove 37 fixed.
+- **In progress:** step 37 (the qt-smoke crash) in a coding tab, not yet claimed in its row; step 33 here: `ryos-planner`'s draft (Files lines, lanes cut by files, 8 questions) is back, Vũ answering.
+- **Next:** 37, then 12 once P7 is placed.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -61,9 +64,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 31 | Harness | ✅ `96405b6` |
 | 32 | Loop rules | ✅ `afa32f5` |
 | 37 | Fix the qt-smoke crash on CI | in progress (10-19) |
-| 33 | The plan as a graph | in progress: Gate lines, Needs, merge rules done; `ryos-planner` drafting Files lines |
+| 33 | The plan as a graph | in progress: planner's draft back; Vũ's questions open |
 | 35 | Tech-debt review of the Qt app | ✅ `de6108a` |
-| 38 | Claim a step when you start | after 37 |
+| 38 | Claim a step when you start | ✅ `e39e71a` |
 | 12 | The early candidate (Vũ's gate) | waits for P7 (on hold) |
 | 13–15, 34 | Backlog; frozen builds in CI | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
