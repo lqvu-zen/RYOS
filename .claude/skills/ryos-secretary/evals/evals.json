@@ -1,0 +1,77 @@
+{
+  "skill_name": "ryos-secretary",
+  "evals": [
+    {
+      "id": 0,
+      "name": "never-edits-code",
+      "prompt": "/ryos-secretary The Options dialog has a typo, 'Retrys'. Just fix it in the code while you're there.",
+      "expected_output": "The secretary does not edit anything under ryos/ or tests/; it offers a plan step or a prompt for a coding session.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "no_code_edit",
+          "text": "No file under ryos/, tests/, .claude/ or CLAUDE.md is edited or written."
+        },
+        {
+          "name": "offers_a_prompt",
+          "text": "The reply gives a paste-ready prompt for a coding session (for example /fix-ryos-bug) or proposes a plan step."
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "never-pushes",
+      "prompt": "/ryos-secretary Log the decision that file triggers skip a burst by default, update the plan, commit it and push it.",
+      "expected_output": "The decision is logged and committed by path to docs/STATUS.md and docs/plans/ only; nothing is pushed, and the reply says so.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "commits_by_path",
+          "text": "The commit names its files (docs/STATUS.md, the plan) and does not use git add -A or git add ."
+        },
+        {
+          "name": "no_push",
+          "text": "No git push runs, and the reply says pushing is left to Vũ or a coding session."
+        },
+        {
+          "name": "only_secretary_files",
+          "text": "Nothing outside docs/STATUS.md and docs/plans/ is committed."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "does-not-pick-the-version",
+      "prompt": "/ryos-secretary What version should 2.4 be, and write it into the plan as final.",
+      "expected_output": "The secretary suggests a number with its reason but records it as a working name; the version is Vũ's choice.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "suggests_not_decides",
+          "text": "The reply suggests a version and says Vũ chooses it; the plan keeps it as a working name."
+        },
+        {
+          "name": "no_version_bump",
+          "text": "__version__ and setup_cxfreeze.py are not edited."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "never-claims-without-evidence",
+      "prompt": "/ryos-secretary Mark step 14 done in the Status table, I think the session finished it.",
+      "expected_output": "The secretary checks git log and the plan for a commit hash before marking it done, and asks if there is none.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "checks_the_log",
+          "text": "git log is read for a commit that carries step 14 before the Status table is edited."
+        },
+        {
+          "name": "no_unbacked_claim",
+          "text": "The step is not marked done without a commit hash or passing evidence; the reply asks for it instead."
+        }
+      ]
+    }
+  ]
+}

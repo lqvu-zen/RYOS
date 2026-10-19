@@ -97,6 +97,14 @@ These are the invariants that make RYOS work. Most "looked fine, broke in practi
 
 - **Don't touch `__version__`.** Leave `ryos/__init__.py` alone — the version is bumped only when cutting a release (see the `release-ryos` skill), never per change, and carries no `-dev` suffix.
 
+## Before you start, and where you stop
+
+**Check CI on HEAD first.** `cd D:/Projects/RYOS && gh run list -L 3 --json conclusion,status,headSha,displayTitle` (compare `headSha` with `git rev-parse HEAD`). If the run on HEAD is red, the fix for it is the next step, ahead of the one you were asked for: say so, and carry on only when Vũ agrees. A run still in progress is not a failure: wait for it (`gh run watch <id> --exit-status`) before you build on it.
+
+**Stop at a `**Gate:**` line.** When the plan step carries one, do the work up to the gate, then stop and tell Vũ in plain words what he has to do (name the version, sign, install a build, tick a checklist, approve a list) before anything is committed, pushed or published past it. Never decide a gate's question yourself.
+
+**Stop rules in the loop.** The implementer makes at most two fix rounds after its first run, then reports what is still red (see `ryos-implementer`). If its report says "Still red", don't send it round again: report to Vũ with the output. A reviewer's BLOCKERS get one more round (fix, re-review). If the second review still has blockers, stop and report them to Vũ; don't start a third round.
+
 ## The workflow
 
 ### 1. Reproduce and scope the bug
@@ -147,7 +155,7 @@ The brief includes, verbatim: the root cause and fix plan from step 3; the faili
 - `cd D:/Projects/RYOS && uv run --no-project --with PySide6 python tests/qt_smoke.py` and `uv run python tests/session_smoke.py` — the real-widget checks and a whole session pass (both use a throwaway data folder; `QT_QPA_PLATFORM=offscreen` runs them without any window).
 - The original repro no longer reproduces, and run/stop, groups, output panel, drag-drop, and the pipeline editor still work. Reproduce through the window's hooks (the session smoke shows the pattern) or the `run-ryos` driver's screenshots — never by opening windows on the user's first screen. If the bug is something a smoke should keep catching, add the check there too.
 
-Add: *"Read only the files in the plan plus direct callers/callees; don't scan the repo. Edit only inside `ryos/`, plus the regression test in tests/test_ryos.py. Don't touch pyproject.toml, build*.bat, or uv.lock. Apply the fix, add the failing test, then run the suite and the repro check; if anything fails, read the traceback, fix, and re-run until clean. Do not commit or push. Report files changed, the regression test going red→green, the final suite result, and a one-line repro-gone note."*
+Add: *"Read only the files in the plan plus direct callers/callees; don't scan the repo. Edit only inside `ryos/`, plus the regression test in tests/test_ryos.py. Don't touch pyproject.toml, build*.bat, or uv.lock. Apply the fix, add the failing test, then run the suite and the repro check; if anything fails, read the traceback, fix, and re-run, for at most two fix rounds after the first run; then stop and report what is still red. Do not commit or push. Report files changed, the regression test going red→green, the final suite result, and a one-line repro-gone note."*
 
 When the agent returns, **verify before moving on** — this is the gate. Run `git diff` and re-run the suite yourself, then check the diff:
 
@@ -170,7 +178,7 @@ Agent({ description: "Review fix for <bug>", subagent_type: "ryos-reviewer", pro
 
 The brief includes, verbatim: the original bug + repro; the root cause and plan from step 3; the full `git diff`; the entire **Architecture rules that always apply** section; and: *"Review ONLY the diff and the files it modifies. Confirm the change fixes the stated root cause (not just the symptom), that the regression test genuinely covers the bug, and that no architecture rule is violated or new regression introduced. Do NOT edit anything. Report BLOCKERS, SUGGESTIONS, and OK. If there are no blockers, end with 'READY TO COMMIT'."*
 
-If there are BLOCKERS, fix them or delegate back via SendMessage, then re-review. Proceed only on `READY TO COMMIT`.
+If there are BLOCKERS, fix them or delegate back via SendMessage, then re-review: one more round only. Proceed only on `READY TO COMMIT`; if the second review still has blockers, stop and report them to Vũ.
 
 ### 6. Commit and push
 
@@ -187,6 +195,8 @@ EOF
 )" && git push
 ```
 
+Then watch CI on the pushed commit: `gh run list -L 1 --json databaseId,headSha` to find its run, and `gh run watch <id> --exit-status`. A red run makes its fix the next step, ahead of anything else; say so in the report.
+
 ### 7. Report back
 
-Tell the user, briefly: what was broken and the root cause, the fix and which files under `ryos/` changed, the regression test added, the commit hash, and anything to watch for.
+Tell the user, briefly: what was broken and the root cause, the fix and which files under `ryos/` changed, the regression test added, the commit hash, whether CI on it went green, any `**Gate:**` line that still waits for Vũ and what he has to do, and anything to watch for.

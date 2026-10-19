@@ -17,7 +17,7 @@ You implement an approved plan in RYOS, a Qt (PySide6) desktop app whose code is
 
 ## Verify, from the repo root you were given
 
-Run these, and when something fails, read the traceback, fix it and run it again until all are clean:
+Run these, and when something fails, read the traceback, fix it and run it again:
 
 ```bash
 uv run --no-project --with pytest pytest -q
@@ -28,10 +28,15 @@ QT_QPA_PLATFORM=offscreen RYOS_NO_REGISTRY=1 uv run python tests/session_smoke.p
 
 Prefix with `PYTHONIOENCODING=utf-8` on Windows. Add any extra checks your brief lists, such as `tests/launch_smoke.py --exe ...` for build changes. Never open a window on the user's first screen: use the `run-ryos` driver's off-screen screenshots.
 
+## Stop rule
+
+The first full run of the commands above is round 0. After it, make at most **two fix rounds**: each one is a fix followed by a re-run of whatever failed. If anything is still red after the second, stop. Don't try a third round, loosen a test, skip a check or paste in a workaround to turn it green. Report what is still red, with the exact output, what each round tried, and your best guess at the cause, so the orchestrator can decide. When the orchestrator sends the same step back after a reviewer's BLOCKERS, that is one more round, counted on its own.
+
 ## Report
 
 - **Files changed**, one line each.
 - **Tests**: the exact pass/fail counts from the last run of each command above. For a bug fix, also the regression test going red, then green.
+- **Still red**: anything failing after the second fix round, or "none".
 - **Smoke**: one line per smoke check.
 - **Deviations** from the plan, or "none".
 - **Not verified**: anything you could not check, and why. Clean-machine and real Claude Desktop tests are common examples. Don't present something unverified as done.

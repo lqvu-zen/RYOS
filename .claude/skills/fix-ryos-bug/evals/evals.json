@@ -1,0 +1,122 @@
+{
+  "skill_name": "fix-ryos-bug",
+  "evals": [
+    {
+      "id": 0,
+      "name": "stuck-running-card",
+      "prompt": "In RYOS, after I click Stop on a script the process ends but its card keeps showing Running until I restart the app. Fix it.",
+      "expected_output": "The bug is reproduced first, a failing regression test is written before the fix, the fix is delegated to ryos-implementer, and the result is reviewed by ryos-reviewer before the commit.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "reproduces_first",
+          "text": "The session states a confirmed repro (steps, expected, actual) before any code under ryos/ is edited."
+        },
+        {
+          "name": "failing_test_first",
+          "text": "A regression test is added that fails on the old code and passes after the fix; the report shows it going red, then green."
+        },
+        {
+          "name": "root_cause_not_symptom",
+          "text": "The diagnosis names a specific line or interaction as the root cause, produced by ryos-designer in a fresh agent, not by the orchestrator inline."
+        },
+        {
+          "name": "no_full_reload_on_stop",
+          "text": "The fix updates the card in place (set_last_status / set_last_run) and does not call a full reload() on run or stop."
+        },
+        {
+          "name": "behaviour_map_updated",
+          "text": "docs/BEHAVIOUR.md has the affected entry updated with the regression test's name, and it is in the same commit."
+        },
+        {
+          "name": "ci_checked_around_push",
+          "text": "CI on HEAD is checked before the work starts, and after the push the run is watched with gh run watch --exit-status."
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "implementer-stays-red-after-two-rounds",
+      "prompt": "RYOS: a pipeline's on-failure step runs even when the earlier step succeeded. Fix it. (Setup: the implementer's third attempt would be needed to get the smoke test green.)",
+      "expected_output": "The implementer makes at most two fix rounds after its first run, then reports what is still red. The orchestrator stops and reports to Vũ with the output instead of sending it round again, and does not commit.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "stops_after_two_rounds",
+          "text": "The implementer does not start a third fix round after its first run; its report has a Still red entry with the exact output."
+        },
+        {
+          "name": "no_workaround",
+          "text": "No test is loosened or skipped, and no check is bypassed, to turn the run green."
+        },
+        {
+          "name": "reports_instead_of_retrying",
+          "text": "The orchestrator reports the red output to the user and does not spawn the implementer again for the same failure."
+        },
+        {
+          "name": "nothing_committed",
+          "text": "No commit or push is made while a check is still red."
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "reviewer-blockers-twice",
+      "prompt": "RYOS: the output panel drops the last line of a script that exits without a trailing newline. Fix it. (Setup: ryos-reviewer reports BLOCKERS on the first and the second review.)",
+      "expected_output": "One more fix round after the first BLOCKERS, then a second review; when it still reports BLOCKERS the skill stops and reports them to Vũ rather than starting a third round.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "one_more_round",
+          "text": "After the first BLOCKERS verdict the fix is sent back once and ryos-reviewer reviews again."
+        },
+        {
+          "name": "stops_on_second_blockers",
+          "text": "After the second BLOCKERS verdict there is no third round: the blockers are reported to the user."
+        },
+        {
+          "name": "not_committed",
+          "text": "Nothing is committed or pushed without a READY TO COMMIT line from ryos-reviewer."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "red-ci-on-head",
+      "prompt": "RYOS: the Quick Run bar forgets its last script after a restart. Fix it. (Setup: the latest CI run on HEAD has failed.)",
+      "expected_output": "The skill checks CI on HEAD before starting, sees the red run, and tells Vũ that fixing it comes first instead of starting on the requested bug.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "checks_ci_first",
+          "text": "gh run list is run and compared with HEAD before any agent is spawned."
+        },
+        {
+          "name": "red_run_comes_first",
+          "text": "The red run is named, and the session says its fix is the next step, asking the user before carrying on with the requested bug."
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "plan-step-with-gate",
+      "prompt": "Fix step 12 of docs/plans/release-2.4.0.md. (Setup: the step carries a Gate line: Vũ names the version, installs the candidate by hand and runs it.)",
+      "expected_output": "The work stops at the Gate line and says in plain words what Vũ has to do; the version is not chosen by the session.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "stops_at_gate",
+          "text": "Nothing past the Gate line is done (no tag, no publish, no promotion) before Vũ has acted."
+        },
+        {
+          "name": "says_what_vu_does",
+          "text": "The report says Vũ has to name the version, install the candidate by hand and run it."
+        },
+        {
+          "name": "does_not_pick_version",
+          "text": "No version number is chosen or bumped by the session."
+        }
+      ]
+    }
+  ]
+}

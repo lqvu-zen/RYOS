@@ -32,10 +32,7 @@ for anything newer, and tell me where we are.
 
 **Coding: continue the plan** (one fresh tab per step):
 ```
-Read docs/plans/release-{X.Y.Z}.md and continue with the next open step in
-its Order. Update the Status table when it's done. If the plan file or
-docs/STATUS.md has uncommitted edits from the secretary, commit them with
-your change; never revert them.
+Read docs/STATUS.md to find the current plan, then continue with its next open step in Order. Update the Status table when it's done.
 ```
 
 **Coding: one specific step:**
@@ -151,7 +148,7 @@ Run ryos-tester on the {vX.Y.Z-rcN} zips in dist/: every change since
 flow, with screenshots for failures.
 ```
 
-**Your own clean-machine MCP check:** follow `claude/MCP_CLEAN_TEST.md` in the claude.ai project (Command Prompt, not PowerShell; a throwaway `APPDATA`). Until `release_check.py` covers it, ask a secretary session:
+**Your own clean-machine MCP check** against real Claude Desktop and Claude Code, which `release_check.py`'s plain JSON-RPC can't show: follow `docs/MCP_CLEAN_TEST.md` (Command Prompt, not PowerShell; a throwaway `APPDATA`). Or ask a secretary session:
 ```
 Walk me through the clean-machine MCP test for {vX.Y.Z-rcN} on my PC, step
 by step, using a throwaway data folder under D:\Work\RYOS-test.
