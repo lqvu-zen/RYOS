@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 22:00 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 22:40 (UTC+7).
 
 ## Roles
 
@@ -24,7 +24,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/archive/release-2.3.1.md` |
 | **2.4** (in progress, 13 of 37 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
 
-## Where we are (2026-10-19 22:00)
+## Where we are (2026-10-19 22:40)
 
 - **v2.3.1** is the latest release (2026-10-14). No 2.4 candidate yet.
 - **`main` = `origin/main` at `afa32f5`** (2026-10-19 21:33). Since `2088a68`:
@@ -46,7 +46,8 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - `afa32f5` **loop rules** (step 32): the implementer stops after two fix rounds; skills check CI first and watch it after a push; one continue prompt; `docs/MCP_CLEAN_TEST.md` committed; new skill evals (written, not run).
 - **CI is red on `afa32f5`: a recurring crash, not flaky noise.** `qt-smoke (ubuntu, offscreen)` exits 139 (segfault) right after its last check (`check_ampersands_show`, the last line before the summary), so at the end of the run or at exit. It has done this in 10 of the last ~20 runs since 2026-10-13 (`d900395`, `e853e87`, `a6deea9`, `754568b` among them), always at the same point; Windows and the unit tests pass. Under step 32's rule a coding session now fixes red CI first. Now **step 37** (Vũ, 22:05).
 - **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox; step 12 relies on it. **On hold (Vũ, 2026-10-19):** where to plan it waits; step 12 can't start without it.
-- **Next:** step 37 (the qt-smoke crash), then step 12 once P7 is placed. Step 33 (the plan as a graph) runs alongside in a secretary session with `ryos-planner`.
+- **In progress (22:40), three at once:** step 37 (the qt-smoke crash) and step 35 (the tech-debt review, docs only) in two coding tabs; step 33 (the plan as a graph) here, with `ryos-planner` drafting the Files lines.
+- **Next:** step 12 once 37 is green and P7 is placed.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -58,10 +59,11 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 11 | A in `release_check`, docs | ✅ `d900395` |
 | 31 | Harness | ✅ `96405b6` |
 | 32 | Loop rules | ✅ `afa32f5` |
-| 37 | Fix the qt-smoke crash on CI | next |
-| 33 | The plan as a graph | started 10-19 (Gate lines, Needs, merge rules); Files lines to do |
+| 37 | Fix the qt-smoke crash on CI | in progress (10-19) |
+| 33 | The plan as a graph | in progress: Gate lines, Needs, merge rules done; `ryos-planner` drafting Files lines |
+| 35 | Tech-debt review of the Qt app (docs only) | in progress (10-19), beside 37 |
 | 12 | The early candidate (Vũ's gate) | waits for P7 (on hold) |
-| 13–15, 34, 35 | Backlog; frozen builds in CI; tech-debt review | — |
+| 13–15, 34 | Backlog; frozen builds in CI | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
 | 25–28 | D: secrets, then triggers | — |
 | 29, 30 | Test phase (with two RC-to-RC updates); release | — |
@@ -128,6 +130,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-10-19 22:40: **Work runs in parallel where the files don't collide:** step 35 (docs only) starts now beside 37, earlier than the Order's "beside the backlog"; 33 continues in the secretary session. A tab working beside another names its step instead of using the continue prompt, and commits only its own files.
 - 2026-10-19 22:05: **The CI qt-smoke crash becomes 2.4 step 37, done next,** before step 12, so CI is a trustworthy gate for the early candidate. `/fix-ryos-bug`.
 - 2026-10-19 14:07: **The improvement plan is approved as drafted** (all recommendations):
   - steps 31–36 join the 2.4 plan; 31 and 32 come before step 11, 33 runs alongside;
