@@ -1,6 +1,6 @@
 # RYOS v2.4.0 (working name): self-update, smarter runs, agents and pipelines, automation
 
-_Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the secretary, 2026-10-13, from Vũ's decisions), after v2.3.1 shipped. Approved by Vũ 2026-10-14 ("all good": every planner recommendation accepted). Steps 31–36 added and step 29 amended 2026-10-19 from the improvement plan, approved by Vũ ("approve all the recommendations"). This is the only plan after 2.3.1. The version number is Vũ's: "2.4.0" is a working name. Each code step goes through the `ryos-*` agent team via its skill, in a fresh conversation._
+_Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the secretary, 2026-10-13, from Vũ's decisions), after v2.3.1 shipped. Approved by Vũ 2026-10-14 ("all good": every planner recommendation accepted). Steps 31–36 added and step 29 amended 2026-10-19 from the improvement plan, approved by Vũ ("approve all the recommendations"). Step 37 added 2026-10-19 from Vũ's decision (red CI). This is the only plan after 2.3.1. The version number is Vũ's: "2.4.0" is a working name. Each code step goes through the `ryos-*` agent team via its skill, in a fresh conversation._
 
 ## Goals
 
@@ -84,6 +84,7 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 34 Frozen builds in CI | coding session (Opus, packaging) | `/add-ryos-feature` |
 | 35 Tech-debt review of the Qt app | coding session (Opus, High) | the "Tech debt check-in" prompt; no code |
 | 36 Type checks over the window, extract what you touch | the B, C and D coding sessions | inside their own steps |
+| 37 Fix the qt-smoke crash on CI | coding session (Opus if the cause is in threads or Qt object lifetime) | `/fix-ryos-bug` |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -250,7 +251,7 @@ _Planner proposal, accepted by Vũ._ `/release-ryos` part A (A1–A8) only, for 
 - `ryos-tester` PASS on the update flow;
 - Vũ runs it.
 
-**Needs:** 1–11
+**Needs:** 1–11, 37 (green CI)
 **Gate:** Vũ names the version, installs the candidate by hand and runs it.
 
 ### 13 — Backlog: checks without a window
@@ -483,7 +484,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - a slow copy from USB or a network share into a watched folder.
 
 **Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist, including the two RC-to-RC updates, is in the Status table.
-**Needs:** 11, 13–28
+**Needs:** 11, 13–28, 37
 **Gate:** Vũ ticks the checklist.
 
 ### 30 — Release 2.4
@@ -579,9 +580,20 @@ _Added 2026-10-19 from Vũ's decision (the improvement plan, "Code and test heal
 
 **Needs:** 35
 
+### 37 — Fix the qt-smoke crash on CI
+_Added 2026-10-19 from Vũ's decision (red CI on `afa32f5`)._ CI's `qt-smoke (ubuntu, offscreen)` job (`uv run --no-project --with PySide6 python tests/qt_smoke.py`) ends with exit code 139, a segfault, in about half its runs since 2026-10-13: 10 of the last 20 runs on `main`, among them `754568b`, `a6deea9`, `e853e87`, `d900395` and `afa32f5`. It has also passed on the same code (`96405b6` passed, `afa32f5` failed with no change under `ryos/` or `tests/`). Every crash comes right after the last check prints (`check_ampersands_show`, `tests/qt_smoke.py:5964`), so it happens after all the checks have finished, between `main()`'s summary and process exit. "RYOS Qt smoke PASSED" never appears in those logs. The Windows test jobs and the unit tests pass. It is not yet known whether the cause is in the smoke's own teardown or in RYOS shutting down (window, `QTimer`, worker threads, `MainThreadInvoker`). If it's RYOS, a user on Linux could hit it at quit. Step 32 makes every coding session fix a red CI run first, so until this is fixed each session stops here.
+**Files:** `tests/qt_smoke.py` (`main`, teardown), possibly `ryos/qtui/*` shutdown paths, `.github/workflows/ci.yml` only if the job needs a debug aid.
+**Done when:**
+- the cause is named, and a check that crashed before the fix passes after it (or the crash is reproduced locally with offscreen Qt on Linux or WSL and fixed);
+- `qt-smoke (ubuntu, offscreen)` passes 10 runs in a row on the fix commit (re-runs or a repeat matrix), with "RYOS Qt smoke PASSED" in each log;
+- if the cause is in RYOS, its `docs/BEHAVIOUR.md` row (quit/tray, TW-*) names the test; if it's in the harness, a line in BEHAVIOUR § Harness escapes. Either way, a line in § Escapes per the escape rule, since it reached `main`.
+
+**Needs:** —
+
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
+   - **37** (the qt-smoke crash, added 2026-10-19) is next after 32, before 12: CI must be green before a candidate.
 2. **Harness and loop rules, before step 11** (added 2026-10-19): 31, then 32. 33 runs alongside (docs only).
 3. **Part A**, the riskiest and the one that changes the release process:
    1. 4 and 6 can run in parallel;
@@ -665,3 +677,4 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 34 Frozen builds in CI | — |
 | 35 Tech-debt review of the Qt app | — |
 | 36 Type checks over the window | — |
+| 37 Fix the qt-smoke crash on CI | — |
