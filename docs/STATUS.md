@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-14 20:50 (UTC+7).
+Kept by the secretary (a claude.ai session attached to the RYOS project). Mirrored here as `docs/STATUS.md`, so every session can read it; the claude.ai project copy is the master. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 11:54 (UTC+7).
 
 ## Roles
 
@@ -24,7 +24,26 @@ Kept by the secretary (a claude.ai session attached to the RYOS project). Mirror
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/plans/release-2.3.1.md` |
 | **2.4** | **A** self-update · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers | `docs/plans/release-2.4.0.md` (30 steps, approved 2026-10-14; from `release-2.4.0-brief.md`) |
 
-## Where we are (2026-10-14 19:45)
+## Where we are (2026-10-19 11:54)
+
+- **v2.3.1** is the latest published release. No new issues since 10-14; #32 is the only open one.
+- **2.4 steps 1–10 are done** (`main` at `ef7600d`):
+  - `685d5aa` **OP-15:** "Clear output between runs" empties the All tab when a run starts (step 1);
+  - `2e9867c` **GR-33:** a scheduled run of an outside script gets no outside note (step 2);
+  - `2a9c973` **SM-16:** select mode and its ticks survive star, unstar and maximise (step 3);
+  - `754568b` find and download this download's update (step 4);
+  - `984e300` download in the background; `version --check` says whether it is downloaded (step 5);
+  - `8cbebd7` Ed25519 signature check, `ryos-cli verify`, the signing tool (step 6);
+  - `9620466` Vũ made the release key on 10-15 (step 7);
+  - `e853e87` the key embedded in builds, signing in `release-ryos`, a signature case in `release_check` (step 8);
+  - `a6deea9` apply and roll back: swap plan, journal, hidden `apply-update` (step 9);
+  - `ef7600d` Restart to update, Roll back…, edge cases, `ryos-cli update` (step 10).
+- **Step 11 is in progress, uncommitted:** `release_check.py` self-update cases (+542 lines), `docs/tutorial/15-updating.md`, README, TUTORIAL and BEHAVIOUR edits are in the working tree.
+- **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox. Step 12 relies on it, so that later candidates reach Vũ through self-update.
+- **Waiting on Vũ:** a backup of the release key file in a second place, and its passphrase in a password manager (step 7).
+- **Next:** finish step 11, then the P7 option, then step 12 (the early candidate).
+
+## Where we were (2026-10-14 19:45)
 
 - **v2.3.0** is still the latest published release. **`v2.3.1-rc1`** is a pre-release (2026-10-14 00:32, from `4000e6d`): `release_check` passed (22 cases), `ryos-tester` **PASS**, Vũ ticked the whole checklist.
 - **`main` = `origin/main` at `ae8c470`.** Since `9c66086`:
@@ -67,7 +86,7 @@ In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secre
 - **GR-33:** a scheduled run outside its group's base folder adds the outside-folder note → 2.4 step 2.
 - **SM-16:** starring, or maximising with full rows, leaves select mode → 2.4 step 3.
 
-## Open GitHub issues (checked 2026-10-14 19:45)
+## Open GitHub issues (checked 2026-10-19 11:54)
 
 | # | Title | Where |
 |---|---|---|
