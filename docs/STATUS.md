@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-19 23:40 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-21 (UTC+7).
 
 ## Roles
 
@@ -26,10 +26,10 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/archive/release-2.3.1.md` |
 | **2.4** (in progress, 15 of 38 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
 
-## Where we are (2026-10-19 23:40)
+## Where we are (2026-10-21)
 
 - **v2.3.1** is the latest release (2026-10-14). No 2.4 candidate yet.
-- **`main` = `origin/main` at `afa32f5`** (2026-10-19 21:33). Since `2088a68`:
+- **`main` = `origin/main` at `895f077`** (2026-10-19 22:51); nothing new since. Up to `afa32f5` (2026-10-19 21:33), Since `2088a68`:
   - `7a125c9` the 2.4 plan written and approved;
   - `685d5aa` **OP-15:** "Clear output between runs" now empties the All tab (step 1);
   - `2e9867c` **GR-33:** a scheduled outside run no longer gets the outside note (step 2);
@@ -50,8 +50,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - **Gap before step 12:** the "Offer release candidates" option (P7) is in no step. `updates.fetch_release(prereleases=…)` exists (step 4), but there is no setting or checkbox; step 12 relies on it. **On hold (Vũ, 2026-10-19):** where to plan it waits; step 12 can't start without it.
 - `de6108a` **tech-debt review of the Qt app** (step 35): `docs/tech-debt-2026-10-19.md`, 11 items; top three: split `handle_step_done` before step 23, extract the card/group menu dispatch from `shell.py` at step 14, settle the jobs/Activity boundary at step 22. The 09-21 review is marked superseded.
 - `e39e71a` **claim a step when you start** (step 38): the coding skills mark their Status row `in progress` and push it first, and stop on a claimed step; the session-start hook skips claimed steps and lists them; a second-tab prompt in `docs/PROMPTS.md`. CI green on `e39e71a`, but qt-smoke still fails about half the time, so one green run doesn't prove 37 fixed.
-- **In progress:** step 37 (the qt-smoke crash) in a coding tab, not yet claimed in its row; step 33 here: `ryos-planner`'s draft (Files lines, lanes cut by files, 8 questions) is back, Vũ answering.
-- **Next:** 37, then 12 once P7 is placed.
+- `895f077` **the qt-smoke crash fixed** (step 37): the smoke left ~800 widgets and ~130 Python-owned objects alive, and the unpinned PySide6 6.12.0 crashed tearing them down at exit. `qt_smoke::close_down` deletes them and the smoke fails if any survive; faulthandler and unbuffered output in the job; § Escapes and § Harness escapes lines. CI green on `895f077`, **2 of 2 attempts** with "PASSED" in the log. **Not yet done by its own Done when:** that asks for 10 green qt-smoke runs in a row on the fix commit, and the Status row is still `—` (the session never claimed or closed it).
+- **In progress:** step 33 here: `ryos-planner`'s draft (Files lines, lanes cut by files, 8 questions) is back, Vũ answering.
+- **Next:** finish 37 (8 more qt-smoke re-runs on `895f077`, then close its row); then 12 once P7 is placed.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -63,7 +64,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 11 | A in `release_check`, docs | ✅ `d900395` |
 | 31 | Harness | ✅ `96405b6` |
 | 32 | Loop rules | ✅ `afa32f5` |
-| 37 | Fix the qt-smoke crash on CI | in progress (10-19) |
+| 37 | Fix the qt-smoke crash on CI | fix in `895f077`; 2 of 10 green runs; row open |
 | 33 | The plan as a graph | in progress: planner's draft back; Vũ's questions open |
 | 35 | Tech-debt review of the Qt app | ✅ `de6108a` |
 | 38 | Claim a step when you start | ✅ `e39e71a` |
