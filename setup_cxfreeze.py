@@ -146,7 +146,7 @@ BUILD_INFO.write_text(buildinfo.build_info_source(
 try:
     setup(
         name="RYOS",
-        version="2.3.1",
+        version="2.4.0",
         description="RYOS - Run Your Own Scripts",
         author=buildinfo.COMPANY,   # cx_Freeze's version resource: CompanyName
         options={"build_exe": build_options},
