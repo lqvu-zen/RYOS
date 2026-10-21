@@ -10,7 +10,7 @@ _Created 2026-10-14 by the planner from `docs/plans/release-2.4.0-brief.md` (the
 4. **B. Smarter runs:** failure patterns, time left, stats.
 5. **C. Agents and pipelines:** agents read history and past output, and see a long run's progress (#32). The window shows runs started by the CLI or agents. Pipeline parameters, and values passed between steps.
 6. **D. Automation:** secrets in Windows Credential Manager, then file triggers.
-7. **Harden how the team works** (steps 31–36, 38): enforce the safety rules in the harness, give the step loop a stop rule, make the plan an explicit graph, have each session claim its step, and check frozen builds and the window code in CI.
+7. **Harden how the team works** (steps 31–36, 38, 40): enforce the safety rules in the harness, give the step loop a stop rule, make the plan an explicit graph, have each session claim its step, refuse a publish without a passing `release_check`, and check frozen builds and the window code in CI.
 8. Ship **2.4** through the test phase: `release_check.py` hard gate, RC pre-release, `ryos-tester`, Vũ's checklist with no minimum time, then promote the same commit.
 
 ## Decisions
@@ -87,6 +87,7 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 37 Fix the qt-smoke crash on CI | coding session (Opus if the cause is in threads or Qt object lifetime) | `/fix-ryos-bug` |
 | 38 Claim a step when you start | coding session | `/add-ryos-feature`; skill, hook and eval edits |
 | 39 A Offer release candidates (P7) | coding session | `/add-ryos-feature` |
+| 40 No publish without a passing release_check; a reproducible portable zip | coding session (Opus, packaging + harness) + Vũ | `/fix-ryos-bug`; Vũ approves the `guard.py` change |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -486,7 +487,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - a slow copy from USB or a network share into a watched folder.
 
 **Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist, including the two RC-to-RC updates, is in the Status table.
-**Needs:** 11, 13–28, 37, 38, 39
+**Needs:** 11, 13–28, 37, 38, 39, 40
 **Gate:** Vũ ticks the checklist.
 
 ### 30 — Release 2.4
@@ -617,6 +618,21 @@ _Added 2026-10-21 from Vũ's decision (P7 was in no step, and step 12 relies on 
 
 **Needs:** 11
 
+### 40 — No publish without a passing release_check; a reproducible portable zip
+_Added 2026-10-21 from Vũ's decision (the v2.4.0-rc1 harness escape, `baf0245`)._ v2.4.0-rc1 was published at 20:38 with no `release_check` run on record before it, and the step 12 row said "PASSED (29/0/0)" without one (corrected in `5f9f1a4`). The rule "release_check is a hard gate" lives only in the `release-ryos` skill; `gh release create` is an `ask` in `.claude/settings.json`, which stops nothing once Vũ is used to approving it. BEHAVIOUR § Harness escapes (2026-10-21) proposes: `release_check` writes a pass stamp (e.g. `dist/release_check.passed`) holding HEAD, the hash of `dist/SHA256SUMS.txt` and the case count, and `.claude/hooks/guard.py` refuses `gh release create vX.Y.Z[-rcN]` (and its wrapped forms) unless the stamp names the current HEAD and the current `SHA256SUMS.txt` hash. A failed run must leave no stamp.
+
+The re-run at `6b9d12e` also failed `release_check::portable`: `build_release.zip_portable` zips `ryos/` from the working tree, which has mixed line endings (57 files CRLF, 29 LF; `core.autocrlf=true`, no `.gitattributes` rule for `ryos/`), so the zip doesn't byte-match a clean checkout, though every file is equal once CRLF is normalised. The same run needed Python 3.13: under 3.14 the three `self_update_*` cases fail. Which side changes (the zip, the check, `.gitattributes`) is the designer's call.
+**Touches:** BEHAVIOUR § Harness escapes (the 2026-10-21 line: "proposed" becomes the check in place), § Escapes (the portable mismatch), `release-ryos` (where the stamp is made and checked).
+**Files:** `tests/release_check.py`, `.claude/hooks/guard.py`, `tests/test_harness.py`, `build_release.py` (`zip_portable`), possibly `.gitattributes`, `.claude/skills/release-ryos/SKILL.md`, `docs/BEHAVIOUR.md`.
+**Done when:**
+- `test_harness` shows `gh release create` refused with no stamp, a stamp for another HEAD, a stamp for another `SHA256SUMS.txt`, and after a failed run; allowed with a matching stamp; the wrapped forms the guard already knows are covered too;
+- `release_check` writes the stamp only when every case passes;
+- `release_check::portable` passes on a fresh `build_release.py` build from this checkout and from a clean worktree, and `release_check` says which Python it needs (or refuses another) instead of failing the `self_update_*` cases;
+- `release-ryos` names the stamp; BEHAVIOUR § Harness escapes and § Escapes say what was added.
+
+**Needs:** 12 (rc1 published).
+**Gate:** Vũ approves the `guard.py` change (`.claude/hooks/` edits are `ask`).
+
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
@@ -628,6 +644,7 @@ _Added 2026-10-21 from Vũ's decision (P7 was in no step, and step 12 relies on 
    2. then 5, 7, 8, 9, 10, 11;
    3. then **39** ("Offer release candidates", P7; added 2026-10-21; step 12 relies on it);
    4. then **12**, the early candidate, so A gets real use for the rest of 2.4.
+   5. then **40** (added 2026-10-21), before any later candidate is published.
 4. **Backlog** 13, 14, 15, before B and C touch rows, the pane and the Running list. Step 13 may run beside part A in its own worktree. 34 (frozen builds in CI, after 11) and 35 (the tech-debt review) run beside the backlog.
 5. **B and C**, in parallel worktrees where step 33 shows their files don't overlap, otherwise in sequence:
    - B: 16 → 17, 18, 19;
@@ -709,3 +726,4 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 37 Fix the qt-smoke crash on CI | done 2026-10-21: cause was the smoke leaving ~800 widgets and ~130 Python-owned objects alive (`deleteLater` never ran without an event loop), which PySide6 6.12.0 (unpinned in CI) crashed tearing down at exit after PASSED (exit 139); fixed in 895f077 (`close_down` in `tests/qt_smoke.py`, fails if any survive; the job gets faulthandler and unbuffered output); BEHAVIOUR rows added in the same commit. Evidence: CI run 39281059401 on 895f077, `qt-smoke (ubuntu, offscreen)` re-run to attempts 1-10, all 10 green with "RYOS Qt smoke PASSED" in each log (checked per attempt through the jobs API) |
 | 38 Claim a step when you start | done 2026-10-19: the three coding skills (`add-ryos-feature`, `fix-ryos-bug`, `release-ryos`) start with "Claim your step before anything else" (a row `in progress` or `started` is held, stop; otherwise set `in progress (YYYY-MM-DD HH:MM)`, commit and push that line alone by path; a session that stops writes why in the row); `session_start.py` `next_open` skips claimed rows and `plan_lines` prints "In progress (claimed by another tab, don't take)" (`is_claimed`, `started` without `skip`); `tests/test_harness.py::TestSessionStart` (one claimed, a `started` row, every open step claimed); `docs/PROMPTS.md` continue prompt says "not already in progress" and has a second-tab prompt; evals: claim in all three skills, `fix-ryos-bug` refuses a claimed step (written, not run). Not changed: the continue prompt quoted in `docs/STATUS.md` (secretary file) |
 | 39 A Offer release candidates (P7) | done 2026-10-21: Options > Logging "Offer release candidates (for testing)" (`offer_release_candidates`, off by default); the window and `ryos-cli version --check` / `update` pass it to `updates.fetch_release`; `version --check` no longer has its own fetch (`notifications._fetch_latest_release` deleted); UP-31 added, TW-17, UP-06, CLI-13 updated. Tests: `test_updates::TestReleaseCandidates`, `test_cli` apply and default-fetch cases, `qt_smoke` options row and rc block. Not run: a real rc to rc update from GitHub (steps 12, 29). |
+| 40 No publish without a passing release_check | — |
