@@ -16,8 +16,9 @@ then a total and RELEASE CHECK PASSED / FAILED (exit 1). Cases:
   refused when made with the test key or when SHA256SUMS.txt was changed;
 * launch_* -- tests/launch_smoke.py on each built download (launch_visible
   on a second screen, when there is one);
-* portable -- the source zip is exactly the tracked ryos/ at HEAD, and runs
-  with uv: the command line and the window (run.bat);
+* portable -- the source zip is exactly the tracked ryos/ at HEAD and the
+  four portable files, byte for byte as git stores HEAD, and runs with uv:
+  the command line and the window (run.bat);
 * cli_management -- add, edit, presets, expose, run, timeouts, ambiguous
   names, a pipeline, history and remove, on RYOS Agent's ryos-cli.exe;
 * mcp_* -- the MCP server over plain JSON-RPC: list, run, poll, stop, the
@@ -50,6 +51,12 @@ Every process gets its own APPDATA under one temp folder, no run-at-login
 writes, no toasts, no single-instance handoff and Qt's offscreen platform.
 The temp folder is deleted when everything passed, and kept (its path
 printed) when something failed.
+
+Before any case it refuses, naming the Python to use, to run on a Python
+other than the builds' (the self_update cases compile a _build_info.pyc).
+It deletes dist/release_check.passed when it starts, and writes it only when
+every case passed (skips allowed) and HEAD and SHA256SUMS.txt did not move:
+the full HEAD, the SHA-256 of SHA256SUMS.txt and the counts.
 """
 
 from __future__ import annotations
@@ -60,6 +67,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import platform
 import py_compile
 import shutil
 import signal
@@ -389,17 +397,22 @@ class Check:
         self.smoke("--exe", str(self.exe("windows-ai", "RYOS.exe")), "--visible")
 
     def portable(self) -> None:
-        tracked = subprocess.run(["git", "ls-files", "ryos"], cwd=ROOT, capture_output=True,
-                                 text=True).stdout.split()
-        tracked = sorted(p for p in tracked if not p.endswith("_build_info.py"))
+        tracked = subprocess.run(["git", "ls-tree", "-r", "-z", "--name-only", "HEAD", "--",
+                                  "ryos"], cwd=ROOT, capture_output=True).stdout.decode("utf-8")
+        expected = sorted([p for p in tracked.split("\0")
+                           if p and "__pycache__" not in p.split("/")
+                           and not p.endswith("_build_info.py")]
+                          + list(build_release.PORTABLE_FILES))
         with zipfile.ZipFile(self.dist / "RYOS-portable.zip") as z:
-            entries = sorted(n for n in z.namelist() if n.startswith("ryos/"))
-            need(entries == tracked,
-                 f"the zip's ryos/ differs from git ls-files: extra "
-                 f"{sorted(set(entries) - set(tracked))[:5]}, missing "
-                 f"{sorted(set(tracked) - set(entries))[:5]}")
-            changed = [n for n in entries if z.read(n) != (ROOT / n).read_bytes()]
-        need(not changed, f"zipped files differ from the working tree: {changed[:5]}")
+            entries = sorted(z.namelist())
+            need(entries == expected,
+                 f"the zip differs from HEAD's ryos/ and portable files: extra "
+                 f"{sorted(set(entries) - set(expected))[:5]}, missing "
+                 f"{sorted(set(expected) - set(entries))[:5]}")
+            changed = [n for n in entries if z.read(n) != subprocess.run(
+                ["git", "cat-file", "blob", f"HEAD:{n}"], cwd=ROOT,
+                capture_output=True).stdout]
+        need(not changed, f"zipped files differ from HEAD's blobs: {changed[:5]}")
         if not shutil.which("uv"):
             raise Failed("uv is not on PATH")
         appdata = self.appdata("portable")
@@ -1062,16 +1075,29 @@ def counts(path: Path) -> dict:
     return found
 
 
+def full_head() -> str:
+    done = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True)
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dist", default=str(ROOT / "dist"))
     parser.add_argument("--fixtures", default=str(TESTS / "fixtures" / "db"))
     args = parser.parse_args()
+    dist = Path(args.dist).resolve()
+    build_release.clear_stamp(dist)
+    refusal = build_release.python_refusal(dist)
+    if refusal:
+        print(f"{refusal}\n\nRELEASE CHECK FAILED")
+        return 1
+    head = full_head()
+    sums = build_release.sums_digest(dist)
 
     real_before = launch_smoke._snapshot(REAL_FOLDER)
     updates_before = launch_smoke._snapshot(REAL_UPDATES)
     root = Path(tempfile.mkdtemp(prefix="ryos-release-check-"))
-    check = Check(Path(args.dist).resolve(), Path(args.fixtures).resolve(), root)
+    check = Check(dist, Path(args.fixtures).resolve(), root)
     print(f"RYOS release check: {check.dist}\n  (throwaway data in {root})", flush=True)
     check.unzip()
     check.server = ReleaseServer()
@@ -1117,7 +1143,16 @@ def main() -> int:
     if tally["FAIL"]:
         print(f"(throwaway data kept in {root})\n\nRELEASE CHECK FAILED")
         return 1
+    stamp = build_release.stamp_for(check.results, head, sums, full_head(),
+                                    build_release.sums_digest(dist), platform.python_version())
+    if stamp is None:
+        print(f"HEAD or SHA256SUMS.txt moved during the run, or could not be read, so no "
+              f"stamp was written.\n(throwaway data kept in {root})\n\nRELEASE CHECK FAILED")
+        return 1
+    (dist / build_release.STAMP).write_text(stamp, encoding="utf-8", newline="\n")
     shutil.rmtree(root, ignore_errors=True)
+    print(f"\nStamp written: dist/{build_release.STAMP} (HEAD {head[:7]}, {tally['PASS']} "
+          f"passed, {tally['SKIP']} skipped)")
     print("\nRELEASE CHECK PASSED")
     return 0
 

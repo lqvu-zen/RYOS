@@ -7,7 +7,7 @@ Writes:
 * ``RYOS-windows.zip``    -- RYOS.exe and ryos-cli.exe, no MCP server;
 * ``RYOS-windows-ai.zip`` -- RYOS.exe and ryos-cli.exe with the MCP server;
 * ``RYOS-agent.zip``      -- ryos-cli.exe alone with MCP, no window and no Qt;
-* ``RYOS-portable.zip``   -- the source, run with uv (``run.bat``);
+* ``RYOS-portable.zip``   -- the source as HEAD holds it, run with uv (``run.bat``);
 * ``SHA256SUMS.txt``      -- a checksum line per zip.
 
 Each zip is checked for what it must hold and must not; a missing exe, Qt
@@ -20,10 +20,15 @@ the script with exit 1 before anything is published. It does not smoke-test the 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import json
 import os
+import platform
+import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -57,15 +62,96 @@ def zip_folder(folder: Path, target: Path) -> list[str]:
         return z.namelist()
 
 
+def _git(*args: str) -> bytes:
+    done = subprocess.run(["git", *args], cwd=ROOT, capture_output=True)
+    if done.returncode != 0:
+        sys.exit(f"git {' '.join(args)} failed: {done.stderr.decode('utf-8', 'replace')}")
+    return done.stdout
+
+
+def commit_files() -> list[str]:
+    names = _git("ls-tree", "-r", "-z", "--name-only", "HEAD", "--", "ryos").decode("utf-8")
+    ryos = sorted(n for n in names.split("\0")
+                  if n and "__pycache__" not in n.split("/") and not n.endswith("_build_info.py"))
+    return ryos + list(PORTABLE_FILES)
+
+
+def commit_blob(name: str) -> bytes:
+    return _git("cat-file", "blob", f"HEAD:{name}")
+
+
+def commit_time() -> tuple[int, int, int, int, int, int]:
+    seconds = int(_git("show", "-s", "--format=%ct", "HEAD").decode("ascii").strip())
+    stamp = time.gmtime(seconds)
+    if stamp.tm_year < 1980:
+        return (1980, 1, 1, 0, 0, 0)
+    return (stamp.tm_year, stamp.tm_mon, stamp.tm_mday,
+            stamp.tm_hour, stamp.tm_min, stamp.tm_sec)
+
+
 def zip_portable(target: Path) -> list[str]:
+    when = commit_time()
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
-        for p in sorted((ROOT / "ryos").rglob("*")):
-            if (p.is_file() and "__pycache__" not in p.parts
-                    and p.name != "_build_info.py"):
-                z.write(p, p.relative_to(ROOT).as_posix())
-        for name in PORTABLE_FILES:
-            z.write(ROOT / name, name)
+        for name in commit_files():
+            info = zipfile.ZipInfo(name, when)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            z.writestr(info, commit_blob(name))
         return z.namelist()
+
+
+STAMP = "release_check.passed"
+FROZEN_ZIPS = ("RYOS-windows.zip", "RYOS-windows-ai.zip", "RYOS-agent.zip")
+
+
+def sums_digest(dist: Path) -> str:
+    try:
+        return hashlib.sha256((dist / "SHA256SUMS.txt").read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return ""
+
+
+def stamp_for(results: list[tuple[str, str, str]], head: str, sums: str,
+              head_after: str, sums_after: str, python: str) -> str | None:
+    if not head or not sums or head != head_after or sums != sums_after:
+        return None
+    if any(outcome not in ("PASS", "SKIP") for _name, outcome, _why in results):
+        return None
+    return json.dumps({
+        "head": head, "sha256sums": sums,
+        "passed": sum(1 for _n, o, _w in results if o == "PASS"),
+        "skipped": sum(1 for _n, o, _w in results if o == "SKIP"),
+        "python": python,
+    }, indent=2) + "\n"
+
+
+def clear_stamp(dist: Path) -> None:
+    try:
+        (dist / STAMP).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def python_refusal(dist: Path, magic: bytes = importlib.util.MAGIC_NUMBER,
+                   running: str = platform.python_version()) -> str | None:
+    for name in FROZEN_ZIPS:
+        try:
+            with zipfile.ZipFile(dist / name) as z:
+                pyc = z.read(BUILD_INFO_ENTRY)
+                entries = z.namelist()
+        except (FileNotFoundError, KeyError, zipfile.BadZipFile):
+            continue
+        if pyc[:4] == magic:
+            continue
+        found = [re.fullmatch(r"python3(\d+)\.dll", e, re.IGNORECASE) for e in entries]
+        minors = [m.group(1) for m in found if m]
+        if not minors:
+            return (f"{name} was built with another Python than this one ({running}): "
+                    "run release_check with the Python the builds used.")
+        built = f"3.{minors[0]}"
+        return (f"{name} was built with Python {built}, and this is {running}: run "
+                f"uv run --python {built} python tests/release_check.py")
+    return None
 
 
 def problems_in(name: str, entries: list[str]) -> list[str]:
@@ -121,6 +207,7 @@ def release_key_problems(name: str, read: Callable[[str], bytes]) -> list[str]:
 
 
 def main() -> int:
+    clear_stamp(DIST)
     try:
         import mcp  # noqa: F401
     except ImportError:

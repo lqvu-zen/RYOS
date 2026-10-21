@@ -8550,6 +8550,176 @@ class TestReleaseZipChecks(unittest.TestCase):
                                             "lib/cryptography/__init__.pyc"]), [])
 
 
+def _build_release():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import build_release
+    return build_release
+
+
+class TestPortableZip(unittest.TestCase):
+    """build_release.zip_portable zips HEAD's own bytes, not the working tree."""
+
+    def git(self, *args: str) -> bytes:
+        done = subprocess.run(["git", "-c", "core.autocrlf=false", "-c", "commit.gpgsign=false",
+                               *args], cwd=self.root, capture_output=True, env=self.env)
+        if done.returncode != 0:
+            raise AssertionError(done.stderr.decode("utf-8", "replace"))
+        return done.stdout
+
+    def setUp(self):
+        self.br = _build_release()
+        self.root = Path(tempfile.mkdtemp(prefix="ryos-portable-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.env = dict(os.environ, GIT_AUTHOR_NAME="Tester", GIT_AUTHOR_EMAIL="t@example.com",
+                        GIT_COMMITTER_NAME="Tester", GIT_COMMITTER_EMAIL="t@example.com",
+                        GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        self.git("init", "-q", "-b", "main")
+        files = {"ryos/__init__.py": b"__version__ = '1'\n", "ryos/a.py": b"a = 1\nb = 2\n",
+                 "pyproject.toml": b"[project]\nname = 'ryos'\n", "run.bat": b"uv run ryos\n",
+                 "install_uv.bat": b"echo uv\n", "icon.ico": b"\x00\x01\r\n\x02"}
+        for name, body in files.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_bytes(body)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "first")
+        (self.root / "ryos" / "a.py").write_bytes(b"a = 1\r\nb = 2\r\n")
+        (self.root / "ryos" / "untracked.py").write_bytes(b"x = 1\n")
+        (self.root / "ryos" / "__pycache__").mkdir()
+        (self.root / "ryos" / "__pycache__" / "a.cpython-313.pyc").write_bytes(b"pyc")
+        (self.root / "ryos" / "_build_info.py").write_bytes(b"VARIANT = 'x'\n")
+        self.patch = mock.patch.object(self.br, "ROOT", self.root)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        self.out = Path(tempfile.mkdtemp(prefix="ryos-portable-out-"))
+        self.addCleanup(shutil.rmtree, self.out, ignore_errors=True)
+
+    def build(self, name: str = "RYOS-portable.zip") -> Path:
+        target = self.out / name
+        self.br.zip_portable(target)
+        return target
+
+    def test_the_zip_is_the_commit_not_the_working_tree(self):
+        import zipfile
+        tracked = self.git("ls-tree", "-r", "--name-only", "HEAD", "--", "ryos").decode().split()
+        want = sorted(tracked + list(self.br.PORTABLE_FILES))
+        with zipfile.ZipFile(self.build()) as z:
+            self.assertEqual(sorted(z.namelist()), want)
+            for name in z.namelist():
+                with self.subTest(name=name):
+                    self.assertEqual(z.read(name), self.git("cat-file", "blob", f"HEAD:{name}"))
+            self.assertEqual(z.read("ryos/a.py"), b"a = 1\nb = 2\n")
+            self.assertEqual(z.read("icon.ico"), b"\x00\x01\r\n\x02")
+
+    def test_the_same_commit_zips_to_the_same_bytes(self):
+        import hashlib
+        first = hashlib.sha256(self.build("one.zip").read_bytes()).hexdigest()
+        later = time.time() + 7200
+        for p in self.root.rglob("*"):
+            if p.is_file() and ".git" not in p.parts:
+                os.utime(p, (later, later))
+        second = hashlib.sha256(self.build("two.zip").read_bytes()).hexdigest()
+        self.assertEqual(first, second)
+
+    def test_pycache_and_build_info_are_left_out(self):
+        import zipfile
+        with zipfile.ZipFile(self.build()) as z:
+            names = z.namelist()
+        self.assertFalse([n for n in names if "__pycache__" in n or n.endswith("_build_info.py")])
+        self.assertNotIn("ryos/untracked.py", names)
+        self.assertEqual(self.br.problems_in("RYOS-portable.zip", names), [])
+
+
+class TestReleaseStamp(unittest.TestCase):
+    """release_check's pass stamp: written only for a clean run on an unmoved HEAD."""
+
+    HEAD = "a" * 40
+    SUMS = "b" * 64
+
+    def setUp(self):
+        self.br = _build_release()
+
+    def stamp(self, results, head=HEAD, sums=SUMS, head_after=HEAD, sums_after=SUMS):
+        return self.br.stamp_for(results, head, sums, head_after, sums_after, "3.13.5")
+
+    def test_a_clean_run_stamps_head_sums_and_counts(self):
+        text = self.stamp([("zips", "PASS", ""), ("launch_visible", "SKIP", "one monitor"),
+                           ("portable", "PASS", "")])
+        self.assertTrue(text.endswith("\n"))
+        self.assertNotIn("\r", text)
+        self.assertEqual(json.loads(text), {"head": self.HEAD, "sha256sums": self.SUMS,
+                                            "passed": 2, "skipped": 1, "python": "3.13.5"})
+
+    def test_no_stamp_for_a_failure_or_a_moved_head_or_sums(self):
+        self.assertIsNone(self.stamp([("zips", "PASS", ""), ("portable", "FAIL", "differs")]))
+        self.assertIsNone(self.stamp([("zips", "PASS", "")], head_after="c" * 40))
+        self.assertIsNone(self.stamp([("zips", "PASS", "")], sums_after="d" * 64))
+        self.assertIsNone(self.stamp([("zips", "PASS", "")], head="", head_after=""))
+        self.assertIsNone(self.stamp([("zips", "PASS", "")], sums="", sums_after=""))
+
+    def test_clear_stamp_and_sums_digest(self):
+        import hashlib
+        dist = Path(tempfile.mkdtemp(prefix="ryos-stamp-"))
+        self.addCleanup(shutil.rmtree, dist, ignore_errors=True)
+        self.br.clear_stamp(dist)
+        (dist / self.br.STAMP).write_text("{}\n", encoding="utf-8")
+        self.br.clear_stamp(dist)
+        self.assertFalse((dist / self.br.STAMP).exists())
+        self.assertEqual(self.br.sums_digest(dist), "")
+        (dist / "SHA256SUMS.txt").write_bytes(b"00  RYOS-agent.zip\n")
+        self.assertEqual(self.br.sums_digest(dist),
+                         hashlib.sha256(b"00  RYOS-agent.zip\n").hexdigest())
+
+
+class TestReleaseChecksPython(unittest.TestCase):
+    """release_check refuses at once on a Python other than the builds'."""
+
+    BUILT = bytes.fromhex("f30d0d0a")
+    OTHER = bytes.fromhex("2b0e0d0a")
+
+    def setUp(self):
+        self.br = _build_release()
+        self.dist = Path(tempfile.mkdtemp(prefix="ryos-python-"))
+        self.addCleanup(shutil.rmtree, self.dist, ignore_errors=True)
+
+    def frozen(self, name: str, dll: str | None = "python313.dll") -> None:
+        import zipfile
+        with zipfile.ZipFile(self.dist / name, "w") as z:
+            z.writestr(self.br.BUILD_INFO_ENTRY, self.BUILT + b"\0" * 12)
+            z.writestr("ryos-cli.exe", b"MZ")
+            z.writestr("python3.dll", b"dll")
+            if dll:
+                z.writestr(dll, b"dll")
+
+    def test_another_python_is_refused_and_the_right_one_named(self):
+        for name in ("RYOS-windows.zip", "RYOS-windows-ai.zip", "RYOS-agent.zip"):
+            with self.subTest(name=name):
+                for old in self.dist.iterdir():
+                    old.unlink()
+                self.frozen(name)
+                said = self.br.python_refusal(self.dist, magic=self.OTHER, running="3.14.5")
+                self.assertIsNotNone(said)
+                self.assertIn("3.13", said)
+                self.assertIn("3.14.5", said)
+                self.assertIn("uv run --python 3.13 python tests/release_check.py", said)
+
+    def test_the_builds_python_is_accepted(self):
+        self.frozen("RYOS-agent.zip")
+        self.assertIsNone(self.br.python_refusal(self.dist, magic=self.BUILT, running="3.13.5"))
+
+    def test_no_zips_is_left_to_the_zips_case(self):
+        self.assertIsNone(self.br.python_refusal(self.dist, magic=self.OTHER, running="3.14.5"))
+        import zipfile
+        with zipfile.ZipFile(self.dist / "RYOS-portable.zip", "w") as z:
+            z.writestr("ryos/__init__.py", "")
+        self.assertIsNone(self.br.python_refusal(self.dist, magic=self.OTHER, running="3.14.5"))
+
+    def test_without_a_python_dll_it_says_another_python(self):
+        self.frozen("RYOS-agent.zip", dll=None)
+        said = self.br.python_refusal(self.dist, magic=self.OTHER, running="3.14.5")
+        self.assertIn("another Python", said)
+        self.assertIn("3.14.5", said)
+
+
 class TestBuildInfo(unittest.TestCase):
     """Which download this RYOS is (ryos/buildinfo.py)."""
 
