@@ -15,6 +15,8 @@ Anything that fails a check is thrown away, and nothing is installed.
 
 You can turn the background download off: **Options → Logging → Download updates in the background**. The banner still tells you a new version is out; you then download it from the release page yourself.
 
+Testers can also see release candidates: **Options → Logging → Offer release candidates (for testing)**. It is off by default; when on, RYOS and `ryos-cli` offer a newer release candidate of your download and install it like a release.
+
 ## Restart to update
 
 Once the download is checked, the banner reads **Update ready — RYOS X (you have vY)**, with two buttons:

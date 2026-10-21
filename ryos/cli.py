@@ -47,7 +47,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, TextIO
+from typing import Any, Callable, TextIO
 
 from . import __version__, buildinfo, manage
 from . import history as runhistory
@@ -608,8 +608,19 @@ def _apply_update(argv: list[str], out: TextIO, err: TextIO, effects) -> int:
     return EXIT_FAILED
 
 
+def _release_fetch(settings: dict | None) -> Callable[[], Any]:
+    def fetch():
+        from . import updates
+        known = settings
+        if known is None:
+            from .settings import _load_settings
+            known = _load_settings()
+        return updates.fetch_release(updates.offers_release_candidates(known))
+    return fetch
+
+
 def _update(args, out: TextIO, err: TextIO, ask, fetch_update, download_update,
-            updater) -> int:
+            updater, settings: dict | None = None) -> int:
     """``ryos update [--rollback] [--yes]``: no lock, no Qt, no database
     opened; the swap itself runs in a helper once this command ends."""
     from . import selfupdate, swap, updates
@@ -622,7 +633,7 @@ def _update(args, out: TextIO, err: TextIO, ask, fetch_update, download_update,
     if updater is None:
         from .logger import setup_logging
         from .settings import _load_settings
-        settings = _load_settings()
+        settings = _load_settings() if settings is None else settings
         setup_logging(settings.get("logging_enabled", True),
                       settings.get("log_level", "INFO"), CLI_LOG_PATH)
         updater = selfupdate.real()
@@ -652,7 +663,7 @@ def _update(args, out: TextIO, err: TextIO, ask, fetch_update, download_update,
     if stop is not None:
         return refuse(stop.text)
     if kind == selfupdate.UPDATE:
-        release = (fetch_update or updates.fetch_release)()
+        release = (fetch_update or _release_fetch(settings))()
         status, tag, _url = update_status(updates.check_of(release), __version__)
         if release is None:
             print(f"ryos: {UNREACHABLE_NOTICE[1]}", file=err)
@@ -746,13 +757,13 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
             print(line, file=out)
         if not args.check:
             return EXIT_OK
-        from . import notifications
-        fetch = fetch_release or notifications._fetch_latest_release
-        status, tag, url = notifications.update_status(fetch(), __version__)
+        from . import notifications, updates
+        fetch = fetch_release or _release_fetch(settings)
+        status, tag, url = notifications.update_status(
+            updates.check_of(fetch()), __version__)
         staged = None
         updates_itself = False
         if status == notifications.NEWER:
-            from . import updates
             staged = updates.downloaded(tag)
             updates_itself = updates.asset_name() is not None
         print(notifications.version_check_text(
@@ -763,7 +774,7 @@ def main(argv: list[str], *, db: ScriptDB | None = None, settings: dict | None =
         return _verify(args.zip, out, err)
     if args.command == "update":
         return _update(args, out, err, ask or _ask_at_terminal, fetch_update,
-                       download_update, updater)
+                       download_update, updater, settings)
     if args.command == "mcp":
         # Its own start-up: it logs to ryos-mcp.log, and it is long-lived.
         from .mcpserver import serve

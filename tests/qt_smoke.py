@@ -482,6 +482,20 @@ def check_options_form(app):
     if got != [".py", ".js"]:
         PROBLEMS.append(f"extensions round-tripped as {got!r}")
 
+    offer = dlg._rows.get("offer_release_candidates")
+    if offer is None:
+        PROBLEMS.append("options form has no Offer release candidates row")
+    else:
+        if offer.value() is not False:
+            PROBLEMS.append("Offer release candidates is ticked by default")
+        offer.set_value(True)
+        if dlg.values()["offer_release_candidates"] is not True:
+            PROBLEMS.append("ticking Offer release candidates did not read back")
+        page = next((dlg.tabs.widget(i) for i in range(dlg.tabs.count())
+                     if dlg.tabs.tabText(i) == settings_schema.LOGGING), None)
+        if page is None or not page.isAncestorOf(offer.widget):
+            PROBLEMS.append("Offer release candidates is not on the Logging tab")
+
     print(f"  [ok] options: {len(dlg._rows)} fields across "
           f"{dlg.tabs.count()} tabs, generated and round-tripping")
     dlg.deleteLater()
@@ -2803,18 +2817,21 @@ def check_update_downloads_in_the_background(app, pump_until):
 
     release = updates.Release("v999.0.0", "https://example.invalid/r", False, {})
 
-    def window(layout, allowed=True):
+    candidate = updates.Release("v999.0.0-rc2", "https://example.invalid/rc", True, {})
+
+    def window(layout, allowed=True, offer=False):
         tmp = Path(tempfile.mkdtemp())
         db = ScriptDB(tmp / "u.db")
         db.create_group("G", base_dir=str(tmp))
         settings = {"quick_run_enabled": False, "compact_mode": layout == "compact",
                     "auto_download_update": allowed}
         seen = SimpleNamespace(fetched=[], downloads=[], finished=[], handled=[],
-                               opened=[], gate=threading.Event())
+                               opened=[], offers=[], gate=threading.Event())
 
-        def fetch_release():
+        def fetch_release(prereleases=False):
             seen.fetched.append(threading.current_thread() is threading.main_thread())
-            return release
+            seen.offers.append(prereleases)
+            return candidate if prereleases else release
 
         def download_update(r):
             seen.downloads.append((r, threading.current_thread()
@@ -2830,6 +2847,8 @@ def check_update_downloads_in_the_background(app, pump_until):
         if layout == "maximised":
             win.set_workspace(True)
         win.show()
+        if offer:
+            win.apply_settings({"offer_release_candidates": True})
         real_result = win._update_result
         win._update_result = lambda result, manual: (
             real_result(result, manual), seen.handled.append(manual))
@@ -2864,6 +2883,8 @@ def check_update_downloads_in_the_background(app, pump_until):
                 PROBLEMS.append(f"{where}: banner said {win.update_label.text()!r}")
             if seen.fetched != [False, False]:
                 PROBLEMS.append(f"{where}: fetch threads {seen.fetched}")
+            if seen.offers != [False, False]:
+                PROBLEMS.append(f"{where}: asked for release candidates {seen.offers}")
             if [d[1] for d in seen.downloads] != [False]:
                 PROBLEMS.append(f"{where}: downloads {seen.downloads} (want one, "
                                 "off the UI thread)")
@@ -2887,6 +2908,26 @@ def check_update_downloads_in_the_background(app, pump_until):
             PROBLEMS.append(f"background download off: downloaded {seen.downloads}")
         win.close()
 
+        for layout in ("normal", "compact", "maximised"):
+            win, seen = window(layout, offer=True)
+            checked_twice(win, seen)
+            where = f"release candidates ({layout})"
+            if seen.offers != [True, True]:
+                PROBLEMS.append(f"{where}: asked for release candidates {seen.offers}")
+            if win.update_banner is None or not win.update_banner.isVisible():
+                PROBLEMS.append(f"{where}: no visible banner")
+                win.close()
+                continue
+            if "v999.0.0-rc2" not in win.update_label.text():
+                PROBLEMS.append(f"{where}: banner said {win.update_label.text()!r}")
+            if [d[1] for d in seen.downloads] != [False] \
+                    or seen.downloads[0][0] is not candidate:
+                PROBLEMS.append(f"{where}: downloads {seen.downloads} (want the "
+                                "candidate once, off the UI thread)")
+            if seen.finished != [True]:
+                PROBLEMS.append(f"{where}: download result handled {seen.finished}")
+            win.close()
+
     win, seen = window("normal")
     checked_twice(win, seen)
     if win.update_banner is None or win.update_label.text() != notifications.banner_text(
@@ -2895,6 +2936,44 @@ def check_update_downloads_in_the_background(app, pump_until):
     if seen.downloads:
         PROBLEMS.append(f"from source: downloaded {seen.downloads}")
     win.close()
+
+    import functools
+    import io
+    import json
+
+    asked_urls: list = []
+    api = "http://127.0.0.1:9/api/releases"
+    entry = {"tag_name": "v999.0.0-rc2", "html_url": "https://example.invalid/rc",
+             "prerelease": True, "assets": []}
+
+    class _Opened(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def canned(request, timeout=None):
+        asked_urls.append(request.full_url)
+        body = [entry] if request.full_url == api else dict(entry, tag_name="v999.0.0")
+        return _Opened(json.dumps(body).encode())
+    for offer, want in ((False, api + "/latest"), (True, api)):
+        asked_urls.clear()
+        wired = MainWindow(
+            REFERENCE["dark"],
+            settings={"quick_run_enabled": False, "auto_download_update": False,
+                      "offer_release_candidates": offer},
+            fetch_release=functools.partial(
+                updates.fetch_release, open_url=canned, api=api))
+        wired.inform = lambda *_a: None
+        wired.show()
+        wired.check_for_updates()
+        if not pump_until(lambda: wired.update_banner is not None, timeout=5.0):
+            PROBLEMS.append(f"release candidates wiring (offer {offer}): no banner")
+        if asked_urls and asked_urls[0] != want:
+            PROBLEMS.append(f"release candidates wiring (offer {offer}): asked "
+                            f"{asked_urls}, wanted {want}")
+        wired.close()
 
 
 def check_restart_to_update(app, pump_until=None):
@@ -2969,7 +3048,7 @@ def check_restart_to_update(app, pump_until=None):
                                  spawn=lambda a, c: None, sleep=lambda s: None))
         settings = {"quick_run_enabled": False, "compact_mode": layout == "compact"}
         win = MainWindow(REFERENCE["dark"], settings=settings,
-                         fetch_release=lambda: release,
+                         fetch_release=lambda prereleases=False: release,
                          download_update=lambda r: updates.Outcome(True, "fake", zip_path),
                          updater=None if inert else updater)
         win.on_quit = lambda: seen.quits.append(True)
@@ -3232,8 +3311,11 @@ def check_updates_and_notify(app):
     reply = {"value": ("v999.0.0", "https://example.invalid/r")}
     threads: list = []
 
-    def fetch():
+    offers: list = []
+
+    def fetch(prereleases=False):
         threads.append(threading.current_thread() is threading.main_thread())
+        offers.append(prereleases)
         return reply["value"]
 
     toasts: list = []
@@ -3255,6 +3337,8 @@ def check_updates_and_notify(app):
         return
     if threads != [False]:
         PROBLEMS.append("the update fetch ran on the UI thread")
+    if offers != [False]:
+        PROBLEMS.append(f"the update fetch asked for release candidates: {offers}")
     if win.update_label.text() != notifications.banner_text(
             "v999.0.0", __version__, buildinfo.download_name()):
         PROBLEMS.append(f"banner said {win.update_label.text()!r}")

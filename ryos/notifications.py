@@ -1,17 +1,12 @@
 """Toast notifications and GitHub update check."""
-import json
 import os
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 
-from . import buildinfo
 from .logger import get_logger
 
 _log = get_logger("notifications")
 
-_RELEASES_API = "https://api.github.com/repos/lqvu-zen/RYOS/releases/latest"
 _RELEASES_PAGE = "https://github.com/lqvu-zen/RYOS/releases/latest"
 
 
@@ -69,22 +64,6 @@ def _parse_version(tag: str) -> tuple[tuple[int, ...], int, int]:
     return numbers, 0, int(digits) if digits else 0
 
 
-def _fetch_latest_release() -> tuple[str, str] | None:
-    test = buildinfo.test_releases_api()
-    url = f"{test}/latest" if test else _RELEASES_API
-    try:
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "RYOS-update-check"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read())
-        return data["tag_name"], data["html_url"]
-    except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
-        # Network down, non-JSON body, or an unexpected response shape: the
-        # update check is optional, so log and skip rather than surface an error.
-        _log.debug("Update check failed: %s", e)
-        return None
-
-
 # --- what an update check means, for both UIs -----------------------------------
 # The fetch is above; these decide what its result means and what to say, so the
 # Tk banner and the Qt banner cannot disagree about when an update exists.
@@ -98,7 +77,7 @@ UNREACHABLE_NOTICE = ("Update Check",
 
 
 def update_status(result, current: str) -> tuple:
-    """(NEWER / CURRENT / UNREACHABLE, tag, url) for a `_fetch_latest_release` result."""
+    """(NEWER / CURRENT / UNREACHABLE, tag, url) for a check's ``(tag, url)`` result (`updates.check_of`)."""
     if result is None:
         return UNREACHABLE, "", ""
     tag, url = result

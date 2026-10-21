@@ -95,6 +95,10 @@ def _release_from(data: dict) -> Release:
                    bool(data.get("prerelease")), assets)
 
 
+def offers_release_candidates(settings) -> bool:
+    return bool(settings.get("offer_release_candidates", False))
+
+
 def fetch_release(prereleases: bool = False, *, open_url: OpenUrl | None = None,
                   api: str | None = None) -> Release | None:
     api = api or buildinfo.test_releases_api() or RELEASES_API

@@ -5,6 +5,7 @@ never GitHub. Every test points LOCALAPPDATA at a throwaway folder.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import http.client
 import io
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import zipfile
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -338,19 +340,148 @@ class TestTestSource(_Base):
         self.assertEqual(self.server.requests[-1][0], "/api/releases/latest")
 
     def test_the_version_check_reads_the_same_source(self):
+        from ryos import cli
         env = f"{self.server.base}/api/releases"
-        for fake, want in ((self.unmarked, notifications._RELEASES_API),
-                           (self.marked, env + "/latest")):
+        cases = ((self.unmarked, False, updates.RELEASES_API + "/latest"),
+                 (self.marked, False, env + "/latest"),
+                 (self.marked, True, env))
+        for fake, on, want in cases:
             seen = []
 
             def urlopen(request, timeout=None):
                 seen.append(request.full_url)
                 raise urllib.error.URLError("not here")
             modules, environ = self.build(fake, env)
-            with self.subTest(fake=fake), modules, environ, \
-                    mock.patch.object(urllib.request, "urlopen", urlopen):
-                self.assertIsNone(notifications._fetch_latest_release())
+            with self.subTest(fake=fake, on=on), modules, environ, \
+                    mock.patch.object(urllib.request, "urlopen", urlopen), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                cli.main(["version", "--check"],
+                         settings={"offer_release_candidates": on})
             self.assertEqual(seen, [want])
+
+
+class TestReleaseCandidates(_Base):
+    ALL = (buildinfo.WINDOWS, buildinfo.WINDOWS_AI, buildinfo.AGENT)
+
+    def channel(self, *tags):
+        releases = [self.publish(tag, prerelease="-rc" in tag) for tag in tags]
+        finals = [r for r, tag in zip(releases, tags) if "-rc" not in tag]
+        self.server.json["/api/releases"] = releases
+        self.server.json["/api/releases/latest"] = finals[0]
+        self.server.requests.clear()
+
+    def asked_all(self):
+        return any(p == "/api/releases" for p, _ in self.server.requests)
+
+    def test_rc_to_the_next_rc(self):
+        self.channel("v9.9.10-rc2", "v9.9.10-rc1", "v9.9.9")
+        release = self.fetch(prereleases=True)
+        self.assertEqual(release.tag, "v9.9.10-rc2")
+        self.assertEqual(notifications.update_status(release.check, "9.9.10-rc1")[0],
+                         notifications.NEWER)
+        for which in self.ALL:
+            with self.subTest(which=which):
+                self.assertTrue(updates.wants_download(
+                    release, "9.9.10-rc1", allowed=True, which=which))
+                outcome = self.download(which, release, current="9.9.10-rc1")
+                self.assertTrue(outcome.ok, outcome.message)
+                self.assertEqual(updates.downloaded(
+                    "v9.9.10-rc2", which, key=TEST_PUBLIC), outcome.path)
+        self.server.requests.clear()
+        off = self.fetch(prereleases=False)
+        self.assertEqual(off.tag, "v9.9.9")
+        self.assertEqual(notifications.update_status(off.check, "9.9.10-rc1")[0],
+                         notifications.CURRENT)
+        self.assertFalse(self.asked_all())
+
+    def test_rc_to_its_final(self):
+        self.channel("v9.9.10", "v9.9.10-rc2", "v9.9.9")
+        for on in (True, False):
+            with self.subTest(on=on):
+                release = self.fetch(prereleases=on)
+                self.assertEqual(release.tag, "v9.9.10")
+                self.assertEqual(
+                    notifications.update_status(release.check, "9.9.10-rc2")[0],
+                    notifications.NEWER)
+                self.assertTrue(updates.wants_download(
+                    release, "9.9.10-rc2", allowed=True, which=buildinfo.WINDOWS))
+
+    def test_a_final_to_the_next_rc1(self):
+        self.channel("v9.9.11-rc1", "v9.9.10")
+        release = self.fetch(prereleases=True)
+        self.assertEqual(release.tag, "v9.9.11-rc1")
+        self.assertTrue(updates.wants_download(
+            release, "9.9.10", allowed=True, which=buildinfo.WINDOWS))
+        outcome = self.download(buildinfo.WINDOWS, release, current="9.9.10")
+        self.assertTrue(outcome.ok, outcome.message)
+        self.server.requests.clear()
+        off = self.fetch(prereleases=False)
+        self.assertEqual(off.tag, "v9.9.10")
+        self.assertEqual(notifications.update_status(off.check, "9.9.10")[0],
+                         notifications.CURRENT)
+        self.assertFalse(self.asked_all())
+
+    def test_a_release_is_never_replaced_by_an_older_pre_release(self):
+        self.channel("v9.9.10-rc3", "v9.9.9")
+        self.server.json["/api/releases"] = [
+            self.publish("v9.9.10-rc3", prerelease=True), self.publish("v9.9.9")]
+        release = self.fetch(prereleases=True)
+        self.assertEqual(release.tag, "v9.9.10-rc3")
+        self.assertEqual(notifications.update_status(release.check, "9.9.10")[0],
+                         notifications.CURRENT)
+        self.assertFalse(updates.wants_download(
+            release, "9.9.10", allowed=True, which=buildinfo.WINDOWS))
+        outcome = self.download(buildinfo.WINDOWS, release, current="9.9.10")
+        self.assertFalse(outcome.ok)
+
+    def test_the_command_line_follows_the_option(self):
+        from ryos import cli, selfupdate, swap
+        packed = io.BytesIO()
+        with zipfile.ZipFile(packed, "w") as z:
+            z.writestr("RYOS.exe", b"new")
+            z.writestr("ryos-cli.exe", b"new cli")
+        zip_bytes = packed.getvalue()
+        here = sys.modules[__name__]
+        with mock.patch.object(here, "_payload", lambda name: (
+                zip_bytes if name == "RYOS-windows.zip" else name.encode() * 10)):
+            self.channel("v9.9.10-rc2", "v9.9.10-rc1", "v9.9.9")
+        fake = SimpleNamespace(VARIANT="windows", RELEASE_KEY=TEST_PUBLIC.hex(),
+                               TEST_UPDATES=True)
+        env = {buildinfo.TEST_RELEASES_ENV: f"{self.server.base}/api/releases"}
+        install = self.tmp / "apps" / "RYOS"
+        install.mkdir(parents=True)
+        (install / "RYOS.exe").write_bytes(b"old")
+        spawned: list = []
+        updater = selfupdate.Updater(
+            install=install, which="windows", running_from=lambda _f: [],
+            write_problem=lambda _i: None,
+            staged=lambda tag: updates.downloaded(tag),
+            spawn=lambda argv, cwd: spawned.append(list(argv)),
+            effects=swap.Effects(wait_for_exit=lambda p, t: True,
+                                 spawn=lambda a, c: None, sleep=lambda s: None),
+            pid=4242)
+
+        def check(settings):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.main(["version", "--check"], settings=settings)
+            return out.getvalue()
+        with mock.patch.dict(sys.modules, {"ryos._build_info": fake}), \
+                mock.patch.dict(os.environ, env), \
+                mock.patch.object(urllib.request, "urlopen", _OPEN), \
+                mock.patch.object(cli, "__version__", "9.9.10-rc1"), \
+                mock.patch.object(updates, "__version__", "9.9.10-rc1"):
+            self.assertIn("9.9.10-rc2",
+                          check({"offer_release_candidates": True}))
+            self.assertIn("Up to date", check({}))
+            out, err = io.StringIO(), io.StringIO()
+            code = cli.main(["update", "--yes"], settings={"offer_release_candidates": True},
+                            out=out, err=err, updater=updater)
+        self.assertEqual(code, cli.EXIT_OK, err.getvalue())
+        self.assertEqual(len(spawned), 1)
+        self.assertIn("v9.9.10-rc2", spawned[0])
+        self.assertIsNotNone(updates.downloaded("v9.9.10-rc2", buildinfo.WINDOWS,
+                                                key=TEST_PUBLIC))
 
 
 class TestDownloading(_Base):

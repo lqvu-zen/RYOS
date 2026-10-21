@@ -337,7 +337,6 @@ located next to the executable into the data directory.
 | --- | --- |
 | `_show_notification(title, body)` | Fire-and-forget Windows 10/11 toast via PowerShell; no-op off Windows. |
 | `_parse_version(tag)` | Parse a `vX.Y.Z` tag into a comparable tuple. |
-| `_fetch_latest_release()` | `(tag_name, html_url)` of the latest GitHub release, or `None` on any failure. |
 
 ---
 

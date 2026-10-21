@@ -158,6 +158,11 @@ FIELDS: tuple[Field, ...] = (
     Field("auto_download_update", BOOL, "Download updates in the background", LOGGING,
           help="Off: RYOS still checks and shows the banner, but downloads "
                "nothing. RYOS from source never downloads."),
+    Field("offer_release_candidates", BOOL, "Offer release candidates (for testing)",
+          LOGGING,
+          help="On: RYOS also offers a newer release candidate of this download, "
+               "checked and installed like a release; ryos-cli follows it too. "
+               "Off: releases only."),
 )
 
 BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}

@@ -360,7 +360,7 @@ class MainWindow(QMainWindow):
                  on_run: Callable[[int], None] | None = None,
                  save_settings: Callable[[dict], None] | None = None,
                  notifier: Callable[[str, str], None] | None = None,
-                 fetch_release: Callable[[], object] | None = None,
+                 fetch_release: Callable[..., object] | None = None,
                  download_update: Callable[[object], object] | None = None,
                  startup=None,
                  configure_logging: Callable[[bool, str], None] | None = None,
@@ -381,7 +381,7 @@ class MainWindow(QMainWindow):
         # Like save_settings: inert unless the entry point passes the real
         # ones, so tests pop no toasts and make no network calls.
         self._notifier = notifier or (lambda _t, _b: None)
-        self._fetch_release = fetch_release or (lambda: None)
+        self._fetch_release = fetch_release or (lambda prereleases=False: None)
         self._download_update = download_update or (lambda _r: None)
         self._update_download_running = False
         self.update_staged = None
@@ -1776,8 +1776,10 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "_update_invoker"):
             self._update_invoker = MainThreadInvoker(self)
 
+        offer = updates.offers_release_candidates(self._settings)
+
         def work():
-            result = self._fetch_release()
+            result = self._fetch_release(prereleases=offer)
             self._update_invoker(lambda: self._update_result(result, manual))
         import threading
         threading.Thread(target=work, daemon=True).start()

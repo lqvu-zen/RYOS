@@ -7122,6 +7122,16 @@ class TestSettingsSchema(unittest.TestCase):
         self.assertIn("still checks", field.help)
         self.assertIn("never downloads", field.help)
 
+    def test_release_candidates_are_off_by_default_beside_the_download(self):
+        keys = [f.key for f in settings_schema.FIELDS]
+        field = settings_schema.BY_KEY["offer_release_candidates"]
+        self.assertEqual(keys.index("offer_release_candidates"),
+                         keys.index("auto_download_update") + 1)
+        self.assertEqual(field.kind, settings_schema.BOOL)
+        self.assertEqual(field.tab, settings_schema.LOGGING)
+        self.assertIs(field.default, False)
+        self.assertEqual(field.label, "Offer release candidates (for testing)")
+
     def test_a_choice_fields_default_is_one_of_its_choices(self):
         # Otherwise coerce() would reject the default and loop back to it.
         for f in settings_schema.FIELDS:

@@ -848,6 +848,24 @@ class TestApplyUpdate(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_OK)
         self.assertIn("no unfinished update", out)
 
+    def test_a_release_candidate_applies_like_a_release(self):
+        self.stage("v99.0.0-rc2")
+        code, out, err = self.apply("--version", "v99.0.0-rc2",
+                                    "--from-version", "99.0.0-rc1")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertIn("now v99.0.0-rc2", out)
+        self.assertEqual(self.read(), self.NEW)
+        code, _out, err = self.apply("--rollback", "--from-version", "99.0.0-rc2")
+        self.assertEqual(code, cli.EXIT_OK, err)
+        self.assertEqual(self.read(), self.OLD)
+
+    def test_an_older_candidate_never_replaces_a_release(self):
+        self.stage("v99.0.0-rc3")
+        code, _out, _err = self.apply("--version", "v99.0.0-rc3",
+                                      "--from-version", "99.0.0")
+        self.assertEqual(code, cli.EXIT_REFUSED)
+        self.assertEqual(self.read(), self.OLD)
+
     def test_a_failed_swap_exits_1_and_nothing_to_roll_back_125(self):
         code, _out, err = self.apply("--rollback")
         self.assertEqual(code, cli.EXIT_REFUSED)
@@ -1010,7 +1028,8 @@ class TestUpdate(unittest.TestCase):
         base.update(over)
         return selfupdate.Updater(**base)
 
-    def update(self, *argv, updater="default", fetch="default", download=None, answer=None):
+    def update(self, *argv, updater="default", fetch="default", download=None, answer=None,
+               settings=None):
         from ryos import updates
         out, err = io.StringIO(), io.StringIO()
 
@@ -1021,7 +1040,7 @@ class TestUpdate(unittest.TestCase):
         def fake_download(release):
             self.downloads.append(release.tag)
             return updates.Outcome(True, "ok", self.zip)
-        code = cli.main(["update", *argv], db=None, settings=None, out=out, err=err,
+        code = cli.main(["update", *argv], db=None, settings=settings, out=out, err=err,
                         ask=ask, updater=self.updater() if updater == "default" else updater,
                         fetch_update=(lambda: self.release) if fetch == "default" else fetch,
                         download_update=download or fake_download)
@@ -1093,6 +1112,22 @@ class TestUpdate(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_OK)
         self.assertIn("Up to date", out)
         self.assertEqual((self.downloads, self.spawned), ([], []))
+
+    def test_the_default_fetch_follows_the_option(self):
+        from unittest import mock
+
+        from ryos import updates
+        for settings, want in (({"offer_release_candidates": True}, True), ({}, False)):
+            asked: list = []
+
+            def recorder(prereleases=False, **_kw):
+                asked.append(prereleases)
+                return None
+            with self.subTest(settings=settings), \
+                    mock.patch.object(updates, "fetch_release", recorder):
+                code, _out, _err = self.update("--yes", fetch=None, settings=settings)
+            self.assertEqual(code, cli.EXIT_FAILED)
+            self.assertEqual(asked, [want])
 
     def test_unreachable(self):
         code, _out, err = self.update("--yes", fetch=lambda: None)

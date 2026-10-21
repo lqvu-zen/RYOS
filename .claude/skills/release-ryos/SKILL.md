@@ -28,7 +28,7 @@ If you're somewhere without a display or without Windows (e.g. a Linux sandbox),
 - **Release candidate** `X.Y.Z-rcN`: `__version__ = "X.Y.Z-rcN"`; `setup_cxfreeze.py` `version="X.Y.Z"` (the Windows version resource takes numbers only). Tag `vX.Y.Z-rcN`, published as a **pre-release**.
 - **Final** `X.Y.Z`: `__version__ = "X.Y.Z"`, `setup_cxfreeze.py` unchanged from the candidate. Tag `vX.Y.Z`, published as the latest release.
 - `pyproject.toml` reads the version from `__version__` via hatchling; it is the single source. Tags carry the `v` prefix, `__version__` does not.
-- The update check reads `/releases/latest`, which skips pre-releases, so nobody is told about a candidate. A candidate's own update check sees its final as newer (`2.3.1-rc1 < 2.3.1`, `_parse_version`), so testers are offered the final when it ships.
+- The update check reads `/releases/latest`, which skips pre-releases, so nobody with Offer release candidates off is told about a candidate. A candidate's own update check sees its final as newer (`2.3.1-rc1 < 2.3.1`, `_parse_version`), so testers are offered the final when it ships.
 - N is one more than the highest number among the existing `vX.Y.Z-rc*` tags (`git tag -l "vX.Y.Z-rc*"`) and any `-rcN` already in `__version__` at HEAD; 1 when there is none. A failed candidate's number is never reused or re-tagged.
 
 ## A. Release candidate
