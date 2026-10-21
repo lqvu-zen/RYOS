@@ -86,6 +86,7 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 36 Type checks over the window, extract what you touch | the B, C and D coding sessions | inside their own steps |
 | 37 Fix the qt-smoke crash on CI | coding session (Opus if the cause is in threads or Qt object lifetime) | `/fix-ryos-bug` |
 | 38 Claim a step when you start | coding session | `/add-ryos-feature`; skill, hook and eval edits |
+| 39 A Offer release candidates (P7) | coding session | `/add-ryos-feature` |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -252,7 +253,7 @@ _Planner proposal, accepted by Vũ._ `/release-ryos` part A (A1–A8) only, for 
 - `ryos-tester` PASS on the update flow;
 - Vũ runs it.
 
-**Needs:** 1–11, 37 (green CI), 38
+**Needs:** 1–11, 37 (green CI), 38, 39
 **Gate:** Vũ names the version, installs the candidate by hand and runs it.
 
 ### 13 — Backlog: checks without a window
@@ -485,7 +486,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - a slow copy from USB or a network share into a watched folder.
 
 **Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist, including the two RC-to-RC updates, is in the Status table.
-**Needs:** 11, 13–28, 37, 38
+**Needs:** 11, 13–28, 37, 38, 39
 **Gate:** Vũ ticks the checklist.
 
 ### 30 — Release 2.4
@@ -604,6 +605,18 @@ _Added 2026-10-19 from Vũ's decision ("other sessions should tell us which task
 
 **Needs:** 37 (green CI).
 
+### 39 — A: Offer release candidates (P7)
+_Added 2026-10-21 from Vũ's decision (P7 was in no step, and step 12 relies on it)._ Decision P7: Options → "Offer release candidates (for testing)", off by default, reads `/releases` instead of `/releases/latest`. It is the only way rcN → rcN+1 goes through self-update for real on Vũ's PC, which step 12 and step 29's two RC-to-RC updates count on. Step 4 built the channel as a parameter, `updates.fetch_release(prereleases=…)` (`ryos/updates.py:101`), but nothing sets it: there is no setting and no checkbox, so the window's check (`ryos/qtui/shell.py`, beside the `auto_download_update` read) and `ryos-cli version --check` / `update` always ask for `/releases/latest`. "Download updates in the background" lives on the Logging tab (`settings.py`, `settings_schema.py`). RYOS Agent has no Options dialog, so the designer decides how the command line follows the setting.
+**Touches:** TW-17 ("a pre-release is never offered" holds with the option off), UP-01, UP-07, UP-08, CLI-13; surfaces W CLI.
+**Files:** `ryos/settings.py`, `ryos/settings_schema.py`, `ryos/qtui/shell.py` (the update check), `ryos/cli.py` (`version --check`, `update`), possibly `ryos/updates.py` / `ryos/selfupdate.py`; `tests/test_updates.py`, `tests/test_cli.py`, `tests/test_ryos.py` (`TestSettingsSchema`), `tests/qt_smoke.py`.
+**Done when:**
+- the option is in Options, off by default, and with it off nothing changes (TW-17's tests still pass);
+- with it on, the window and the command line offer a newer pre-release of this download, downloaded, signature-checked and applied exactly like a release, tested against a 127.0.0.1 server (rcN → rcN+1, rcN → its final, a final → the next rc1);
+- a pre-release is never offered to a build with the option off, and a release is never replaced by an older pre-release;
+- `qt_smoke` checks the checkbox; TW-17 and a new UP entry name the tests.
+
+**Needs:** 11
+
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
@@ -613,7 +626,8 @@ _Added 2026-10-19 from Vũ's decision ("other sessions should tell us which task
 3. **Part A**, the riskiest and the one that changes the release process:
    1. 4 and 6 can run in parallel;
    2. then 5, 7, 8, 9, 10, 11;
-   3. then **12**, the early candidate, so A gets real use for the rest of 2.4.
+   3. then **39** ("Offer release candidates", P7; added 2026-10-21; step 12 relies on it);
+   4. then **12**, the early candidate, so A gets real use for the rest of 2.4.
 4. **Backlog** 13, 14, 15, before B and C touch rows, the pane and the Running list. Step 13 may run beside part A in its own worktree. 34 (frozen builds in CI, after 11) and 35 (the tech-debt review) run beside the backlog.
 5. **B and C**, in parallel worktrees where step 33 shows their files don't overlap, otherwise in sequence:
    - B: 16 → 17, 18, 19;
@@ -694,3 +708,4 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 36 Type checks over the window | — |
 | 37 Fix the qt-smoke crash on CI | in progress (2026-10-21 18:49): fix in 895f077; collecting 10 green qt-smoke runs |
 | 38 Claim a step when you start | done 2026-10-19: the three coding skills (`add-ryos-feature`, `fix-ryos-bug`, `release-ryos`) start with "Claim your step before anything else" (a row `in progress` or `started` is held, stop; otherwise set `in progress (YYYY-MM-DD HH:MM)`, commit and push that line alone by path; a session that stops writes why in the row); `session_start.py` `next_open` skips claimed rows and `plan_lines` prints "In progress (claimed by another tab, don't take)" (`is_claimed`, `started` without `skip`); `tests/test_harness.py::TestSessionStart` (one claimed, a `started` row, every open step claimed); `docs/PROMPTS.md` continue prompt says "not already in progress" and has a second-tab prompt; evals: claim in all three skills, `fix-ryos-bug` refuses a claimed step (written, not run). Not changed: the continue prompt quoted in `docs/STATUS.md` (secretary file) |
+| 39 A Offer release candidates (P7) | — |
