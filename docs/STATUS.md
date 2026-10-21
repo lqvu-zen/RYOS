@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-21 21:00 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-21 21:30 (UTC+7).
 
 ## Roles
 
@@ -52,7 +52,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - `895f077` **the qt-smoke crash fixed** (step 37): the smoke left ~800 widgets and ~130 Python-owned objects alive, and the unpinned PySide6 6.12.0 crashed tearing them down at exit. `qt_smoke::close_down` deletes them and fails if any survive. **Proven:** 10 of 10 green qt-smoke attempts on `895f077` with "PASSED" in each log (row closed in `0dfb024`).
 - `7b74e98` **Offer release candidates** (step 39, P7): Options > Logging, off by default; the window, `ryos-cli version --check` and `update` all follow it; `version --check` now uses the same fetch as the window (`notifications._fetch_latest_release` removed); UP-31, TW-17, UP-06, CLI-13. Not run: a real rc → rc update from GitHub (steps 12, 29).
 - **In progress:** step 33 here: `ryos-planner`'s draft (Files lines, lanes cut by files, 8 questions) is back, Vũ answering.
-- **Step 12 in progress** (claimed 20:13): rc1 is built, signed and published. Its row isn't closed yet: still to show are `release_check` passing, `ryos-tester` PASS on the update flow, and **Vũ installing rc1 by hand and running it**, with "Offer release candidates" on so rc2 arrives by self-update.
+- **Step 12 in progress** (claimed 20:13): rc1 built, signed, published. **`ryos-tester`: PASS** on the update flow (verify with the real key on the three frozen zips, `version --check`, `update` rc1 → rc2 and rc1 → final and `--rollback` from a local signed source, the option off and on, the window's update flows from source in all three layouts; the built `RYOS.exe` was only started, not driven through a real update). **`release_check`:** `3001f46` recorded "PASSED (29/0/0)"; the coding tab is correcting that row (uncommitted) to a run at `053d8b9` **after publishing**: 28 passed, 1 failed, the failure `build_commit` only because HEAD was two docs commits (the secretary's) past the build. No record shows a 29/0/0 run before the publish. **Waiting on Vũ's checklist** (10 items in the step 12 row: Claude Desktop and Claude Code over MCP, `real_data_smoke` on real data and a backup, real data after the upgrade, SmartScreen and hash from a fresh download, Properties > Details, a real Restart to update and Roll back, the rc channel against real GitHub once rc2 exists, select mode at real DPI, antivirus during the swap, portable `run.bat` / `install_uv.bat`).
 - **Next after 12:** the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
@@ -70,7 +70,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 35 | Tech-debt review of the Qt app | ✅ `de6108a` |
 | 38 | Claim a step when you start | ✅ `e39e71a` |
 | 39 | Offer release candidates (P7) | ✅ `7b74e98` |
-| 12 | The early candidate (Vũ's gate) | in progress: v2.4.0-rc1 published (`6b9d12e`); Vũ to install and run |
+| 12 | The early candidate (Vũ's gate) | in progress: rc1 published (`6b9d12e`), tester PASS; Vũ's checklist open |
 | 13–15, 34 | Backlog; frozen builds in CI | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
 | 25–28 | D: secrets, then triggers | — |
