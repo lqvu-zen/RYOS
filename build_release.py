@@ -1,6 +1,6 @@
 """Build every RYOS download into dist/, and check each one.
 
-    uv run --extra mcp --with cx_Freeze python build_release.py
+    uv run --python 3.13 --extra mcp --with cx_Freeze python build_release.py
 
 Writes:
 
@@ -207,12 +207,14 @@ def release_key_problems(name: str, read: Callable[[str], bytes]) -> list[str]:
 
 
 def main() -> int:
+    if buildinfo.build_python_refusal():
+        sys.exit(buildinfo.build_python_refusal())
     clear_stamp(DIST)
     try:
         import mcp  # noqa: F401
     except ImportError:
         sys.exit("The builds carry the MCP server: run this as\n"
-                 "  uv run --extra mcp --with cx_Freeze python build_release.py")
+                 "  uv run --python 3.13 --extra mcp --with cx_Freeze python build_release.py")
     DIST.mkdir(exist_ok=True)
     for variant in BUILDS:
         build(variant)

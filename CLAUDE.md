@@ -17,7 +17,7 @@ Apart from PySide6, everything is from the standard library (sqlite3, subprocess
 ## Building the Executable
 
 ```bash
-uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
+uv run --python 3.13 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 
@@ -25,9 +25,9 @@ Output: `dist/cxfreeze/` folder containing `RYOS.exe` (the window), `ryos-cli.ex
 
 `RYOS_VARIANT` picks the download (`ryos/buildinfo.py`): `windows` (the default) has **no MCP server** -- the SDK is excluded even when installed, `ryos-cli mcp` exits 125 saying so, and the "Available to agents" checkbox is hidden (its database column untouched); `windows-ai` builds into `dist/cxfreeze-ai/` with the MCP server inside `ryos-cli.exe` (the SDK adds about 28 MB, most of it `cryptography` and `pydantic_core`, both imported when the server starts; `setup_cxfreeze.py` refuses to build it without the `mcp` extra); `agent` is below. The variant IDs and zip names are fixed: each build's update notice names its own zip.
 
-Every download at once, as a release needs them: `uv run --extra mcp --with cx_Freeze python build_release.py` builds the three frozen variants, writes `RYOS-windows.zip`, `RYOS-windows-ai.zip`, `RYOS-agent.zip`, `RYOS-portable.zip` and `SHA256SUMS.txt` to `dist/`, and checks what each zip must and must not hold.
+Every download at once, as a release needs them: `uv run --python 3.13 --extra mcp --with cx_Freeze python build_release.py` builds the three frozen variants, writes `RYOS-windows.zip`, `RYOS-windows-ai.zip`, `RYOS-agent.zip`, `RYOS-portable.zip` and `SHA256SUMS.txt` to `dist/`, and checks what each zip must and must not hold.
 
-RYOS Agent, `ryos-cli.exe` alone without the window or Qt (about 48 MB): `RYOS_VARIANT=agent uv run --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe` builds it in `dist/cxfreeze-agent/`, and `uv run python tests/launch_smoke.py --cli-only dist/cxfreeze-agent/ryos-cli.exe` checks it: it says it is RYOS Agent, carries no Qt and no window, and its command line and MCP server work against a throwaway folder.
+RYOS Agent, `ryos-cli.exe` alone without the window or Qt (about 48 MB): `RYOS_VARIANT=agent uv run --python 3.13 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe` builds it in `dist/cxfreeze-agent/`, and `uv run python tests/launch_smoke.py --cli-only dist/cxfreeze-agent/ryos-cli.exe` checks it: it says it is RYOS Agent, carries no Qt and no window, and its command line and MCP server work against a throwaway folder.
 
 To check a build starts without touching your own data: `uv run python tests/launch_smoke.py --exe dist/cxfreeze/RYOS.exe` (a throwaway data folder, no registry writes, no toasts, no window; `--visible` shows it on a second screen). It then runs the command line in the same folder -- `ryos-cli.exe` beside a built `RYOS.exe`, which must be there, or `python -m ryos` -- with `--version`, `list` and a real `run`, and, for a build with AI agents, talks MCP to `ryos-cli.exe mcp` (initialize, the tool list, `list_scripts`) as plain JSON-RPC, so the smoke itself needs no SDK -- or, for the build without them, checks `ryos-cli.exe mcp` refuses with 125.
 

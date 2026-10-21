@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib
 import os
 import re
+import sys
 
 #: Shown in Properties -> Details of both exes (setup_cxfreeze.py). NFC
 #: literals: the version resource is UTF-16, but a decomposed form would still
@@ -51,6 +52,16 @@ BUILD_FOLDERS = {WINDOWS: "dist/cxfreeze", WINDOWS_AI: "dist/cxfreeze-ai",
 
 #: The frozen variants that carry the MCP server (the SDK inside ryos-cli.exe).
 _WITH_MCP = {WINDOWS_AI, AGENT}
+
+BUILD_PYTHON = (3, 13)
+
+
+def build_python_refusal(running: tuple = tuple(sys.version_info[:2])) -> str | None:
+    if running == BUILD_PYTHON:
+        return None
+    want = ".".join(map(str, BUILD_PYTHON))
+    return (f"The frozen builds are made with Python {want}, not "
+            f"{'.'.join(map(str, running))}: run them with  uv run --python {want} ...")
 
 
 def variant() -> str:

@@ -8865,6 +8865,15 @@ class TestBuildInfo(unittest.TestCase):
         self.assertEqual(set(buildinfo.DOWNLOADS),
                          {*buildinfo.BUILD_FOLDERS, buildinfo.PORTABLE})
 
+    def test_frozen_builds_refuse_any_python_but_the_pinned_one(self):
+        from ryos import buildinfo
+        self.assertIsNone(buildinfo.build_python_refusal((3, 13)))
+        for other in ((3, 10), (3, 12), (3, 14)):
+            with self.subTest(other=other):
+                message = buildinfo.build_python_refusal(other)
+                self.assertIn("uv run --python 3.13", message)
+                self.assertIn("%d.%d" % other, message)
+
     def test_the_file_a_build_writes(self):
         from ryos import buildinfo
         namespace: dict = {}
