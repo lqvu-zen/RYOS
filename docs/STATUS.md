@@ -138,7 +138,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
-- 2026-10-21 20:10: **The early candidate is 2.4.0-rc1** (Vũ named it); published as a pre-release at 20:38.
+- 2026-10-21 (before 20:13): **The early candidate is 2.4.0-rc1** (Vũ named it); published as a pre-release at 20:38.
 - 2026-10-21: **P7 "Offer release candidates" becomes 2.4 step 39,** after 11 and before 12 (the secretary's recommendation, taken by Vũ). Steps 12 and 29 now need it. `/add-ryos-feature`, Sonnet Medium.
 - 2026-10-19 23:00: **A coding session claims its step when it starts** (2.4 step 38, after 37, before 12): it marks the Status row `in progress` and pushes that alone; the continue prompt and the session-start hook skip claimed steps; a session that stops writes why. `/add-ryos-feature`.
 - 2026-10-19 22:40: **Work runs in parallel where the files don't collide:** step 35 (docs only) starts now beside 37, earlier than the Order's "beside the backlog"; 33 continues in the secretary session. A tab working beside another names its step instead of using the continue prompt, and commits only its own files.
