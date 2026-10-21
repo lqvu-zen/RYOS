@@ -113,14 +113,14 @@ the extension to `quick_run_index_extensions` in `settings.py`. Add a case to
 2. Make the change; add or update tests in `tests/test_ryos.py`.
 3. Run `uvx ruff check .` and the test command above — both must pass.
 4. Open a PR. CI runs ruff + pytest on Ubuntu and Windows across Python
-   3.10 and 3.13; all four jobs must be green.
+   3.10 and 3.14; all four jobs must be green.
 
 ## Building a release executable
 
 The primary packager is cx_Freeze (produces a folder you zip and distribute):
 
 ```bash
-uv run --python 3.13 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
+uv run --python 3.14 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 # or double-click build.bat / build_cxfreeze.bat
 ```
 

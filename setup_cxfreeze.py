@@ -1,7 +1,7 @@
 """cx_Freeze build configuration for RYOS.
 
 Usage (via build_cxfreeze.bat):
-    uv run --python 3.13 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
+    uv run --python 3.14 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe
 
 RYOS_VARIANT picks the download (ryos/buildinfo.py):
     windows     (default) RYOS.exe + ryos-cli.exe, no MCP   -> dist/cxfreeze/
@@ -43,7 +43,7 @@ if buildinfo.bundles_mcp(VARIANT):
         import mcp  # noqa: F401
     except ImportError:
         sys.exit("The build needs the MCP SDK: run it as\n"
-                 "  uv run --python 3.13 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe")
+                 "  uv run --python 3.14 --extra mcp --with cx_Freeze python setup_cxfreeze.py build_exe")
 
 #: The Qt plugin folders RYOS loads: the platform (windows, offscreen), the
 #: widget style, image formats and the SVG icon engine for its icons, and

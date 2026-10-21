@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.13"]
+        python-version: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v6
 
@@ -47,7 +47,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       # Libraries Qt loads even offscreen (fonts, EGL, keyboard).
       - name: Install Qt runtime libraries
@@ -71,7 +71,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       # Static type-check of the UI-free core modules; scope lives in
       # pyproject's [tool.mypy] (UI and Windows-only startup.py are excluded).
@@ -92,7 +92,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
 
       - name: __version__ changes only in a release commit
         run: uv run --no-project python tools/harness_checks.py version --base "$BASE" --head "$HEAD_SHA"

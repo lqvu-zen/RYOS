@@ -277,5 +277,5 @@ One CI trap worth knowing: `--no-project` still resolves against a local
 command will not reproduce the failure.
 
 CI (`.github/workflows/ci.yml`) runs ruff and the unit suite on Ubuntu and
-Windows × Python 3.10/3.13, mypy, and the Qt, launch and session smokes
+Windows × Python 3.10/3.14, mypy, and the Qt, launch and session smokes
 offscreen on Ubuntu. See `docs/CONTRIBUTING.md` for the development workflow.

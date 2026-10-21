@@ -53,7 +53,7 @@ BUILD_FOLDERS = {WINDOWS: "dist/cxfreeze", WINDOWS_AI: "dist/cxfreeze-ai",
 #: The frozen variants that carry the MCP server (the SDK inside ryos-cli.exe).
 _WITH_MCP = {WINDOWS_AI, AGENT}
 
-BUILD_PYTHON = (3, 13)
+BUILD_PYTHON = (3, 14)
 
 
 def build_python_refusal(running: tuple = tuple(sys.version_info[:2])) -> str | None:
