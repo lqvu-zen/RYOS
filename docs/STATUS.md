@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-21 20:15 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-10-21 21:00 (UTC+7).
 
 ## Roles
 
@@ -28,8 +28,8 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 
 ## Where we are (2026-10-21)
 
-- **v2.3.1** is the latest release (2026-10-14). No 2.4 candidate yet.
-- **`main` = `origin/main` at `7b74e98`** (2026-10-21 20:03), CI green. Up to `afa32f5` (2026-10-19 21:33), Since `2088a68`:
+- **v2.3.1** is the latest release (2026-10-14). **v2.4.0-rc1** is published as a pre-release (2026-10-21 20:38, commit `6b9d12e`): the four zips, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`, so the first signed release.
+- **`main` = `origin/main` at `6b9d12e`** ("Release candidate 2.4.0-rc1", 2026-10-21 20:14), CI green. Up to `afa32f5` (2026-10-19 21:33), Since `2088a68`:
   - `7a125c9` the 2.4 plan written and approved;
   - `685d5aa` **OP-15:** "Clear output between runs" now empties the All tab (step 1);
   - `2e9867c` **GR-33:** a scheduled outside run no longer gets the outside note (step 2);
@@ -52,7 +52,8 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - `895f077` **the qt-smoke crash fixed** (step 37): the smoke left ~800 widgets and ~130 Python-owned objects alive, and the unpinned PySide6 6.12.0 crashed tearing them down at exit. `qt_smoke::close_down` deletes them and fails if any survive. **Proven:** 10 of 10 green qt-smoke attempts on `895f077` with "PASSED" in each log (row closed in `0dfb024`).
 - `7b74e98` **Offer release candidates** (step 39, P7): Options > Logging, off by default; the window, `ryos-cli version --check` and `update` all follow it; `version --check` now uses the same fetch as the window (`notifications._fetch_latest_release` removed); UP-31, TW-17, UP-06, CLI-13. Not run: a real rc → rc update from GitHub (steps 12, 29).
 - **In progress:** step 33 here: `ryos-planner`'s draft (Files lines, lanes cut by files, 8 questions) is back, Vũ answering.
-- **Next: step 12, the early candidate.** Part A is complete (1–11, 37, 38, 39 done). **Gate:** Vũ names the version, signs, installs it by hand and runs it; with "Offer release candidates" on, later candidates reach him through self-update.
+- **Step 12 in progress** (claimed 20:13): rc1 is built, signed and published. Its row isn't closed yet: still to show are `release_check` passing, `ryos-tester` PASS on the update flow, and **Vũ installing rc1 by hand and running it**, with "Offer release candidates" on so rc2 arrives by self-update.
+- **Next after 12:** the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -69,7 +70,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 35 | Tech-debt review of the Qt app | ✅ `de6108a` |
 | 38 | Claim a step when you start | ✅ `e39e71a` |
 | 39 | Offer release candidates (P7) | ✅ `7b74e98` |
-| 12 | The early candidate (Vũ's gate) | **next**: waits for Vũ's version number |
+| 12 | The early candidate (Vũ's gate) | in progress: v2.4.0-rc1 published (`6b9d12e`); Vũ to install and run |
 | 13–15, 34 | Backlog; frozen builds in CI | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
 | 25–28 | D: secrets, then triggers | — |
@@ -137,6 +138,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-10-21 20:10: **The early candidate is 2.4.0-rc1** (Vũ named it); published as a pre-release at 20:38.
 - 2026-10-21: **P7 "Offer release candidates" becomes 2.4 step 39,** after 11 and before 12 (the secretary's recommendation, taken by Vũ). Steps 12 and 29 now need it. `/add-ryos-feature`, Sonnet Medium.
 - 2026-10-19 23:00: **A coding session claims its step when it starts** (2.4 step 38, after 37, before 12): it marks the Status row `in progress` and pushes that alone; the continue prompt and the session-start hook skip claimed steps; a session that stops writes why. `/add-ryos-feature`.
 - 2026-10-19 22:40: **Work runs in parallel where the files don't collide:** step 35 (docs only) starts now beside 37, earlier than the Order's "beside the backlog"; 33 continues in the secretary session. A tab working beside another names its step instead of using the continue prompt, and commits only its own files.
