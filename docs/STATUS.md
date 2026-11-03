@@ -59,7 +59,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - `5a0512c` **frozen builds use Python 3.14, not 3.13** (10-21 22:38): `BUILD_PYTHON = (3, 14)` in `ryos/buildinfo.py`; build commands, CI matrix (3.10 and 3.14) and `release-ryos` follow. A throwaway-worktree build on 3.14.5 passed every `release_check` case but `build_commit` and `signature`, including the three `self_update_*` cases once recorded failing on 3.14. Not a plan step; it reverses the 3.13 pin of `c2c39e0` and step 40 part 1 (no decision logged). Not run: the signed release path on 3.14, due at the next candidate.
 - `510d27e` **devflow adopted** (11-03 19:24): `.claude/devflow.md` profile, `.claude/devflow.json` guard config, `docs/DESIGN.md`, `tools/devflow_checks.py` with a CI job, an `ask` rule for editing the guard config. The `ryos-*` skills, agents, hooks and `harness_checks.py` stay until devflow is proven; retiring them is a separate commit. CI green on `510d27e`.
 - **Three new issues, all from Vũ** (see Open GitHub issues): #33 and #35 the window hangs in the maximised layout (2.3.1 and rc1), #34 a script typed as text.
-- **Next:** step 40 part 2 once Vũ approves; then the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
+- **Next:** step 41 (#33, #35, added 2026-11-03); step 40 part 2 once Vũ approves; then the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -78,6 +78,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 39 | Offer release candidates (P7) | ✅ `7b74e98` |
 | 12 | The early candidate (Vũ's gate) | in progress: rc1 published (`6b9d12e`), tester PASS; Vũ's checklist open |
 | 40 | No publish without a passing release_check; portable zip | part 1 ✅ `299cd5a`; part 2 waits for Vũ (guard.py) |
+| 41 | Fix the maximised-layout hang (#33, #35) | — (next) |
 | — | Python 3.14 for frozen builds; devflow adopted | ✅ `5a0512c`, `510d27e` (not plan steps) |
 | 13–15, 34 | Backlog; frozen builds in CI | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
@@ -104,9 +105,9 @@ In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secre
 
 | # | Title | Where |
 |---|---|---|
-| 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | proposed, not yet planned |
+| 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | 2.4 step 41 (with #33); trigger not confirmed |
 | 34 | Suggestion: create a script from text only, without a .bat or .ps1 file (2.4.0-rc1) | proposed, not yet planned |
-| 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | proposed, not yet planned |
+| 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | 2.4 step 41 |
 | 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude); owner adds "anything to show in the RYOS app?" | 2.4 steps 20 (keep run output), 21 (agents read history, progress) and 22 (CLI and agent runs show in the window) |
 
 Issues 29, 30 and 31 closed 2026-10-14 with v2.3.1.
@@ -149,6 +150,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-11-03 19:40: **#33 and #35 (the window hangs in the maximised layout) become 2.4 step 41, one `/devflow:fix-bug` step, next in Order** before step 40 part 2 and the backlog (the secretary's recommendation, taken by Vũ). It escaped v2.3.1, so it adds its § Escapes line and check. #34 not decided yet.
 - 2026-10-21 22:10: **The rc1 publish-without-check escape becomes 2.4 step 40, before any later candidate** (the secretary's recommendation, taken by Vũ): a `release_check` pass stamp that `guard.py` requires for `gh release create`, plus the portable zip's line-ending mismatch and the Python 3.13 need. Vũ approves the `guard.py` change. `/fix-ryos-bug`, Opus.
 - 2026-10-21 (before 20:13): **The early candidate is 2.4.0-rc1** (Vũ named it); published as a pre-release at 20:38.
 - 2026-10-21: **P7 "Offer release candidates" becomes 2.4 step 39,** after 11 and before 12 (the secretary's recommendation, taken by Vũ). Steps 12 and 29 now need it. `/add-ryos-feature`, Sonnet Medium.

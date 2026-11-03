@@ -88,6 +88,7 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 38 Claim a step when you start | coding session | `/add-ryos-feature`; skill, hook and eval edits |
 | 39 A Offer release candidates (P7) | coding session | `/add-ryos-feature` |
 | 40 No publish without a passing release_check; a reproducible portable zip | coding session (Opus, packaging + harness) + Vũ | `/fix-ryos-bug`; Vũ approves the `guard.py` change |
+| 41 Fix the maximised-layout hang (#33, #35) | coding session (Opus if threads or the single-instance handoff) | `/devflow:fix-bug` |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -487,7 +488,7 @@ The `ryos-tester` brief covers the update flow. Vũ's checklist adds:
 - a slow copy from USB or a network share into a watched folder.
 
 **Done when:** `release_check.py` passes on a fresh build of all four zips and fails on a planted fault for each new case, and the checklist, including the two RC-to-RC updates, is in the Status table.
-**Needs:** 11, 13–28, 37, 38, 39, 40
+**Needs:** 11, 13–28, 37, 38, 39, 40, 41
 **Gate:** Vũ ticks the checklist.
 
 ### 30 — Release 2.4
@@ -633,9 +634,28 @@ The re-run at `6b9d12e` also failed `release_check::portable`: `build_release.zi
 **Needs:** 12 (rc1 published).
 **Gate:** Vũ approves the `guard.py` change (`.claude/hooks/` edits are `ask`).
 
+### 41 — Fix the window hanging in the maximised layout (#33, #35)
+_Added 2026-11-03 from issues #33 and #35 (Vũ's decision)._ Two reports from Vũ of the window hanging in the maximised ("fullscreen") layout with compact rows, theme Tech Innovation, the windows-ai build:
+- **#33** (2.3.1, `ae8c470`): the window hangs after right-click > Edit on a pipeline in the maximised layout.
+- **#35** (2.4.0-rc1, `6b9d12e`): the window hangs in the maximised layout; Task Manager shows six "RYOS - Run Your Own Scripts" processes (one with the window, 194 MB, others at 50, 48, 1.4 and 0.7 MB). No steps given; whether it also started from Edit on a pipeline is not known yet.
+
+Both attached logs end with ordinary `Done:` lines and the start-up "Window asked for 400x600, got 480x600" warnings, with no error or traceback at the hang. The pipeline editor is opened by `MainWindow._edit_pipeline` (`ryos/qtui/shell.py:2801`), reached from the row menu (`shell.py:1194`, `:2760`) and the pane, and runs `PipelineEditorDialog` (`ryos/qtui/pipeline.py:26`) through `self.run_dialog` (`dlg.exec()`), then `_defer_reload`. The map lists the maximised right-click menus (RC-20 to RC-25 on D) and the pane's Edit button (RC-35) as **untested**, due in step 14; this bug got past v2.3.1, so the escape rule applies. Whether the extra processes are later launches waiting on the single-instance handoff, or something else, is the designer's finding.
+**Touches:** RC-20, RC-35, PL-01/PL-02 (the editor), the single-instance handoff rows in § Window, tray and start-up; § Escapes.
+**Files:** `ryos/qtui/shell.py` (`_edit_pipeline`), `ryos/qtui/pipeline.py`, `tests/qt_smoke.py`, `docs/BEHAVIOUR.md`, possibly `ryos/qtui/detail.py`, `ryos/qtui/placement.py`, `ryos/single_instance.py`, `tests/test_ryos.py`.
+**Done when:**
+- a test reproduces the hang first (red), then passes: Edit on a pipeline from the right-click menu and from the pane's Edit button in the maximised layout, with normal and compact rows, opens the editor, and Save and Cancel both return to a responsive window;
+- the same holds for a script's Edit in the maximised layout;
+- if the extra processes come from the hang, a second launch while the window is hung says so or exits instead of piling up (or the designer shows they are unrelated, and the step says so);
+- RC-20 and RC-35 name the new test for D; § Escapes gets "#33 (v2.3.1): should have been caught by …; added …".
+
+Use `/devflow:fix-bug`. Opus for the implementer if the cause is in threads, the output queue or the single-instance handoff (**Escalate**).
+
+**Needs:** —
+
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
+   - **41** (the maximised-layout hang, #33 and #35; added 2026-11-03) comes next, before 40 part 2 and the backlog.
    - **37** (the qt-smoke crash, added 2026-10-19) comes next (CI must be green before a candidate).
    - **38** (claim a step, added 2026-10-19) right after it (parallel tabs need it).
 2. **Harness and loop rules, before step 11** (added 2026-10-19): 31, then 32. 33 runs alongside (docs only).
@@ -727,3 +747,4 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 38 Claim a step when you start | done 2026-10-19: the three coding skills (`add-ryos-feature`, `fix-ryos-bug`, `release-ryos`) start with "Claim your step before anything else" (a row `in progress` or `started` is held, stop; otherwise set `in progress (YYYY-MM-DD HH:MM)`, commit and push that line alone by path; a session that stops writes why in the row); `session_start.py` `next_open` skips claimed rows and `plan_lines` prints "In progress (claimed by another tab, don't take)" (`is_claimed`, `started` without `skip`); `tests/test_harness.py::TestSessionStart` (one claimed, a `started` row, every open step claimed); `docs/PROMPTS.md` continue prompt says "not already in progress" and has a second-tab prompt; evals: claim in all three skills, `fix-ryos-bug` refuses a claimed step (written, not run). Not changed: the continue prompt quoted in `docs/STATUS.md` (secretary file) |
 | 39 A Offer release candidates (P7) | done 2026-10-21: Options > Logging "Offer release candidates (for testing)" (`offer_release_candidates`, off by default); the window and `ryos-cli version --check` / `update` pass it to `updates.fetch_release`; `version --check` no longer has its own fetch (`notifications._fetch_latest_release` deleted); UP-31 added, TW-17, UP-06, CLI-13 updated. Tests: `test_updates::TestReleaseCandidates`, `test_cli` apply and default-fetch cases, `qt_smoke` options row and rc block. Not run: a real rc to rc update from GitHub (steps 12, 29). |
 | 40 No publish without a passing release_check | **Gate:** part 1 done in 299cd5a (reviewed READY TO COMMIT; suite 1598 passed): `zip_portable` writes HEAD's blobs with the commit time (`TestPortableZip`, UP-32); `release_check` refuses another Python up front, clears `dist/release_check.passed` at start and writes it only when every case passed and HEAD and `SHA256SUMS.txt` did not move (`TestReleaseStamp`, `TestReleaseChecksPython`, UP-33); `release-ryos` A3/A4, BEHAVIOUR § Escapes and § Harness escapes (partly in place). Not run: a fresh `build_release.py` plus `release_check` (`--python 3.13`) from this checkout and from a clean worktree. Left: part 2, the `.claude/hooks/guard.py` refusal of `gh release create` without a matching stamp, its `test_harness` cases (`TestPublishGate`, `TestGuardMain`), the SKILL A5/B5 sentence and the final § Harness escapes line; waits for Vũ's approval of the `guard.py` change and his answers to the designer's open questions |
+| 41 Maximised-layout hang (#33, #35) | — |
