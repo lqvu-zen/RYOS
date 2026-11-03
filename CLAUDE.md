@@ -142,3 +142,13 @@ Execution runs in a `threading.Thread`; output is fed through a `queue.Queue` an
 - **Real effects are passed in**: the Qt window saves settings, reconfigures the log, shows toasts, checks for updates, writes run-at-login and quits only through arguments that do nothing by default. `ryos/qtui/main.py` is the one place that passes the real ones, so tests can build windows freely.
 - **Schema changes**: `_ensure_baseline()` in `db.py` is frozen. New columns and tables go in `_MIGRATIONS`, keyed by the `PRAGMA user_version` they upgrade to, and each one re-checks `PRAGMA table_info` so it is safe to run twice.
 - **Widening an accessor row is a breaking change**: `db.get()` and `list_pipeline_steps()` are unpacked by name in the UI, and appending a column has silently broken those call sites three times. Slice to a fixed width (`rec[:7]`, `row[:8]`) at the call site, and `TestRowWidthsArePinned` in `tests/test_ryos.py` pins the widths as a tripwire.
+
+## How work is done here (devflow)
+
+This project uses the devflow plugin. Its profile is `.claude/devflow.md` (architecture rules, verify commands, edit bounds, release); its guard config is `.claude/devflow.json`.
+
+- New capability or improvement: `/devflow:add-feature`. Bug or red CI: `/devflow:fix-bug`. Shipping: `/devflow:release`. Status, issues, plans and decisions: `/devflow:secretary`.
+- What must keep working, on every surface, with the test guarding each: `docs/BEHAVIOUR.md`. Read an area's rows before changing it; a fix updates its entry and test, a new behaviour adds one.
+- Project status: `docs/STATUS.md`, kept by the secretary. Plans: `docs/plans/`, one fresh coding session per step; claim the step first.
+- The version changes only in a `Release candidate X.Y.Z-rcN` or `Release X.Y.Z` commit.
+- **The escape rule.** Every bug found after a release gets one line in `docs/BEHAVIOUR.md` § Escapes, and its fix adds the check that would have caught it.

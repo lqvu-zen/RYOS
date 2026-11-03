@@ -122,7 +122,8 @@
       "PowerShell(git push --mirror*)",
       "PowerShell(git push * --mirror*)",
       "Edit(/.claude/settings.json)",
-      "Edit(/.claude/hooks/**)"
+      "Edit(/.claude/hooks/**)",
+      "Edit(/.claude/devflow.json)"
     ],
     "deny": [
       "Bash(git checkout *docs/STATUS.md*)",

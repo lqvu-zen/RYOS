@@ -1,0 +1,41 @@
+{
+  "name": "RYOS",
+  "maintainer": "Vũ",
+  "main_branch": "main",
+  "status_file": "docs/STATUS.md",
+  "plans_dir": "docs/plans",
+  "guard": {
+    "real_data": ["%APPDATA%/RYOS", "%LOCALAPPDATA%/RYOS"],
+    "secret_dirs": ["~/ryos-keys"],
+    "secret_extensions": ["pem", "key", "p8"],
+    "self_guarding_scripts": [
+      "tests/real_data_smoke.py",
+      "tests/release_check.py",
+      "tests/launch_smoke.py",
+      "tests/session_smoke.py"
+    ],
+    "maintainer_only": [
+      {"script": "tools/sign_release.py", "subcommands": ["sign", "new"]}
+    ],
+    "app": {
+      "commands": ["ryos", "ryos-cli"],
+      "modules": ["ryos"],
+      "harmless": [["--version"], ["-v"], ["--help"], ["-h"]],
+      "isolate_env": ["APPDATA", "LOCALAPPDATA"],
+      "data_folder": "RYOS"
+    },
+    "ask_release": true,
+    "release_stamp": {
+      "path": "dist/release_check.passed",
+      "binds": "dist/SHA256SUMS.txt",
+      "gate": "uv run --python 3.14 python tests/release_check.py"
+    }
+  },
+  "checks": {
+    "version_files": [
+      {"path": "ryos/__init__.py", "pattern": "^__version__ = \"([^\"]+)\""},
+      {"path": "setup_cxfreeze.py", "pattern": "version=\"([^\"]+)\"", "numbers_only": true}
+    ],
+    "no_new_python_comments": ["ryos/"]
+  }
+}
