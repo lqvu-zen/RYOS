@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-11-03 19:28 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-11-04 19:30 (UTC+7).
 
 ## Roles
 
@@ -26,7 +26,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/archive/release-2.3.1.md` |
 | **2.4** (in progress, 17 of 40 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
 
-## Where we are (2026-11-03)
+## Where we are (2026-11-04)
 
 - **v2.3.1** is the latest release (2026-10-14). **v2.4.0-rc1** is published as a pre-release (2026-10-21 20:38, commit `6b9d12e`): the four zips, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`, so the first signed release.
 - **`main` = `origin/main` at `6b9d12e`** ("Release candidate 2.4.0-rc1", 2026-10-21 20:14), CI green. Up to `afa32f5` (2026-10-19 21:33), Since `2088a68`:
@@ -58,8 +58,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - **Step 40 part 2 waits for Vũ (Gate):** the `guard.py` refusal of `gh release create` without a matching stamp, its `test_harness` cases, the `release-ryos` A5/B5 sentence and the final § Harness escapes line. Needs Vũ's approval of the `guard.py` change and his answers to the designer's open questions (in the coding tab).
 - `5a0512c` **frozen builds use Python 3.14, not 3.13** (10-21 22:38): `BUILD_PYTHON = (3, 14)` in `ryos/buildinfo.py`; build commands, CI matrix (3.10 and 3.14) and `release-ryos` follow. A throwaway-worktree build on 3.14.5 passed every `release_check` case but `build_commit` and `signature`, including the three `self_update_*` cases once recorded failing on 3.14. Not a plan step; it reverses the 3.13 pin of `c2c39e0` and step 40 part 1 (no decision logged). Not run: the signed release path on 3.14, due at the next candidate.
 - `510d27e` **devflow adopted** (11-03 19:24): `.claude/devflow.md` profile, `.claude/devflow.json` guard config, `docs/DESIGN.md`, `tools/devflow_checks.py` with a CI job, an `ask` rule for editing the guard config. The `ryos-*` skills, agents, hooks and `harness_checks.py` stay until devflow is proven; retiring them is a separate commit. CI green on `510d27e`.
+- `a5f5547` **step 41, partly done** (11-04; `c5216ee` records it; reviewed READY TO COMMIT, pytest 1600, ruff, mypy, qt_smoke, session_smoke green): INFO log of every `run_dialog`, `popup`, card drag and layout switch; **defect A** fixed (compact rows kept hover previews beside the pane and over a modal editor); **defect B** fixed (a second launch un-maximised a window that was never hidden to the tray); `qt_smoke::check_maximised_edit_returns` was red with 49 problems, now 0; `check_preview_never_over_modal`, `TestTrayPolicy`. **The hang itself did not reproduce, so the step stays open.** The hung window in the attached logs and screenshot is idle (0% CPU, not "Not responding"), so likely a modal or grab Vũ can't see; the six processes in #35 are most likely `ryos-cli.exe mcp` servers, not launches. Needs Vũ (see Vũ to do).
 - **Three new issues, all from Vũ** (see Open GitHub issues): #33 and #35 the window hangs in the maximised layout (2.3.1 and rc1), #34 a script typed as text.
-- **Next:** step 41 (#33, #35, added 2026-11-03); step 40 part 2 once Vũ approves; then the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
+- **Next:** step 41 waits for Vũ's dump (#33, #35); step 40 part 2 once Vũ approves; then the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -78,7 +79,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 39 | Offer release candidates (P7) | ✅ `7b74e98` |
 | 12 | The early candidate (Vũ's gate) | in progress: rc1 published (`6b9d12e`), tester PASS; Vũ's checklist open |
 | 40 | No publish without a passing release_check; portable zip | part 1 ✅ `299cd5a`; part 2 waits for Vũ (guard.py) |
-| 41 | Fix the maximised-layout hang (#33, #35) | — (next) |
+| 41 | Fix the maximised-layout hang (#33, #35) | partly done `a5f5547` (defects A and B, logging); the hang not reproduced, waits for Vũ's dump |
 | — | Python 3.14 for frozen builds; devflow adopted | ✅ `5a0512c`, `510d27e` (not plan steps) |
 | 13–15, 34 | Backlog; frozen builds in CI | — |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
@@ -89,6 +90,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 
 - [ ] **Back up the release key** in a second place, and put its passphrase in a password manager (left over from step 7).
 - [ ] Step 31 left checks for you: approve the `ask`/`deny` lists as committed in `96405b6`; confirm a fresh session runs one command from each skill without a prompt; confirm auto-memory still works now that `C:\Users\Admin\.claude` is out of `additionalDirectories`. (The `gh release create` ask is seen at the next candidate.)
+- [ ] **Step 41:** the next time RYOS hangs in the maximised layout, before killing it: (1) press Esc and Alt+Tab to look for a hidden dialog or popup; (2) take a dump or `py-spy dump --pid <pid>` of the window's process; (3) copy the command lines of the other RYOS processes (Task Manager > Details > Command line); (4) send the last lines of `ryos.log` (it now logs every dialog, popup, drag and layout switch) and your `settings.json`; (5) say what you did just before. Run `a5f5547` or later so the log has the new lines.
 - [ ] At step 33: decide whether B and C run in parallel.
 
 ## Secretary skill and planner agent
@@ -101,13 +103,13 @@ In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secre
 - **GR-33:** a scheduled run outside its group's base folder got the outside-folder note → fixed, 2.4 step 2 (`2e9867c`).
 - **SM-16:** starring, or maximising with full rows, left select mode → fixed, 2.4 step 3 (`2a9c973`).
 
-## Open GitHub issues (checked 2026-11-03 19:28)
+## Open GitHub issues (checked 2026-11-04 19:29)
 
 | # | Title | Where |
 |---|---|---|
-| 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | 2.4 step 41 (with #33); trigger not confirmed |
+| 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | 2.4 step 41 (with #33); defects A and B fixed in `a5f5547`, the hang not reproduced, waits for Vũ's dump |
 | 34 | Suggestion: create a script from text only, without a .bat or .ps1 file (2.4.0-rc1) | proposed, not yet planned |
-| 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | 2.4 step 41 |
+| 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | 2.4 step 41 (open, as #35) |
 | 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude); owner adds "anything to show in the RYOS app?" | 2.4 steps 20 (keep run output), 21 (agents read history, progress) and 22 (CLI and agent runs show in the window) |
 
 Issues 29, 30 and 31 closed 2026-10-14 with v2.3.1.
