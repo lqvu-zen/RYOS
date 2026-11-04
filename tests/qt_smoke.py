@@ -6048,6 +6048,63 @@ def check_ampersands_show(app):
     print("  [ok] ampersands: a group named R&D keeps its '&' in its tab and menus")
 
 
+def check_startup_and_log_options(app):
+    """TW-16 and ST-13: Start with Windows goes through the injected startup
+    object only, and saved options reach the injected logging setup."""
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    class FakeStartup:
+        def __init__(self, refuse=False):
+            self.on, self.calls, self.refuse = False, [], refuse
+
+        def enabled(self):
+            return self.on
+
+        def set(self, on):
+            self.calls.append(on)
+            if self.refuse:
+                raise OSError("registry says no")
+            self.on = on
+
+    startup = FakeStartup()
+    configured: list = []
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False},
+                     startup=startup)
+    win.warn = lambda title, text: None
+    if win.startup_action.isChecked():
+        PROBLEMS.append("Start with Windows showed ticked while the entry was off")
+    win.startup_action.setChecked(True)
+    if startup.calls != [True] or not startup.on or not win.startup_action.isChecked():
+        PROBLEMS.append(f"ticking Start with Windows gave calls {startup.calls}, "
+                        f"entry {startup.on}")
+    win.startup_action.setChecked(False)
+    if startup.calls != [True, False] or startup.on or win.startup_action.isChecked():
+        PROBLEMS.append(f"unticking Start with Windows gave calls {startup.calls}, "
+                        f"entry {startup.on}")
+    win.deleteLater()
+
+    refusing = FakeStartup(refuse=True)
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False},
+                     startup=refusing)
+    warned = []
+    win.warn = lambda title, text: warned.append(title)
+    win.startup_action.setChecked(True)
+    if warned != ["Could not change startup"] or win.startup_action.isChecked():
+        PROBLEMS.append(f"a registry that refused left warned={warned}, ticked="
+                        f"{win.startup_action.isChecked()}")
+    win.deleteLater()
+
+    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False},
+                     configure_logging=lambda on, level: configured.append((on, level)))
+    win.apply_settings({"logging_enabled": False, "log_level": "DEBUG"})
+    win.apply_settings({"logging_enabled": True, "log_level": "ERROR"})
+    if configured != [(False, "DEBUG"), (True, "ERROR")]:
+        PROBLEMS.append(f"saved log options reached the logging setup as {configured}")
+    win.deleteLater()
+    print("  [ok] start with Windows and the log options go through the injected objects")
+
+
 def _real_log_state():
     """The user's own log file, as (size, mtime) -- None when there is none.
 
@@ -6809,6 +6866,7 @@ def main() -> int:
     check_preview_never_over_modal(app)
     check_heavy_output_stays_responsive(app)
     check_ampersands_show(app)
+    check_startup_and_log_options(app)
     left = close_down(app)
     if left:
         PROBLEMS.append(f"still alive after closing down: {sorted(set(left))}")

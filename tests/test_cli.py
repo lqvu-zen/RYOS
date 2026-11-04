@@ -1243,6 +1243,56 @@ class TestMcpWithoutTheSdk(unittest.TestCase):
         self.assertIn("--extra mcp", err.getvalue())
 
 
+class TestCtrlC(unittest.TestCase):
+    """A real interrupt sent to a real `ryos run`: it stops the run, exits 130."""
+
+    def test_an_interrupt_stops_the_run_and_exits_130(self):
+        import signal
+        import time
+        data = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, data, ignore_errors=True)
+        env = {**os.environ, "APPDATA": str(data), "LOCALAPPDATA": str(data / "local"),
+               "RYOS_NO_REGISTRY": "1", "RYOS_NO_TOASTS": "1"}
+        beat = data / "beat.txt"
+        started = data / "started.txt"
+        script = data / "forever.py"
+        script.write_text(
+            "import pathlib, time\n"
+            f"pathlib.Path({str(started)!r}).write_text('go')\n"
+            "while True:\n"
+            f"    pathlib.Path({str(beat)!r}).write_text(str(time.time()))\n"
+            "    time.sleep(0.05)\n", encoding="utf-8")
+        added = subprocess.run(
+            [sys.executable, "-m", "ryos", "add", str(script), "--name", "forever",
+             "--yes"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(added.returncode, 0, added.stdout + added.stderr)
+        runner = (
+            "import signal, sys\n"
+            "if hasattr(signal, 'SIGBREAK'):\n"
+            "    signal.signal(signal.SIGBREAK, signal.default_int_handler)\n"
+            "import ryos.__main__ as m\n"
+            "sys.argv = ['ryos', 'run', 'forever']\n"
+            "sys.exit(m.main())\n"
+        )
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        proc = subprocess.Popen([sys.executable, "-c", runner], cwd=ROOT, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                creationflags=flags)
+        self.addCleanup(proc.kill)
+        end = time.time() + 60
+        while not started.exists() and time.time() < end and proc.poll() is None:
+            time.sleep(0.05)
+        self.assertTrue(started.exists(), "the script never started")
+        time.sleep(0.3)
+        proc.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
+        out, err = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 130, out + err)
+        self.assertIn("stopping", err)
+        last = beat.read_text()
+        time.sleep(0.5)
+        self.assertEqual(beat.read_text(), last, "the script was still running")
+
+
 class TestTheRealEntryPoint(unittest.TestCase):
     def test_takes_no_lock_writes_no_startup_entry_and_imports_no_qt(self):
         data = Path(tempfile.mkdtemp())

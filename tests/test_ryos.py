@@ -2623,6 +2623,45 @@ class TestRunSubprocess(unittest.TestCase):
         self.assertIn(_ERROR_LINE + "\n", text)
         self.assertTrue(text.endswith("Press any key to continue . . . "), repr(text))
 
+    def _launcher_with_a_late_child(self):
+        tmp = Path(tempfile.mkdtemp())
+        pidfile = tmp / "child.pid"
+        self.addCleanup(_kill_leftovers, pidfile)
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        script = tmp / "launcher.py"
+        script.write_text(
+            "import subprocess, sys\n"
+            "p = subprocess.Popen([sys.executable, '-c', "
+            "'import time; time.sleep(1.5); print(\"late line\", flush=True)'])\n"
+            f"open({str(pidfile)!r}, 'a').write(str(p.pid) + '\\n')\n"
+            "print('launched', flush=True)\n", encoding="utf-8")
+        return [sys.executable, str(script)]
+
+    def test_a_launcher_follows_its_output_to_the_end_of_the_pipe(self):
+        q = _queue.Queue()
+        with mock.patch("ryos.runner.DRAIN_SECONDS", 0.2):
+            run_subprocess(q, self._job(), self._launcher_with_a_late_child(), "l", 1,
+                           follow_leftovers=True)
+        items = self._drain(q)
+        text = "".join(i[2] for i in items if i[0] == "stdout")
+        self.assertIn("launched\n", text)
+        self.assertIn("late line\n", text)
+        self.assertEqual(items[-1][0], "done_tag")
+
+    def test_any_other_step_stops_reading_after_the_drain_window(self):
+        q = _queue.Queue()
+        started = time.monotonic()
+        with mock.patch("ryos.runner.DRAIN_SECONDS", 0.2):
+            run_subprocess(q, self._job(), self._launcher_with_a_late_child(), "l", 1)
+        self.assertLess(time.monotonic() - started, 1.4)
+        items = self._drain(q)
+        text = "".join(i[2] for i in items if i[0] == "stdout")
+        self.assertIn("launched\n", text)
+        self.assertNotIn("late line", text)
+        self.assertEqual(items[-1][0], "done_tag")
+        time.sleep(1.8)
+        self.assertEqual(self._drain(q), [])
+
     def test_a_byte_the_locale_cannot_decode_does_not_kill_the_run(self):
         # 0x81 is undefined in cp1252 and invalid alone in UTF-8. A strict
         # decode raised inside the worker thread, which then never posted its
@@ -2680,6 +2719,100 @@ def _kill_leftovers(pidfile):
             os.kill(int(pid), signal.SIGTERM)
         except (OSError, ValueError):
             pass
+
+
+class TestLogOptions(unittest.TestCase):
+    """Write a log file (logging_enabled, log_level) and Log script output too
+    (log_runs_output), into throwaway files and handlers."""
+
+    def setUp(self):
+        import logging
+        self.logging = logging
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        root = logging.getLogger("ryos")
+        saved = (list(root.handlers), root.level, root.propagate)
+
+        def restore():
+            for h in list(root.handlers):
+                if h not in saved[0]:
+                    h.close()
+            root.handlers[:] = saved[0]
+            root.setLevel(saved[1])
+            root.propagate = saved[2]
+        self.addCleanup(restore)
+
+    def _flush(self):
+        for h in self.logging.getLogger("ryos").handlers:
+            h.flush()
+
+    def _log_text(self, enabled, level):
+        from ryos.logger import get_logger, setup_logging
+        self._n = getattr(self, "_n", 0) + 1
+        path = self.tmp / f"t{self._n}.log"
+        setup_logging(enabled, level, path=path)
+        log = get_logger("opts")
+        log.debug("debug-line")
+        log.info("info-line")
+        log.error("error-line")
+        self._flush()
+        return path.read_text(encoding="utf-8") if path.exists() else None
+
+    def test_off_writes_no_file(self):
+        self.assertIsNone(self._log_text(False, "DEBUG"))
+
+    def test_on_writes_lines_at_or_above_the_level(self):
+        text = self._log_text(True, "INFO")
+        self.assertNotIn("debug-line", text)
+        self.assertIn("info-line", text)
+        self.assertIn("error-line", text)
+        text = self._log_text(True, "ERROR")
+        self.assertNotIn("info-line", text)
+        self.assertIn("error-line", text)
+        text = self._log_text(True, "DEBUG")
+        self.assertIn("debug-line", text)
+
+    def test_script_output_reaches_the_log_only_when_asked(self):
+        records = []
+
+        class Catch(self.logging.Handler):
+            def emit(self, record):
+                records.append(record.getMessage())
+
+        catcher = Catch(level=self.logging.DEBUG)
+        root = self.logging.getLogger("ryos")
+        root.addHandler(catcher)
+        root.setLevel(self.logging.DEBUG)
+        for asked in (True, False):
+            records.clear()
+            q = _queue.Queue()
+            run_subprocess(q, Job(1, "script", 1, None, "t", "job:1", "g"),
+                           [sys.executable, "-c", "print('secret-output')"], "t", 1,
+                           log_output=asked)
+            self.assertEqual(any("secret-output" in m for m in records), asked)
+            self.assertIn(("stdout", 1, "secret-output\n"), list(q.queue))
+
+    def test_the_run_host_passes_the_option_to_every_run(self):
+        from ryos.jobhost import JobHost
+        for asked in (True, False):
+            seen = []
+
+            def fake_run(*args, **kwargs):
+                seen.append(kwargs["log_output"])
+
+            db = ScriptDB(self.tmp / f"{asked}.db")
+            db.create_group("G")
+            script = self.tmp / "s.py"
+            script.write_text("pass\n", encoding="utf-8")
+            sid = db.add("s", str(script), "", sys.executable, "G")
+            host = JobHost(db, {"launcher_release_seconds": 0, "log_runs_output": asked},
+                           call_later=lambda s, fn: None, on_output=lambda *a, **k: None)
+            with mock.patch("ryos.jobhost.run_subprocess", fake_run):
+                host.run_script(sid, "s", str(script), "", sys.executable)
+                end = time.time() + 5
+                while not seen and time.time() < end:
+                    time.sleep(0.01)
+            self.assertEqual(seen, [asked])
 
 
 from ryos.runner import decode_output_item  # noqa: E402
@@ -8958,6 +9091,20 @@ class TestBuildInfo(unittest.TestCase):
         for text in (buildinfo.COMPANY, buildinfo.COPYRIGHT):
             self.assertTrue(unicodedata.is_normalized("NFC", text))
 
+    def test_a_missing_or_wrong_publisher_in_the_version_resource_is_named(self):
+        from ryos import buildinfo
+        good = {"CompanyName": buildinfo.COMPANY, "LegalCopyright": buildinfo.COPYRIGHT,
+                "FileVersion": "2.4.0"}
+        self.assertEqual(buildinfo.publisher_problems(good), [])
+        self.assertEqual(buildinfo.publisher_problems(None), ["no version resource"])
+        self.assertEqual(buildinfo.publisher_problems({}), ["no version resource"])
+        no_company = {k: v for k, v in good.items() if k != "CompanyName"}
+        self.assertEqual(len(buildinfo.publisher_problems(no_company)), 1)
+        self.assertIn("CompanyName", buildinfo.publisher_problems(no_company)[0])
+        wrong = dict(good, LegalCopyright="(c) someone else")
+        self.assertIn("LegalCopyright", buildinfo.publisher_problems(wrong)[0])
+        self.assertEqual(len(buildinfo.publisher_problems({"FileVersion": "2.4.0"})), 2)
+
     def test_the_bug_report_names_the_commit(self):
         from ryos import buildinfo, bugreport
         fake = types.SimpleNamespace(VARIANT="windows-ai", COMMIT="1a2b3c4")
@@ -10476,6 +10623,22 @@ class TestCopyBetweenGroups(unittest.TestCase):
         self.assertEqual([p[1:] for p in self.db.list_param_presets(new_id)],
                          [("quick", "--quick")])
         self.assertIn("build", self._scripts("A"))         # the original stays
+
+    def test_a_copy_leaves_the_schedule_with_the_original(self):
+        pid = self.db.create_pipeline("ship", "A")
+        self.db.add_pipeline_step(pid, self.build)
+        self.db.add_schedule("script", script_id=self.build, spec_type="daily",
+                             spec='{"at": "09:00"}', enabled=True)
+        self.db.add_schedule("pipeline", pipeline_id=pid, spec_type="daily",
+                             spec='{"at": "09:00"}', enabled=True)
+        for kind, item_id in ((cardmenu.SCRIPT, self.build), (cardmenu.PIPELINE, pid)):
+            for how, new_id in (
+                    ("copy", cardmenu.copy_to_group(self.db, kind, item_id, "B")),
+                    ("clone", cardmenu.clone(self.db, kind, item_id))):
+                with self.subTest(kind=kind, how=how):
+                    key = "script_id" if kind == cardmenu.SCRIPT else "pipeline_id"
+                    self.assertEqual(self.db.list_schedules(**{key: new_id}), [])
+                    self.assertEqual(len(self.db.list_schedules(**{key: item_id})), 1)
 
     def test_pasting_into_its_own_group_is_a_copy_beside_it(self):
         new_id = cardmenu.copy_to_group(self.db, cardmenu.SCRIPT, self.build, "A")

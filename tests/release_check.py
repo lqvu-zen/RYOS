@@ -1052,6 +1052,22 @@ class Check:
             problems.append(f"the test source was asked for {self.server.seen[:5]}")
         need(not problems, "; ".join(problems))
 
+    def publisher(self) -> None:
+        if sys.platform != "win32":
+            raise Skipped("version resources are read on Windows")
+        problems = []
+        for variant in FROZEN:
+            names = ("ryos-cli.exe",) if variant == buildinfo.AGENT else (
+                "RYOS.exe", "ryos-cli.exe")
+            for name in names:
+                path = self.exe(variant, name)
+                if not path.exists():
+                    problems.append(f"{variant}: no {name}")
+                    continue
+                problems += [f"{variant} {name}: {p}" for p in
+                             buildinfo.publisher_problems(version_strings(path))]
+        need(not problems, "; ".join(problems))
+
     def real_folder_untouched(self, before: dict, updates_before: dict) -> None:
         after = launch_smoke._snapshot(REAL_FOLDER)
         changed = sorted(set(after.items()) ^ set(before.items()))
@@ -1059,6 +1075,42 @@ class Check:
         after = launch_smoke._snapshot(REAL_UPDATES)
         changed = sorted(set(after.items()) ^ set(updates_before.items()))
         need(not changed, f"{REAL_UPDATES} changed: {changed[:5]}")
+
+
+def version_strings(path: Path) -> dict | None:
+    """The string table of an exe's version resource, None when it has none."""
+    import ctypes
+    from ctypes import wintypes
+
+    version = ctypes.WinDLL("version", use_last_error=True)
+    version.GetFileVersionInfoSizeW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+    version.GetFileVersionInfoSizeW.restype = wintypes.DWORD
+    version.GetFileVersionInfoW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                            ctypes.c_void_p]
+    version.GetFileVersionInfoW.restype = wintypes.BOOL
+    version.VerQueryValueW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR,
+                                       ctypes.POINTER(ctypes.c_void_p),
+                                       ctypes.POINTER(wintypes.UINT)]
+    version.VerQueryValueW.restype = wintypes.BOOL
+
+    size = version.GetFileVersionInfoSizeW(str(path), None)
+    if not size:
+        return None
+    block = ctypes.create_string_buffer(size)
+    if not version.GetFileVersionInfoW(str(path), 0, size, block):
+        return None
+    ptr, length = ctypes.c_void_p(), wintypes.UINT()
+    if not version.VerQueryValueW(block, "\\VarFileInfo\\Translation",
+                                  ctypes.byref(ptr), ctypes.byref(length)) or not length.value:
+        return None
+    lang, codepage = ctypes.cast(ptr, ctypes.POINTER(wintypes.WORD * 2)).contents
+    found = {}
+    for key in ("CompanyName", "LegalCopyright", "FileVersion", "ProductName"):
+        sub = f"\\StringFileInfo\\{lang:04x}{codepage:04x}\\{key}"
+        if version.VerQueryValueW(block, sub, ctypes.byref(ptr), ctypes.byref(length)) \
+                and length.value:
+            found[key] = ctypes.wstring_at(ptr.value, length.value - 1)
+    return found
 
 
 def counts(path: Path) -> dict:
@@ -1110,6 +1162,7 @@ def main() -> int:
     check.case("launch_windows_ai", check.smoke, "--exe",
                str(check.exe("windows-ai", "RYOS.exe")))
     check.case("launch_agent", check.smoke, "--cli-only", str(check.exe("agent")))
+    check.case("publisher", check.publisher)
     check.case("launch_visible", check.launch_visible)
     check.case("portable", check.portable)
     check.case("cli_management", check.cli_management)

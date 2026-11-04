@@ -64,6 +64,19 @@ def build_python_refusal(running: tuple = tuple(sys.version_info[:2])) -> str | 
             f"{'.'.join(map(str, running))}: run them with  uv run --python {want} ...")
 
 
+def publisher_problems(strings: dict | None) -> list[str]:
+    """What a built exe's version resource lacks of the publisher: its
+    CompanyName and LegalCopyright must be COMPANY and COPYRIGHT."""
+    if not strings:
+        return ["no version resource"]
+    problems = []
+    for key, want in (("CompanyName", COMPANY), ("LegalCopyright", COPYRIGHT)):
+        got = strings.get(key)
+        if got != want:
+            problems.append(f"{key} is {got!r}, not {want!r}")
+    return problems
+
+
 def variant() -> str:
     """This RYOS's variant; ``portable`` (from source) without a build's file."""
     try:
