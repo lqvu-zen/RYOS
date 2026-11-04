@@ -6128,6 +6128,252 @@ def check_pill_corners(app):
     print("  [ok] tab pills keep round corners at a small font (#11)")
 
 
+def check_maximised_edit_returns(app):
+    """Maximised, Edit opens the editor from every way in, and Save and Cancel
+    both leave a window that takes input (#33, #35).
+
+    For a pipeline and a script, with normal and compact rows: the row's menu,
+    its pencil, F2, and the pane's Edit and three dots. The editor is shown
+    modal without a blocking exec; while it is up the pointer rests on a row,
+    and nothing else may open over it. Afterwards there is no modal, popup or
+    stray window, a click reaches the window, and the layout is still on. A
+    second launch while maximised keeps the window maximised.
+    """
+    import queue
+    import sys as _sys
+    import tempfile
+    import time as _time
+    from types import SimpleNamespace
+
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtTest import QTest
+
+    from ryos import cardmenu, cardstyle
+    from ryos.db import ScriptDB
+    from ryos.qtui.menus import actions_by_key
+    from ryos.qtui.pipeline import PipelineEditorDialog
+    from ryos.qtui.scriptdialog import ScriptDialog
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def pump(seconds):
+        end = _time.monotonic() + seconds
+        while _time.monotonic() < end:
+            app.processEvents()
+            _time.sleep(0.01)
+
+    earlier = [w for w in app.topLevelWidgets() if w.isVisible()]
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "s.py"
+    script.write_text("print('hi')\n", encoding="utf-8")
+    db = ScriptDB(tmp / "edit.db")
+    db.create_group("G", base_dir=str(tmp))
+    sid = db.add("plain", str(script), "", _sys.executable, "G")
+    pid = db.create_pipeline("P", "G")
+    db.add_pipeline_step(pid, sid)
+
+    for compact in (False, True):
+        mode = "compact" if compact else "normal"
+        win = MainWindow(REFERENCE["dark"],
+                         settings={"quick_run_enabled": False, "compact_mode": compact})
+        win.load_from_db(db)
+        win.show_group("G")
+        win.show()
+        app.processEvents()
+        win.showMaximized()
+        pump(0.2)
+        if not win.workspace:
+            PROBLEMS.append(f"{mode}: maximising did not turn the layout on")
+            win._quitting = True
+            win.close()
+            win.deleteLater()
+            continue
+        with_preview = [c for c in win._cards if getattr(c, "preview", None) is not None]
+        if with_preview:
+            PROBLEMS.append(f"{mode}: {len(with_preview)} rows beside the detail pane "
+                            "still open a hover preview")
+
+        lock = SimpleNamespace(signals=queue.Queue(), release=lambda: None)
+        win.attach_instance(lock, interval_ms=50)
+        lock.signals.put("RESTORE")
+        pump(0.3)
+        if not (win.isMaximized() and win.workspace):
+            PROBLEMS.append(f"{mode}: a second launch un-maximised the window")
+
+        def row(kind):
+            return win.card_lists["G"].section(
+                "pipelines" if kind == cardmenu.PIPELINE else "scripts").cards[0]
+
+        menus: list = []
+        picker: list = []
+
+        def popup(menu, _pos):
+            if any(a.text() == "All" for a in menu.actions()):
+                picker.append(menu)
+                return
+            menus.append(menu)
+            acts = actions_by_key(menu)
+            if cardmenu.EDIT in acts:
+                acts[cardmenu.EDIT].trigger()
+        win.popup = popup
+
+        def via_menu(kind):
+            card = row(kind)
+            app.sendEvent(card, QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse, QPoint(30, 10),
+                card.mapToGlobal(QPoint(30, 10))))
+
+        def via_pencil(kind):
+            row(kind).edit_button.click()
+
+        def via_f2(kind):
+            QTest.keyClick(row(kind), Qt.Key.Key_F2)
+
+        def via_pane(kind):
+            row(kind).activated.emit()
+            app.processEvents()
+            win.detail.edit.click()
+
+        def via_dots(kind):
+            row(kind).activated.emit()
+            app.processEvents()
+            win.detail.more.click()
+
+        routes = {"menu": via_menu, "pencil": via_pencil, "F2": via_f2,
+                  "pane Edit": via_pane, "pane dots": via_dots}
+        expect = {cardmenu.PIPELINE: PipelineEditorDialog, cardmenu.SCRIPT: ScriptDialog}
+        for kind in (cardmenu.PIPELINE, cardmenu.SCRIPT):
+            for name, route in routes.items():
+                for how in ("save", "cancel"):
+                    where = f"{mode}, {kind}, {name}, {how}"
+                    opened: list = []
+                    stray: list = []
+
+                    def run_dialog(dlg, how=how, opened=opened, stray=stray, kind=kind,
+                                   linger=(name == "menu")):
+                        opened.append(dlg)
+                        dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+                        dlg.show()
+                        app.sendEvent(row(kind), QEvent(QEvent.Type.Enter))
+                        pump(cardstyle.PREVIEW_DELAY_MS / 1000 + 0.3 if linger else 0.05)
+                        stray.extend(w.objectName() or type(w).__name__
+                                     for w in app.topLevelWidgets()
+                                     if w.isVisible() and w not in earlier
+                                     and w not in (win, dlg))
+                        if how == "save":
+                            dlg.save()
+                        else:
+                            dlg.reject()
+                    win.run_dialog = run_dialog
+                    route(kind)
+                    pump(0.1)
+                    if [type(d) for d in opened] != [expect[kind]]:
+                        PROBLEMS.append(f"{where}: opened {[type(d).__name__ for d in opened]}")
+                        continue
+                    if stray:
+                        PROBLEMS.append(f"{where}: {stray} opened over the editor")
+                    left = [w.objectName() or type(w).__name__
+                            for w in app.topLevelWidgets()
+                            if w.isVisible() and w not in earlier and w is not win]
+                    if app.activeModalWidget() is not None or app.activePopupWidget() is not None \
+                            or left:
+                        PROBLEMS.append(f"{where}: after the editor closed, still up: "
+                                        f"modal {app.activeModalWidget()}, popup "
+                                        f"{app.activePopupWidget()}, windows {left}")
+                    picker.clear()
+                    QTest.mouseClick(win.group_picker, Qt.MouseButton.LeftButton)
+                    if not picker:
+                        PROBLEMS.append(f"{where}: the window did not take a click afterwards")
+                    if not (win.isMaximized() and win.workspace):
+                        PROBLEMS.append(f"{where}: the window left the maximised layout")
+        win._quitting = True
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+    print("  [ok] maximised, Edit from every way in opens the editor and Save and "
+          "Cancel return to a window that takes input; a second launch keeps it maximised")
+
+
+def check_preview_never_over_modal(app):
+    """A compact row's hover preview does not open over an application-modal
+    dialog or an open menu (#33)."""
+    import shutil
+    import tempfile
+    import time as _time
+
+    from PySide6.QtCore import QEvent, QPoint, Qt
+    from PySide6.QtWidgets import QDialog, QMenu
+
+    from ryos import cardstyle
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def pump(seconds):
+        end = _time.monotonic() + seconds
+        while _time.monotonic() < end:
+            app.processEvents()
+            _time.sleep(0.01)
+
+    def previews():
+        return [w for w in app.topLevelWidgets()
+                if w.isVisible() and w.objectName() == "hoverPreview"]
+
+    before = len(PROBLEMS)
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "s.py"
+    script.write_text("print('hi')\n", encoding="utf-8")
+    db = ScriptDB(tmp / "modal.db")
+    db.create_group("G", base_dir=str(tmp))
+    db.add("plain", str(script), "", sys.executable, "G")
+    win = MainWindow(REFERENCE["dark"],
+                     settings={"quick_run_enabled": False, "compact_mode": True})
+    win.load_from_db(db)
+    win.show_group("G")
+    win.show()
+    app.processEvents()
+    row = win.card_lists["G"].section("scripts").cards[0]
+
+    app.sendEvent(row, QEvent(QEvent.Type.Enter))
+    pump(cardstyle.PREVIEW_DELAY_MS / 1000 + 0.3)
+    if not previews():
+        PROBLEMS.append("preview over modal: a compact row opened no preview at all")
+    app.sendEvent(row, QEvent(QEvent.Type.Leave))
+    pump(0.2)
+
+    dlg = QDialog(win)
+    dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+    dlg.show()
+    app.sendEvent(row, QEvent(QEvent.Type.Enter))
+    pump(cardstyle.PREVIEW_DELAY_MS / 1000 + 0.3)
+    if previews():
+        PROBLEMS.append("preview over modal: a hover preview opened over a modal dialog")
+    app.sendEvent(row, QEvent(QEvent.Type.Leave))
+    dlg.close()
+    dlg.deleteLater()
+    pump(0.2)
+
+    menu = QMenu(win)
+    menu.addAction("x")
+    menu.popup(win.mapToGlobal(QPoint(10, 10)))
+    app.processEvents()
+    app.sendEvent(row, QEvent(QEvent.Type.Enter))
+    pump(cardstyle.PREVIEW_DELAY_MS / 1000 + 0.3)
+    if previews():
+        PROBLEMS.append("preview over modal: a hover preview opened over an open menu")
+    menu.close()
+    menu.deleteLater()
+    win._quitting = True
+    win.close()
+    win.deleteLater()
+    app.processEvents()
+    shutil.rmtree(tmp, ignore_errors=True)
+    if len(PROBLEMS) == before:
+        print("  [ok] a compact row's hover preview never opens over a modal dialog "
+              "or an open menu")
+
+
 def check_heavy_output_stays_responsive(app):
     """Issue #29a: maximised, a pipeline printing faster than the window
     could draw froze it -- one drain of the output queue ran until the step
@@ -6559,6 +6805,8 @@ def main() -> int:
     check_bug_report(app)
     check_suggestion(app)
     check_maximised_layout(app)
+    check_maximised_edit_returns(app)
+    check_preview_never_over_modal(app)
     check_heavy_output_stays_responsive(app)
     check_ampersands_show(app)
     left = close_down(app)

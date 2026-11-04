@@ -137,6 +137,12 @@ def on_minimize(settings: dict, tray_available: bool, hidden: bool) -> str:
 SHOW_NORMAL, SHOW_MAXIMIZED = "normal", "maximized"
 
 
+def restore_maximized(visible: bool, maximized: bool, saved: bool) -> bool:
+    """A window already on screen keeps its state; one coming back from the
+    tray uses the state it was hidden in."""
+    return maximized if visible else saved
+
+
 def restore_plan(was_maximized: bool, window_area, cursor_area) -> tuple[bool, str]:
     """(move it to the cursor's monitor first, how to show it).
 

@@ -83,7 +83,11 @@ def start_drag(source: QWidget, payload: CardPayload, press: QPoint,
             min(preview.width(), 320),
             Qt.TransformationMode.SmoothTransformation))
         drag.setHotSpot(QPoint(12, 12))
+    from ..logger import get_logger
+    log = get_logger("qtui.dragdrop")
+    log.info("drag start: %s %s", payload.kind, payload.item_id)
     (run or (lambda d: d.exec(Qt.DropAction.MoveAction)))(drag)
+    log.info("drag end: %s %s", payload.kind, payload.item_id)
     return True
 
 

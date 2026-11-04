@@ -435,9 +435,8 @@ class MainWindow(QMainWindow):
         self.select_mode = False
         self.ask_save_path: Callable[[str, str], str | None] = self._ask_save_path
         self.ask_open_path: Callable[[str], str | None] = self._ask_open_path
-        self.run_dialog: Callable[[object], None] = lambda dlg: dlg.exec()
-        self.popup: Callable[[object, QPoint], None] = \
-            lambda menu, pos: menu.exec(pos)
+        self.run_dialog: Callable[[object], object] = self._run_dialog
+        self.popup: Callable[[object, QPoint], object] = self._popup
 
         self.setWindowTitle("RYOS")
         self.resize(self._settings.get("window_width", 540),
@@ -2206,6 +2205,24 @@ class MainWindow(QMainWindow):
             self._tray.set_jobs([(j.job_id, j.name)
                                  for j in self._bridge.registry.all()])
 
+    def _run_dialog(self, dlg) -> object:
+        from ..logger import get_logger
+        log = get_logger("qtui.shell")
+        name = type(dlg).__name__
+        log.info("dialog open: %s", name)
+        result = dlg.exec()
+        log.info("dialog closed: %s result=%s", name, result)
+        return result
+
+    def _popup(self, menu, pos) -> object:
+        from ..logger import get_logger
+        log = get_logger("qtui.shell")
+        name = type(menu).__name__
+        log.info("menu open: %s", name)
+        chosen = menu.exec(pos)
+        log.info("menu closed: %s", name)
+        return chosen
+
     def apply_start(self) -> None:
         """Honour start-minimised, once the window has been shown."""
         action = traypolicy.on_start(self._settings, self.tray_available())
@@ -2232,7 +2249,10 @@ class MainWindow(QMainWindow):
         src = (self.area_at(*screens.geometry_origin(saved)) or target
                if target is not None else None)
         move, show = traypolicy.restore_plan(
-            getattr(self, "_restore_maximized", False), src, target)
+            traypolicy.restore_maximized(
+                self.isVisible(), self.isMaximized(),
+                getattr(self, "_restore_maximized", False)),
+            src, target)
         if move:
             if show == traypolicy.SHOW_MAXIMIZED:
                 # Normal first, so it maximises on the monitor it moves to.
@@ -3251,6 +3271,8 @@ class MainWindow(QMainWindow):
         """
         if on == self.workspace:
             return
+        from ..logger import get_logger
+        get_logger("qtui.shell").info("workspace layout %s", "on" if on else "off")
         self.workspace = on
         self.rail.setVisible(on)
         self.activity.setVisible(on and self.activity_shown)
@@ -3285,7 +3307,7 @@ class MainWindow(QMainWindow):
             self.set_output_expanded(getattr(self, "_output_was_expanded", False),
                                      force=True)
         # The list's rows are compact beside the detail: rebuild them to suit.
-        if not self._settings.get("compact_mode", False) and self._db is not None:
+        if self._db is not None:
             self.reload()
         else:
             self._show_selected()

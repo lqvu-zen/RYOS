@@ -9052,6 +9052,12 @@ class TestTrayPolicy(unittest.TestCase):
         self.assertEqual(traypolicy.restore_plan(False, there, here),
                          (True, traypolicy.SHOW_NORMAL))
 
+    def test_a_second_launch_keeps_a_maximised_window_maximised(self):
+        self.assertTrue(traypolicy.restore_maximized(True, True, False))
+        self.assertFalse(traypolicy.restore_maximized(True, False, True))
+        self.assertTrue(traypolicy.restore_maximized(False, False, True))
+        self.assertFalse(traypolicy.restore_maximized(False, True, False))
+
     def test_quit_prompt_and_verbs(self):
         self.assertIsNone(traypolicy.quit_prompt(0))
         self.assertIn("1 script job is", traypolicy.quit_prompt(1)[1])

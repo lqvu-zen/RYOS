@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QPainter
-from PySide6.QtWidgets import (QFrame, QLabel, QLayout, QSizePolicy, QVBoxLayout,
+from PySide6.QtWidgets import (QApplication, QFrame, QLabel, QLayout, QSizePolicy, QVBoxLayout,
                                QWidget)
 
 from .. import marquee
@@ -176,6 +176,9 @@ class HoverPreview(QObject):
 
     def _show(self) -> None:
         if self._popup is not None:
+            return
+        if (QApplication.activeModalWidget() is not None
+                or QApplication.activePopupWidget() is not None):
             return
         popup = QFrame(self._host.window(),
                        Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
