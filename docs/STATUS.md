@@ -1,6 +1,6 @@
 # RYOS: project status
 
-Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-11-04 19:30 (UTC+7).
+Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session attached to the RYOS project). **This file is the master;** the claude.ai project copy was retired on 2026-10-19. Coding sessions **read** it but don't edit it: plan progress goes in each plan's own Status table. Last updated 2026-11-05 20:05 (UTC+7).
 
 ## Roles
 
@@ -24,9 +24,9 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | Release | What | Plan |
 |---|---|---|
 | **2.3.1** (✅ published 2026-10-14) | #26, #27, #29, #30, #31 fixes; behaviour map; publisher details; expose a group; Suggest a feature; release test phase | `docs/archive/release-2.3.1.md` |
-| **2.4** (in progress, 17 of 40 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
+| **2.4** (in progress, 21 of 41 steps done) | Fixes OP-15, GR-33, SM-16 · **A** self-update · backlog · **B** failure patterns, time left, stats · **C** agents read history and logs, more pipeline logic · **D** secrets, file triggers · steps 31–36: how the team works | `docs/plans/release-2.4.0.md` (steps 1–30 approved 2026-10-14; 31–36 added 2026-10-19) |
 
-## Where we are (2026-11-04)
+## Where we are (2026-11-05)
 
 - **v2.3.1** is the latest release (2026-10-14). **v2.4.0-rc1** is published as a pre-release (2026-10-21 20:38, commit `6b9d12e`): the four zips, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig`, so the first signed release.
 - **`main` = `origin/main` at `6b9d12e`** ("Release candidate 2.4.0-rc1", 2026-10-21 20:14), CI green. Up to `afa32f5` (2026-10-19 21:33), Since `2088a68`:
@@ -60,7 +60,14 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - `510d27e` **devflow adopted** (11-03 19:24): `.claude/devflow.md` profile, `.claude/devflow.json` guard config, `docs/DESIGN.md`, `tools/devflow_checks.py` with a CI job, an `ask` rule for editing the guard config. The `ryos-*` skills, agents, hooks and `harness_checks.py` stay until devflow is proven; retiring them is a separate commit. CI green on `510d27e`.
 - `a5f5547` **step 41, partly done** (11-04; `c5216ee` records it; reviewed READY TO COMMIT, pytest 1600, ruff, mypy, qt_smoke, session_smoke green): INFO log of every `run_dialog`, `popup`, card drag and layout switch; **defect A** fixed (compact rows kept hover previews beside the pane and over a modal editor); **defect B** fixed (a second launch un-maximised a window that was never hidden to the tray); `qt_smoke::check_maximised_edit_returns` was red with 49 problems, now 0; `check_preview_never_over_modal`, `TestTrayPolicy`. **The hang itself did not reproduce, so the step stays open.** The hung window in the attached logs and screenshot is idle (0% CPU, not "Not responding"), so likely a modal or grab Vũ can't see; the six processes in #35 are most likely `ryos-cli.exe mcp` servers, not launches. Needs Vũ (see Vũ to do).
 - **Three new issues, all from Vũ** (see Open GitHub issues): #33 and #35 the window hangs in the maximised layout (2.3.1 and rc1), #34 a script typed as text.
-- **Next:** step 41 waits for Vũ's dump (#33, #35); step 40 part 2 once Vũ approves; then the backlog, 13 → 14 → 15 (34 beside it); B and C lanes wait for step 33's answers.
+- `e040990` **backlog without a window** (step 13): tests for GR-24, PL-16, ST-13, TW-16, CLI-05 and a `release_check` `publisher` case (TW-27). No bug found.
+- `3c0e0a5` **backlog: pane, dialogs, menus** (step 14): smoke checks for FV-13, SC-14, RC-35, QR-13, TW-15, OP-21, OP-05, IE-05; `qt_smoke` no longer leaks Quick Run index files into the real data folder. **Found a bug, TW-13:** the hint's links to other groups have been missing from the Qt window since v2.0.0 (`search.compute_hint` has no caller).
+- `1f52ecb`, `ecdc290` **frozen builds in CI** (step 34): `.github/workflows/frozen.yml` (on demand and nightly, `windows-latest`) builds the four zips and runs `release_check.py --ci`; 28 passed, 2 skipped on the runner; both planted faults fail at `zips`. The nightly run of 11-05 was green. Not fixed: `session_smoke` and `swap` treat a path's 8.3 short and long forms as different.
+- `2d9175e`, `73a61e1` **backlog: every row surface** (step 15): real clicks, menus, select mode, keyboard and drag on compact rows, chips, the maximised list and the pane. **Found a bug, SM-13:** with a search active, Select All ticks the hidden rows and Run selected / Delete selected act on them (`qt_smoke` KNOWN_BUGS). Open question: a chip has no star button while FV-05 says "the star".
+- **CI went red on `73a61e1`** (qt-smoke); step 16 was claimed and released unstarted (`f8af45e`, `b6fe5d1`). `bb1c11b` fixes it in `tests/qt_smoke.py` (the Quick Run cap check scanned its own `qr.db` on ubuntu; the chatty-pipeline turn limit raised to 1 s). **CI on `bb1c11b` still running** at 20:05; not proven green yet.
+- `dcd5309` **step 12: Vũ's checklist all ticked** (11-05, on Vũ's word). Every item of the rc1 checklist is done; the row isn't marked done yet.
+- **New issue #36** (Vũ, rc1, compact): Close all deletes the output of running runs. Proposed as a fix-bug step (see Open GitHub issues).
+- **Next:** CI green on `bb1c11b`; then the three found bugs (#36, TW-13, SM-13) if Vũ puts them in 2.4; step 16 (B lane) once CI is green; step 41 still waits for Vũ's dump; step 40 part 2 once Vũ approves; B and C lanes wait for step 33's answers.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -77,11 +84,13 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 35 | Tech-debt review of the Qt app | ✅ `de6108a` |
 | 38 | Claim a step when you start | ✅ `e39e71a` |
 | 39 | Offer release candidates (P7) | ✅ `7b74e98` |
-| 12 | The early candidate (Vũ's gate) | in progress: rc1 published (`6b9d12e`), tester PASS; Vũ's checklist open |
+| 12 | The early candidate (Vũ's gate) | rc1 published (`6b9d12e`), tester PASS, Vũ's checklist all ticked (`dcd5309`); row not closed yet |
 | 40 | No publish without a passing release_check; portable zip | part 1 ✅ `299cd5a`; part 2 waits for Vũ (guard.py) |
 | 41 | Fix the maximised-layout hang (#33, #35) | partly done `a5f5547` (defects A and B, logging); the hang not reproduced, waits for Vũ's dump |
 | — | Python 3.14 for frozen builds; devflow adopted | ✅ `5a0512c`, `510d27e` (not plan steps) |
-| 13–15, 34 | Backlog; frozen builds in CI | — |
+| 13–15 | Backlog | ✅ `e040990`, `3c0e0a5`, `2d9175e`; found TW-13 and SM-13 bugs |
+| 34 | Frozen builds in CI | ✅ `1f52ecb`, `ecdc290` (nightly green) |
+| — | Red CI on `73a61e1` | fix `bb1c11b`, CI running |
 | 16–24, 36 | B and C (lanes decided at step 33); type checks alongside | — |
 | 25–28 | D: secrets, then triggers | — |
 | 29, 30 | Test phase (with two RC-to-RC updates); release | — |
@@ -102,11 +111,14 @@ In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secre
 - **OP-15:** "Clear output between runs" did nothing → fixed, 2.4 step 1 (`685d5aa`).
 - **GR-33:** a scheduled run outside its group's base folder got the outside-folder note → fixed, 2.4 step 2 (`2e9867c`).
 - **SM-16:** starring, or maximising with full rows, left select mode → fixed, 2.4 step 3 (`2a9c973`).
+- **TW-13:** the no-match hint's links to other groups are missing from the Qt window since v2.0.0 → found at 2.4 step 14 (`3c0e0a5`), not planned yet.
+- **SM-13:** with a search active, Select All ticks the hidden rows and Run/Delete selected act on them → found at 2.4 step 15 (`2d9175e`), not planned yet.
 
-## Open GitHub issues (checked 2026-11-04 19:29)
+## Open GitHub issues (checked 2026-11-05 20:05)
 
 | # | Title | Where |
 |---|---|---|
+| 36 | Close all deletes the logs of running runs (2.4.0-rc1, windows-ai, compact). No steps. OP-12 says Close all keeps running tabs; `close_all_output` (`ryos/qtui/shell.py:850`) keeps their tabs but always clears the All tab, which holds running output too. | proposed: 2.4 fix-bug step (OP-12), waits for Vũ |
 | 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | 2.4 step 41 (with #33); defects A and B fixed in `a5f5547`, the hang not reproduced, waits for Vũ's dump |
 | 34 | Suggestion: create a script from text only, without a .bat or .ps1 file (2.4.0-rc1) | proposed, not yet planned |
 | 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | 2.4 step 41 (open, as #35) |
