@@ -6016,8 +6016,8 @@ def check_keyboard_through_the_list(app):
                 QContextMenuEvent.Reason.Keyboard, QPoint(4, 4), QPoint(4, 4)))
             if not menus:
                 PROBLEMS.append(f"{surface}: the Menu key on a row opened no menu")
-            if not rows[-1].accessibleName().startswith("gamma")
-                    or not rows[-1].accessibleDescription():
+            if (not rows[-1].accessibleName().startswith("gamma")
+                    or not rows[-1].accessibleDescription()):
                 PROBLEMS.append(f"{surface}: a row has no name or key hint for a "
                                 "screen reader")
             QTest.mouseClick(win.card_lists["G"].rows()[1], Qt.MouseButton.LeftButton,
