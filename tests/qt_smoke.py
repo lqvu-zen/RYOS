@@ -37,6 +37,111 @@ from ryos.themes import (SEEDS, build_palette,  # noqa: E402
 
 PROBLEMS: list[str] = []
 
+KNOWN_BUGS: list[str] = []
+
+
+class _RecordingBridge:
+    def __init__(self, db):
+        from ryos.jobs import JobRegistry
+        self.registry, self.db, self.started = JobRegistry(), db, []
+
+    def run_script(self, sid, *a, **k):
+        self.started.append(("script", sid))
+        return True
+
+    def run_pipeline(self, pid, *a, **k):
+        self.started.append(("pipeline", pid))
+        return True
+
+    def stop(self):
+        pass
+
+
+def _click_like_a_person(app, win, widget, pos=None, where="") -> bool:
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QAbstractButton
+
+    label = where or (widget.objectName() or type(widget).__name__)
+    if not widget.isVisible():
+        PROBLEMS.append(f"{label}: not visible, so a person could not click it")
+        return False
+    if pos is None:
+        pos = widget.rect().center()
+    under = win.childAt(widget.mapTo(win, pos))
+    on_it = under is widget or (under is not None and widget.isAncestorOf(under))
+    if not on_it or (not isinstance(widget, QAbstractButton)
+                     and isinstance(under, QAbstractButton)):
+        PROBLEMS.append(f"{label}: {type(under).__name__} is under the click, "
+                        "so it would miss")
+        return False
+    QTest.mouseClick(widget, Qt.MouseButton.LeftButton, pos=QPoint(pos))
+    app.processEvents()
+    return True
+
+
+def _send_drag(app, widget, pos, raw, drop=True) -> bool:
+    """Enter, move, then drop -- Qt refuses a drop that no enter accepted.
+    True when the drop indicator showed during the move."""
+    from PySide6.QtCore import QMimeData, QPointF, Qt
+    from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+
+    from ryos.qtui.dragdrop import MIME
+
+    mime = QMimeData()
+    mime.setData(MIME, raw)
+    args = (Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+    app.sendEvent(widget, QDragEnterEvent(pos, *args))
+    app.sendEvent(widget, QDragMoveEvent(pos, *args))
+    indicator = getattr(widget, "indicator", None)
+    shown = bool(indicator is not None and indicator.isVisible())
+    if drop:
+        app.sendEvent(widget, QDropEvent(QPointF(pos), *args))
+    app.processEvents()
+    app.processEvents()
+    return shown
+
+
+def _open_window(app, db, *, group="G", compact=False, workspace=False,
+                 bridge=None):
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    win = MainWindow(REFERENCE["light"], settings={
+        "quick_run_enabled": False, "compact_mode": compact,
+        "max_parallel_jobs": 10})
+    if isinstance(bridge, _RecordingBridge):
+        win._bridge = bridge
+    elif bridge is not None:
+        win.attach_jobs(bridge)
+        bridge.start()
+    win.resize(1600, 900)
+    win.load_from_db(db)
+    win.show_group(group)
+    win.show()
+    if workspace:
+        win.set_workspace(True)
+    for _ in range(3):
+        app.processEvents()
+    return win
+
+
+def _close_window(app, win) -> None:
+    win._quitting = True
+    win.close()
+    win.deleteLater()
+    app.processEvents()
+
+
+def _pump_until(app, predicate, timeout=15.0) -> bool:
+    import time as _time
+    end = _time.time() + timeout
+    while _time.time() < end and not predicate():
+        app.processEvents()
+        _time.sleep(0.02)
+    return predicate()
+
 
 def _all_seeds() -> dict:
     """Every theme the project ships: built-ins, presets and the gallery."""
@@ -1609,9 +1714,8 @@ def check_drag_and_drop(app):
     """
     import tempfile
 
-    from PySide6.QtCore import QEvent, QMimeData, QPoint, QPointF, Qt
-    from PySide6.QtGui import (QDragEnterEvent, QDragMoveEvent, QDropEvent,
-                               QMouseEvent)
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
 
     from ryos.db import ScriptDB
     from ryos.qtui.dragdrop import MIME, CardPayload
@@ -1643,16 +1747,7 @@ def check_drag_and_drop(app):
         return [r[0] for r in db.list_all() if (r[8] or "") == group]
 
     def drag_to(widget, pos, raw):
-        """Enter, move, drop -- Qt refuses a drop that no enter accepted."""
-        mime = QMimeData()
-        mime.setData(MIME, raw)
-        args = (Qt.DropAction.MoveAction, mime, Qt.MouseButton.LeftButton,
-                Qt.KeyboardModifier.NoModifier)
-        app.sendEvent(widget, QDragEnterEvent(pos, *args))
-        app.sendEvent(widget, QDragMoveEvent(pos, *args))
-        app.sendEvent(widget, QDropEvent(QPointF(pos), *args))
-        app.processEvents()      # the reload is deferred to the next turn
-        app.processEvents()
+        return _send_drag(app, widget, pos, raw)
 
     def drop_on(widget, pos, payload):
         drag_to(widget, pos, payload.encode())
@@ -1768,6 +1863,135 @@ def check_drag_and_drop(app):
     win.deleteLater()
 
 
+
+
+def check_drag_on_compact_chip_and_maximised(app):
+    """Dragging works from every kind of row: a compact row, a maximised
+    row and a favourite chip start a drag from their name (never from a
+    button) past the threshold; compact and maximised rows reorder, with the
+    line showing; compact rows and chips move to another group's pill, and
+    the file follows into its folder. The maximised list has no pills."""
+    import tempfile
+
+    from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QAbstractButton
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.dragdrop import MIME, CardPayload
+
+    def make_db(favourite=False):
+        tmp = Path(tempfile.mkdtemp())
+        inside = tmp / "base"
+        inside.mkdir()
+        (tmp / "elsewhere").mkdir()
+        (tmp / "elsewhere" / "b.py").write_text("", encoding="utf-8")
+        db = ScriptDB(tmp / "dnd.db")
+        db.create_group("G", base_dir=str(inside))
+        db.create_group("H", base_dir=str(tmp / "elsewhere"))
+        ids = [db.add(n, str(inside / f"{n}.py"), "", "", "G")
+               for n in ("a", "b", "c")]
+        if favourite:
+            db.set_favorite_script(ids[0], True)
+        return tmp, db, ids
+
+    def order(db):
+        return [r[0] for r in db.list_all() if (r[8] or "") == "G"]
+
+    def drag_starts(widget, surface):
+        started: list = []
+        widget.drag_runner = lambda drag: started.append(
+            CardPayload.decode(drag.mimeData().data(MIME).data()))
+        press = widget.name_label.mapTo(widget, widget.name_label.rect().center())
+        under = widget.childAt(press)
+        if isinstance(under, QAbstractButton):
+            PROBLEMS.append(f"{surface}: the name's centre is a button, so a "
+                            "press there is a click")
+
+        def mouse(kind, pos, buttons):
+            app.sendEvent(widget, QMouseEvent(
+                kind, QPointF(pos), QPointF(widget.mapToGlobal(pos)),
+                Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier))
+
+        mouse(QEvent.Type.MouseButtonPress, press, Qt.MouseButton.LeftButton)
+        mouse(QEvent.Type.MouseMove, press + QPoint(3, 2), Qt.MouseButton.LeftButton)
+        if started:
+            PROBLEMS.append(f"{surface}: a 3-pixel twitch started a drag")
+        mouse(QEvent.Type.MouseMove, press + QPoint(0, 12), Qt.MouseButton.LeftButton)
+        if started != [widget.drag_payload]:
+            PROBLEMS.append(f"{surface}: a real drag did not start with the "
+                            f"row's payload: {started}")
+        mouse(QEvent.Type.MouseButtonRelease, press, Qt.MouseButton.NoButton)
+
+    def reorders(win, db, ids, surface):
+        lst = win.card_lists["G"].section("scripts")
+        first = lst.cards[0]
+        shown = _send_drag(app, lst, QPoint(10, first.geometry().y() + 2),
+                           CardPayload("script", ids[2], "G").encode())
+        if not shown:
+            PROBLEMS.append(f"{surface}: no drop line showed while dragging over "
+                            "the list")
+        if order(db) != [ids[2], ids[0], ids[1]]:
+            PROBLEMS.append(f"{surface}: dropping c above a gave {order(db)}")
+
+    def moves(win, db, ids, tmp, payload, surface):
+        bar = win.group_tab_bar
+        keys = [bar.tabData(i) for i in range(bar.count())]
+        _send_drag(app, bar, bar.tabRect(keys.index("H")).center(), payload.encode())
+        if db.get(payload.item_id)[5] != "H":
+            PROBLEMS.append(f"{surface}: dropping on pill H did not move the script")
+        elif db.get(payload.item_id)[2] != str(tmp / "elsewhere" / "b.py"):
+            PROBLEMS.append(f"{surface}: the moved script did not follow into H's "
+                            f"folder: {db.get(payload.item_id)[2]!r}")
+
+    tmp, db, ids = make_db()
+    win = _open_window(app, db, compact=True)
+    try:
+        drag_starts(win.card_lists["G"].section("scripts").cards[0], "compact row")
+        reorders(win, db, ids, "compact row")
+    finally:
+        _close_window(app, win)
+    tmp, db, ids = make_db()
+    win = _open_window(app, db, compact=True)
+    try:
+        moves(win, db, ids, tmp, CardPayload("script", ids[1], "G"), "compact row")
+    finally:
+        _close_window(app, win)
+
+    tmp, db, ids = make_db()
+    win = _open_window(app, db, workspace=True)
+    try:
+        drag_starts(win.card_lists["G"].section("scripts").cards[0], "maximised row")
+        reorders(win, db, ids, "maximised row")
+        if win.group_tab_bar.isVisible():
+            PROBLEMS.append("maximised: group pills showed, so a row could be "
+                            "dragged onto one")
+    finally:
+        _close_window(app, win)
+
+    tmp, db, ids = make_db(favourite=True)
+    win = _open_window(app, db)
+    try:
+        chips = win.card_lists["G"].favorite_cards
+        if len(chips) != 1:
+            PROBLEMS.append(f"{len(chips)} favourite chips, not 1")
+        else:
+            drag_starts(chips[0], "favourite chip")
+    finally:
+        _close_window(app, win)
+    tmp, db, ids = make_db(favourite=True)
+    db.set_favorite_script(ids[0], False)
+    db.set_favorite_script(ids[1], True)
+    win = _open_window(app, db)
+    try:
+        chip = win.card_lists["G"].favorite_cards[0]
+        moves(win, db, ids, tmp, chip.drag_payload, "favourite chip")
+    finally:
+        _close_window(app, win)
+    print("  [ok] drag (compact row, maximised row, favourite chip): starts "
+          "from the name past the threshold, reorders with the drop line "
+          "(compact, maximised), moves to a pill and follows the folder "
+          "(compact, chip); the maximised list has no pills")
 
 
 def check_schedules(app):
@@ -2122,6 +2346,227 @@ def check_context_menus(app):
 
 
 
+def check_row_menu_on_chip_compact_and_pane(app):
+    """The row menu does the same on a compact row, a favourite chip and the
+    maximised list and pane: its entries in the normal row's order, highlight,
+    favourite (a chip leaves Favorites at once), clone, delete asking by name,
+    the three dialogs, and Move Down on a compact row."""
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QContextMenuEvent
+
+    from ryos import cardmenu, sections
+    from ryos.db import ScriptDB
+    from ryos.qtui.menus import actions_by_key
+    from ryos.qtui.smalldialogs import (PresetEntryDialog, RunHistoryDialog,
+                                        ScheduleDialog)
+    from ryos.themes import readable_highlight
+
+    def make_db():
+        tmp = Path(tempfile.mkdtemp())
+        base = tmp / "base"
+        base.mkdir()
+        db = ScriptDB(tmp / "menus.db")
+        db.create_group("G", base_dir=str(base))
+        db.create_group("H")
+        ids = {n: db.add(n, str(base / f"{n}.py"), "", _sys.executable, "G")
+               for n in ("a", "b", "c")}
+        db.set_favorite_script(ids["a"], True)
+        pid = db.create_pipeline("p", "G")
+        db.add_pipeline_step(pid, ids["a"])
+        db.set_favorite_pipeline(pid, True)
+        return db, ids, pid
+
+    def stored(db, kind, item_id):
+        if kind == cardmenu.SCRIPT:
+            return bool(next(r for r in db.list_all() if r[0] == item_id)[10])
+        return bool(next(r for r in db.list_pipelines("G") if r[0] == item_id)[2])
+
+    def settle():
+        for _ in range(3):
+            app.processEvents()
+
+    shown: list = []
+    db, ids, pid = make_db()
+    win = _open_window(app, db, bridge=_RecordingBridge(db))
+    win.popup = lambda menu, _pos: shown.append(menu)
+    reference = {}
+    try:
+        for kind, item_id, section in (
+                (cardmenu.SCRIPT, ids["b"], sections.SCRIPTS),
+                (cardmenu.PIPELINE, pid, sections.PIPELINES)):
+            card = next(c for c in win.card_lists["G"].section(section).cards
+                        if (c.drag_payload.kind, c.drag_payload.item_id)
+                        == (kind, item_id))
+            shown.clear()
+            app.sendEvent(card, QContextMenuEvent(
+                QContextMenuEvent.Reason.Mouse, QPoint(30, 10),
+                card.mapToGlobal(QPoint(30, 10))))
+            reference[kind] = list(actions_by_key(shown[-1]))
+    finally:
+        _close_window(app, win)
+
+    def exercise(surface, *, compact=False, workspace=False, via="row",
+                 chip=False):
+        db, ids, pid = make_db()
+        win = _open_window(app, db, compact=compact, workspace=workspace,
+                           bridge=_RecordingBridge(db))
+        shown.clear()
+        win.popup = lambda menu, _pos: shown.append(menu)
+        asked: list = []
+        answers = {"yes": True}
+        win.ask_yes_no = lambda title, q: asked.append(q) or answers["yes"]
+        dialogs: list = []
+        win.run_dialog = lambda dlg: dialogs.append(dlg)
+        palette = win._palette
+        target = ids["a"] if chip else ids["b"]
+        target_name = "a" if chip else "b"
+
+        def card_of(kind, item_id):
+            if chip:
+                pool = win.card_lists["G"].favorite_cards
+            else:
+                pool = win.card_lists["G"].section(
+                    sections.PIPELINES if kind == cardmenu.PIPELINE
+                    else sections.SCRIPTS).cards
+            return next((c for c in pool if (c.drag_payload.kind,
+                                             c.drag_payload.item_id)
+                         == (kind, item_id)), None)
+
+        def open_menu(kind, item_id):
+            shown.clear()
+            if via == "pane":
+                win.select_item(kind, item_id, sections.PIPELINES
+                                if kind == cardmenu.PIPELINE else sections.SCRIPTS)
+                settle()
+                _click_like_a_person(app, win, win.detail.more,
+                                     where=f"{surface}: the pane's three dots")
+            else:
+                card = card_of(kind, item_id)
+                if card is None:
+                    PROBLEMS.append(f"{surface}: no row for {kind} {item_id}")
+                    return {}
+                app.sendEvent(card, QContextMenuEvent(
+                    QContextMenuEvent.Reason.Mouse, QPoint(30, 10),
+                    card.mapToGlobal(QPoint(30, 10))))
+            return actions_by_key(shown[-1]) if shown else {}
+
+        def pick(kind, item_id, key):
+            acts = open_menu(kind, item_id)
+            if key not in acts:
+                PROBLEMS.append(f"{surface}: the {kind} menu had no {key!r}: "
+                                f"{sorted(acts)}")
+                return False
+            acts[key].trigger()
+            settle()
+            return True
+
+        def chip_names():
+            return [c._name for c in win.card_lists["G"].favorite_cards]
+
+        def group_names():
+            return [r[1] for r in db.list_all() if r[8] == "G"]
+
+        try:
+            if workspace and not win.workspace:
+                PROBLEMS.append(f"{surface}: the maximised layout did not turn on")
+                return
+            for kind, item_id in ((cardmenu.SCRIPT, target), (cardmenu.PIPELINE, pid)):
+                got = list(open_menu(kind, item_id))
+                if got != reference[kind]:
+                    PROBLEMS.append(f"{surface}: the {kind} menu offers {got}, not "
+                                    f"the normal row's {reference[kind]}")
+            if compact and not workspace:
+                before = [r[0] for r in db.list_all() if r[8] == "G"]
+                if pick(cardmenu.SCRIPT, ids["a"], cardmenu.MOVE_DOWN):
+                    after = [r[0] for r in db.list_all() if r[8] == "G"]
+                    if after[:2] != [before[1], before[0]]:
+                        PROBLEMS.append(f"{surface}: Move Down on a gave {after}")
+
+            if pick(cardmenu.SCRIPT, target, cardmenu.highlight_key("red")):
+                want = readable_highlight("red", palette["card_bg"],
+                                          palette["card_hover"])
+                card = card_of(cardmenu.SCRIPT, target)
+                if card is None or want not in card.name_label.styleSheet():
+                    PROBLEMS.append(f"{surface}: a red highlight did not colour "
+                                    "the row's name")
+                if via == "pane" and readable_highlight(
+                        "red", palette["bg"]) not in win.detail.name.styleSheet():
+                    PROBLEMS.append(f"{surface}: a red highlight did not colour "
+                                    "the pane's name")
+                acts = open_menu(cardmenu.SCRIPT, target)
+                key = cardmenu.highlight_key("red")
+                if key not in acts or not acts[key].text().startswith("●"):
+                    PROBLEMS.append(f"{surface}: the menu did not mark the "
+                                    "current highlight")
+
+            for kind, item_id, name in ((cardmenu.SCRIPT, target, target_name),
+                                        (cardmenu.PIPELINE, pid, "p")):
+                before = stored(db, kind, item_id)
+                if pick(kind, item_id, cardmenu.FAVORITE):
+                    if stored(db, kind, item_id) == before:
+                        PROBLEMS.append(f"{surface}: Favorite did not flip the "
+                                        f"{kind}'s star")
+                    if (name in chip_names()) == before:
+                        PROBLEMS.append(
+                            f"{surface}: the {kind} "
+                            f"{'stayed in' if before else 'did not join'} "
+                            "Favorites after the menu flipped its star")
+                if kind == cardmenu.SCRIPT:
+                    db.set_favorite_script(item_id, before)
+                else:
+                    db.set_favorite_pipeline(item_id, before)
+                win.reload()
+                settle()
+
+            if pick(cardmenu.SCRIPT, target, cardmenu.CLONE):
+                copy_name = f"{target_name} (copy)"
+                if group_names().count(copy_name) != 1:
+                    PROBLEMS.append(f"{surface}: Clone did not add {copy_name!r} "
+                                    f"to G: {group_names()}")
+                else:
+                    copy_id = next(r[0] for r in db.list_all()
+                                   if r[1] == copy_name and r[8] == "G")
+                    if card_of(cardmenu.SCRIPT, copy_id) is None and via != "pane":
+                        PROBLEMS.append(f"{surface}: the clone has no row to "
+                                        "right-click")
+                    else:
+                        answers["yes"] = False
+                        asked.clear()
+                        pick(cardmenu.SCRIPT, copy_id, cardmenu.DELETE)
+                        if db.get(copy_id) is None or len(asked) != 1 \
+                                or copy_name not in asked[0]:
+                            PROBLEMS.append(f"{surface}: declining the delete "
+                                            f"question {asked} still deleted, or "
+                                            "it did not name the item")
+                        answers["yes"] = True
+                        pick(cardmenu.SCRIPT, copy_id, cardmenu.DELETE)
+                        if db.get(copy_id) is not None:
+                            PROBLEMS.append(f"{surface}: confirming the delete "
+                                            "question did not delete")
+
+            dialogs.clear()
+            pick(cardmenu.SCRIPT, target, cardmenu.SCHEDULE)
+            pick(cardmenu.PIPELINE, pid, cardmenu.HISTORY)
+            pick(cardmenu.SCRIPT, target, cardmenu.RUN_WITH)
+            kinds = [type(d) for d in dialogs]
+            if kinds != [ScheduleDialog, RunHistoryDialog, PresetEntryDialog]:
+                PROBLEMS.append(f"{surface}: dialogs opened from the menu: {kinds}")
+        finally:
+            _close_window(app, win)
+
+    exercise("compact row", compact=True)
+    exercise("favourite chip", chip=True)
+    exercise("maximised row", workspace=True)
+    exercise("maximised pane", workspace=True, via="pane")
+    print("  [ok] row menu (compact row, favourite chip, maximised row and "
+          "pane): entries in the normal order, highlight, favourite (a chip "
+          "leaves Favorites at once), clone, delete asks by name, schedule / "
+          "history / run with open their dialogs, Move Down on a compact row")
+
+
 def check_select_mode(app):
     """Select mode: tick, select all, run past the cap, delete -- for real.
 
@@ -2366,6 +2811,191 @@ def check_select_mode(app):
           "re-scopes, delete asks once for both kinds")
     win.hide()
     win.deleteLater()
+
+
+def check_select_on_compact_and_maximised(app):
+    """Select mode on compact rows and the maximised list: ticking with real
+    row clicks, Select All, Run selected, Delete selected, a search active,
+    and Make available / unavailable to agents, also on the All tab."""
+    import sys as _sys
+    import tempfile
+    import types as _types
+    from unittest import mock
+
+    from PySide6.QtCore import QPoint
+
+    from ryos.db import ScriptDB
+
+    def make_db():
+        tmp = Path(tempfile.mkdtemp())
+        db = ScriptDB(tmp / "select.db")
+        db.create_group("G")
+        db.create_group("H")
+        ids = {}
+        for name, group in (("s0", "G"), ("s1", "G"), ("s2", "G"), ("h0", "H")):
+            script = tmp / f"{name}.py"
+            script.write_text("print(1)\n", encoding="utf-8")
+            ids[name] = db.add(name, str(script), "", _sys.executable, group)
+        pid = db.create_pipeline("p", "G")
+        db.add_pipeline_step(pid, ids["s0"])
+        return db, ids, pid
+
+    build = {"ryos._build_info": _types.SimpleNamespace(VARIANT="windows-ai")}
+    with mock.patch.dict(_sys.modules, build):
+        for surface in ("compact rows", "maximised list"):
+            db, ids, pid = make_db()
+            bridge = _RecordingBridge(db)
+            win = _open_window(app, db, compact=surface == "compact rows",
+                               workspace=surface == "maximised list", bridge=bridge)
+            asked: list = []
+            told: list = []
+            win.ask_yes_no = lambda title, q, asked=asked: asked.append(q) or True
+            win.inform = lambda title, text, told=told: told.append(title)
+
+            def settle():
+                for _ in range(3):
+                    app.processEvents()
+
+            def card(name):
+                return next(c for c in win.selectable_cards() if c._name == name)
+
+            def tick(name):
+                target = card(name)
+                return _click_like_a_person(
+                    app, win, target, pos=QPoint(target.width() // 2, 4),
+                    where=f"{surface}: the {name} row in select mode")
+
+            def press(button, what):
+                return _click_like_a_person(app, win, button,
+                                            where=f"{surface}: {what}")
+
+            try:
+                if surface == "maximised list" and not win.workspace:
+                    PROBLEMS.append("maximised: the layout did not turn on")
+                    continue
+                win.set_select_mode(True)
+                settle()
+                tick("s0")
+                tick("p")
+                if win.select_label.text() != "2 of 4 selected":
+                    PROBLEMS.append(f"{surface}: two row clicks gave "
+                                    f"{win.select_label.text()!r}")
+                press(win.select_all_button, "Select All")
+                if len(win.selected_cards()) != 4:
+                    PROBLEMS.append(f"{surface}: Select All ticked "
+                                    f"{len(win.selected_cards())} of 4")
+                press(win.run_selected_button, "Run selected")
+                if set(bridge.started) != {("script", ids["s0"]), ("script", ids["s1"]),
+                                           ("script", ids["s2"]), ("pipeline", pid)} \
+                        or len(bridge.started) != 4:
+                    PROBLEMS.append(f"{surface}: Run selected started {bridge.started}")
+                if win.statusBar().currentMessage() != "Started 3 scripts and 1 pipeline.":
+                    PROBLEMS.append(f"{surface}: Run selected said "
+                                    f"{win.statusBar().currentMessage()!r}")
+                press(win.select_all_button, "Deselect All")
+                if win.selected_cards():
+                    PROBLEMS.append(f"{surface}: Deselect All left something ticked")
+
+                win.set_select_mode(True)
+                win.search_box.setText("s1")
+                settle()
+                shown = [c._name for c in win.selectable_cards() if not c.isHidden()]
+                if shown != ["s1"]:
+                    PROBLEMS.append(f"{surface}: the search for s1 left {shown} showing")
+                press(win.select_all_button, "Select All with a search")
+                ticked = win.selected_cards()
+                hidden_ticked = [c._name for c in ticked if c.isHidden()]
+                if hidden_ticked:
+                    bug = ("SM-13: with a search active, Select All ticks rows the "
+                           "search hides; Run selected and Delete selected act on "
+                           "them (MainWindow.selectable_cards ignores the search)")
+                    if bug not in KNOWN_BUGS:
+                        KNOWN_BUGS.append(bug)
+                    for c in ticked:
+                        if c.isHidden():
+                            c.checkbox.setChecked(False)
+                bridge.started.clear()
+                press(win.run_selected_button, "Run selected with a search")
+                if bridge.started != [("script", ids["s1"])]:
+                    PROBLEMS.append(f"{surface}: with a search for s1, Run selected "
+                                    f"started {bridge.started}")
+                win.search_box.clear()
+                settle()
+
+                win.set_select_mode(False)
+                ids["tmp"] = db.add("tmp", str(Path(tempfile.mkdtemp()) / "tmp.py"),
+                                    "", _sys.executable, "G")
+                tmp_pipeline = db.create_pipeline("tmpP", "G")
+                win.reload()
+                settle()
+                win.set_select_mode(True)
+                settle()
+                tick("tmp")
+                tick("tmpP")
+                asked.clear()
+                press(win.delete_selected_button, "Delete selected")
+                settle()
+                if len(asked) != 1 or not asked[0].startswith(
+                        "Delete 1 script and 1 pipeline?"):
+                    PROBLEMS.append(f"{surface}: Delete selected asked {asked}")
+                if db.get(ids["tmp"]) is not None or any(
+                        p[0] == tmp_pipeline for p in db.list_pipelines("G")):
+                    PROBLEMS.append(f"{surface}: Delete selected left the ticked "
+                                    "script or pipeline")
+                if win.select_mode or win.select_bar.isVisible():
+                    PROBLEMS.append(f"{surface}: select mode survived deleting")
+                if surface == "maximised list" and not win.workspace:
+                    PROBLEMS.append("maximised: deleting left the maximised layout")
+
+                win.set_select_mode(True)
+                settle()
+                tick("s0")
+                tick("p")
+                asked.clear()
+                told.clear()
+                press(win.agents_off_button, "Make unavailable to agents")
+                if asked or db.is_agent_exposed("script", ids["s0"]) \
+                        or db.is_agent_exposed("pipeline", pid) \
+                        or len(win.selected_cards()) != 2:
+                    PROBLEMS.append(f"{surface}: unavailable asked {asked}, exposed "
+                                    "something, or dropped the ticks")
+                press(win.agents_on_button, "Make available to agents")
+                if len(asked) != 1 or "Will make 2" not in asked[0] \
+                        or not db.is_agent_exposed("script", ids["s0"]) \
+                        or not db.is_agent_exposed("pipeline", pid) \
+                        or len(win.selected_cards()) != 2:
+                    PROBLEMS.append(f"{surface}: available asked {asked}, or did "
+                                    "not expose both, or dropped the ticks")
+
+                win.show_group(None)
+                settle()
+                if not win.showing_all():
+                    PROBLEMS.append(f"{surface}: the All tab did not show")
+                for c in win.selectable_cards():
+                    c.checkbox.setChecked(False)
+                tick("s1")
+                tick("h0")
+                asked.clear()
+                press(win.agents_on_button, "Make available to agents on All")
+                if len(asked) != 1 or "Will make 2" not in asked[0] \
+                        or not db.is_agent_exposed("script", ids["s1"]) \
+                        or not db.is_agent_exposed("script", ids["h0"]) \
+                        or len(win.selected_cards()) != 2:
+                    PROBLEMS.append(f"{surface}, All tab: available asked {asked}, "
+                                    "or did not expose both, or dropped the ticks")
+                asked.clear()
+                press(win.agents_off_button, "Make unavailable to agents on All")
+                if asked or db.is_agent_exposed("script", ids["s1"]) \
+                        or db.is_agent_exposed("script", ids["h0"]) \
+                        or len(win.selected_cards()) != 2:
+                    PROBLEMS.append(f"{surface}, All tab: unavailable asked {asked}, "
+                                    "left something exposed, or dropped the ticks")
+            finally:
+                _close_window(app, win)
+    print("  [ok] select mode (compact rows, maximised list): real row clicks "
+          "tick, Select All, Run selected starts all, Delete selected asks once "
+          "and leaves the mode, a search active, agents on / off on a group "
+          "and on All")
 
 
 def check_select_bar_fits(app):
@@ -4530,7 +5160,6 @@ def check_outside_warning(app):
     from ryos.db import ScriptDB
     from PySide6.QtWidgets import QLabel
 
-    from ryos.jobs import JobRegistry
     from ryos.qtui.shell import MainWindow
     from ryos.themes import REFERENCE
 
@@ -4544,26 +5173,11 @@ def check_outside_warning(app):
     db.add_pipeline_step(pid, inside)
     db.add_pipeline_step(pid, away)
 
-    class Bridge:                       # records what would have started
-        def __init__(self):
-            self.registry, self.db, self.started = JobRegistry(), db, []
-
-        def run_script(self, sid, *a, **k):
-            self.started.append(("script", sid))
-            return True
-
-        def run_pipeline(self, pid, *a, **k):
-            self.started.append(("pipeline", pid))
-            return True
-
-        def stop(self):
-            pass
-
     saved: list = []
     win = MainWindow(REFERENCE["light"],
                      settings={"quick_run_enabled": False, "compact_mode": True},
                      save_settings=lambda s: saved.append(dict(s)))
-    win._bridge = Bridge()
+    win._bridge = _RecordingBridge(db)
     win.load_from_db(db)
     win.show_group("G")
     app.processEvents()
@@ -4606,6 +5220,81 @@ def check_outside_warning(app):
         asked.clear()
         win._bridge.started.clear()
 
+        db.set_favorite_script(away, True)
+        db.set_favorite_pipeline(pid, True)
+        win.reload()
+        app.processEvents()
+
+        def chip(name):
+            return next(c for c in win.card_lists["G"].favorite_cards
+                        if c._name == name)
+
+        win.run_dialog = answer(False)
+        if _click_like_a_person(app, win, chip("away").run_button,
+                                where="outside warning, the chip's Run"):
+            if len(asked) != 1 or win._bridge.started:
+                PROBLEMS.append("Cancel on a chip's outside warning: asked "
+                                f"{len(asked)}, started {win._bridge.started}")
+        win.run_dialog = answer(True)
+        _click_like_a_person(app, win, chip("away").run_button,
+                             where="outside warning, the chip's Run")
+        if win._bridge.started != [("script", away)]:
+            PROBLEMS.append("Run anyway on a chip did not start the script: "
+                            f"{win._bridge.started}")
+        win._bridge.started.clear()
+        asked.clear()
+        _click_like_a_person(app, win, chip("pipe").run_button,
+                             where="outside warning, the pipeline chip's Run")
+        if win._bridge.started != [("pipeline", pid)] \
+                or "Step 2 runs" not in (asked[-1] if asked else ""):
+            PROBLEMS.append(f"the pipeline chip's warning: asked {asked}, "
+                            f"started {win._bridge.started}")
+        win._bridge.started.clear()
+        asked.clear()
+
+        win.resize(1200, 720)
+        win.set_workspace(True)
+        for _ in range(3):
+            app.processEvents()
+        row("away").activated.emit()
+        app.processEvents()
+        win.run_dialog = answer(False)
+        if _click_like_a_person(app, win, win.detail.run,
+                                where="outside warning, the pane's Run"):
+            if len(asked) != 1 or win._bridge.started:
+                PROBLEMS.append("Cancel on the pane's outside warning: asked "
+                                f"{len(asked)}, started {win._bridge.started}")
+        win.run_dialog = answer(True)
+        _click_like_a_person(app, win, win.detail.run,
+                             where="outside warning, the pane's Run")
+        if win._bridge.started != [("script", away)]:
+            PROBLEMS.append("Run anyway from the pane did not start the script: "
+                            f"{win._bridge.started}")
+        win._bridge.started.clear()
+        asked.clear()
+        row("pipe", "pipelines").activated.emit()
+        app.processEvents()
+        win.run_dialog = answer(False)
+        if _click_like_a_person(app, win, win.detail.run,
+                                where="outside warning, the pane's Run on a pipeline"):
+            if len(asked) != 1 or win._bridge.started \
+                    or "Step 2 runs" not in asked[-1]:
+                PROBLEMS.append("Cancel on the pane's pipeline warning: asked "
+                                f"{asked}, started {win._bridge.started}")
+        win.run_dialog = answer(True)
+        _click_like_a_person(app, win, win.detail.run,
+                             where="outside warning, the pane's Run on a pipeline")
+        if win._bridge.started != [("pipeline", pid)]:
+            PROBLEMS.append("Run anyway from the pane did not start the pipeline: "
+                            f"{win._bridge.started}")
+        win.set_workspace(False)
+        db.set_favorite_script(away, False)
+        db.set_favorite_pipeline(pid, False)
+        win.reload()
+        app.processEvents()
+        asked.clear()
+        win._bridge.started.clear()
+
         win.run_dialog = answer(False, dont_warn=True)
         row("away").run_button.click()
         if win._bridge.started or len(asked) != 1:
@@ -4636,11 +5325,11 @@ def check_outside_warning(app):
                 or "outside" not in badge.toolTip():
             PROBLEMS.append("the compact outside tag is not the small named icon")
     finally:
-        win.close()
-        win.deleteLater()
+        _close_window(app, win)
     print("  [ok] outside warning: asks before a run from the window, Cancel runs "
           "nothing, Run anyway runs, the box turns it off and is saved, pipelines "
-          "name their steps; the compact tag is a small named icon")
+          "name their steps, from rows, chips, the pane and Run selected; the "
+          "compact tag is a small named icon")
 
 
 def check_badges_banner_previews(app):
@@ -5251,7 +5940,8 @@ def check_tray_round_trip(app):
 def check_keyboard_through_the_list(app):
     """The list works from the keyboard: Down from the search box, arrows
     between rows (favourites, pipelines, scripts), Enter runs, F2 edits, the
-    Menu key opens the row's menu, Space ticks it in select mode."""
+    Menu key opens the row's menu, Space ticks it in select mode -- on normal
+    rows, compact rows and the maximised list, where the pane follows."""
     import tempfile
 
     from PySide6.QtCore import QPoint, Qt
@@ -5260,91 +5950,101 @@ def check_keyboard_through_the_list(app):
 
     from ryos.db import ScriptDB
     from ryos.qtui.scriptdialog import ScriptDialog
-    from ryos.qtui.shell import MainWindow
-    from ryos.themes import REFERENCE
 
     tmp = Path(tempfile.mkdtemp())
     db = ScriptDB(tmp / "keys.db")
     db.create_group("G")
     for name in ("alpha", "beta", "gamma"):
         db.add(name, str(tmp / f"{name}.py"), "", "", "G")
-    pid = db.create_pipeline("P", "G")
-    win = MainWindow(REFERENCE["light"], settings={"quick_run_enabled": False})
-    win.load_from_db(db)
-    win.show()
-    win.activateWindow()
-    app.processEvents()
+    db.create_pipeline("P", "G")
     focused = QApplication.focusWidget
-    try:
-        page = win.card_lists["G"]
-        rows = page.rows()
-        names = [r._name for r in rows]
-        if names != ["P", "alpha", "beta", "gamma"]:
-            PROBLEMS.append(f"the keyboard walks the rows as {names}")
-        QTest.keyClick(win.search_box, Qt.Key.Key_Down)
+
+    for surface in ("normal", "compact", "maximised"):
+        win = _open_window(app, db, compact=surface == "compact",
+                           workspace=surface == "maximised")
+        win.activateWindow()
         app.processEvents()
-        if focused() is not rows[0]:
-            PROBLEMS.append("Down in the search box did not reach the first row")
-        if not rows[0].property("kbfocus"):
-            PROBLEMS.append("the row the keyboard reached is not marked")
-        QTest.keyClick(focused(), Qt.Key.Key_Down)
-        QTest.keyClick(focused(), Qt.Key.Key_Down)
-        if focused() is not rows[2]:
-            PROBLEMS.append("Down twice did not reach the third row")
-        if rows[0].property("kbfocus"):
-            PROBLEMS.append("a row the keyboard left is still marked")
-        rows[1].setFocus(Qt.FocusReason.MouseFocusReason)     # a click
-        if rows[1].property("kbfocus"):
-            PROBLEMS.append("a clicked row is marked as the keyboard's")
-        rows[2].setFocus(Qt.FocusReason.TabFocusReason)
-        QTest.keyClick(focused(), Qt.Key.Key_End)
-        QTest.keyClick(focused(), Qt.Key.Key_Down)          # stops at the end
-        if focused() is not rows[-1]:
-            PROBLEMS.append("End / Down past the end moved off the last row")
-        ran: list = []
-        rows[-1].run_button.clicked.disconnect()
-        rows[-1].run_button.clicked.connect(lambda: ran.append(True))
-        QTest.keyClick(focused(), Qt.Key.Key_Return)
-        if ran != [True]:
-            PROBLEMS.append("Enter on a row did not run it")
-        opened: list = []
-        win.run_dialog = lambda dlg: (opened.append(type(dlg)), dlg.reject())
-        QTest.keyClick(focused(), Qt.Key.Key_F2)
-        if opened != [ScriptDialog]:
-            PROBLEMS.append(f"F2 on a row opened {opened}")
-        menus: list = []
-        win.popup = lambda menu, _pos: menus.append(menu)
-        app.sendEvent(focused(), QContextMenuEvent(
-            QContextMenuEvent.Reason.Keyboard, QPoint(4, 4), QPoint(4, 4)))
-        if not menus:
-            PROBLEMS.append("the Menu key on a row opened no menu")
-        if not rows[-1].accessibleName().startswith("gamma") \
-                or not rows[-1].accessibleDescription():
-            PROBLEMS.append("a row has no name or key hint for a screen reader")
-        # Outside select mode a click only chooses the row.
-        QTest.mouseClick(win.card_lists["G"].rows()[1], Qt.MouseButton.LeftButton,
-                         pos=QPoint(40, 4))
-        if win.card_lists["G"].rows()[1].checkbox.isChecked():
-            PROBLEMS.append("a row click ticked a hidden box outside select mode")
-        win.set_select_mode(True)
-        app.processEvents()
-        row = win.card_lists["G"].rows()[1]
-        row.setFocus()
-        QTest.keyClick(row, Qt.Key.Key_Space)
-        if not row.checkbox.isChecked():
-            PROBLEMS.append("Space in select mode did not tick the row")
-        first = win.card_lists["G"].rows()[0]
-        first.setFocus()
-        QTest.keyClick(first, Qt.Key.Key_Space)
-        if not (hasattr(first, "pipeline_id") and first.checkbox.isChecked()):
-            PROBLEMS.append("Space in select mode did not tick the pipeline row")
-        win.set_select_mode(False)
-        _ = pid
-    finally:
-        win.close()
-        win.deleteLater()
-    print("  [ok] keyboard: search → rows (marked; a click is not), arrows / End stop at the end, Enter runs, "
-          "F2 edits, Menu key opens the menu, Space ticks in select mode")
+        try:
+            page = win.card_lists["G"]
+            rows = page.rows()
+            names = [r._name for r in rows]
+            if names != ["P", "alpha", "beta", "gamma"]:
+                PROBLEMS.append(f"{surface}: the keyboard walks the rows as {names}")
+            QTest.keyClick(win.search_box, Qt.Key.Key_Down)
+            app.processEvents()
+            if focused() is not rows[0]:
+                PROBLEMS.append(f"{surface}: Down in the search box did not "
+                                "reach the first row")
+            if not rows[0].property("kbfocus"):
+                PROBLEMS.append(f"{surface}: the row the keyboard reached is not marked")
+            if surface == "maximised" and win.detail.name.text() != "P":
+                PROBLEMS.append("maximised: after Down from the search box the "
+                                f"pane shows {win.detail.name.text()!r}, not the "
+                                "focused row")
+            QTest.keyClick(focused(), Qt.Key.Key_Down)
+            QTest.keyClick(focused(), Qt.Key.Key_Down)
+            if focused() is not rows[2]:
+                PROBLEMS.append(f"{surface}: Down twice did not reach the third row")
+            if rows[0].property("kbfocus"):
+                PROBLEMS.append(f"{surface}: a row the keyboard left is still marked")
+            if surface == "maximised" and win.detail.name.text() != "beta":
+                PROBLEMS.append("maximised: the pane did not follow the arrows to "
+                                f"beta: {win.detail.name.text()!r}")
+            rows[1].setFocus(Qt.FocusReason.MouseFocusReason)
+            if rows[1].property("kbfocus"):
+                PROBLEMS.append(f"{surface}: a clicked row is marked as the keyboard's")
+            rows[2].setFocus(Qt.FocusReason.TabFocusReason)
+            QTest.keyClick(focused(), Qt.Key.Key_End)
+            QTest.keyClick(focused(), Qt.Key.Key_Down)
+            if focused() is not rows[-1]:
+                PROBLEMS.append(f"{surface}: End / Down past the end moved off the "
+                                "last row")
+            ran: list = []
+            rows[-1].run_button.clicked.disconnect()
+            rows[-1].run_button.clicked.connect(lambda: ran.append(True))
+            QTest.keyClick(focused(), Qt.Key.Key_Return)
+            if ran != [True]:
+                PROBLEMS.append(f"{surface}: Enter on a row did not run it")
+            opened: list = []
+            win.run_dialog = lambda dlg: (opened.append(type(dlg)), dlg.reject())
+            QTest.keyClick(focused(), Qt.Key.Key_F2)
+            if opened != [ScriptDialog]:
+                PROBLEMS.append(f"{surface}: F2 on a row opened {opened}")
+            menus: list = []
+            win.popup = lambda menu, _pos: menus.append(menu)
+            app.sendEvent(focused(), QContextMenuEvent(
+                QContextMenuEvent.Reason.Keyboard, QPoint(4, 4), QPoint(4, 4)))
+            if not menus:
+                PROBLEMS.append(f"{surface}: the Menu key on a row opened no menu")
+            if not rows[-1].accessibleName().startswith("gamma")
+                    or not rows[-1].accessibleDescription():
+                PROBLEMS.append(f"{surface}: a row has no name or key hint for a "
+                                "screen reader")
+            QTest.mouseClick(win.card_lists["G"].rows()[1], Qt.MouseButton.LeftButton,
+                             pos=QPoint(40, 4))
+            if win.card_lists["G"].rows()[1].checkbox.isChecked():
+                PROBLEMS.append(f"{surface}: a row click ticked a hidden box outside "
+                                "select mode")
+            win.set_select_mode(True)
+            app.processEvents()
+            row = win.card_lists["G"].rows()[1]
+            row.setFocus()
+            QTest.keyClick(row, Qt.Key.Key_Space)
+            if not row.checkbox.isChecked():
+                PROBLEMS.append(f"{surface}: Space in select mode did not tick the row")
+            first = win.card_lists["G"].rows()[0]
+            first.setFocus()
+            QTest.keyClick(first, Qt.Key.Key_Space)
+            if not (hasattr(first, "pipeline_id") and first.checkbox.isChecked()):
+                PROBLEMS.append(f"{surface}: Space in select mode did not tick the "
+                                "pipeline row")
+            win.set_select_mode(False)
+        finally:
+            _close_window(app, win)
+    print("  [ok] keyboard (normal, compact and maximised rows): search -> rows "
+          "(marked; a click is not; the pane follows), arrows / End stop at the "
+          "end, Enter runs, F2 edits, Menu key opens the menu, Space ticks in "
+          "select mode")
 
 
 def check_search_empty_state(app):
@@ -5750,6 +6450,180 @@ def check_run_becomes_stop(app):
         win.deleteLater()
     print("  [ok] run becomes stop: a row's own run shows Stop and stops just it; "
           "a pipeline's step keeps Run")
+
+
+def check_row_clicks_on_chip_and_pane(app):
+    """Real clicks on a favourite chip, a maximised row and the detail pane:
+    Run starts, turns to Retry after a failure and to Stop while running, a
+    second press stops and starts nothing, and the star adds and removes the
+    favourite -- each click first checked to land on the button."""
+    import sys as _sys
+    import tempfile
+
+    from PySide6.QtCore import QPoint
+
+    from ryos import detail
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "fail.py").write_text(
+        "import sys\nprint('failing', flush=True)\nsys.exit(3)\n", encoding="utf-8")
+    (tmp / "slow.py").write_text(
+        "import time\nprint('working', flush=True)\ntime.sleep(20)\n",
+        encoding="utf-8")
+    db = ScriptDB(tmp / "clicks.db")
+    db.create_group("G")
+    fid = db.add("fail", str(tmp / "fail.py"), "", _sys.executable, "G")
+    sid = db.add("slow", str(tmp / "slow.py"), "", _sys.executable, "G")
+    db.set_favorite_script(fid, True)
+    db.set_favorite_script(sid, True)
+
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    win = _open_window(app, db, bridge=bridge)
+
+    def runs(item_id):
+        return len(db.list_runs(script_id=item_id))
+
+    def running(item_id):
+        return any(j.script_id == item_id and j.kind == "script"
+                   for j in bridge.registry.all())
+
+    def chip(name):
+        return next((c for c in win.card_lists["G"].favorite_cards
+                     if c._name == name), None)
+
+    def row(name):
+        return next(c for c in win.card_lists["G"].section("scripts").cards
+                    if c._name == name)
+
+    def state(card):
+        return card.run_button.property("runState")
+
+    def chip_names():
+        return [c._name for c in win.card_lists["G"].favorite_cards]
+
+    def stored(item_id):
+        return bool(next(r for r in db.list_all() if r[0] == item_id)[10])
+
+    def settled(predicate, what, timeout=8.0):
+        if not _pump_until(app, predicate, timeout):
+            PROBLEMS.append(what)
+            return False
+        return True
+
+    try:
+        if _click_like_a_person(app, win, chip("fail").run_button,
+                                where="F: the fail chip's Run"):
+            settled(lambda: runs(fid) == 1 and state(chip("fail")) == "retry",
+                    "F: a click on a chip's Run did not run the script once and "
+                    "turn the chip to Retry")
+            if state(row("fail")) != "retry":
+                PROBLEMS.append("F: the chip failed but its row did not show Retry")
+            if _click_like_a_person(app, win, chip("fail").run_button,
+                                    where="F: the fail chip's Retry"):
+                settled(lambda: runs(fid) == 2,
+                        "F: a click on a chip's Retry did not run the script again")
+
+        if _click_like_a_person(app, win, chip("slow").run_button,
+                                where="F: the slow chip's Run"):
+            if settled(lambda: state(chip("slow")) == "stop"
+                       and state(row("slow")) == "stop",
+                       "F: a running script's chip and row did not both show Stop"):
+                held = len(bridge.registry)
+                _click_like_a_person(app, win, chip("slow").run_button,
+                                     where="F: the slow chip's Stop")
+                if len(bridge.registry) > held:
+                    PROBLEMS.append("F: Stop on a chip started another copy")
+                settled(lambda: not running(sid),
+                        "F: Stop on a chip did not end the run")
+                settled(lambda: state(chip("slow")) != "stop"
+                        and state(row("slow")) != "stop",
+                        "F: after its run stopped, the chip or row still showed Stop")
+
+        if _click_like_a_person(app, win, row("slow").fav_button,
+                                where="F: the slow row's star"):
+            settled(lambda: chip("slow") is None and not stored(sid),
+                    "F: unstarring from the row left a chip in Favorites")
+            row("slow").set_hovered(True)
+            if _click_like_a_person(app, win, row("slow").fav_button,
+                                    where="F: the slow row's star, to star again"):
+                settled(lambda: chip("slow") is not None and stored(sid),
+                        "F: starring from the row did not bring its chip back")
+
+        win.set_workspace(True)
+        for _ in range(3):
+            app.processEvents()
+        if not win.workspace:
+            PROBLEMS.append("D: the maximised layout did not turn on")
+            return
+        if _click_like_a_person(app, win, row("fail"),
+                                pos=QPoint(row("fail").width() // 2, 4),
+                                where="D: the fail row's body"):
+            if win.detail.name.text() != "fail":
+                PROBLEMS.append("D: clicking a row's body showed "
+                                f"{win.detail.name.text()!r} in the pane")
+            if win.detail.run.text() != detail.run_label("error"):
+                PROBLEMS.append("D: after a failure the pane's Run reads "
+                                f"{win.detail.run.text()!r}")
+            before = runs(fid)
+            if _click_like_a_person(app, win, win.detail.run,
+                                    where="D: the pane's Retry"):
+                settled(lambda: runs(fid) == before + 1,
+                        "D: a click on the pane's Retry did not run the script")
+
+        if _click_like_a_person(app, win, row("slow"),
+                                pos=QPoint(row("slow").width() // 2, 4),
+                                where="D: the slow row's body"):
+            if _click_like_a_person(app, win, win.detail.run,
+                                    where="D: the pane's Run"):
+                if settled(lambda: win.detail.run.property("runState") == "stop"
+                           and state(row("slow")) == "stop",
+                           "D: the pane and the row did not both show Stop"):
+                    held = len(bridge.registry)
+                    _click_like_a_person(app, win, win.detail.run,
+                                         where="D: the pane's Stop")
+                    if len(bridge.registry) > held:
+                        PROBLEMS.append("D: Stop on the pane started another copy")
+                    settled(lambda: not running(sid),
+                            "D: Stop on the pane did not end the run")
+                    settled(lambda: win.detail.run.property("runState") != "stop"
+                            and state(row("slow")) != "stop",
+                            "D: after its run stopped, the pane or row still "
+                            "showed Stop")
+
+        if _click_like_a_person(app, win, row("slow").run_button,
+                                where="D: the slow row's own Run"):
+            if settled(lambda: state(row("slow")) == "stop",
+                       "D: the row's own Run did not become Stop"):
+                held = len(bridge.registry)
+                _click_like_a_person(app, win, row("slow").run_button,
+                                     where="D: the slow row's own Stop")
+                if len(bridge.registry) > held:
+                    PROBLEMS.append("D: Stop on a row started another copy")
+                settled(lambda: not running(sid),
+                        "D: Stop on the row did not end the run")
+
+        if _click_like_a_person(app, win, row("slow").fav_button,
+                                where="D: the slow row's star"):
+            settled(lambda: chip("slow") is None and not stored(sid),
+                    "D: unstarring from the row left the chip in the strip")
+            if win.detail.star.property("on"):
+                PROBLEMS.append("D: after the row's star was removed the pane's "
+                                "star is still on")
+            if _click_like_a_person(app, win, win.detail.star,
+                                    where="D: the pane's star"):
+                settled(lambda: chip("slow") is not None and stored(sid),
+                        "D: the pane's star did not bring the chip back")
+    finally:
+        for job in list(bridge.registry.all()):
+            win._stop_job(job)
+        _pump_until(app, lambda: len(bridge.registry) == 0, 10)
+        bridge.stop()
+        _close_window(app, win)
+    print("  [ok] clicks (favourite chip, maximised row and pane): Run, Retry "
+          "and Stop by a real click on the button, Stop starts no second run, "
+          "the star adds and removes the chip")
 
 
 def check_maximised_layout(app):
@@ -7137,10 +8011,13 @@ def main() -> int:
     check_quick_run(app)
     check_quick_run_shows_new_row(app)
     check_drag_and_drop(app)
+    check_drag_on_compact_chip_and_maximised(app)
     check_schedules(app)
     check_context_menus(app)
+    check_row_menu_on_chip_compact_and_pane(app)
     check_copy_paste_between_groups(app)
     check_select_mode(app)
+    check_select_on_compact_and_maximised(app)
     check_select_bar_fits(app)
     check_group_management(app)
     check_tray_and_close(app)
@@ -7166,6 +8043,7 @@ def main() -> int:
     check_keyboard_through_the_list(app)
     check_tray_round_trip(app)
     check_run_becomes_stop(app)
+    check_row_clicks_on_chip_and_pane(app)
     check_cli_run_reaches_the_window(app)
     check_newer_database_is_refused(app)
     check_bug_report(app)
@@ -7190,6 +8068,8 @@ def main() -> int:
         for p in PROBLEMS:
             print("  PROBLEM:", p, flush=True)
         return 1
+    for bug in KNOWN_BUGS:
+        print("  known app bug (not failed):", bug, flush=True)
     print("RYOS Qt smoke PASSED", flush=True)
     return 0
 
