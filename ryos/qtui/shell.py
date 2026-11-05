@@ -2276,6 +2276,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:                  # noqa: N802
         if self._quitting:
+            self._activity_timer.stop()
             event.accept()
             return
         event.ignore()

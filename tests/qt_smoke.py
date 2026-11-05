@@ -1530,8 +1530,7 @@ def check_quick_run_shows_new_row(app):
         if bar is None or bar.isVisible():
             PROBLEMS.append(f"quick run ({layout}): bar missing or left open")
         bridge.stop()
-        win.close()
-        win.deleteLater()
+        _close_window(app, win)
         pump(0.05)
         shutil.rmtree(tmp, ignore_errors=True)
     if len(PROBLEMS) == before:
@@ -3728,9 +3727,7 @@ def check_restart_to_update(app, pump_until=None):
 
     def done(win, bridge):
         bridge.stop()
-        win.close()
-        win.deleteLater()
-        app.processEvents()
+        _close_window(app, win)
 
     with mock.patch.dict(sys.modules,
                          {"ryos._build_info": SimpleNamespace(VARIANT="windows")}):
