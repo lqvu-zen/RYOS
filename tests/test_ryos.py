@@ -8274,6 +8274,28 @@ class TestScriptFormLoadSave(unittest.TestCase):
     def test_small_rules(self):
         self.assertEqual(scriptform.name_from_path("/a/b/tool.py"), "tool")
         self.assertEqual(scriptform.name_from_path(""), "")
+    def test_close_all_with_nothing_going_empties_all(self):
+        self.assertEqual(
+            outputpanel.kept_on_close_all(["job:1", "job:1", "job:2"], []),
+            [False] * 3)
+
+    def test_close_all_keeps_a_running_runs_lines_in_all(self):
+        self.assertEqual(
+            outputpanel.kept_on_close_all(
+                ["job:1", "job:2", "job:1", "job:2"], ["job:2"]),
+            [False, True, False, True])
+
+    def test_close_all_keeps_a_running_run_whose_tab_was_closed(self):
+        self.assertEqual(outputpanel.closable([outputpanel.ALL], ["job:3"]), [])
+        self.assertEqual(
+            outputpanel.kept_on_close_all(["job:1", "job:3", "job:3"], ["job:3"]),
+            [False, True, True])
+
+    def test_close_all_drops_lines_of_no_run(self):
+        self.assertEqual(
+            outputpanel.kept_on_close_all([None, "job:2"], ["job:2"]),
+            [False, True])
+
         self.assertEqual(scriptform.with_preset([], " --x "), [("--x", "--x")])
         self.assertIsNone(scriptform.with_preset([("--x", "--x")], "--x"))
         self.assertIsNone(scriptform.with_preset([], "  "))

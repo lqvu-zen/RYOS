@@ -143,6 +143,11 @@ def closable(keys, running) -> list:
     return [k for k in keys if k != ALL and k not in running]
 
 
+def kept_on_close_all(sources, running) -> list[bool]:
+    running = set(running)
+    return [s in running for s in sources]
+
+
 def cleared_when_run_starts(keys, *, enabled: bool) -> list:
     return [ALL] if enabled and ALL in keys else []
 

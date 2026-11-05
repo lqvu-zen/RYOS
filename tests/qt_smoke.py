@@ -4858,6 +4858,49 @@ def check_run_with_params_and_new_pipeline(app):
     win.deleteLater()
 
 
+def _close_all_keeps_running(app, win, where) -> None:
+    from types import SimpleNamespace
+
+    from ryos import outputpanel
+
+    all_key = outputpanel.ALL
+    for key in ("close:1", "close:2", "close:3"):
+        win.add_output_tab(key, key)
+    win.append_output("done line\n", tab_key="close:1")
+    win.append_output("still going\n", tab_key="close:2")
+    win.append_output("before close\n", tab_key="close:3")
+    win._close_output_key("close:3")
+    win.append_output("after close\n", tab_key="close:3")
+    win._bridge = SimpleNamespace(registry=SimpleNamespace(all=lambda: [
+        SimpleNamespace(tab_key="close:2"), SimpleNamespace(tab_key="close:3")]))
+    try:
+        win.close_all_output()
+        app.processEvents()
+        all_pane = win._output_tabs[all_key]
+        expected = ["still going", "before close", "after close"]
+        if set(win._output_tabs) != {all_key, "close:2"}:
+            PROBLEMS.append(f"Close All ({where}) left {set(win._output_tabs)}")
+        if win._output_tabs["close:2"].plain_text() != "still going":
+            PROBLEMS.append(f"Close All ({where}) changed the running tab's output")
+        if all_pane.plain_text().splitlines() != expected \
+                or all_pane.text.toPlainText().splitlines() != expected:
+            PROBLEMS.append(f"Close All ({where}) left All as "
+                            f"{all_pane.plain_text().splitlines()} / "
+                            f"{all_pane.text.toPlainText().splitlines()}, "
+                            f"not {expected} (#36)")
+        if "done line" in all_pane.plain_text():
+            PROBLEMS.append(f"Close All ({where}) kept a finished run's line in All")
+        win._bridge = SimpleNamespace(registry=SimpleNamespace(all=lambda: []))
+        win.close_all_output()
+        app.processEvents()
+        if set(win._output_tabs) != {all_key} or all_pane.lines \
+                or all_pane.sources or all_pane.text.toPlainText():
+            PROBLEMS.append(f"Close All ({where}) with nothing running left "
+                            f"{set(win._output_tabs)} or text in All")
+    finally:
+        win._bridge = None
+
+
 def check_output_panel(app):
     """The output header and tabs: colour, errors only, find, clear, close
     all, the tab menu, collapse -- the Tk panel's behaviour."""
@@ -4984,15 +5027,25 @@ def check_output_panel(app):
     win.clear_output()
     if pane.lines or pane.text.toPlainText():
         PROBLEMS.append("Clear left output behind")
+    _close_all_keeps_running(app, win, "normal rows")
+    compact = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False,
+                                                      "compact_mode": True})
+    compact.show()
+    app.processEvents()
+    _close_all_keeps_running(app, compact, "compact rows")
+    _close_window(app, compact)
+    from ryos import detail
+    maxed = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    maxed.resize(1400, 800)
+    maxed.show()
+    maxed.set_workspace(True)
+    app.processEvents()
+    maxed.detail.show_tab(detail.OUTPUT_TAB)
+    if not maxed.detail.isAncestorOf(maxed.output_tabs):
+        PROBLEMS.append("Close All, maximised: the tabs are not in the detail pane")
+    _close_all_keeps_running(app, maxed, "maximised")
+    _close_window(app, maxed)
     win.add_output_tab("job:2", "two")
-    win._bridge = SimpleNamespace(registry=SimpleNamespace(
-        all=lambda: [SimpleNamespace(tab_key="job:2")]))
-    win.append_output("mirror\n", tab_key="job:2")
-    win.close_all_output()
-    if set(win._output_tabs) != {outputpanel.ALL, "job:2"} \
-            or win._output_tabs[outputpanel.ALL].plain_text():
-        PROBLEMS.append(f"Close All left {set(win._output_tabs)}, or kept All's text")
-    win._bridge = None
     if "job:2" in win._output_tabs:
         tab_menu("job:2")[outputpanel.TAB_CLOSE].trigger()
     if "job:2" in win._output_tabs:
@@ -5042,7 +5095,7 @@ def check_output_panel(app):
     print("  [ok] output panel: starts collapsed, fits 540, colours by tag, errors "
           "only hides and restores, cap holds while filtered, find counts and "
           "steps, per-tab state, Esc, Copy/Save/Close, Clear, Close All keeps "
-          "running, auto-open, newest tab right after All")
+          "running runs' output in their tab and in All (N, C, D), auto-open, newest tab right after All")
     win.deleteLater()
 
 

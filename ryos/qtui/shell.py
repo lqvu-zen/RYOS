@@ -81,6 +81,7 @@ class OutputPane(QWidget):
         # (line, tag, step): step is (token, label) for a line from a step
         # running beside others, else None.
         self.lines: list[tuple[str, str, tuple | None]] = []
+        self.sources: list[str | None] = []
         self.query = ""
         self.errors_only = False
         # The parallel steps seen in this tab, token -> (label, state), and
@@ -178,15 +179,18 @@ class OutputPane(QWidget):
                                                self.step_filter))
 
     def append(self, text: str, max_lines: int, *, scroll: bool = True,
-               tag: str | None = None, step: tuple | None = None) -> None:
+               tag: str | None = None, step: tuple | None = None,
+               source: str | None = None) -> None:
         tag = tag or "stdout"
         old_count = len(self.lines)
         new = [(line, tag, step) for line in outputpanel.split_lines(text)]
         self.lines.extend(new)
+        self.sources.extend([source] * len(new))
         drop = outputpanel.overflow_lines(len(self.lines), max_lines)
         dropped: list = []
         if drop:
             dropped, self.lines = self.lines[:drop], self.lines[drop:]
+            self.sources = self.sources[drop:]
         if drop and drop >= old_count:
             # Nothing on screen survives: write only what is kept, not a
             # batch bigger than the cap.
@@ -222,9 +226,19 @@ class OutputPane(QWidget):
 
     def clear(self) -> None:
         self.lines = []
+        self.sources = []
         self.text.clear()
         self.set_step_filter(None)
         self.search()
+
+    def keep_runs(self, running) -> None:
+        keep = outputpanel.kept_on_close_all(self.sources, running)
+        if not any(keep):
+            self.clear()
+            return
+        self.lines = [e for e, k in zip(self.lines, keep) if k]
+        self.sources = [s for s, k in zip(self.sources, keep) if k]
+        self.rebuild()
 
     def set_palette(self, palette: dict) -> None:
         self._palette = palette
@@ -848,12 +862,13 @@ class MainWindow(QMainWindow):
         self._clear_pane(self.active_output_key() or "")
 
     def close_all_output(self) -> None:
-        """Close every tab but All and those still running; clear All."""
+        """Close every tab but All and those still running; take only
+        finished runs' lines out of All."""
         running = ([j.tab_key for j in self._bridge.registry.all()]
                    if self._bridge is not None else [])
         for key in outputpanel.closable(list(self._output_tabs), running):
             self._close_output_key(key)
-        self._output_tabs[outputpanel.ALL].clear()
+        self._output_tabs[outputpanel.ALL].keep_runs(running)
         self._sync_output_bar()
 
     def _show_output_tab_menu(self, pos) -> None:
@@ -3132,7 +3147,8 @@ class MainWindow(QMainWindow):
             # Only the job's own tab knows its steps: on All, tokens from
             # different jobs would collide, so the line goes in plain.
             self._output_tabs[key].append(text, max_lines, scroll=scroll, tag=tag,
-                                          step=step if key == tab_key else None)
+                                          step=step if key == tab_key else None,
+                                          source=tab_key)
         # Re-run an active search once output settles, not on every line.
         if self.output_find.text():
             self._output_search_timer.start()
