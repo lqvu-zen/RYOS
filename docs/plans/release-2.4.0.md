@@ -632,7 +632,13 @@ The re-run at `6b9d12e` also failed `release_check::portable`: `build_release.zi
 - `release-ryos` names the stamp; BEHAVIOUR § Harness escapes and § Escapes say what was added.
 
 **Needs:** 12 (rc1 published).
-**Gate:** Vũ approves the `guard.py` change (`.claude/hooks/` edits are `ask`).
+**Gate:** Vũ approves the `guard.py` change (`.claude/hooks/` edits are `ask`). **Approved 2026-11-05**, with the designer's open questions answered:
+1. With a matching stamp the guard returns `ask` (Vũ still sees every publish, wrapped forms included).
+2. `gh api` POST to `…/releases` goes through the same stamp gate, and so does `gh release upload --clobber` (a replaced zip after the check would get past it otherwise).
+3. The guard denies Write/Edit and shell redirects to `dist/release_check.passed`.
+4. The stamp also records the hash of `SHA256SUMS.txt.sig`, and the guard checks it.
+5. A stamp for an earlier commit is not accepted, even when only `docs/` commits followed.
+6. (The `.python-version` question is overtaken: `5a0512c` builds on 3.14 through `BUILD_PYTHON`.)
 
 ### 41 — Fix the window hanging in the maximised layout (#33, #35)
 _Added 2026-11-03 from issues #33 and #35 (Vũ's decision)._ Two reports from Vũ of the window hanging in the maximised ("fullscreen") layout with compact rows, theme Tech Innovation, the windows-ai build:

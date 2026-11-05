@@ -67,7 +67,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - **CI went red on `73a61e1`** (qt-smoke); step 16 was claimed and released unstarted (`f8af45e`, `b6fe5d1`). `bb1c11b` fixes it in `tests/qt_smoke.py` (the Quick Run cap check scanned its own `qr.db` on ubuntu; the chatty-pipeline turn limit raised to 1 s). **CI on `bb1c11b` still running** at 20:05; not proven green yet.
 - `dcd5309` **step 12: Vũ's checklist all ticked** (11-05, on Vũ's word). Every item of the rc1 checklist is done; the row isn't marked done yet.
 - **New issue #36** (Vũ, rc1, compact): Close all deletes the output of running runs. Proposed as a fix-bug step (see Open GitHub issues).
-- **Next:** CI green on `bb1c11b`; then the three found bugs (#36, TW-13, SM-13) if Vũ puts them in 2.4; step 16 (B lane) once CI is green; step 40 part 2 once Vũ approves; B and C lanes wait for step 33's answers.
+- **Next:** CI green on `bb1c11b`; then the three found bugs (#36, TW-13, SM-13) if Vũ puts them in 2.4; step 16 (B lane) once CI is green; step 40 part 2 approved (11-05); step 33 answered (B and C in parallel), the planner is refreshing the Files lines and drafting the new steps.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -99,7 +99,6 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 
 - [ ] **Back up the release key** in a second place, and put its passphrase in a password manager (left over from step 7).
 - [ ] Step 31 left checks for you: approve the `ask`/`deny` lists as committed in `96405b6`; confirm a fresh session runs one command from each skill without a prompt; confirm auto-memory still works now that `C:\Users\Admin\.claude` is out of `additionalDirectories`. (The `gh release create` ask is seen at the next candidate.)
-- [ ] At step 33: decide whether B and C run in parallel.
 
 ## Secretary skill and planner agent
 
@@ -163,6 +162,9 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-11-05 20:30: **Step 40 part 2 approved** (Vũ, the secretary's recommendations): the `guard.py` publish gate; `ask` with a matching stamp; `gh api` POST to releases and `gh release upload --clobber` gated too; writes to the stamp file denied; the stamp holds the `.sig` hash too; no ancestor stamps. The `.python-version` question is overtaken by `5a0512c`.
+- 2026-11-05 20:30: **Step 33 answered** (Vũ, the secretary's recommendations): "files don't overlap" means no shared function (shared lists such as the Status table allowed); **B and C run in parallel** as the planner's four pairs (16/18, 17/19, 23/21, 24/22) in two lanes, at most two at once, after the planner refreshes the Files lines against today's code; splitting `handle_step_done` becomes its own step before 20 (engine lane); `shell.py` made mypy-clean once, as its own step before the lanes, with step 36's CI change; the menu-dispatch extraction lands at 26; step 18's designer settles the jobs/Activity boundary. Questions 3 and 4 (20 beside the backlog, 38 beside 37) are overtaken.
+- 2026-11-05 20:30: **#36, TW-13 and SM-13 join 2.4 as `/devflow:fix-bug` steps, ahead of step 16** (the secretary's recommendation): Close all clearing running output, the missing group links in the no-match hint, Select All ticking rows a search hides.
 - 2026-11-05 20:15: **Step 41 (the maximised-layout hang, #33 and #35) closed as CNR** (cannot reproduce; Vũ will send no dump). Defects A and B and the dialog/popup/drag logging from `a5f5547` stay; if the window hangs again, the new log lines start a new step.
 - 2026-11-03 19:40: **#33 and #35 (the window hangs in the maximised layout) become 2.4 step 41, one `/devflow:fix-bug` step, next in Order** before step 40 part 2 and the backlog (the secretary's recommendation, taken by Vũ). It escaped v2.3.1, so it adds its § Escapes line and check. #34 not decided yet.
 - 2026-10-21 22:10: **The rc1 publish-without-check escape becomes 2.4 step 40, before any later candidate** (the secretary's recommendation, taken by Vũ): a `release_check` pass stamp that `guard.py` requires for `gh release create`, plus the portable zip's line-ending mismatch and the Python 3.13 need. Vũ approves the `guard.py` change. `/fix-ryos-bug`, Opus.
