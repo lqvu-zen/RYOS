@@ -23,7 +23,7 @@ import threading
 from datetime import datetime
 from typing import Callable
 
-from . import schedule_runner
+from . import failurepatterns, schedule_runner
 from .db import SOURCE_MANUAL, SOURCE_SCHEDULE, ScriptDB
 from .job_controller import JobController
 from .jobs import Job, JobRegistry
@@ -117,6 +117,8 @@ class JobHost:
                 step_token=None) -> None:
         self.db.mark_run(script_id)
         launcher = self.db.is_detached(script_id)
+        rules = () if launcher else failurepatterns.compile_rules(
+            *self.db.failure_rules(script_id))
         # step_token and log_output are keyword-only in effect: run_subprocess
         # takes log_output first positionally, so passing the token positionally
         # would silently enable run logging and lose the token.
@@ -128,6 +130,7 @@ class JobHost:
                 "step_token": step_token,
                 # A launcher's output keeps reaching its tab after release.
                 "follow_leftovers": launcher,
+                "fail_on": rules or None,
             },
             daemon=True,
         ).start()

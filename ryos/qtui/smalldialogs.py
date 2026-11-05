@@ -448,7 +448,7 @@ class RunHistoryView(QWidget):
     def reload(self) -> None:
         rows = self.rows()
         self.summary.setText(history.summarize(rows))
-        lines = [history.header_row()] + [history.format_run_row(r) for r in rows]
+        lines = history.run_lines(rows, self.db.run_failures([r[0] for r in rows]))
         self.table.setPlainText("\n".join(lines) if rows else "No runs recorded yet.")
         self.clear_button.setEnabled(bool(rows))
 

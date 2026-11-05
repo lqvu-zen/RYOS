@@ -130,6 +130,7 @@ class AgentTools:
             "duration_seconds": (round((finished - run.started_at).total_seconds(), 3)
                                  if finished else None),
             "total_lines": run.total,
+            "failed_by": run.failed_by,
         }
 
     def _keep_bounded(self) -> None:

@@ -91,7 +91,9 @@ def build(tools: AgentTools):
         "A run's status (running, ok, error, stopped, timeout), exit code, "
         f"times, and up to `limit` (max {MAX_PAGE}) lines of output from line "
         "`offset`. Pass the returned next_offset to read on. With wait_seconds "
-        f"(max {MAX_WAIT:g}) it waits until the run finishes or has new output."))
+        f"(max {MAX_WAIT:g}) it waits until the run finishes or has new output. "
+        "For a run failed by a failure pattern, failed_by gives the rule, the line, "
+        "its line number and, in a pipeline, the step."))
     @refusals_as_tool_errors
     def get_run(run_id: int, offset: int = 0, limit: int = 200,
                 wait_seconds: float = 0) -> dict:

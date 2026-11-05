@@ -109,6 +109,7 @@ class Run:
     status: str = RUNNING
     exit_code: int | None = None
     timed_out: bool = False
+    failed_by: dict | None = None
     lines: deque = field(default_factory=lambda: deque(maxlen=MAX_LINES))
     #: Every line ever received; ``total - len(lines)`` were dropped.
     total: int = 0
@@ -203,6 +204,7 @@ class HeadlessRunner:
         outcome = job.outcome or "error"
         # A run that finished OK just as its time ran out still passed.
         run.status = TIMEOUT if run.timed_out and outcome != "ok" else outcome
+        run.failed_by = job.failed_by if run.status == "error" else None
         if self._on_finished_cb is not None:
             self._on_finished_cb(run)
 

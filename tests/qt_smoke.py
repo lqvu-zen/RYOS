@@ -8026,6 +8026,56 @@ def check_output_tab_order_maximised(app):
           "own tab in front")
 
 
+def check_pattern_failure(app):
+    """A script that exits 0 but prints a line its failure patterns match is
+    failed through the real JobBridge, with the rule in its footer and under
+    its row in History."""
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from ryos.db import ScriptDB
+    from ryos.qtui.jobs import JobBridge
+    from ryos.qtui.smalldialogs import RunHistoryView
+
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "gcc.py"
+    script.write_text("print('compiling')\nprint('error: x')\n", encoding="utf-8")
+    db = ScriptDB(tmp / "qt.db")
+    db.create_group("G")
+    sid = db.add("gcc", str(script), "", _sys.executable, "G")
+    db.set_failure_rules(sid, [], True)
+
+    bridge = JobBridge(db, {"max_parallel_jobs": 4})
+    lines: list = []
+    finished: list = []
+    bridge.output.connect(lambda key, text, tag, *_step: lines.append(text))
+    bridge.finished.connect(finished.append)
+    bridge.start()
+    bridge.run_script(sid, "gcc", str(script), "", _sys.executable)
+    end = _time.time() + 25
+    while _time.time() < end and not finished:
+        app.processEvents()
+        _time.sleep(0.02)
+    bridge.stop()
+    if not finished:
+        PROBLEMS.append("pattern failure: the run never finished")
+        return
+    runs = db.list_runs(script_id=sid)
+    if not runs or (runs[0][7], runs[0][8]) != ("error", 0):
+        PROBLEMS.append(f"pattern failure: recorded {runs[:1]!r}, expected error with exit 0")
+    body = "".join(lines)
+    if 'matched "error:" (common pattern) on line 2: error: x' not in body:
+        PROBLEMS.append(f"pattern failure: the footer does not say why: {body[-200:]!r}")
+    view = RunHistoryView(db=db, script_id=sid)
+    text = view.table.toPlainText()
+    if "↳ matched" not in text:
+        PROBLEMS.append(f"pattern failure: History shows no reason: {text!r}")
+    view.deleteLater()
+    print("  [ok] failure patterns: a zero exit with a matching line failed, footer and "
+          "History say which rule and line")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     import os
@@ -8108,6 +8158,7 @@ def main() -> int:
     check_output_tab_order_maximised(app)
     check_ampersands_show(app)
     check_startup_and_log_options(app)
+    check_pattern_failure(app)
     left = close_down(app)
     if left:
         PROBLEMS.append(f"still alive after closing down: {sorted(set(left))}")

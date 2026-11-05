@@ -575,6 +575,8 @@ class JobController:
         secs = (finished_at - job.start_time).total_seconds()
         elapsed = _format_elapsed_secs(secs)
         exit_code = self._exit_code(job, token)
+        hit = job.rule_hits.pop(token, None)
+        failed_by = hit.as_dict() if hit is not None and status == "error" else None
 
         if job.kind == "pipeline":
             if token in job.released_steps:
@@ -594,8 +596,9 @@ class JobController:
                 started_at=job.step_started.get(token, job.start_time),
                 finished_at=finished_at, status=status, exit_code=exit_code,
                 step_index=token if isinstance(token, int) else None,
-                trigger_source=SOURCE_PIPELINE,
+                trigger_source=SOURCE_PIPELINE, failed_by=failed_by,
             )
+            job.step_failed_by[token] = failed_by
             # Retry first: a step with attempts left is relaunched under the
             # same token and stays pending, so the group has not settled and
             # nothing downstream sees a failure yet. Each attempt has already
@@ -737,6 +740,9 @@ class JobController:
                     finished_at=finished_at, status="error",
                     step_index=failed_at, trigger_source=job.trigger,
                 )
+                step_hit = job.step_failed_by.get(failed_at)
+                if step_hit:
+                    job.failed_by = {**step_hit, "step": failed_at}
                 job.outcome = "error"
                 self._on_finish(job)
                 self._on_notify(
@@ -748,7 +754,9 @@ class JobController:
                 RUN_SCRIPT, name=job.name, script_id=sid,
                 started_at=job.start_time, finished_at=finished_at,
                 status=status, exit_code=exit_code, trigger_source=job.trigger,
+                failed_by=failed_by,
             )
+            job.failed_by = failed_by
             if status == "ok":
                 self._on_status("Done.")
                 self._on_notify("RYOS — Script passed", f"✓  {job.name}  ·  {elapsed}")

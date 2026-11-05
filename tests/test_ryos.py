@@ -29,7 +29,7 @@ from ryos import quickrun_index  # noqa: E402
 from ryos import quickrun as qr_mod  # noqa: E402
 from ryos import quickrun_actions as qra  # noqa: E402
 from ryos import schedule_runner  # noqa: E402
-from ryos import cardmenu, grouping, themes  # noqa: E402
+from ryos import cardmenu, failurepatterns, grouping, themes  # noqa: E402
 from ryos.jobs import RETRYING, RUNNING, live_statuses  # noqa: E402
 from ryos import selection  # noqa: E402
 from ryos import configio  # noqa: E402
@@ -2005,6 +2005,25 @@ class TestFixtureUpgrades(unittest.TestCase):
                     self.assertEqual(conn.execute(
                         "SELECT value FROM meta WHERE key='compatible_from'").fetchone(),
                         ("1",))
+
+    def test_upgrades_turn_no_failure_pattern_on(self):
+        from contextlib import closing
+        for fixture in self.fixtures:
+            with self.subTest(fixture=fixture.name):
+                copy = self.tmp / fixture.name
+                shutil.copyfile(fixture, copy)
+                db = ScriptDB(copy)
+                with closing(sqlite3.connect(copy)) as conn:
+                    self.assertEqual(conn.execute(
+                        "SELECT COUNT(*) FROM failure_rules").fetchone(), (0,))
+                    self.assertEqual(conn.execute(
+                        "SELECT COUNT(*) FROM scripts WHERE fail_on_common != 0").fetchone(),
+                        (0,))
+                    self.assertEqual(conn.execute(
+                        "SELECT COUNT(*) FROM runs WHERE failed_by IS NOT NULL").fetchone(),
+                        (0,))
+                for row in db.list_all():
+                    self.assertEqual(db.failure_rules(row[0]), ([], False))
 
     def test_fixtures_hold_no_real_paths(self):
         from contextlib import closing
@@ -4676,6 +4695,17 @@ class TestRunHistoryFormatting(unittest.TestCase):
     def test_summarize_empty(self):
         self.assertEqual(summarize([]), "No runs recorded yet.")
 
+    def test_a_pattern_failure_shows_its_rule_and_line(self):
+        from ryos.history import format_failure, run_lines
+        reason = {"rule": "error:", "common": True, "line": "gcc: error: x", "line_no": 12}
+        self.assertEqual(format_failure(reason),
+                         '    ↳ matched "error:" (common pattern) on line 12: gcc: error: x')
+        failed, passed = _run_row(id=2, status="error", exit_code=0), _run_row(id=1)
+        self.assertEqual(run_lines([failed, passed], {2: reason}),
+                         [header_row(), format_run_row(failed), format_failure(reason),
+                          format_run_row(passed)])
+        self.assertEqual(run_lines([passed], {}), [header_row(), format_run_row(passed)])
+
 
 class _FakeProc:
     def __init__(self, returncode):
@@ -4743,6 +4773,30 @@ class TestControllerWritesHistory(unittest.TestCase):
         job = self._script_job()
         self.ctl.handle_step_done(job, 7, "error")
         self.assertIsNone(self.db.list_runs(script_id=7)[0][8])
+
+    def test_a_pattern_failure_records_its_rule_and_line(self):
+        from ryos.failurepatterns import Hit
+        job = self._script_job()
+        job.processes[None] = _FakeProc(0)
+        job.rule_hits[None] = Hit("error:", True, "gcc: error: x", 4)
+        self.ctl.handle_step_done(job, 7, "error")
+        row = self.db.list_runs(script_id=7)[0]
+        self.assertEqual((row[7], row[8]), ("error", 0))
+        reason = {"rule": "error:", "common": True, "line": "gcc: error: x", "line_no": 4}
+        self.assertEqual(self.db.run_failures([row[0]]), {row[0]: reason})
+        self.assertEqual(job.failed_by, reason)
+        self.assertEqual(job.rule_hits, {})
+
+    def test_a_stopped_run_records_no_pattern(self):
+        from ryos.failurepatterns import Hit
+        from ryos.jobs import STOPPED
+        job = self._script_job()
+        job.rule_hits[None] = Hit("error:", True, "gcc: error: x", 4)
+        self.ctl.handle_step_done(job, 7, STOPPED)
+        row = self.db.list_runs(script_id=7)[0]
+        self.assertEqual(row[7], STOPPED)
+        self.assertEqual(self.db.run_failures([row[0]]), {})
+        self.assertIsNone(job.failed_by)
 
     def test_job_trigger_is_carried_into_the_row(self):
         # Nothing sets a non-manual trigger yet; the scheduler will.
@@ -5586,6 +5640,59 @@ class TestPipelineFailurePolicy(unittest.TestCase):
                    _policy_step("b", run_when=WHEN_ON_SUCCESS)],
                   {"a": ["error"]})
         self.assertEqual(self.launched, ["a"])
+
+    # ---- failure patterns ----
+
+    def _launch_with_patterns(self, job, spec, name, sid, token=None):
+        from ryos.failurepatterns import Hit
+        self.launched.append(name)
+        seq = self.outcomes.get(name, ["ok"])
+        outcome = seq.pop(0) if len(seq) > 1 else (seq[0] if seq else "ok")
+        if outcome == "pattern":
+            attempt = self.launched.count(name)
+            job.rule_hits[token] = Hit("FAILED", True, f"{name} FAILED {attempt}", attempt)
+        status = "ok" if outcome == "ok" else "error"
+        self.q.put(("done_tag", job.job_id, sid, status, "ok", "", token))
+
+    def test_a_pattern_failure_stops_by_policy(self):
+        self.ctl._launch = self._launch_with_patterns
+        self._run([_policy_step("a"), _policy_step("b"), _policy_step("c")],
+                  {"b": ["pattern"]})
+        self.assertEqual(self.launched, ["a", "b"])
+        self.assertEqual(self.verdict, "error")
+
+    def test_a_pattern_failure_continues_when_told(self):
+        self.ctl._launch = self._launch_with_patterns
+        job = self._run([_policy_step("a", on_failure=FAIL_CONTINUE), _policy_step("b")],
+                        {"a": ["pattern"]})
+        self.assertEqual(self.launched, ["a", "b"])
+        self.assertEqual(self.verdict, "ok")
+        self.assertIsNone(job.failed_by)
+
+    def test_each_retry_attempt_records_its_own_match(self):
+        self.ctl._launch = self._launch_with_patterns
+        self._run([_policy_step("a", retries=2)], {"a": ["pattern", "error", "pattern"]})
+        self.assertEqual(self.launched, ["a", "a", "a"])
+        db = self.ctl._db
+        steps = sorted((r for r in db.list_runs(pipeline_id=1, limit=100) if r[3] == RUN_STEP),
+                       key=lambda r: r[0])
+        reasons = db.run_failures([r[0] for r in steps])
+        self.assertEqual([reasons.get(r[0], {}).get("line") for r in steps],
+                         ["a FAILED 1", None, "a FAILED 3"])
+
+    def test_job_failed_by_names_the_failing_step(self):
+        self.ctl._launch = self._launch_with_patterns
+        job = self._run([_policy_step("a"), _policy_step("b")], {"b": ["pattern"]})
+        self.assertEqual(job.failed_by, {"rule": "FAILED", "common": True,
+                                         "line": "b FAILED 1", "line_no": 1, "step": 2})
+        summary = [r for r in self.ctl._db.list_runs(pipeline_id=1) if r[3] == RUN_PIPELINE]
+        self.assertEqual(self.ctl._db.run_failures([summary[0][0]]), {})
+
+    def test_a_later_attempt_failing_by_exit_code_clears_the_match(self):
+        self.ctl._launch = self._launch_with_patterns
+        job = self._run([_policy_step("a", retries=1)], {"a": ["pattern", "error"]})
+        self.assertEqual(self.verdict, "error")
+        self.assertIsNone(job.failed_by)
 
     def test_a_queue_of_only_skippable_steps_still_finishes(self):
         # Regression: skipping emptied the queue without anything reaching a
@@ -11252,3 +11359,238 @@ class TestBaseFolderNotes(unittest.TestCase):
         self._pipeline(host)
         self.drain(host)
         self.assertFalse([o for o in self.out if "Note:" in o[1]])
+
+
+
+class TestFailurePatterns(unittest.TestCase):
+    def watch(self, patterns=(), common=False):
+        return failurepatterns.Watch(failurepatterns.compile_rules(list(patterns), common))
+
+    def test_nothing_without_rules_or_with_common_off(self):
+        self.assertEqual(failurepatterns.compile_rules([], False), ())
+        w = self.watch()
+        w.feed("error: boom")
+        self.assertIsNone(w.hit)
+
+    def test_common_literals(self):
+        for line, rule in (("gcc: error: x", "error:"), ("1 FAILED", "FAILED"),
+                           ("Traceback (most recent call last):", "Traceback")):
+            with self.subTest(line=line):
+                w = self.watch(common=True)
+                w.feed(line)
+                self.assertEqual((w.hit.rule, w.hit.common), (rule, True))
+        w = self.watch(common=True)
+        w.feed("error.x and fail")
+        self.assertIsNone(w.hit)
+
+    def test_search_anywhere_and_case_sensitive(self):
+        w = self.watch([r"\bboom\b"])
+        w.feed("Boom")
+        self.assertIsNone(w.hit)
+        w.feed("it went boom here")
+        self.assertEqual((w.hit.rule, w.hit.common, w.hit.line_no), (r"\bboom\b", False, 2))
+        w = self.watch(common=True)
+        w.feed("Error: nope")
+        w.feed("failed")
+        self.assertIsNone(w.hit)
+
+    def test_first_hit_is_kept_and_user_rules_come_first(self):
+        rules = failurepatterns.compile_rules(["x"], True)
+        self.assertEqual([r.pattern for r in rules], ["x", *failurepatterns.COMMON_PATTERNS])
+        w = failurepatterns.Watch(rules)
+        w.feed("ok")
+        w.feed("FAILED x")
+        w.feed("error: later")
+        self.assertEqual((w.hit.rule, w.hit.line, w.hit.line_no, w.lines),
+                         ("x", "FAILED x", 2, 3))
+
+    def test_ansi_is_stripped_for_the_match_and_the_stored_line(self):
+        w = self.watch(["^error:"])
+        w.feed("\x1b[31merror:\x1b[0m bad  \n")
+        self.assertEqual(w.hit.line, "error: bad")
+        self.assertEqual(failurepatterns.strip_ansi("plain"), "plain")
+
+    def test_clipped_to_show_and_capped_to_match(self):
+        w = self.watch(["boom"])
+        w.feed("x" * 2000 + "boom")
+        self.assertIsNone(w.hit)
+        w.feed("boom" + "y" * 1000)
+        self.assertEqual(len(w.hit.line), failurepatterns.MAX_SHOWN_CHARS + 1)
+        self.assertTrue(w.hit.line.endswith("…"))
+
+    def test_invalid_and_blank_are_skipped_without_raising(self):
+        with self.assertLogs("ryos.failurepatterns", level="WARNING"):
+            rules = failurepatterns.compile_rules(["(", "", "   ", "ok"], False)
+        self.assertEqual([r.pattern for r in rules], ["ok"])
+
+    def test_json_round_trip_and_junk(self):
+        d = failurepatterns.Hit("error:", True, "gcc: error: é", 3).as_dict()
+        self.assertEqual(failurepatterns.from_json(failurepatterns.to_json(d)), d)
+        for junk in (None, "", "{", "[1]", '{"line": 1}', "3"):
+            with self.subTest(junk=junk):
+                self.assertIsNone(failurepatterns.from_json(junk))
+
+    def test_describe_wording(self):
+        d = {"rule": "error:", "common": True, "line": "gcc: error: x", "line_no": 12}
+        self.assertEqual(failurepatterns.describe(d),
+                         'matched "error:" (common pattern) on line 12: gcc: error: x')
+        self.assertEqual(failurepatterns.describe({**d, "common": False, "rule": "x"}),
+                         'matched "x" on line 12: gcc: error: x')
+        self.assertEqual(failurepatterns.footer_line(d),
+                         "  ✗ " + failurepatterns.describe(d) + "\n")
+
+
+class TestFailurePatternStorage(unittest.TestCase):
+    def setUp(self):
+        self.db = _make_db()
+        self.db.create_group("G")
+        self.sid = self.db.add("S", "/s.py", "", "", "G")
+
+    def test_round_trip_in_order_and_off_by_default(self):
+        self.assertEqual(self.db.failure_rules(self.sid), ([], False))
+        self.db.set_failure_rules(self.sid, ["b", "a", "c"], True)
+        self.assertEqual(self.db.failure_rules(self.sid), (["b", "a", "c"], True))
+        self.assertEqual(self.db.failure_rules(9999), ([], False))
+
+    def test_set_replaces(self):
+        self.db.set_failure_rules(self.sid, ["a", "b"], True)
+        self.db.set_failure_rules(self.sid, ["c"], False)
+        self.assertEqual(self.db.failure_rules(self.sid), (["c"], False))
+
+    def test_the_migration_turns_nothing_on_and_is_safe_twice(self):
+        from ryos.db import _migrate_failure_patterns
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE scripts (id INTEGER PRIMARY KEY, name TEXT)")
+        conn.execute("CREATE TABLE runs (id INTEGER PRIMARY KEY, status TEXT)")
+        conn.execute("INSERT INTO scripts (name) VALUES ('old')")
+        conn.execute("INSERT INTO runs (status) VALUES ('ok')")
+        _migrate_failure_patterns(conn)
+        _migrate_failure_patterns(conn)
+        self.assertEqual(conn.execute("SELECT fail_on_common FROM scripts").fetchall(), [(0,)])
+        self.assertEqual(conn.execute("SELECT failed_by FROM runs").fetchall(), [(None,)])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM failure_rules").fetchone(), (0,))
+        conn.close()
+
+    def test_record_run_keeps_a_reason_and_list_runs_stays_11_wide(self):
+        reason = {"rule": "x", "common": False, "line": "x", "line_no": 1}
+        failed = self.db.record_run(RUN_SCRIPT, name="S", script_id=self.sid,
+                                    started_at="2026-01-01T00:00:00", status="error",
+                                    exit_code=0, failed_by=reason)
+        passed = self.db.record_run(RUN_SCRIPT, name="S", script_id=self.sid,
+                                    started_at="2026-01-01T00:00:01", status="ok")
+        self.assertEqual(self.db.run_failures([failed, passed]), {failed: reason})
+        self.assertEqual(self.db.run_failures([]), {})
+        self.assertTrue(all(len(r) == 11 for r in self.db.list_runs()))
+
+    def test_deleting_a_script_takes_its_failure_rules(self):
+        other = self.db.add("T", "/t.py", "", "", "G")
+        self.db.set_failure_rules(self.sid, ["a"], True)
+        self.db.set_failure_rules(other, ["b"], False)
+        self.db.delete(self.sid)
+        self.assertEqual(self.db.failure_rules(self.sid), ([], False))
+        self.assertEqual(self.db.failure_rules(other), (["b"], False))
+        self.db.delete_all()
+        with self.db._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM failure_rules").fetchone(),
+                             (0,))
+
+
+class TestRunnerFailurePatterns(unittest.TestCase):
+    def _job(self):
+        return Job(1, "script", 1, None, "t", "job:1", "g")
+
+    def _run(self, code, fail_on, token=None):
+        q = _queue.Queue()
+        job = self._job()
+        run_subprocess(q, job, [sys.executable, "-c", code], "t", 1,
+                       step_token=token, fail_on=fail_on)
+        return list(q.queue), job
+
+    def test_a_zero_exit_with_a_match_fails_and_keeps_the_hit(self):
+        items, job = self._run("print('ok'); print('error: boom')",
+                               failurepatterns.compile_rules([], True))
+        done = items[-1]
+        self.assertEqual((len(done), done[0], done[3], done[4]),
+                         (6, "done_tag", "error", "stderr"))
+        self.assertIn('✗ matched "error:" (common pattern) on line 2: error: boom',
+                      done[5])
+        self.assertIn("exit code 0", done[5])
+        self.assertEqual(job.rule_hits[None].as_dict(),
+                         {"rule": "error:", "common": True, "line": "error: boom",
+                          "line_no": 2})
+        self.assertIn(("stdout", 1, "error: boom\n"), items)
+
+    def test_a_token_keeps_the_seven_wide_tuple(self):
+        items, job = self._run("print('FAILED')", failurepatterns.compile_rules([], True),
+                               token=4)
+        self.assertEqual((len(items[-1]), items[-1][3], items[-1][6]), (7, "error", 4))
+        self.assertEqual(job.rule_hits[4].rule, "FAILED")
+
+    def test_a_partial_last_line_still_matches(self):
+        _items, job = self._run("import sys; sys.stdout.write('ok\\nFAILED')",
+                                failurepatterns.compile_rules([], True))
+        self.assertEqual((job.rule_hits[None].line, job.rule_hits[None].line_no),
+                         ("FAILED", 2))
+
+    def test_no_rules_is_todays_path(self):
+        items, job = self._run("print('error: boom')", None)
+        self.assertEqual(items[0], ("stdout", 1, "error: boom\n"))
+        self.assertEqual((len(items), items[-1][3], items[-1][4]), (2, "ok", "ok"))
+        self.assertTrue(items[-1][5].startswith("\n  exit code 0  ·  "))
+        self.assertEqual(job.rule_hits, {})
+
+    def test_a_nonzero_exit_that_matches_keeps_the_hit(self):
+        items, job = self._run("import sys; print('Traceback'); sys.exit(3)",
+                               failurepatterns.compile_rules([], True))
+        self.assertEqual((items[-1][3], items[-1][4]), ("error", "stderr"))
+        self.assertIn("exit code 3", items[-1][5])
+        self.assertEqual(job.rule_hits[None].rule, "Traceback")
+
+    def test_the_done_log_names_the_rule_not_the_line(self):
+        with self.assertLogs("ryos.runner", level="INFO") as logs:
+            self._run("print('error: secret-text')", failurepatterns.compile_rules([], True))
+        done = [m for m in logs.output if "Done:" in m]
+        self.assertTrue(done and "'error:'" in done[0] and "line 1" in done[0], done)
+        self.assertFalse([m for m in logs.output if "secret-text" in m])
+
+
+class TestJobHostPassesFailurePatterns(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.db = ScriptDB(self.tmp / "t.db")
+        self.db.create_group("G")
+        self.script = self.tmp / "s.py"
+        self.script.write_text("pass\n", encoding="utf-8")
+
+    def _fail_on(self, sid):
+        from ryos.jobhost import JobHost
+        seen = []
+
+        def fake_run(*args, **kwargs):
+            seen.append(kwargs["fail_on"])
+
+        host = JobHost(self.db, {"launcher_release_seconds": 0},
+                       call_later=lambda s, fn: None, on_output=lambda *a, **k: None)
+        with mock.patch("ryos.jobhost.run_subprocess", fake_run):
+            host.run_script(sid, "s", str(self.script), "", sys.executable)
+            end = time.time() + 5
+            while not seen and time.time() < end:
+                time.sleep(0.01)
+        self.assertEqual(len(seen), 1)
+        return seen[0]
+
+    def test_none_without_rules(self):
+        sid = self.db.add("s", str(self.script), "", sys.executable, "G")
+        self.assertIsNone(self._fail_on(sid))
+
+    def test_the_rules_when_set(self):
+        sid = self.db.add("s", str(self.script), "", sys.executable, "G")
+        self.db.set_failure_rules(sid, ["boom"], True)
+        rules = self._fail_on(sid)
+        self.assertEqual([r.pattern for r in rules],
+                         ["boom", *failurepatterns.COMMON_PATTERNS])
+
+    def test_none_for_a_launcher(self):
+        sid = self.db.add("s", str(self.script), "", sys.executable, "G", 0, 1)
+        self.db.set_failure_rules(sid, ["boom"], True)
+        self.assertIsNone(self._fail_on(sid))

@@ -195,6 +195,22 @@ class TestRun(_Base):
         self.assertEqual((code, json.loads(out)["status"]), (cli.EXIT_REFUSED, "refused"))
         self.assertEqual(self.notified, 0)          # nothing ran
 
+    def test_a_pattern_failure_exits_1_and_says_why(self):
+        sid = self.script("tests", "print('3 passed')\nprint('1 FAILED')\n")
+        self.db.set_failure_rules(sid, [], True)
+        code, out, _ = self.ryos("run", "tests")
+        self.assertEqual(code, cli.EXIT_FAILED)
+        self.assertIn('matched "FAILED" (common pattern) on line 2: 1 FAILED', out)
+        code, out, _ = self.ryos("run", "tests", "--json")
+        result = json.loads(out)
+        self.assertEqual((code, result["status"], result["exit_code"]),
+                         (cli.EXIT_FAILED, "error", 0))
+        self.assertEqual(result["failed_by"], {"rule": "FAILED", "common": True,
+                                               "line": "1 FAILED", "line_no": 2})
+        self.db.set_failure_rules(sid, [], False)
+        code, out, _ = self.ryos("run", "tests", "--json")
+        self.assertEqual((code, json.loads(out)["failed_by"]), (0, None))
+
     def test_a_timeout(self):
         self.script("slow", "import time\ntime.sleep(60)\n")
         code, _out, err = self.ryos("run", "slow", "--timeout", "0.5")
@@ -382,6 +398,24 @@ class TestEditRemoveExpose(_Manage):
         self.assertEqual((rows[0]["name"], rows[0]["status"], rows[0]["by"]),
                          ("backup", "ok", SOURCE_CLI))
         self.assertEqual(self.rebuilt, 0)          # reading changes nothing
+
+    def test_history_shows_a_pattern_failure(self):
+        cli.main(["run", "Tools/backup"], db=self.db, settings={}, out=io.StringIO(),
+                 err=io.StringIO(), notify_window=lambda: None)
+        self.db.set_failure_rules(self.sid, ["^ok$"], False)
+        cli.main(["run", "Tools/backup"], db=self.db, settings={}, out=io.StringIO(),
+                 err=io.StringIO(), notify_window=lambda: None)
+        code, out, _ = self.ryos("history", "Tools/backup")
+        self.assertEqual(code, 0)
+        lines = out.splitlines()
+        self.assertIn("Failed", lines[1])
+        self.assertEqual(lines[2], '    ↳ matched "^ok$" on line 1: ok')
+        self.assertIn("OK", lines[3])
+        self.assertEqual(len(lines), 4)
+        rows = json.loads(self.ryos("history", "--json")[1])
+        self.assertEqual([r["failed_by"] for r in rows],
+                         [{"rule": "^ok$", "common": False, "line": "ok", "line_no": 1},
+                          None])
 
     def test_history_prints_on_a_windows_console(self):
         # A console in cp1252 has no "✓": the mark is replaced, not a crash.

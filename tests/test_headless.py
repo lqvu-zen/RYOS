@@ -174,6 +174,21 @@ class TestRunningAScript(_Base):
         self.assertEqual([r[10] for r in self.db.list_runs(script_id=sid)],
                          [SOURCE_AGENT, SOURCE_CLI])
 
+    def test_a_pattern_fails_a_zero_exit(self):
+        sid = self.script("gcc", "print('compiling')\nprint('gcc: error: x')\n")
+        run = self.runner.wait(self.runner.start_script(self.target(SCRIPT, sid)), 30)
+        self.assertEqual((run.status, run.exit_code, run.failed_by), ("ok", 0, None))
+        self.db.set_failure_rules(sid, [], True)
+        run = self.runner.wait(self.runner.start_script(self.target(SCRIPT, sid)), 30)
+        self.assertEqual((run.status, run.exit_code), ("error", 0))
+        self.assertEqual(run.failed_by, {"rule": "error:", "common": True,
+                                         "line": "gcc: error: x", "line_no": 2})
+        self.assertTrue(any('matched "error:"' in ln for ln in run.lines))
+        rows = self.db.list_runs(script_id=sid)
+        self.assertEqual([r[7] for r in rows], ["error", "ok"])
+        self.assertEqual(self.db.run_failures([r[0] for r in rows]),
+                         {rows[0][0]: run.failed_by})
+
     def test_output_streams_to_the_caller(self):
         seen = []
         runner = HeadlessRunner(self.db, on_output=lambda run, text, tag: seen.append(text))
@@ -208,6 +223,22 @@ class TestRunningAPipeline(_Base):
         self.db.set_step_policy(steps[0], on_failure=FAIL_CONTINUE)
         run = self.runner.wait(self.runner.start_pipeline(self.target(PIPELINE, pid)), 30)
         self.assertEqual(run.status, "ok")
+        self.assertIn("after ran", run.lines)
+
+    def test_a_pattern_failure_follows_the_step_policy(self):
+        bad = self.script("bad", "print('step 1 FAILED')\n")
+        after = self.script("after", "print('after ran')\n")
+        self.db.set_failure_rules(bad, [r"FAIL\w+"], False)
+        pid, steps = self.pipeline(bad, after)
+        run = self.runner.wait(self.runner.start_pipeline(self.target(PIPELINE, pid)), 30)
+        self.assertEqual(run.status, "error")
+        self.assertNotIn("after ran", run.lines)
+        self.assertEqual(run.failed_by, {"rule": r"FAIL\w+", "common": False,
+                                         "line": "step 1 FAILED", "line_no": 1, "step": 1})
+
+        self.db.set_step_policy(steps[0], on_failure=FAIL_CONTINUE)
+        run = self.runner.wait(self.runner.start_pipeline(self.target(PIPELINE, pid)), 30)
+        self.assertEqual((run.status, run.failed_by), ("ok", None))
         self.assertIn("after ran", run.lines)
 
     def test_a_retry(self):

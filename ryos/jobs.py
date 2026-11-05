@@ -55,6 +55,9 @@ class Job:
         # it still runs). Set just before the host is told it finished.
         self.outcome: str | None = None
         self.exit_code: int | None = None
+        self.rule_hits: dict = {}
+        self.step_failed_by: dict = {}
+        self.failed_by: dict | None = None
         self.pipeline_name = pipeline_name
         self.pipeline_queue: list = pipeline_queue if pipeline_queue is not None else []
         self.pipeline_step_idx: int = 0

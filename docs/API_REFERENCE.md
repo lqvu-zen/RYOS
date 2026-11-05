@@ -124,7 +124,8 @@ a pipeline's outcome exists only here.
 
 | Method | Returns | Notes |
 | --- | --- | --- |
-| `record_run(kind, *, name, started_at, finished_at=None, script_id=None, pipeline_id=None, status=None, exit_code=None, step_index=None, trigger_source=SOURCE_MANUAL)` | `int` (row id) | `kind` is one of `RUN_SCRIPT` / `RUN_STEP` / `RUN_PIPELINE`. Timestamps accept a `datetime` or an ISO string, and are stored at millisecond resolution so a sub-second run doesn't read as `0.0s`. |
+| `record_run(kind, *, name, started_at, finished_at=None, script_id=None, pipeline_id=None, status=None, exit_code=None, step_index=None, trigger_source=SOURCE_MANUAL, failed_by=None)` | `int` (row id) | `kind` is one of `RUN_SCRIPT` / `RUN_STEP` / `RUN_PIPELINE`. Timestamps accept a `datetime` or an ISO string, and are stored at millisecond resolution so a sub-second run doesn't read as `0.0s`. `failed_by` (a dict: rule, common, line, line_no) is stored as JSON in `runs.failed_by` when a failure pattern failed the run. |
+| `run_failures(run_ids)` | `dict[int, dict]` | Why a failure pattern failed each of those runs, for the ones that have a reason; `list_runs` rows stay 11 wide. |
 | `list_runs(*, script_id=None, pipeline_id=None, kinds=None, limit=50)` | list of 11-tuples | Most recent first: `(id, script_id, pipeline_id, kind, name, started_at, finished_at, status, exit_code, step_index, trigger_source)`. Neither id given → whole history. |
 | `last_pipeline_status()` | `dict` | `{pipeline_id: status}` from each pipeline's most recent run — one query per card refresh, not one per card. |
 | `prune_runs(days)` | `int` (rows removed) | `days <= 0` **disables** pruning rather than deleting everything. |
@@ -153,6 +154,8 @@ local time; the scheduling maths itself lives in `ryos.scheduling`.
 | --- | --- | --- |
 | `list_param_presets(script_id)` | list of `(id, label, params)` | |
 | `replace_param_presets(script_id, presets)` | — | `presets = [(label, params), …]`; replaces all. |
+| `failure_rules(script_id)` | `(list[str], bool)` | The script's own failure patterns in order, and whether the common set (`error:`, `FAILED`, `Traceback`) is ticked. `([], False)` by default. |
+| `set_failure_rules(script_id, patterns, use_common)` | — | Replaces the script's failure patterns and its common-set tick, in one transaction. |
 
 ### Export / import
 

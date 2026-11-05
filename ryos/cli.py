@@ -301,6 +301,7 @@ def _result(run: Run, tail: int) -> dict:
                              if finished else None),
         "output": run.tail(tail),
         "output_lines": run.total,
+        "failed_by": run.failed_by,
     }
 
 
@@ -379,10 +380,10 @@ def _find(db: ScriptDB, kind: str, ref: str):
         raise manage.ManageError(str(e)) from None
 
 
-def _history_rows(rows: list) -> list[dict]:
+def _history_rows(rows: list, failures: dict) -> list[dict]:
     return [{"id": r[0], "kind": r[3], "name": r[4], "started_at": r[5],
              "finished_at": r[6], "status": r[7], "exit_code": r[8],
-             "step": r[9], "by": r[10]} for r in rows]
+             "step": r[9], "by": r[10], "failed_by": failures.get(r[0])} for r in rows]
 
 
 def _expose_group(args, db: ScriptDB, out: TextIO, ask, rebuild_window) -> int:
@@ -416,14 +417,14 @@ def _manage(args, db: ScriptDB, out: TextIO, ask, rebuild_window) -> int:
         kind = PIPELINE if args.pipeline else SCRIPT
         target = _find(db, kind, args.ref) if args.ref else None
         rows = manage.history(db, target, max(1, args.limit))
+        failures = db.run_failures([r[0] for r in rows])
         if args.json:
-            print(json.dumps(_history_rows(rows)), file=out)
+            print(json.dumps(_history_rows(rows, failures)), file=out)
         elif not rows:
             print("Nothing has run yet.", file=out)
         else:
-            print(runhistory.header_row(), file=out)
-            for row in rows:
-                print(runhistory.format_run_row(row), file=out)
+            for line in runhistory.run_lines(rows, failures):
+                print(line, file=out)
         return EXIT_OK
     if command == "add":
         if args.expose:

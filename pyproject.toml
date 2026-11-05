@@ -74,6 +74,7 @@ files = [
     "ryos/quickrun_actions.py",
     "ryos/jobs.py",
     "ryos/runner.py",
+    "ryos/failurepatterns.py",
     "ryos/job_controller.py",
     "ryos/jobhost.py",
     "ryos/headless.py",

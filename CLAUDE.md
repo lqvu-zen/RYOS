@@ -100,6 +100,7 @@ Qt (PySide6) desktop app organized as the `ryos/` package: toolkit-free rules an
 | Recurring schedules (pure, naive local time)   | `ryos/scheduling.py`    |
 | Firing due schedules (shared sweep)            | `ryos/schedule_runner.py` |
 | Run-history formatting                         | `ryos/history.py`       |
+| Failure patterns: rules, matching, wording     | `ryos/failurepatterns.py` |
 | Card search / filtering                        | `ryos/search.py`        |
 | Group ordering and collapse state              | `ryos/grouping.py`      |
 | Card and tab right-click menus (as data)       | `ryos/cardmenu.py`      |

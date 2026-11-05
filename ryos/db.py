@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from . import failurepatterns
 from .logger import get_logger
 from .settings import DB_PATH
 
@@ -214,6 +215,7 @@ def _forget_scripts(conn, where: str, args=()) -> None:
     conn.execute(f"DELETE FROM script_param_presets WHERE script_id IN ({ids})", args)
     conn.execute(f"DELETE FROM schedules WHERE kind='script' AND script_id IN ({ids})",
                  args)
+    conn.execute(f"DELETE FROM failure_rules WHERE script_id IN ({ids})", args)
 
 
 def _migrate_drop_orphans(conn):
@@ -253,6 +255,24 @@ def _migrate_meta(conn):
                  (str(COMPATIBLE_FROM),))
 
 
+def _migrate_failure_patterns(conn):
+    """A script's failure patterns, whether it also uses the common set, and
+    why a run failed by one. Every existing script gets none and the common
+    set off, so it is judged by its exit code exactly as before."""
+    conn.execute("CREATE TABLE IF NOT EXISTS failure_rules ("
+                 "id INTEGER PRIMARY KEY AUTOINCREMENT, script_id INTEGER NOT NULL, "
+                 "pattern TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_failure_rules_script "
+                 "ON failure_rules(script_id, sort_order)")
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(scripts)")]
+    if "fail_on_common" not in cols:
+        conn.execute("ALTER TABLE scripts ADD COLUMN "
+                     "fail_on_common INTEGER NOT NULL DEFAULT 0")
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)")]
+    if "failed_by" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN failed_by TEXT DEFAULT NULL")
+
+
 def _carry_exposure(conn, table: str, src_id: int, dst_id: int) -> None:
     """Give a copy its source's agent_exposed. Copies within this database
     keep it, as they keep everything else; an import never sets it."""
@@ -264,7 +284,7 @@ _MIGRATIONS: dict = {2: _migrate_step_trigger_mode, 3: _migrate_label_color,
                      4: _migrate_script_env, 5: _migrate_run_history,
                      6: _migrate_schedules, 7: _migrate_step_failure_policy,
                      8: _migrate_drop_orphans, 9: _migrate_agent_exposed,
-                     10: _migrate_meta}
+                     10: _migrate_meta, 11: _migrate_failure_patterns}
 
 #: kind -> table, for the methods that take either.
 _KIND_TABLE = {"script": "scripts", "pipeline": "pipelines"}
@@ -673,6 +693,8 @@ class ScriptDB:
                     for pid in pipe_ids:
                         conn.execute("DELETE FROM pipeline_steps WHERE pipeline_id=?", (pid,))
                     conn.execute("DELETE FROM pipelines WHERE COALESCE(group_name,'')=?", (gname,))
+                    conn.execute("DELETE FROM failure_rules WHERE script_id IN (SELECT id "
+                                 "FROM scripts WHERE COALESCE(group_name,'')=?)", (gname,))
                     conn.execute("DELETE FROM scripts   WHERE COALESCE(group_name,'')=?", (gname,))
                     if gname:
                         conn.execute("DELETE FROM groups WHERE name=?", (gname,))
@@ -954,25 +976,46 @@ class ScriptDB:
                    script_id: int | None = None, pipeline_id: int | None = None,
                    status: str | None = None, exit_code: int | None = None,
                    step_index: int | None = None,
-                   trigger_source: str = SOURCE_MANUAL) -> int:
+                   trigger_source: str = SOURCE_MANUAL,
+                   failed_by: dict | None = None) -> int:
         """Append one completed run. Returns its row id.
 
         Timestamps accept a datetime or an ISO string; storing seconds-
         resolution ISO keeps them sortable as text, like every other timestamp
-        in this schema.
+        in this schema. ``failed_by`` is the failure pattern that failed it.
         """
         with self._connect() as conn:
             cur = conn.execute(
                 "INSERT INTO runs (script_id, pipeline_id, kind, name, started_at, "
-                "finished_at, status, exit_code, step_index, trigger_source) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "finished_at, status, exit_code, step_index, trigger_source, failed_by) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (script_id, pipeline_id, kind, name or "",
                  _iso(started_at), _iso(finished_at), status,
                  None if exit_code is None else int(exit_code),
-                 step_index, trigger_source),
+                 step_index, trigger_source,
+                 None if failed_by is None else failurepatterns.to_json(failed_by)),
             )
             conn.commit()
             return cur.lastrowid
+
+    def run_failures(self, run_ids) -> dict[int, dict]:
+        """{run id: why a failure pattern failed it}, for the runs that have one."""
+        ids = [int(i) for i in run_ids]
+        if not ids:
+            return {}
+        found: dict[int, dict] = {}
+        with self._connect() as conn:
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                rows = conn.execute(
+                    f"SELECT id, failed_by FROM runs WHERE id IN "
+                    f"({','.join('?' * len(chunk))}) AND failed_by IS NOT NULL",
+                    chunk).fetchall()
+                for run_id, text in rows:
+                    reason = failurepatterns.from_json(text)
+                    if reason is not None:
+                        found[run_id] = reason
+        return found
 
     def list_runs(self, *, script_id: int | None = None,
                   pipeline_id: int | None = None, kinds: tuple | None = None,
@@ -1335,6 +1378,28 @@ class ScriptDB:
                     "VALUES (?, ?, ?, ?)",
                     (script_id, label, params, i),
                 )
+            conn.commit()
+
+    def failure_rules(self, script_id: int) -> tuple[list[str], bool]:
+        """A script's own failure patterns in order, and whether it also uses
+        the common set."""
+        with self._connect() as conn:
+            patterns = [r[0] for r in conn.execute(
+                "SELECT pattern FROM failure_rules WHERE script_id=? "
+                "ORDER BY sort_order ASC, id ASC", (script_id,))]
+            row = conn.execute("SELECT COALESCE(fail_on_common, 0) FROM scripts "
+                               "WHERE id=?", (script_id,)).fetchone()
+        return patterns, bool(row[0]) if row else False
+
+    def set_failure_rules(self, script_id: int, patterns, use_common: bool) -> None:
+        """Replace a script's failure patterns and its common-set tick."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM failure_rules WHERE script_id=?", (script_id,))
+            for i, pattern in enumerate(patterns):
+                conn.execute("INSERT INTO failure_rules (script_id, pattern, sort_order) "
+                             "VALUES (?, ?, ?)", (script_id, pattern, i))
+            conn.execute("UPDATE scripts SET fail_on_common=? WHERE id=?",
+                         (1 if use_common else 0, script_id))
             conn.commit()
 
     def create_pipeline(self, name: str, group_name: str) -> int:

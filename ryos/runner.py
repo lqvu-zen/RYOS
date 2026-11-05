@@ -9,6 +9,9 @@ Queue protocol (each item is a tuple keyed by its first element):
     ("stderr", job_id, line)                              launch failure detail
     ("done",     job_id, script_id, "error", message)     launch failed, no process
     ("done_tag", job_id, script_id, status, tag, footer)  process finished (status ok/error)
+status is "error" for a non-zero exit, or when a line matched one of the
+script's failure patterns (``fail_on``); the match itself is written to
+``job.rule_hits[step_token]`` before the done item is posted, never queued.
 Every shape above may carry one extra trailing element, a step_token, appended
 only when the producer supplies one (concurrent pipeline steps); untagged
 callers keep the shorter tuple unchanged.
@@ -23,6 +26,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 
+from .failurepatterns import Watch, footer_line
 from .interpreter import RunSpec, working_dir_for
 from .logger import get_logger
 
@@ -80,7 +84,7 @@ def terminate_tree(proc, *, platform=None, run=subprocess.run) -> None:
 
 
 def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, step_token=None,
-                   follow_leftovers=False):
+                   follow_leftovers=False, fail_on=None):
     """Launch a run, stream stdout to output_queue, and post a completion item.
 
     `spec` is a RunSpec. A bare command list is also accepted and given the
@@ -93,6 +97,9 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
     done item is posted and anything later is discarded. With
     ``follow_leftovers`` (a launcher, whose run the UI releases on its own)
     the output is followed to end-of-file as before.
+
+    ``fail_on`` holds the script's compiled failure patterns (None: judged by
+    exit code alone). Each line is checked before it is posted or logged.
 
     Sets job.current_process (and job.processes[step_token]) so the UI can
     terminate it. Never raises: launch failures are reported on the queue as
@@ -142,7 +149,7 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
         _put(("done", job.job_id, script_id, "error", f"❌ Error: {name}\n"))
         return
 
-    stream = _Stream()
+    stream = _Stream(Watch(fail_on) if fail_on else None)
     reader = threading.Thread(
         target=_forward_output, args=(proc, stream, _put, job.job_id, name, log_output),
         daemon=True)
@@ -152,33 +159,41 @@ def run_subprocess(output_queue, job, spec, name, script_id, log_output=False, s
     proc.wait()
     reader.join(DRAIN_SECONDS)
     rc = proc.returncode
-    tag = "ok" if rc == 0 else "stderr"
-    status = "ok" if rc == 0 else "error"
-    if rc == 0:
-        _log.info("Done: %s | exit=%s", name, rc)
-    else:
-        _log.error("Done: %s | exit=%s", name, rc)
     # Under the reader's lock, so no line of this step lands after its done.
     with stream.lock:
         stream.cut = True
         if stream.partial:
+            if stream.watch is not None:
+                stream.watch.feed(stream.partial)
             _put(("stdout", job.job_id, stream.partial))
             if log_output:
                 _log.debug("[%s] %s", name, stream.partial.rstrip())
             stream.partial = ""
-        _put((
-            "done_tag", job.job_id, script_id, status, tag,
-            f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n",
-        ))
+        hit = stream.watch.hit if stream.watch is not None else None
+        status = "ok" if rc == 0 and hit is None else "error"
+        tag = "ok" if status == "ok" else "stderr"
+        footer = f"\n  exit code {rc}  ·  {datetime.now().strftime('%H:%M:%S')}\n"
+        if hit is None:
+            if rc == 0:
+                _log.info("Done: %s | exit=%s", name, rc)
+            else:
+                _log.error("Done: %s | exit=%s", name, rc)
+        else:
+            job.rule_hits[step_token] = hit
+            _log.error("Done: %s | exit=%s | matched %r on line %s",
+                       name, rc, hit.rule, hit.line_no)
+            footer = "\n" + footer_line(hit.as_dict()) + footer[1:]
+        _put(("done_tag", job.job_id, script_id, status, tag, footer))
 
 
 class _Stream:
     """What run_subprocess and its reader thread share about one step's output."""
 
-    def __init__(self):
+    def __init__(self, watch=None):
         self.lock = threading.Lock()
         self.cut = False     # the done item is posted: forward nothing more
         self.partial = ""    # text after the last newline, not yet posted
+        self.watch = watch
 
 
 def _forward_output(proc, stream, put, job_id, name, log_output) -> None:
@@ -202,6 +217,8 @@ def _forward_output(proc, stream, put, job_id, name, log_output) -> None:
                 return
             *lines, stream.partial = (stream.partial + text).split("\n")
             for line in lines:
+                if stream.watch is not None:
+                    stream.watch.feed(line)
                 put(("stdout", job_id, line + "\n"))
                 if log_output:
                     _log.debug("[%s] %s", name, line.rstrip())

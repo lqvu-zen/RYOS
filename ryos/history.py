@@ -10,6 +10,8 @@ exit_code, step_index, trigger_source)``.
 """
 from datetime import datetime
 
+from . import failurepatterns
+
 # Column widths for the monospace list in RunHistoryDialog. The dialog's header
 # label is built from the same numbers, so the two can't drift apart.
 _W_WHEN = 17
@@ -115,6 +117,22 @@ def header_row() -> str:
     """Column headings aligned to format_run_row."""
     return (f"{'WHEN':<{_W_WHEN}}{'STATUS':<{_W_STATUS}}{'TOOK':>{_W_TOOK}}  "
             f"{'EXIT':>{_W_EXIT}}   {'BY':<{_W_BY}}WHAT")
+
+
+def format_failure(reason: dict) -> str:
+    """The line under a run failed by a failure pattern: which rule, which line."""
+    return "    ↳ " + failurepatterns.describe(reason)
+
+
+def run_lines(rows, failures: dict) -> list[str]:
+    """The header, then each row, each followed by why a pattern failed it."""
+    lines = [header_row()]
+    for row in rows:
+        lines.append(format_run_row(row))
+        reason = failures.get(row[0])
+        if reason:
+            lines.append(format_failure(reason))
+    return lines
 
 
 def clear_prompt(count: int) -> str:

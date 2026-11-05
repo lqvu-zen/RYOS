@@ -117,6 +117,17 @@ class TestRunning(_Base):
         done = self.finish(self.tools.run_script("boom")["run_id"])
         self.assertEqual((done["status"], done["exit_code"]), ("error", 5))
 
+    def test_get_run_reports_a_pattern_failure(self):
+        sid = self.script("tests", "print('Traceback (most recent call last):')\n")
+        done = self.finish(self.tools.run_script("tests")["run_id"])
+        self.assertEqual((done["status"], done["failed_by"]), ("ok", None))
+        self.db.set_failure_rules(sid, [], True)
+        done = self.finish(self.tools.run_script("tests")["run_id"])
+        self.assertEqual((done["status"], done["exit_code"]), ("error", 0))
+        self.assertEqual(done["failed_by"],
+                         {"rule": "Traceback", "common": True,
+                          "line": "Traceback (most recent call last):", "line_no": 1})
+
     def test_stop(self):
         self.script("slow", "import time\nprint('up', flush=True)\ntime.sleep(60)\n")
         run_id = self.tools.run_script("slow")["run_id"]
