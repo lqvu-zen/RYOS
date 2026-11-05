@@ -88,7 +88,7 @@ and the test that guards it, or **untested**.
 | **RC-32** Clicking Run leaves no focus ring on the button; Tab still reaches the rows and header buttons. | N | `qt_smoke::check_focus_starts_in_search` |
 | **RC-33** A parameter drop-down on a row shows only when the script has presets, starts on the script's own parameters, and Run passes what is chosen (see section 13). | N C F · Sc | `qt_smoke::check_run_with_params_and_new_pipeline`, `test_ryos::TestRunParams`, `test_ryos::TestParamOptions` |
 | **RC-34** A row's preset chip shows the preset Run will use and lets you choose another from a menu. | N F · Sc | `qt_smoke::check_strip_and_preset` |
-| **RC-35** The pane's Edit, Run, star and three dots do exactly what the row's own buttons do. | D · Sc P | `qt_smoke::check_maximised_layout` (Run and Retry), `qt_smoke::check_maximised_edit_returns` (Edit and three dots, #33, #35) |
+| **RC-35** The pane's Edit, Run, star and three dots do exactly what the row's own buttons do. | D · Sc P | `qt_smoke::check_maximised_layout` (Run and Retry), `qt_smoke::check_maximised_edit_returns` (Edit and three dots, #33, #35), `qt_smoke::check_pane_star_and_schedule` (star and Schedule, against the row's own star; N C rows) |
 | **RC-36** A group name with "&" shows the "&" on its tab and in menus naming the group. | W | `qt_smoke::check_ampersands_show` |
 
 ## 2. Favourites
@@ -107,7 +107,7 @@ and the test that guards it, or **untested**.
 | **FV-10** Sections (Favorites, Pipelines, Scripts) fold with their header; the fold is remembered per group for the session, survives a reload, and is shared with the All tab. | N C A | `test_ryos::TestSections::test_collapse_state`, `qt_smoke::check_sections_and_favorites`, `qt_smoke::check_all_tab` |
 | **FV-11** An empty section says so, in words. | N C A | `test_ryos::TestSections::test_every_section_has_words`, `qt_smoke::check_sections_and_favorites` |
 | **FV-12** Search finds a favourite in both its chip and its row. | F N | `qt_smoke::check_sections_and_favorites` |
-| **FV-13** The detail pane's star adds or removes the favourite. | D · Sc P | **untested** |
+| **FV-13** The detail pane's star adds or removes the favourite. | D · Sc P | `qt_smoke::check_pane_star_and_schedule` (script and pipeline, N C rows: the stored flag and the pane's star after the reload) |
 
 ## 3. Groups and base folders
 
@@ -186,7 +186,7 @@ and the test that guards it, or **untested**.
 | **QR-10** The new row, and the run that came from Quick Run, survive a restart. | W | `session_smoke::step_restart` |
 | **QR-11** A Quick Run cannot reach outside the base folder (no `..`, no look-alike sibling). | W CLI | `test_ryos::TestIsInside`, `test_ryos::TestResolve::test_traversal_attempt_rejected` |
 | **QR-12** The file index is built in the background, once at a time, served stale while it rebuilds, cached on disk, capped and filtered by extension. | W | `test_ryos::TestQuickRunIndexController`, `test_ryos::TestQuickRunIndexTTL`, `test_ryos::TestQuickRunIndexHelpers` |
-| **QR-13** "Suggest as you type" off, and the extension and file-count options, change what the bar offers. | W | `qt_smoke::check_options_form` (round-trip of the values only). The bar's reaction: **untested** |
+| **QR-13** "Suggest as you type" off, and the extension and file-count options, change what the bar offers. | W | `qt_smoke::check_options_form` (round-trip of the values), `qt_smoke::check_quick_run_options` (the bar's offers after `apply_settings` and in a fresh window, N C rows) |
 
 ## 6. Pipelines
 
@@ -227,7 +227,7 @@ and the test that guards it, or **untested**.
 | **OP-02** Several runs can go at once, up to the parallel-job cap; past it a notice ("Too many jobs") says so and nothing is started; 0 means no cap. | W S CLI · Sc P | `qt_smoke::check_jobs_run`, `test_ryos::TestLaunchPlanning::test_the_job_cap_refuses_as_a_notice_not_an_error`, `test_ryos::TestLaunchPlanning::test_zero_max_jobs_means_no_cap`, `test_ryos::TestSplitByCapacity` |
 | **OP-03** The same script cannot be started twice at once from the command line or by an agent. | CLI MCP | `test_headless::TestRunningAScript::test_the_same_script_twice_is_refused`, `test_agenttools::TestRunning::test_not_twice_at_once` |
 | **OP-04** A script whose file is missing is refused with a message. | W CLI | `test_ryos::TestLaunchPlanning::test_a_missing_file_is_an_error`, `test_headless::TestRunningAScript::test_a_missing_file_is_refused` |
-| **OP-05** Heavy output never freezes the window: one drain stops after its time budget and coalesces a run's consecutive lines, so a chatty pipeline cannot hold the window (#29a). | W D N · Sc P | `test_ryos::TestPumpBudget`, `test_ryos::TestSplitOutputLines`, `qt_smoke::check_heavy_output_stays_responsive` (D only) |
+| **OP-05** Heavy output never freezes the window: one drain stops after its time budget and coalesces a run's consecutive lines, so a chatty pipeline cannot hold the window (#29a). | W D N · Sc P | `test_ryos::TestPumpBudget`, `test_ryos::TestSplitOutputLines`, `qt_smoke::check_heavy_output_stays_responsive` (D and N) |
 | **OP-06** The command line and MCP drain everything, in order, with the done item delivered once and last. | CLI MCP | `test_ryos::TestPumpBudget::test_without_a_budget_a_pump_drains_everything`, `test_ryos::TestPumpBudget::test_budgeted_pumps_deliver_every_line_in_order_then_the_done_once`, `test_headless::TestRunOutput` |
 | **OP-07** The output panel starts folded; Show output opens it with its find bar; Hide output folds it. | W | `qt_smoke::check_output_panel` |
 | **OP-08** A tab per run, plus All, which cannot be closed and shows everything once; a closed run's later output falls back to All. | W D | `test_ryos::TestOutputRouting`, `qt_smoke::check_shell` |
@@ -243,7 +243,7 @@ and the test that guards it, or **untested**.
 | **OP-18** The status bar's last line says what happened ("Ready", "Done", "Failed", "Stopped"). | W R | `session_smoke::step_status_line` ("Started N": see SM-07) |
 | **OP-19** A script waiting for input does not hang its run. | CLI W | `test_ryos::TestStopAndLiveStatus::test_a_script_waiting_for_input_does_not_hang` |
 | **OP-20** A finished run sends a notification unless the option is off or toasts are blocked. | W | `qt_smoke::check_updates_and_notify`, `test_ryos::TestToastsCanBeBlocked` |
-| **OP-21** A run's output tab opens right after All, so the newest run is first and in view; the tab you are reading stays chosen; a re-run gets its own new tab in front, the earlier one moves right (#31). | W D · Sc P | `test_ryos::TestOutputTabOrder`, `qt_smoke::check_output_panel`, `session_smoke::step_run_and_output` (N C) |
+| **OP-21** A run's output tab opens right after All, so the newest run is first and in view; the tab you are reading stays chosen; a re-run gets its own new tab in front, the earlier one moves right (#31). | W D · Sc P | `test_ryos::TestOutputTabOrder`, `qt_smoke::check_output_panel`, `session_smoke::step_run_and_output` (N C), `qt_smoke::check_output_tab_order_maximised` (D) |
 
 ## 8. Run history
 
@@ -276,7 +276,7 @@ and the test that guards it, or **untested**.
 | **SC-11** A scheduled run is recorded as a schedule run. | W | `qt_smoke::check_schedules` |
 | **SC-12** Deleting an item deletes its schedule. | Sc P | `test_ryos::TestDeletesLeaveNothingBehind::test_delete_takes_steps_presets_and_schedule`, `test_ryos::TestDeletesLeaveNothingBehind::test_delete_pipeline_takes_its_schedule` |
 | **SC-13** Up next lists the soonest scheduled runs first, only what will run, with when and how often; the status bar repeats the gist. | D R | `test_ryos::TestActivityBar::test_up_next_soonest_first_and_only_what_will_run`, `qt_smoke::check_maximised_layout` |
-| **SC-14** The Schedule... button in the maximised pane opens the schedule dialog for the chosen item. | D · Sc P | **untested** |
+| **SC-14** The Schedule... button in the maximised pane opens the schedule dialog for the chosen item. | D · Sc P | `qt_smoke::check_pane_star_and_schedule` (script and pipeline, N C rows: the dialog's item) |
 
 ## 10. Window, tray and start-up
 
@@ -294,9 +294,9 @@ and the test that guards it, or **untested**.
 | **TW-10** Keep on top applies at start and when Options are applied. | W | `qt_smoke::check_window_placement` |
 | **TW-11** The window opens with focus in the search box; Tab moves between header, list and output. | W | `qt_smoke::check_focus_starts_in_search` |
 | **TW-12** Search filters rows as you type and shows "N of M"; an empty result says so and hides empty sections; a reload keeps the filter; clearing restores everything. | W N C A | `test_ryos::TestSearchNormalizeAndMatch`, `test_ryos::TestSearchEmptyState`, `qt_smoke::check_shell`, `qt_smoke::check_search_empty_state`, `session_smoke::step_quick_run_search_select` |
-| **TW-13** When the open group has no match, the hint links to other groups that do. | W | `test_ryos::TestComputeHint` (the rule). The links in the window: **untested** |
+| **TW-13** When the open group has no match, the hint links to other groups that do. | W | `test_ryos::TestComputeHint` (the rule). The links in the window: **not built**; `compute_hint` has had no caller since the Tk interface was removed (eb312c3, v2.0.0), so the window shows only the count. A bug, not an untested row |
 | **TW-14** Esc clears the search box; Down goes to the first row. | W | `qt_smoke::check_keyboard_through_the_list` (Down), `session_smoke::step_keyboard_and_menu` (Esc) |
-| **TW-15** The menus are File (New script / pipeline / group, Import, Export, Exit), Options (Options, Appearance, Start with Windows, Select, Delete All) and Help (Check for updates, Roll back to the previous version (UP-25), Suggest a feature, Report a bug, Open log folder). | W | `session_smoke::step_groups_and_scripts` (File menu), `qt_smoke::check_bug_report` (Help menu), `session_smoke::step_help_and_log`, plus `qt_smoke::check_suggestion` (Help menu, in this order), `qt_smoke::check_restart_to_update` (the Roll back entry) |
+| **TW-15** The menus are File (New script / pipeline / group, Import, Export, Exit), Options (Options, Appearance, Start with Windows, Select, Delete All) and Help (Check for updates, Roll back to the previous version (UP-25), Suggest a feature, Report a bug, Open log folder). | W | `session_smoke::step_groups_and_scripts` (File menu), `qt_smoke::check_options_menu_entries` (Options menu, in this order), `qt_smoke::check_bug_report` (Help menu), `session_smoke::step_help_and_log`, plus `qt_smoke::check_suggestion` (Help menu, in this order), `qt_smoke::check_restart_to_update` (the Roll back entry) |
 | **TW-16** Start with Windows turns the run-at-login entry on and off. An update or roll back never changes the install path (UP-14), so `_sync_startup_command` finds nothing to rewrite. | W | `qt_smoke::check_startup_and_log_options` (fake startup object, ticked, unticked, refused) |
 | **TW-17** A newer release shows the update banner (fetched off the UI thread, once, dismissible, naming this download's zip); a manual check always answers; an automatic check that fails says nothing. A release candidate sees its final release as newer; with Offer release candidates off (the default) a pre-release is never offered (`/releases/latest` skips it); on, see UP-31. With "Download updates in the background" on (the default), a Windows download's newer release is downloaded off the UI thread after the banner shows (UP-07); once it is downloaded and checked the banner turns to Ready, "Update ready — RYOS X (you have vY)" with Restart to update and Later, and on to Staging, Waiting or At next start (UP-21); with background download off, or from source, it stays as before with its Download button. | W CLI | `test_ryos::TestUpdateStatus`, `test_ryos::TestParseVersion`, `test_ryos::TestUpdateStatus::test_a_release_candidate_sees_its_final_as_newer`, `qt_smoke::check_updates_and_notify`, `test_updates::TestFindingTheRelease::test_the_check_result_keeps_its_tag_and_url_shape` (the release with its assets still gives the check its `(tag, url)`), `test_updates::TestWhenToDownload`, `test_ryos::TestSettingsSchema::test_background_download_is_on_by_default_beside_the_check`, `qt_smoke::check_options_form`, `test_ryos::TestSettingsSchema::test_release_candidates_are_off_by_default_beside_the_download` |
 | **TW-18** Report a bug (status bar button and Help menu) opens a new GitHub issue filled in with versions (a build's commit too), theme and layout, and sends nothing; then shows the log's path with an Open log folder button and warns it can hold script paths and output (#29). | W | `test_ryos::TestBugReport`, `test_ryos::TestBuildInfo::test_the_bug_report_names_the_commit`, `test_ryos::TestSuggestion::test_the_bug_report_link_is_unchanged`, `qt_smoke::check_bug_report`, `session_smoke::step_help_and_log` |
@@ -372,7 +372,7 @@ and the test that guards it, or **untested**.
 | **IE-02** A round trip keeps scripts, flags, presets, pipelines, step order, policies and parameter overrides, colours, favourites and environment. | Sc P | `test_ryos::TestExportImportFidelity`, `test_ryos::TestExportImportPipelines`, `test_ryos::TestScriptDBExportImport` |
 | **IE-03** Older (v3) files still import with defaults; unknown values fall back; hostile values are clamped; a step whose script is missing is skipped, not fatal. | Sc P | `test_ryos::TestExportImportFidelity::test_v3_file_still_imports`, `test_ryos::TestExportImportFidelity::test_step_with_missing_script_is_skipped_not_fatal`, `test_ryos::TestStepPolicyStorage::test_import_clamps_hostile_values` |
 | **IE-04** Import asks Merge / Replace / Cancel; Merge skips what is already there and never overwrites; Cancel imports nothing. | W · Sc P | `test_ryos::TestConfigIO::test_import_asks_with_named_choices`, `test_ryos::TestScriptDBExportImport::test_import_merge_skips_duplicates`, `qt_smoke::check_review_fixes`, `qt_smoke::check_group_management` |
-| **IE-05** Replace swaps the groups' scripts and pipelines and leaves other groups alone. | W · Sc P | `test_ryos::TestScriptDBExportImport::test_import_replace_clears_existing`. Through the window: **untested** |
+| **IE-05** Replace swaps the groups' scripts and pipelines and leaves other groups alone. | W · Sc P | `test_ryos::TestScriptDBExportImport::test_import_replace_clears_existing`, `session_smoke::step_import_replace` (through the window, N C) |
 | **IE-06** Importing the same file twice adds nothing; imported groups appear as tabs and the status line counts what was added. | W | `qt_smoke::check_group_management`, `session_smoke::step_export_import` |
 | **IE-07** An import never makes anything available to agents. | W MCP | `test_ryos::TestAgentExposure::test_an_import_never_grants_it` |
 | **IE-08** Delete All counts scripts, pipelines and groups from the database; with nothing it does not ask; confirming leaves nothing behind (pipelines too). | W | `test_ryos::TestConfigIO::test_delete_all_counts_what_it_deletes`, `test_ryos::TestDeletePromptsNamePipelines`, `qt_smoke::check_group_management` |
@@ -488,12 +488,7 @@ step 13; "-> 2.4" is left for 2.4.
 
 | Entry | What is missing | Plan |
 | --- | --- | --- |
-| **FV-13** The detail pane's star | the pane's Run / Retry are tested; its star is not | -> 2.4 |
-| **SC-14** The pane's Schedule... button | not pressed in any test | -> 2.4 |
-| **QR-13** "Suggest as you type" off, and the index options, change the bar | the form round-trips the values; the bar's reaction is not checked | -> 2.4 |
-| **IE-05** Replace through the window | tested in the database only | -> 2.4 |
-| **TW-13** (part) The hint's links to other groups | the rule is tested; the links in the window are not | -> 2.4 |
-| **TW-15** (part) The Options and Help menus hold what the tutorial says | File and Help are checked; Options isn't | -> 2.4 |
+| **TW-13** (part) The hint's links to other groups | the rule is tested; the window has no links to test: `search.compute_hint` has no caller in `ryos/` and `shell.py` sets only a count label, so the behaviour has not been in the Qt window since the Tk removal (eb312c3, v2.0.0): a bug for fix-ryos-bug | -> 2.4 |
 | **SM-13** (part) Run selected / Delete on C, D; a search active | not tested | -> 2.4 |
 
 ### Guarded on some surfaces only
@@ -509,6 +504,3 @@ breaks B" has happened. The table says which surfaces are unguarded.
 | Right-click menu actions (RC-20 to RC-25) | N; Edit on D (three dots), N C (`qt_smoke::check_maximised_edit_returns`) | C, F, D (the other actions) | -> 2.4 |
 | Drag and drop (GR-14, GR-15) | N | C, D list | -> 2.4 |
 | Outside-folder warning when running (GR-30) | N (and compact tag) | F, D: Run from a chip or from the pane | -> 2.4 |
-| Heavy output (OP-05) | D | N | -> 2.4 |
-| Pane buttons (RC-35) | Run, Retry, Edit, three dots (Edit) | star, Schedule | -> 2.4 |
-| Newest run's tab right after All (OP-21) | N C (`qt_smoke::check_output_panel`, `session_smoke::step_run_and_output`) | D: the same bar in the detail pane | -> 2.4 |

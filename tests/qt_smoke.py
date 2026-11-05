@@ -6432,6 +6432,11 @@ def check_preview_never_over_modal(app):
 
 
 def check_heavy_output_stays_responsive(app):
+    for maximised in (True, False):
+        _chatty_pipeline_run(app, maximised)
+
+
+def _chatty_pipeline_run(app, maximised):
     """Issue #29a: maximised, a pipeline printing faster than the window
     could draw froze it -- one drain of the output queue ran until the step
     stopped printing. Run a real chatty two-step pipeline, choose its row as
@@ -6470,8 +6475,11 @@ def check_heavy_output_stays_responsive(app):
     win.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
     win.resize(1600, 900)
     win.show()
-    win.set_workspace(True)
+    win.set_workspace(maximised)
+    if not maximised:
+        win.set_output_expanded(True)
     app.processEvents()
+    layout = "maximised" if maximised else "normal"
 
     def row():
         return win.card_lists["G"].section("pipelines").cards[0]
@@ -6486,32 +6494,35 @@ def check_heavy_output_stays_responsive(app):
             _time.sleep(0.01)
         return worst, predicate()
 
-    row().activated.emit()
-    app.processEvents()
-    win.detail.run.click()
-    # Watching it: the row chosen again, its Output in front.
-    row().activated.emit()
-    win.detail.show_tab(detail.OUTPUT_TAB)
+    if maximised:
+        row().activated.emit()
+        app.processEvents()
+        win.detail.run.click()
+        row().activated.emit()
+        win.detail.show_tab(detail.OUTPUT_TAB)
+    else:
+        row().run_button.click()
     running, finished = turns_until(lambda: win.running.count == 0, 90)
     after, _ = turns_until(lambda: False, 1.0)
-    row().activated.emit()
+    if maximised:
+        row().activated.emit()
     after2, _ = turns_until(lambda: False, 0.5)
     after = max(after, after2)
     pane = next((p for k, p in win._output_tabs.items() if k != op.ALL), None)
     text = pane.plain_text() if pane is not None else ""
-    print(f"    worst turn running {running:.2f}s, after {after:.2f}s")
+    print(f"    {layout}: worst turn running {running:.2f}s, after {after:.2f}s")
     if not finished:
-        PROBLEMS.append("the chatty pipeline did not finish")
+        PROBLEMS.append(f"{layout}: the chatty pipeline did not finish")
     if running > 0.5:
-        PROBLEMS.append(f"maximised, a chatty pipeline held the window for {running:.1f} s in one turn")
+        PROBLEMS.append(f"{layout}, a chatty pipeline held the window for {running:.1f} s in one turn")
     if after > 0.5:
-        PROBLEMS.append(f"after the chatty pipeline, a turn took {after:.1f} s")
+        PROBLEMS.append(f"{layout}: after the chatty pipeline, a turn took {after:.1f} s")
     if f"chatty {lines_per_step - 1:05}" not in text or "Pipeline complete" not in text:
-        PROBLEMS.append("the chatty pipeline's last line or its completion is missing")
+        PROBLEMS.append(f"{layout}: the chatty pipeline's last line or its completion is missing")
     bridge.stop()
     win.hide()
     win.deleteLater()
-    print("  [ok] heavy output: the window keeps its turns while a chatty pipeline runs")
+    print(f"  [ok] heavy output ({layout}): the window keeps its turns while a chatty pipeline runs")
 
 
 def check_parallel_step_output(app):
@@ -6795,11 +6806,309 @@ def close_down(app) -> list[str]:
     return left
 
 
+def check_pane_star_and_schedule(app):
+    import sys as _sys
+    import tempfile
+    import time as _time
+
+    from ryos import cardmenu
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.qtui.smalldialogs import ScheduleDialog
+    from ryos.themes import REFERENCE
+
+    def pump(seconds):
+        end = _time.monotonic() + seconds
+        while _time.monotonic() < end:
+            app.processEvents()
+            _time.sleep(0.01)
+
+    tmp = Path(tempfile.mkdtemp())
+    script = tmp / "s.py"
+    script.write_text("print('hi')\n", encoding="utf-8")
+    db = ScriptDB(tmp / "pane.db")
+    db.create_group("G", base_dir=str(tmp))
+    sid = db.add("plain", str(script), "", _sys.executable, "G")
+    pid = db.create_pipeline("P", "G")
+    db.add_pipeline_step(pid, sid)
+
+    def stored(kind):
+        if kind == cardmenu.SCRIPT:
+            return bool(next(r for r in db.list_all() if r[0] == sid)[10])
+        return bool(next(r for r in db.list_pipelines("G") if r[0] == pid)[2])
+
+    for compact in (False, True):
+        mode = "compact" if compact else "normal"
+        win = MainWindow(REFERENCE["dark"],
+                         settings={"quick_run_enabled": False, "compact_mode": compact})
+        win.load_from_db(db)
+        win.show_group("G")
+        win.show()
+        win.set_workspace(True)
+        pump(0.2)
+        if not win.workspace:
+            PROBLEMS.append(f"{mode}: the maximised layout did not turn on")
+            win.deleteLater()
+            continue
+
+        def row(kind):
+            return win.card_lists["G"].section(
+                "pipelines" if kind == cardmenu.PIPELINE else "scripts").cards[0]
+
+        for kind in (cardmenu.SCRIPT, cardmenu.PIPELINE):
+            where = f"{mode}, {kind}"
+            row(kind).activated.emit()
+            pump(0.1)
+            if win.detail.star.property("on"):
+                PROBLEMS.append(f"{where}: the pane's star starts on for a plain item")
+            win.detail.star.click()
+            pump(0.3)
+            if not stored(kind):
+                PROBLEMS.append(f"{where}: the pane's star did not store the favourite")
+            if not win.detail.star.property("on") or not win.detail.rec.get("favorite"):
+                PROBLEMS.append(f"{where}: after the reload the pane's star is not on")
+            row(kind).activated.emit()
+            pump(0.1)
+            if not win.detail.star.property("on"):
+                PROBLEMS.append(f"{where}: choosing the row again shows the star off")
+            win.detail.star.click()
+            pump(0.3)
+            if stored(kind):
+                PROBLEMS.append(f"{where}: the pane's star did not remove the favourite")
+            if win.detail.star.property("on"):
+                PROBLEMS.append(f"{where}: after the reload the pane's star is still on")
+
+            row(kind).fav_button.click()
+            pump(0.3)
+            if not stored(kind):
+                PROBLEMS.append(f"{where}: the row's own star did not store the favourite")
+            row(kind).activated.emit()
+            pump(0.1)
+            if not win.detail.star.property("on"):
+                PROBLEMS.append(f"{where}: the pane does not show the row's star as on")
+            win.detail.star.click()
+            pump(0.3)
+            if stored(kind):
+                PROBLEMS.append(f"{where}: the pane's star did not undo the row's star")
+
+            opened: list = []
+
+            def run_dialog(dlg, opened=opened):
+                opened.append(dlg)
+                dlg.reject()
+            win.run_dialog = run_dialog
+            row(kind).activated.emit()
+            pump(0.1)
+            win.detail.schedule.click()
+            pump(0.1)
+            if [type(d) for d in opened] != [ScheduleDialog]:
+                PROBLEMS.append(f"{where}: the pane's Schedule opened "
+                                f"{[type(d).__name__ for d in opened]}")
+                continue
+            dlg = opened[0]
+            want = (sid, None) if kind == cardmenu.SCRIPT else (None, pid)
+            if (dlg._script_id, dlg._pipeline_id) != want:
+                PROBLEMS.append(f"{where}: the pane's Schedule is for "
+                                f"{(dlg._script_id, dlg._pipeline_id)}, not {want}")
+            if dlg.windowTitle() and ("plain" if kind == cardmenu.SCRIPT else "P") \
+                    not in dlg.windowTitle():
+                PROBLEMS.append(f"{where}: the schedule dialog is titled "
+                                f"{dlg.windowTitle()!r}")
+        win._quitting = True
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+    print("  [ok] maximised pane: the star adds and removes the favourite for scripts and "
+          "pipelines and the pane shows it after the reload; Schedule opens the dialog "
+          "for the chosen item")
+
+
+def check_quick_run_options(app):
+    import tempfile
+    import time as _time
+
+    from PySide6.QtTest import QTest
+
+    from ryos import quickrun as qr
+    from ryos.db import ScriptDB
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    def pump(seconds):
+        end = _time.monotonic() + seconds
+        while _time.monotonic() < end:
+            app.processEvents()
+            _time.sleep(0.01)
+
+    def make():
+        tmp = Path(tempfile.mkdtemp())
+        for name in ("alpha_tool.py", "alpine.py", "alpha_notes.txt", "alpha_doc.md"):
+            (tmp / name).write_text("print(1)\n", encoding="utf-8")
+        db = ScriptDB(tmp / "qr.db")
+        db.create_group("G", base_dir=str(tmp))
+        return tmp, db
+
+    def window(db, compact, **options):
+        settings = {"quick_run_enabled": True, "compact_mode": compact,
+                    "quick_run_autocomplete": True, "quick_run_max_suggestions": 10,
+                    "quick_run_index_extensions": [], "quick_run_index_max_files": 5000,
+                    "max_parallel_jobs": 4, **options}
+        win = MainWindow(REFERENCE["dark"], settings=settings)
+        win.load_from_db(db)
+        win.show_group("G")
+        win.show()
+        app.processEvents()
+        return win
+
+    def offered(win, wait_for_index=True):
+        bar = win.quick_run_bars["G"]
+        bar.open()
+        if wait_for_index:
+            end = _time.monotonic() + 20
+            while _time.monotonic() < end and \
+                    win._qr_index.cached(bar.base_dir) is None:
+                app.processEvents()
+                _time.sleep(0.02)
+        QTest.keyClicks(bar.entry, "alp")
+        pump(qr.SUGGEST_DEBOUNCE_MS / 1000 + 0.3)
+        names = ([bar.suggestions.item(i).text() for i in range(bar.suggestions.count())]
+                 if bar.suggestions_open else [])
+        bar.close_bar()
+        return names
+
+    def finish(win):
+        win._quitting = True
+        win.close()
+        win.deleteLater()
+        app.processEvents()
+
+    for compact in (False, True):
+        mode = "compact" if compact else "normal"
+        tmp, db = make()
+        win = window(db, compact)
+        names = offered(win)
+        if len(names) != 4:
+            PROBLEMS.append(f"{mode}: the bar offered {names} for 'alp', not the 4 files")
+
+        win.apply_settings({"quick_run_autocomplete": False})
+        pump(0.3)
+        names = offered(win, wait_for_index=False)
+        if names:
+            PROBLEMS.append(f"{mode}: with Suggest as you type off the bar offered {names}")
+        win.apply_settings({"quick_run_autocomplete": True})
+        pump(0.3)
+        names = offered(win)
+        if len(names) != 4:
+            PROBLEMS.append(f"{mode}: turning Suggest as you type back on offered {names}")
+
+        win.apply_settings({"quick_run_max_suggestions": 2})
+        pump(0.3)
+        names = offered(win)
+        if len(names) != 2:
+            PROBLEMS.append(f"{mode}: with 2 suggestions allowed the bar offered {names}")
+        finish(win)
+
+        tmp, db = make()
+        win = window(db, compact, quick_run_autocomplete=False)
+        if offered(win, wait_for_index=False) or win._qr_index.cached(str(tmp)) is not None:
+            PROBLEMS.append(f"{mode}: a window started with Suggest as you type off "
+                            "still built or showed suggestions")
+        finish(win)
+
+        for exts, want in (([".txt"], ["alpha_notes.txt"]),
+                           ([".py"], ["alpha_tool.py", "alpine.py"]),
+                           ([".md", ".txt"], ["alpha_doc.md", "alpha_notes.txt"])):
+            tmp, db = make()
+            win = window(db, compact, quick_run_index_extensions=exts)
+            names = offered(win)
+            if sorted(names) != sorted(want):
+                PROBLEMS.append(f"{mode}: indexing {exts} offered {names}, not {want}")
+            finish(win)
+
+        tmp, db = make()
+        win = window(db, compact, quick_run_index_max_files=1)
+        names = offered(win)
+        if len(names) != 1:
+            PROBLEMS.append(f"{mode}: with 1 file indexed the bar offered {names}")
+        finish(win)
+    print("  [ok] quick run options: Suggest as you type off offers nothing (live and at "
+          "start-up), the count, the indexed extensions and the file cap change the offers")
+
+
+def check_options_menu_entries(app):
+    from ryos import selection
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.show()
+    app.processEvents()
+    menus = {a.text(): [x.text() for x in a.menu().actions() if x.text()]
+             for a in win.menuBar().actions() if a.menu()}
+    want = ["&Options…", "&Appearance…", "Start with &Windows",
+            selection.ENTER_LABEL, "Delete All…"]
+    if menus.get("&Options") != want:
+        PROBLEMS.append(f"the Options menu holds {menus.get('&Options')}, not {want}")
+    win.deleteLater()
+    print("  [ok] the Options menu holds Options, Appearance, Start with Windows, "
+          "Select and Delete All, in that order")
+
+
+def check_output_tab_order_maximised(app):
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QTabBar
+
+    from ryos import detail, outputpanel
+    from ryos.qtui.shell import MainWindow
+    from ryos.themes import REFERENCE
+
+    win = MainWindow(REFERENCE["dark"], settings={"quick_run_enabled": False})
+    win.resize(1400, 800)
+    win.show()
+    win.set_workspace(True)
+    app.processEvents()
+    if not win.workspace:
+        PROBLEMS.append("output tabs, maximised: the layout did not turn on")
+        win.deleteLater()
+        return
+    win.detail.show_tab(detail.OUTPUT_TAB)
+    win.running.add = lambda job: None
+    tabs = win.output_tabs
+    bar = tabs.tabBar()
+    if not win.detail.isAncestorOf(tabs):
+        PROBLEMS.append("output tabs, maximised: the tabs are not in the detail pane")
+    win._on_job_started(SimpleNamespace(tab_key="job:1", name="one"))
+    tabs.setCurrentWidget(win._output_tabs["job:1"])
+    reading = tabs.currentWidget()
+    win._on_job_started(SimpleNamespace(tab_key="job:2", name="two"))
+    win._on_job_started(SimpleNamespace(tab_key="job:3", name="one"))
+    app.processEvents()
+    order = win._output_keys()
+    if order != [outputpanel.ALL, "job:3", "job:2", "job:1"]:
+        PROBLEMS.append(f"output tabs, maximised: read {order}, not newest first after All")
+    texts = [tabs.tabText(i) for i in range(tabs.count())]
+    if texts[1:] != ["one", "two", "one"]:
+        PROBLEMS.append(f"output tabs, maximised: a re-run's tab reads {texts}")
+    if tabs.currentWidget() is not reading:
+        PROBLEMS.append("output tabs, maximised: a new run's tab changed the tab being read")
+    if not tabs.isVisibleTo(win) or not bar.rect().intersects(bar.tabRect(1)):
+        PROBLEMS.append("output tabs, maximised: the newest run's tab is not in view")
+    if bar.tabButton(0, QTabBar.ButtonPosition.RightSide) is not None:
+        PROBLEMS.append("output tabs, maximised: the All tab has a close button")
+    win.deleteLater()
+    print("  [ok] output tabs, maximised: the newest run's tab is right after All, in the "
+          "detail pane and in view; the tab being read stays chosen; a re-run gets its "
+          "own tab in front")
+
+
 def main() -> int:
     print("RYOS Qt smoke starting...")
     import os
     import tempfile
     os.environ["LOCALAPPDATA"] = tempfile.mkdtemp(prefix="ryos-local-")
+    from ryos import quickrun_index
+    quickrun_index.QR_INDEX_DIR = Path(tempfile.mkdtemp(prefix="ryos-qr-"))
     real_log = _real_log_state()
     app = QApplication(sys.argv)
     global SMOKE_ORIGIN
@@ -6865,6 +7174,10 @@ def main() -> int:
     check_maximised_edit_returns(app)
     check_preview_never_over_modal(app)
     check_heavy_output_stays_responsive(app)
+    check_pane_star_and_schedule(app)
+    check_quick_run_options(app)
+    check_options_menu_entries(app)
+    check_output_tab_order_maximised(app)
     check_ampersands_show(app)
     check_startup_and_log_options(app)
     left = close_down(app)

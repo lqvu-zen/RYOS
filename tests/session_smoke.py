@@ -1060,6 +1060,53 @@ def step_export_import(s: Session) -> None:
        f"with nothing duplicated")
 
 
+def step_import_replace(s: Session) -> None:
+    db = s.db
+    db.create_group("Swap")
+    db.create_group("Aside")
+    keep_a = db.add("keep-a", str(s.work / "keep_a.py"), "", "", "Swap")
+    keep_b = db.add("keep-b", str(s.work / "keep_b.py"), "", "", "Swap")
+    aside = db.add("aside", str(s.work / "aside.py"), "", "", "Aside")
+    pipe = db.create_pipeline("Swap pipe", "Swap")
+    db.add_pipeline_step(pipe, keep_a)
+    part = s.work / "swap-only.json"
+    db.export_to_file(str(part), group_name="Swap")
+    stray = db.add("stray", str(s.work / "stray.py"), "", "", "Swap")
+    db.delete(keep_b)
+    other = db.create_pipeline("Stray pipe", "Swap")
+
+    def names(group):
+        return sorted(r[1] for r in db.list_all() if r[8] == group)
+
+    s.answer("open", str(part))
+    s.win.ask_import_mode = lambda: "replace"
+    s.win.import_config()
+    s.pump(0.4)
+    if names("Swap") != ["keep-a", "keep-b"]:
+        problem(f"Replace left the imported group with {names('Swap')}")
+    if sorted(p[1] for p in db.list_pipelines("Swap")) != ["Swap pipe"]:
+        problem(f"Replace left the imported group's pipelines as "
+                f"{[p[1] for p in db.list_pipelines('Swap')]}")
+    if not any(r[0] == aside and r[1] == "aside" and r[8] == "Aside"
+               for r in db.list_all()):
+        problem("Replace touched a group that was not in the imported file")
+    if stray in {r[0] for r in db.list_all()} or other in {p[0] for p in db.list_pipelines("Swap")}:
+        problem("Replace kept what the imported file did not hold")
+    if "Swap" not in s.win.card_lists:
+        problem("the window did not show the replaced group after the import")
+
+    for r in [r for r in db.list_all() if r[8] in ("Swap", "Aside")]:
+        db.delete(r[0])
+    for p in db.list_pipelines("Swap"):
+        db.delete_pipeline(p[0])
+    db.delete_group("Swap")
+    db.delete_group("Aside")
+    s.win.reload()
+    s.pump(0.3)
+    ok("import Replace through the window: the imported group is swapped for the "
+       "file's scripts and pipelines, another group is left alone")
+
+
 def step_options_and_theme(s: Session, settings_path: Path) -> None:
     def fill_options(dlg):
         dlg._rows["max_output_lines"].set_value(777)
@@ -1272,6 +1319,7 @@ def main() -> int:
              lambda: step_help_and_log(s),
              lambda: step_favourite_and_delete(s),
              lambda: step_export_import(s),
+             lambda: step_import_replace(s),
              lambda: step_options_and_theme(s, Path(settings_mod._SETTINGS_PATH)),
              lambda: step_restart(s, build, load_settings)]
     for step in steps:
