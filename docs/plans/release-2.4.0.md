@@ -89,6 +89,9 @@ Accepted by Vũ 2026-10-14 (all planner recommendations, P1–P22):
 | 39 A Offer release candidates (P7) | coding session | `/add-ryos-feature` |
 | 40 No publish without a passing release_check; a reproducible portable zip | coding session (Opus, packaging + harness) + Vũ | `/fix-ryos-bug`; Vũ approves the `guard.py` change |
 | 41 Fix the maximised-layout hang (#33, #35) | coding session (Opus if threads or the single-instance handoff) | `/devflow:fix-bug` |
+| 42 Fix #36 Close all clears running output | coding session | `/devflow:fix-bug` |
+| 43 Fix TW-13 the no-match hint's group links | coding session | `/devflow:fix-bug` |
+| 44 Fix SM-13 Select All with a search | coding session | `/devflow:fix-bug` |
 
 Every session is Sonnet 5.5 Medium unless marked. "Opus" means the implementer is escalated to Opus at medium effort (A2, A3, D1, every DB migration, packaging, cross-process and threading work). Each step that adds a top-level module adds its row to `CLAUDE.md`'s Architecture table and `docs/ARCHITECTURE.md`.
 
@@ -660,10 +663,62 @@ Use `/devflow:fix-bug`. Opus for the implementer if the cause is in threads, the
 
 **Needs:** —
 
+### 42 — Fix #36: Close all clears the output of running runs
+_Added 2026-11-05 from issue #36 (Vũ, 2.4.0-rc1, windows-ai, compact rows) and Vũ's decision._ OP-12 says Close all "closes finished tabs but keeps All and running ones". `MainWindow.close_all_output` (`ryos/qtui/shell.py:850`) keeps running tabs (`outputpanel.closable`, `ryos/outputpanel.py:140`) but always clears the All tab (`:856`), and All mirrors every run's lines (`outputpanel.target_tabs`), the running ones too. All's lines are `(text, tag, step)` with no run key (`OutputPane.lines`), so the window can't yet tell a finished run's lines in All from a running one's. A running run whose own tab was closed earlier writes only to All (OP-08), so Close all loses its output entirely. The clearing dates from the Qt output panel (`5f9e78f`, v2.0.0), and `qt_smoke::check_output_panel` asserts it (`tests/qt_smoke.py:4991–4996`), so the test enshrines the bug. "Clear output between runs" (OP-15) also empties All when a run starts; the designer says what Close all does to All while runs go, consistent with OP-15. The maximised layout hosts the same panel in the pane's Output tab (`detail.attach_output`).
+**Touches:** OP-12, OP-08, OP-15, OP-16, OP-21; § Escapes; surfaces W N C D.
+**Files:** `ryos/qtui/shell.py` (`close_all_output`, possibly `OutputPane`), `ryos/outputpanel.py` (`closable` or a new rule), `tests/test_ryos.py` (`TestOutputPanelRules`), `tests/qt_smoke.py` (`check_output_panel`, possibly `check_maximised_layout`), `docs/BEHAVIOUR.md`.
+**Done when:**
+- a test fails before the fix: with a run going, Close all leaves that run's output readable in its tab and wherever the designer's rule keeps it in All;
+- `TestOutputPanelRules` covers the rule: a run going, nothing going, a running run whose tab was closed earlier;
+- `qt_smoke::check_output_panel` asserts the new rule instead of "All emptied", with normal rows, compact rows and the maximised pane's Output tab;
+- with "Clear output between runs" on, OP-15's tests still pass;
+- OP-12 names #36 and the tests; § Escapes gets "#36 (v2.4.0-rc1, since v2.0.0, `5f9e78f`): should have been caught by …; added …".
+
+Use `/devflow:fix-bug`.
+
+**Needs:** —
+
+### 43 — Fix TW-13: the no-match hint's links to other groups
+_Added 2026-11-05 from the behaviour map (found at step 14, `3c0e0a5`) and Vũ's decision._ TW-13: "When the open group has no match, the hint links to other groups that do." The Tk window drew it (`_update_search_hint`, removed in `eb312c3`, v2.0.0): "No matches in "G". Found in:", one link per group with its count that switched groups and kept the query, and a ✕ that hid the hint until the text changed. Since then `search.compute_hint` (`ryos/search.py:42`) and its tested model (`HintLink`, `SearchHint`) have had no caller; the Qt window shows only "N of M" in `search_hint` (`ryos/qtui/shell.py:617`, set in `_apply_search` at `:3046`) and the empty-group line (`GroupPage.no_match`, `ryos/qtui/sections.py:94`). What exists:
+- `ScriptDB.group_match_counts` (`ryos/db.py:1418`) counts by SQL `LIKE` on names, while the window filters with `search.matches` on `card._name` (`shell.py:3037`); the designer makes the two agree or counts from the cards;
+- `MainWindow.show_group` (`:1470`) switches groups; maximised, the pills give way to `group_picker` (TW-21);
+- `compute_hint` returns no hint on the All tab, where `all_no_match` already speaks;
+- `HintLink.target` is `None` for the unnamed group; the designer confirms whether the Qt window has one.
+**Touches:** TW-13, TW-12, TW-14, TW-21, FV-12; § Escapes; surfaces W N C D.
+**Files:** `ryos/qtui/shell.py` (`_build_top`, `_apply_search`), possibly `ryos/qtui/sections.py` (`GroupPage`), `ryos/search.py`, possibly `ryos/db.py` (`group_match_counts`, read only), possibly `ryos/qtui/stylesheet.py`; `tests/qt_smoke.py` (`check_shell`, `check_search_empty_state`), `tests/test_ryos.py` (`TestComputeHint`), `docs/BEHAVIOUR.md` (TW-13, its backlog row, § Escapes).
+**Done when:**
+- a `qt_smoke` check fails before the fix: on a group with no match while two others match, the hint lists both with their counts, and a click opens that group with the search kept and its rows filtered;
+- it passes with normal rows, compact rows and maximised (through the group picker);
+- no hint shows on the All tab or when the open group has a match;
+- if the ✕ is kept, a dismissed hint stays hidden until the text changes;
+- `compute_hint` has a caller and `TestComputeHint` still passes;
+- TW-13 names the check, its backlog row is removed, and § Escapes gets "TW-13 (v2.0.0 to v2.4.0-rc1, lost in `eb312c3`): should have been caught by a window check of the hint; added …".
+
+Use `/devflow:fix-bug`.
+
+**Needs:** 42 (same tab; `shell.py`)
+
+### 44 — Fix SM-13: Select All with a search active ticks the rows it hides
+_Added 2026-11-05 from the behaviour map (found at step 15, `2d9175e`) and Vũ's decision._ `MainWindow.selectable_cards` (`ryos/qtui/shell.py:2576`) returns every card on the tab, or every group's cards on All, whether the search shows them or not. `toggle_select_all` (`:2629`), `selected_cards` (`:2595`), `_update_select_bar` (`:2622`), `run_selected` (`:2636`), `expose_selected` (`:2659`) and `delete_selected` (`:2684`) build on it, so with a search Select All ticks hidden rows, the bar counts them, and Run, Delete and Make available act on them. `_apply_search` (`:3030`) hides a row with `card.setVisible(False)` and, on All, a whole group with `page.setVisible(False)`; a card in a hidden page is not `isHidden()`, so the fix follows the search rule, not widget visibility. Select mode has been in the Qt window since v2.0.0 (`962cd9c`). `qt_smoke::check_select_on_compact_and_maximised` records the bug in `KNOWN_BUGS` and unticks hidden rows itself. The designer decides what happens to a row ticked before a search hides it.
+**Touches:** SM-05, SM-06, SM-09, SM-10, SM-13, SM-14, TW-12, FV-12; § Escapes; surfaces S N C A D · Sc P.
+**Files:** `ryos/qtui/shell.py` (`selectable_cards`, `toggle_select_all`, `_update_select_bar`, possibly `_apply_search`), possibly `ryos/selection.py`; `tests/qt_smoke.py` (`check_select_on_compact_and_maximised`, `check_select_mode`, `check_all_tab`), possibly `tests/test_ryos.py` (`TestSelection`), `docs/BEHAVIOUR.md` (SM-05, SM-13, the backlog rows, § Escapes).
+**Done when:**
+- the `KNOWN_BUGS` branch becomes a problem and fails before the fix;
+- with a search active, Select All ticks only the rows the search shows, and the bar's count and Select All label count only those;
+- Run selected, Delete selected and Make available / unavailable act only on them, for scripts and pipelines;
+- this holds with normal rows, compact rows, maximised and on the All tab (a group hidden whole);
+- the designer's rule for a row ticked before the search is tested; clearing the search brings back the full set (SM-05);
+- `KNOWN_BUGS` is empty; SM-13 names the tests, the backlog rows are removed, and § Escapes gets "SM-13 (v2.0.0 to v2.4.0-rc1): should have been caught by a select-mode check with a search active; added …".
+
+Use `/devflow:fix-bug`.
+
+**Needs:** 43 (same tab; both may change `_apply_search`)
+
 ## Order
 
 1. **Fixes** 1, 2, 3 (small, independent). Done.
    - **41** (the maximised-layout hang, #33 and #35; added 2026-11-03) comes next, before 40 part 2 and the backlog. Closed 2026-11-05 as CNR (Vũ).
+   - **42 → 43 → 44** (#36, TW-13, SM-13; added 2026-11-05) in one tab, in that order (all change `shell.py`), before the B and C lanes.
    - **37** (the qt-smoke crash, added 2026-10-19) comes next (CI must be green before a candidate).
    - **38** (claim a step, added 2026-10-19) right after it (parallel tabs need it).
 2. **Harness and loop rules, before step 11** (added 2026-10-19): 31, then 32. 33 runs alongside (docs only).
@@ -756,3 +811,6 @@ Run at most two lanes, and only where step 33's Files lines don't overlap: one m
 | 39 A Offer release candidates (P7) | done 2026-10-21: Options > Logging "Offer release candidates (for testing)" (`offer_release_candidates`, off by default); the window and `ryos-cli version --check` / `update` pass it to `updates.fetch_release`; `version --check` no longer has its own fetch (`notifications._fetch_latest_release` deleted); UP-31 added, TW-17, UP-06, CLI-13 updated. Tests: `test_updates::TestReleaseCandidates`, `test_cli` apply and default-fetch cases, `qt_smoke` options row and rc block. Not run: a real rc to rc update from GitHub (steps 12, 29). |
 | 40 No publish without a passing release_check | in progress (2026-11-05 20:18), part 2 (Vũ approved the `guard.py` change 2026-11-05); **Gate:** part 1 done in 299cd5a (reviewed READY TO COMMIT; suite 1598 passed): `zip_portable` writes HEAD's blobs with the commit time (`TestPortableZip`, UP-32); `release_check` refuses another Python up front, clears `dist/release_check.passed` at start and writes it only when every case passed and HEAD and `SHA256SUMS.txt` did not move (`TestReleaseStamp`, `TestReleaseChecksPython`, UP-33); `release-ryos` A3/A4, BEHAVIOUR § Escapes and § Harness escapes (partly in place). Not run: a fresh `build_release.py` plus `release_check` (`--python 3.13`) from this checkout and from a clean worktree. Left: part 2, the `.claude/hooks/guard.py` refusal of `gh release create` without a matching stamp, its `test_harness` cases (`TestPublishGate`, `TestGuardMain`), the SKILL A5/B5 sentence and the final § Harness escapes line; waits for Vũ's approval of the `guard.py` change and his answers to the designer's open questions |
 | 41 Maximised-layout hang (#33, #35) | partly done 2026-11-04 in a5f5547 (reviewed READY TO COMMIT; pytest 1600, ruff, mypy, qt_smoke, session_smoke green): INFO log of every `run_dialog`, `popup`, card drag and layout switch; defect A (compact rows kept hover previews beside the pane and over a modal: `set_workspace` always reloads, `HoverPreview._show` skips while a modal or popup is up); defect B (a second launch un-maximised a window: `traypolicy.restore_maximized`); `qt_smoke::check_maximised_edit_returns` (49 problems red, 0 green) and `check_preview_never_over_modal`, `test_ryos::TestTrayPolicy`; RC-17/20/35, PL-01/02, TW-06/08/20, § Escapes. **The hang itself is not reproduced and the step stays open:** needs Vũ's dump of the hung RYOS.exe and the extra processes' command lines, then a fix from the log or dump; see Tried. **Closed 2026-11-05 by Vũ: CNR** (cannot reproduce; no dump to come). Defects A and B and the logging stand; a new hang becomes a new step from the new log lines |
+| 42 Fix #36 Close all clears running output | — |
+| 43 Fix TW-13 hint links to other groups | — |
+| 44 Fix SM-13 Select All with a search | — |

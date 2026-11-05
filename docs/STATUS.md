@@ -88,6 +88,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 40 | No publish without a passing release_check; portable zip | part 1 ✅ `299cd5a`; part 2 waits for Vũ (guard.py) |
 | 41 | Fix the maximised-layout hang (#33, #35) | closed as CNR (Vũ, 11-05): defects A and B and logging in `a5f5547`; the hang never reproduced |
 | — | Python 3.14 for frozen builds; devflow adopted | ✅ `5a0512c`, `510d27e` (not plan steps) |
+| 42–44 | Fix #36, TW-13, SM-13 (one tab, in order) | — (planned 11-05) |
 | 13–15 | Backlog | ✅ `e040990`, `3c0e0a5`, `2d9175e`; found TW-13 and SM-13 bugs |
 | 34 | Frozen builds in CI | ✅ `1f52ecb`, `ecdc290` (nightly green) |
 | — | Red CI on `73a61e1` | fix `bb1c11b`, CI running |
