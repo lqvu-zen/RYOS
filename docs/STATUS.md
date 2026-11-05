@@ -58,7 +58,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - **Step 40 part 2 waits for Vũ (Gate):** the `guard.py` refusal of `gh release create` without a matching stamp, its `test_harness` cases, the `release-ryos` A5/B5 sentence and the final § Harness escapes line. Needs Vũ's approval of the `guard.py` change and his answers to the designer's open questions (in the coding tab).
 - `5a0512c` **frozen builds use Python 3.14, not 3.13** (10-21 22:38): `BUILD_PYTHON = (3, 14)` in `ryos/buildinfo.py`; build commands, CI matrix (3.10 and 3.14) and `release-ryos` follow. A throwaway-worktree build on 3.14.5 passed every `release_check` case but `build_commit` and `signature`, including the three `self_update_*` cases once recorded failing on 3.14. Not a plan step; it reverses the 3.13 pin of `c2c39e0` and step 40 part 1 (no decision logged). Not run: the signed release path on 3.14, due at the next candidate.
 - `510d27e` **devflow adopted** (11-03 19:24): `.claude/devflow.md` profile, `.claude/devflow.json` guard config, `docs/DESIGN.md`, `tools/devflow_checks.py` with a CI job, an `ask` rule for editing the guard config. The `ryos-*` skills, agents, hooks and `harness_checks.py` stay until devflow is proven; retiring them is a separate commit. CI green on `510d27e`.
-- `a5f5547` **step 41, partly done** (11-04; `c5216ee` records it; reviewed READY TO COMMIT, pytest 1600, ruff, mypy, qt_smoke, session_smoke green): INFO log of every `run_dialog`, `popup`, card drag and layout switch; **defect A** fixed (compact rows kept hover previews beside the pane and over a modal editor); **defect B** fixed (a second launch un-maximised a window that was never hidden to the tray); `qt_smoke::check_maximised_edit_returns` was red with 49 problems, now 0; `check_preview_never_over_modal`, `TestTrayPolicy`. **The hang itself did not reproduce, so the step stays open.** The hung window in the attached logs and screenshot is idle (0% CPU, not "Not responding"), so likely a modal or grab Vũ can't see; the six processes in #35 are most likely `ryos-cli.exe mcp` servers, not launches. Needs Vũ (see Vũ to do).
+- `a5f5547` **step 41, partly done** (11-04; `c5216ee` records it; reviewed READY TO COMMIT, pytest 1600, ruff, mypy, qt_smoke, session_smoke green): INFO log of every `run_dialog`, `popup`, card drag and layout switch; **defect A** fixed (compact rows kept hover previews beside the pane and over a modal editor); **defect B** fixed (a second launch un-maximised a window that was never hidden to the tray); `qt_smoke::check_maximised_edit_returns` was red with 49 problems, now 0; `check_preview_never_over_modal`, `TestTrayPolicy`. **The hang itself did not reproduce, so the step stays open.** The hung window in the attached logs and screenshot is idle (0% CPU, not "Not responding"), so likely a modal or grab Vũ can't see; the six processes in #35 are most likely `ryos-cli.exe mcp` servers, not launches. **Closed 11-05 by Vũ as CNR** (cannot reproduce; no dump to come).
 - **Three new issues, all from Vũ** (see Open GitHub issues): #33 and #35 the window hangs in the maximised layout (2.3.1 and rc1), #34 a script typed as text.
 - `e040990` **backlog without a window** (step 13): tests for GR-24, PL-16, ST-13, TW-16, CLI-05 and a `release_check` `publisher` case (TW-27). No bug found.
 - `3c0e0a5` **backlog: pane, dialogs, menus** (step 14): smoke checks for FV-13, SC-14, RC-35, QR-13, TW-15, OP-21, OP-05, IE-05; `qt_smoke` no longer leaks Quick Run index files into the real data folder. **Found a bug, TW-13:** the hint's links to other groups have been missing from the Qt window since v2.0.0 (`search.compute_hint` has no caller).
@@ -67,7 +67,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 - **CI went red on `73a61e1`** (qt-smoke); step 16 was claimed and released unstarted (`f8af45e`, `b6fe5d1`). `bb1c11b` fixes it in `tests/qt_smoke.py` (the Quick Run cap check scanned its own `qr.db` on ubuntu; the chatty-pipeline turn limit raised to 1 s). **CI on `bb1c11b` still running** at 20:05; not proven green yet.
 - `dcd5309` **step 12: Vũ's checklist all ticked** (11-05, on Vũ's word). Every item of the rc1 checklist is done; the row isn't marked done yet.
 - **New issue #36** (Vũ, rc1, compact): Close all deletes the output of running runs. Proposed as a fix-bug step (see Open GitHub issues).
-- **Next:** CI green on `bb1c11b`; then the three found bugs (#36, TW-13, SM-13) if Vũ puts them in 2.4; step 16 (B lane) once CI is green; step 41 still waits for Vũ's dump; step 40 part 2 once Vũ approves; B and C lanes wait for step 33's answers.
+- **Next:** CI green on `bb1c11b`; then the three found bugs (#36, TW-13, SM-13) if Vũ puts them in 2.4; step 16 (B lane) once CI is green; step 40 part 2 once Vũ approves; B and C lanes wait for step 33's answers.
 - **Self-update is untested for real:** steps 4–10 each note "not run against real GitHub or a frozen build". Steps 11 and 12 are the first real tests.
 
 ## v2.4, by step
@@ -86,7 +86,7 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 | 39 | Offer release candidates (P7) | ✅ `7b74e98` |
 | 12 | The early candidate (Vũ's gate) | rc1 published (`6b9d12e`), tester PASS, Vũ's checklist all ticked (`dcd5309`); row not closed yet |
 | 40 | No publish without a passing release_check; portable zip | part 1 ✅ `299cd5a`; part 2 waits for Vũ (guard.py) |
-| 41 | Fix the maximised-layout hang (#33, #35) | partly done `a5f5547` (defects A and B, logging); the hang not reproduced, waits for Vũ's dump |
+| 41 | Fix the maximised-layout hang (#33, #35) | closed as CNR (Vũ, 11-05): defects A and B and logging in `a5f5547`; the hang never reproduced |
 | — | Python 3.14 for frozen builds; devflow adopted | ✅ `5a0512c`, `510d27e` (not plan steps) |
 | 13–15 | Backlog | ✅ `e040990`, `3c0e0a5`, `2d9175e`; found TW-13 and SM-13 bugs |
 | 34 | Frozen builds in CI | ✅ `1f52ecb`, `ecdc290` (nightly green) |
@@ -99,7 +99,6 @@ Kept by the secretary (`/ryos-secretary` in Claude Code, or a claude.ai session 
 
 - [ ] **Back up the release key** in a second place, and put its passphrase in a password manager (left over from step 7).
 - [ ] Step 31 left checks for you: approve the `ask`/`deny` lists as committed in `96405b6`; confirm a fresh session runs one command from each skill without a prompt; confirm auto-memory still works now that `C:\Users\Admin\.claude` is out of `additionalDirectories`. (The `gh release create` ask is seen at the next candidate.)
-- [ ] **Step 41:** the next time RYOS hangs in the maximised layout, before killing it: (1) press Esc and Alt+Tab to look for a hidden dialog or popup; (2) take a dump or `py-spy dump --pid <pid>` of the window's process; (3) copy the command lines of the other RYOS processes (Task Manager > Details > Command line); (4) send the last lines of `ryos.log` (it now logs every dialog, popup, drag and layout switch) and your `settings.json`; (5) say what you did just before. Run `a5f5547` or later so the log has the new lines.
 - [ ] At step 33: decide whether B and C run in parallel.
 
 ## Secretary skill and planner agent
@@ -119,9 +118,9 @@ In place since `2e15204`: `.claude/skills/ryos-secretary/SKILL.md` (`/ryos-secre
 | # | Title | Where |
 |---|---|---|
 | 36 | Close all deletes the logs of running runs (2.4.0-rc1, windows-ai, compact). No steps. OP-12 says Close all keeps running tabs; `close_all_output` (`ryos/qtui/shell.py:850`) keeps their tabs but always clears the All tab, which holds running output too. | proposed: 2.4 fix-bug step (OP-12), waits for Vũ |
-| 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | 2.4 step 41 (with #33); defects A and B fixed in `a5f5547`, the hang not reproduced, waits for Vũ's dump |
+| 35 | App stuck in fullscreen (maximised) again; Task Manager shows six RYOS processes (2.4.0-rc1, windows-ai, compact). No steps; the log ends with normal runs, no error. | 2.4 step 41 closed as CNR (11-05); defects A and B fixed in `a5f5547`; issue still open on GitHub |
 | 34 | Suggestion: create a script from text only, without a .bat or .ps1 file (2.4.0-rc1) | proposed, not yet planned |
-| 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | 2.4 step 41 (open, as #35) |
+| 33 | App stuck after right-click > Edit on a pipeline in the maximised layout (2.3.1, windows-ai, compact). Log has no error. | 2.4 step 41 closed as CNR (as #35); issue still open on GitHub |
 | 32 | Suggestion: check a run's status from MCP (a long pipeline looked hung to Claude); owner adds "anything to show in the RYOS app?" | 2.4 steps 20 (keep run output), 21 (agents read history, progress) and 22 (CLI and agent runs show in the window) |
 
 Issues 29, 30 and 31 closed 2026-10-14 with v2.3.1.
@@ -164,6 +163,7 @@ All checks passed: `windows-ai` MCP with no Python or `uv` on `PATH`; Claude Des
 
 ## Decision log
 
+- 2026-11-05 20:15: **Step 41 (the maximised-layout hang, #33 and #35) closed as CNR** (cannot reproduce; Vũ will send no dump). Defects A and B and the dialog/popup/drag logging from `a5f5547` stay; if the window hangs again, the new log lines start a new step.
 - 2026-11-03 19:40: **#33 and #35 (the window hangs in the maximised layout) become 2.4 step 41, one `/devflow:fix-bug` step, next in Order** before step 40 part 2 and the backlog (the secretary's recommendation, taken by Vũ). It escaped v2.3.1, so it adds its § Escapes line and check. #34 not decided yet.
 - 2026-10-21 22:10: **The rc1 publish-without-check escape becomes 2.4 step 40, before any later candidate** (the secretary's recommendation, taken by Vũ): a `release_check` pass stamp that `guard.py` requires for `gh release create`, plus the portable zip's line-ending mismatch and the Python 3.13 need. Vũ approves the `guard.py` change. `/fix-ryos-bug`, Opus.
 - 2026-10-21 (before 20:13): **The early candidate is 2.4.0-rc1** (Vũ named it); published as a pre-release at 20:38.
