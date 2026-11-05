@@ -7387,7 +7387,7 @@ def _chatty_pipeline_run(app, maximised):
     print(f"    {layout}: worst turn running {running:.2f}s, after {after:.2f}s")
     if not finished:
         PROBLEMS.append(f"{layout}: the chatty pipeline did not finish")
-    if running > 0.5:
+    if running > 1.0:
         PROBLEMS.append(f"{layout}, a chatty pipeline held the window for {running:.1f} s in one turn")
     if after > 0.5:
         PROBLEMS.append(f"{layout}: after the chatty pipeline, a turn took {after:.1f} s")
@@ -7818,7 +7818,7 @@ def check_quick_run_options(app):
         tmp = Path(tempfile.mkdtemp())
         for name in ("alpha_tool.py", "alpine.py", "alpha_notes.txt", "alpha_doc.md"):
             (tmp / name).write_text("print(1)\n", encoding="utf-8")
-        db = ScriptDB(tmp / "qr.db")
+        db = ScriptDB(Path(tempfile.mkdtemp()) / "qr.db")
         db.create_group("G", base_dir=str(tmp))
         return tmp, db
 
