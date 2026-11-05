@@ -42,6 +42,11 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Use a temp folder without 8.3 short names
+        run: |
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: Build the four downloads
         run: uv run --python 3.14 --extra mcp --with cx_Freeze python build_release.py
 
