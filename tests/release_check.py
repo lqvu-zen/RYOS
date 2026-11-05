@@ -1181,6 +1181,7 @@ def main() -> int:
         return 1
     head = full_head()
     sums = build_release.sums_digest(dist)
+    sig = build_release.sig_digest(dist)
 
     real_before = launch_smoke._snapshot(REAL_FOLDER)
     updates_before = launch_smoke._snapshot(REAL_UPDATES)
@@ -1238,10 +1239,11 @@ def main() -> int:
               "is release_check on Vu's PC)")
         return 0
     stamp = build_release.stamp_for(check.results, head, sums, full_head(),
-                                    build_release.sums_digest(dist), platform.python_version())
+                                    build_release.sums_digest(dist), platform.python_version(),
+                                    sig=sig, sig_after=build_release.sig_digest(dist))
     if stamp is None:
-        print(f"HEAD or SHA256SUMS.txt moved during the run, or could not be read, so no "
-              f"stamp was written.\n(throwaway data kept in {root})\n\nRELEASE CHECK FAILED")
+        print(f"HEAD, SHA256SUMS.txt or SHA256SUMS.txt.sig moved during the run, or could not "
+              f"be read, so no stamp was written.\n(throwaway data kept in {root})\n\nRELEASE CHECK FAILED")
         return 1
     (dist / build_release.STAMP).write_text(stamp, encoding="utf-8", newline="\n")
     shutil.rmtree(root, ignore_errors=True)

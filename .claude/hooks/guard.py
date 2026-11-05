@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import posixpath
@@ -867,41 +868,249 @@ def reverts_secretary_files(words: list[str], dirty: Callable[[], list[str]],
     return None
 
 
-def release_ask(words: list[str]) -> str | None:
+STAMP_NAME = "release_check.passed"
+GATE_COMMAND = "uv run --python 3.14 python tests/release_check.py"
+STAMP_BINDS = (("sha256sums", "SHA256SUMS.txt"), ("sha256sums_sig", "SHA256SUMS.txt.sig"))
+DELETES = frozenset({"rm", "del", "erase", "remove-item", "ri"})
+FALSE_WORDS = frozenset({"false", "f", "0"})
+TRUE_WORDS = frozenset({"true", "t", "1"})
+STAMP_WRITE_MESSAGE = (
+    "guard.py refused: this writes dist/release_check.passed, the release_check pass stamp. "
+    "Only tests/release_check.py writes it, when every case passes; never write, copy or edit "
+    "it by hand (release-ryos A4)."
+)
+_REPO_FLAG = r"(?:(?:-r|--repo)(?:\s+|=)?\S+\s+)?"
+_HIDDEN_PUBLISH = re.compile(
+    rf"\bgh(?:\.exe)?\s+{_REPO_FLAG}release\s+{_REPO_FLAG}(?:create|new|upload|edit)\b")
+
+
+class ReleaseAction(NamedTuple):
+    what: str
+    reason: str
+    publishes: bool
+    target: str = ""
+
+
+def _gh_rest(words: list[str]) -> list[str] | None:
+    if not words or command_name(words[0]) != "gh":
+        return None
+    return _after_flags(words, 1)
+
+
+def _after_flags(words: list[str], index: int) -> list[str]:
+    while index < len(words) and words[index].startswith("-"):
+        index += 2 if words[index] in ("-R", "--repo") else 1
+    return words[index:]
+
+
+def _api_write_method(rest: list[str]) -> str | None:
+    if not rest or rest[0] != "api" or not any("releases" in w for w in rest):
+        return None
+    method = "GET"
+    fields = False
+    for i, word in enumerate(rest):
+        if word in ("-X", "--method") and i + 1 < len(rest):
+            method = rest[i + 1].upper()
+        elif word.startswith("-X") and len(word) > 2:
+            method = word[2:].upper()
+        elif word.startswith("--method="):
+            method = word.split("=", 1)[1].upper()
+        elif word in ("-f", "-F", "--field", "--raw-field", "--input"):
+            fields = True
+    explicit = any(w in ("-X", "--method") or w.startswith(("-X", "--method=")) for w in rest)
+    if method != "GET":
+        return method
+    return "POST" if fields and not explicit else None
+
+
+def _edit_publishes(args: list[str]) -> bool:
+    for index, word in enumerate(args):
+        name, equals, value = word.partition("=")
+        if name not in ("--draft", "--prerelease", "--latest"):
+            continue
+        if not equals:
+            following = args[index + 1].lower() if index + 1 < len(args) else ""
+            value = following if following in FALSE_WORDS | TRUE_WORDS else "true"
+        value = value.lower()
+        if name == "--latest" and value not in FALSE_WORDS:
+            return True
+        if name != "--latest" and value in FALSE_WORDS:
+            return True
+    return False
+
+
+def _release_target(rest: list[str]) -> str:
+    for index, word in enumerate(rest):
+        if word == "--target" and index + 1 < len(rest):
+            return rest[index + 1]
+        if word.startswith("--target="):
+            return word.split("=", 1)[1]
+    return ""
+
+
+def release_action(words: list[str]) -> ReleaseAction | None:
     if not words:
         return None
-    name = command_name(words[0])
-    if name == "gh":
-        index = 1
-        while index < len(words) and words[index].startswith("-"):
-            index += 2 if words[index] in ("-R", "--repo") else 1
-        rest = words[index:]
-        if len(rest) > 1 and rest[0] == "release" and rest[1] in (
-                "create", "edit", "delete", "delete-asset", "upload"):
-            return f"`gh release {rest[1]}` changes a published release; Vũ approves it."
-        if rest and rest[0] == "api" and any("releases" in w for w in rest):
-            method = "GET"
-            fields = False
-            for i, word in enumerate(rest):
-                if word in ("-X", "--method") and i + 1 < len(rest):
-                    method = rest[i + 1].upper()
-                elif word.startswith("-X") and len(word) > 2:
-                    method = word[2:].upper()
-                elif word.startswith("--method="):
-                    method = word.split("=", 1)[1].upper()
-                elif word in ("-f", "-F", "--field", "--raw-field", "--input"):
-                    fields = True
-            explicit = any(w in ("-X", "--method") or w.startswith(("-X", "--method=")) for w in rest)
-            if method != "GET" or (fields and not explicit):
-                return "`gh api` writing to releases changes a published release; Vũ approves it."
+    rest = _gh_rest(words)
+    if rest is not None:
+        command = _after_flags(rest, 1) if rest and rest[0] == "release" else []
+        if command:
+            sub = "create" if command[0] == "new" else command[0]
+            what = f"gh release {sub}"
+            reason = f"`{what}` changes a published release; Vũ approves it."
+            if sub == "create":
+                return ReleaseAction(what, reason, True, _release_target(command))
+            if sub == "upload" or (sub == "edit" and _edit_publishes(command[1:])):
+                return ReleaseAction(what, reason, True)
+            if sub in ("edit", "delete", "delete-asset"):
+                return ReleaseAction(what, reason, False)
+            return None
+        method = _api_write_method(rest)
+        if method:
+            return ReleaseAction(f"gh api -X {method}", "`gh api` writing to releases changes a "
+                                 "published release; Vũ approves it.",
+                                 method in ("POST", "PUT", "PATCH"))
         return None
     found = _git(words)
     if found and found[0] == "push":
         for word in found[1]:
             if (word.startswith("--force") or word == "--mirror" or word.startswith("+")
                     or (word.startswith("-") and not word.startswith("--") and "f" in word)):
-                return "A forced or mirroring `git push` rewrites history on GitHub; Vũ approves it."
+                return ReleaseAction("git push", "A forced or mirroring `git push` rewrites "
+                                     "history on GitHub; Vũ approves it.", False)
     return None
+
+
+def hidden_publish(segment: Segment, name: str, body: str) -> bool:
+    if name in ("git", "gh"):
+        return False
+    if not (segment.substitution or body or name not in READ_ONLY):
+        return False
+    return bool(_HIDDEN_PUBLISH.search(flat(segment.text)) or _HIDDEN_PUBLISH.search(body))
+
+
+def names_stamp_path(word: str) -> bool:
+    form = flat(word).rstrip("/")
+    return bool(form) and posixpath.basename(posixpath.normpath(form)) == STAMP_NAME
+
+
+def writes_stamp(words: list[str], redirects: list[str], body: str) -> bool:
+    if any(names_stamp_path(r) for r in redirects):
+        return True
+    if not words:
+        return False
+    name = command_name(words[0])
+    if name in ("git", "gh") or name in DELETES:
+        return False
+    acting = (name == "find" and any(w.lower() in FIND_ACTIONS for w in words)) or (
+        name == "sort" and any(w in ("-o", "--output") or w.startswith("--output=") for w in words))
+    if name in READ_ONLY and not acting:
+        return False
+    return STAMP_NAME in flat(" ".join(words)) or STAMP_NAME in body
+
+
+def stamp_not_checked(target: str = "") -> str:
+    return "the stamp was not checked (no stamp reader was given)"
+
+
+def git_head(project: str) -> str:
+    try:
+        result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=project, capture_output=True,
+                                text=True, encoding="utf-8", timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    head = result.stdout.strip()
+    return head if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40,64}", head) else ""
+
+
+def _sha256_of(path: str) -> str | None:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def release_stamp_problem(project: str, head_of: Callable[[str], str],
+                          target: str = "") -> str | None:
+    try:
+        return _stamp_problem(project, head_of, target)
+    except Exception as error:
+        return f"the stamp could not be checked ({type(error).__name__}: {error})"
+
+
+def _stamp_problem(project: str, head_of: Callable[[str], str], target: str) -> str | None:
+    if not project:
+        return ("the project folder is not known (no CLAUDE_PROJECT_DIR or cwd), so "
+                "dist/release_check.passed cannot be found")
+    dist = os.path.join(project, "dist")
+    try:
+        with open(os.path.join(dist, STAMP_NAME), "rb") as handle:
+            raw = handle.read()
+    except FileNotFoundError:
+        return ("there is no dist/release_check.passed (no release_check has passed since the "
+                "last build, or its last run failed)")
+    except OSError as error:
+        return f"dist/release_check.passed cannot be read as a pass stamp ({type(error).__name__})"
+    try:
+        stamp = json.loads(raw)
+    except ValueError:
+        return "dist/release_check.passed cannot be read as a pass stamp (not JSON)"
+    if not isinstance(stamp, dict):
+        return "dist/release_check.passed cannot be read as a pass stamp (not a JSON object)"
+    passed = stamp.get("passed")
+    if isinstance(passed, bool) or not isinstance(passed, int) or passed < 1:
+        return "dist/release_check.passed records no passed cases"
+    head = head_of(project)
+    if not head:
+        return f"git could not report HEAD in {project}"
+    recorded = stamp.get("head")
+    if recorded != head:
+        shown = recorded[:12] if isinstance(recorded, str) and recorded.strip() else "no commit"
+        return f"dist/release_check.passed is for {shown} and HEAD is {head[:12]}"
+    for field, name in STAMP_BINDS:
+        digest = _sha256_of(os.path.join(dist, name))
+        if digest is None:
+            return f"dist/{name} is missing"
+        if field not in stamp:
+            return (f"dist/release_check.passed has no `{field}` (the hash of dist/{name}), so "
+                    "an older release_check wrote it")
+        if stamp[field] != digest:
+            return f"dist/{name} has changed since release_check passed"
+    wanted = target.lower()
+    if target and not (re.fullmatch(r"[0-9a-f]{7,64}", wanted) and head.startswith(wanted)):
+        return f"--target {target[:12]} is not HEAD ({head[:12]}), the commit release_check passed for"
+    return None
+
+
+def in_project(location: Location) -> bool:
+    if location.relative is not None:
+        return True
+    root = location.project
+    here = location.absolute
+    return bool(root and here and (here == root or here.startswith(root + "/")))
+
+
+def _publish_verdict(action: ReleaseAction, location: Location,
+                     stamp_problem: Callable[[str], str | None]) -> Verdict:
+    if not in_project(location):
+        problem: str | None = ("it runs outside the project folder, so its files are not the "
+                               "ones release_check checked")
+    else:
+        try:
+            problem = stamp_problem(action.target)
+        except Exception as error:
+            problem = f"the stamp could not be checked ({type(error).__name__}: {error})"
+    if problem:
+        return Verdict("deny", f"guard.py refused: `{action.what}` publishes a release, and "
+                               f"{problem}. Run `{GATE_COMMAND}` on this build at this HEAD (it "
+                               "writes dist/release_check.passed only when every case passes), "
+                               "then publish.")
+    return Verdict("ask", f"`{action.what}` publishes a release; dist/release_check.passed "
+                          "matches HEAD, SHA256SUMS.txt and SHA256SUMS.txt.sig. Vũ approves it.")
 
 
 def _sign_release(words: list[str]) -> bool:
@@ -918,7 +1127,8 @@ def _cd_target(words: list[str]) -> str | None:
 
 def _segment_verdict(segment: Segment, places: Places, assigned: dict[str, str],
                      dirty: Callable[[], list[str]], tainted_in: bool,
-                     location: Location) -> tuple[Verdict, bool]:
+                     location: Location,
+                     stamp_problem: Callable[[str], str | None]) -> tuple[Verdict, bool]:
     if is_set_outside_cmd(segment):
         return Verdict("deny", SET_MESSAGE), False
     before = dict(assigned)
@@ -944,6 +1154,8 @@ def _segment_verdict(segment: Segment, places: Places, assigned: dict[str, str],
     if _sign_release(expanded):
         return Verdict("deny", "guard.py refused: tools/sign_release.py sign/new is Vũ's; he signs "
                                "releases himself (release-ryos A3b)."), False
+    if writes_stamp(expanded, redirects, body):
+        return Verdict("deny", STAMP_WRITE_MESSAGE), False
     if not expanded and segment.substitution and any(
             names_place(flat(v), places.real_data) for v in values):
         return Verdict("deny", "guard.py refused: a command substitution touching the real "
@@ -973,21 +1185,27 @@ def _segment_verdict(segment: Segment, places: Places, assigned: dict[str, str],
     reason = reverts_secretary_files(expanded, dirty, location.relative)
     if reason:
         return Verdict("deny", reason), False
-    ask = release_ask(expanded)
-    if ask:
-        return Verdict("ask", ask), tainted_out
+    action = release_action(expanded)
+    if action is None and hidden_publish(segment, name, body):
+        action = ReleaseAction("gh release create/upload/edit (inside another command)", "", True)
+    if action is not None and action.publishes:
+        return _publish_verdict(action, location, stamp_problem), tainted_out
+    if action is not None:
+        return Verdict("ask", action.reason), tainted_out
     return ALLOW, tainted_out
 
 
 def command_verdict(command: str, shell: str, places: Places,
-                    secretary_dirty: Callable[[], list[str]]) -> Verdict:
+                    secretary_dirty: Callable[[], list[str]],
+                  stamp_problem: Callable[[str], str | None] = stamp_not_checked) -> Verdict:
     assigned: dict[str, str] = {}
     location = Location(places.project)
     tainted = False
     asked: Verdict | None = None
     for segment in segments(command, shell):
         verdict, tainted_out = _segment_verdict(segment, places, assigned, secretary_dirty,
-                                                tainted and segment.piped, location)
+                                                tainted and segment.piped, location,
+                                                stamp_problem)
         if verdict.kind == "deny":
             return verdict
         if verdict.kind == "ask" and asked is None:
@@ -998,6 +1216,8 @@ def command_verdict(command: str, shell: str, places: Places,
 
 def file_verdict(path: str, places: Places) -> Verdict:
     form = flat(expand_refs(path, places.refs, {}))
+    if names_stamp_path(form):
+        return Verdict("deny", STAMP_WRITE_MESSAGE)
     if names_place(form, places.keys) or re.search(r"\.(pem|key|p8)$", form):
         return Verdict("deny", "guard.py refused: this file is (or is beside) the release signing "
                                "key. Vũ keeps the key; Claude never reads or writes it.")
@@ -1009,12 +1229,13 @@ def file_verdict(path: str, places: Places) -> Verdict:
 
 
 def decide(tool_name: str, tool_input: Mapping, env: Mapping[str, str],
-           secretary_dirty: Callable[[], list[str]]) -> Verdict:
+           secretary_dirty: Callable[[], list[str]],
+           stamp_problem: Callable[[str], str | None] = stamp_not_checked) -> Verdict:
     places = places_from_env(env)
     if tool_name in ("Bash", "PowerShell"):
         command = tool_input.get("command") or ""
         shell = "bash" if tool_name == "Bash" else "powershell"
-        return command_verdict(command, shell, places, secretary_dirty)
+        return command_verdict(command, shell, places, secretary_dirty, stamp_problem)
     if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         path = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         return file_verdict(path, places)
@@ -1039,7 +1260,8 @@ def main() -> int:
         data = json.loads(sys.stdin.buffer.read().decode("utf-8", errors="replace"))
         project = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or ""
         verdict = decide(data.get("tool_name", ""), data.get("tool_input") or {}, os.environ,
-                         lambda: secretary_changes(project))
+                         lambda: secretary_changes(project),
+                         lambda target: release_stamp_problem(project, git_head, target))
     except Exception as error:
         print(f"guard.py failed: {type(error).__name__}: {error} -- not checked", file=sys.stderr)
         return 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -28,6 +29,7 @@ def _load(name: str, path: Path):
 guard = _load("ryos_harness_guard", GUARD_PATH)
 session_start = _load("ryos_harness_session_start", SESSION_PATH)
 harness_checks = _load("ryos_harness_checks", CHECKS_PATH)
+build_release = _load("ryos_harness_build_release", ROOT / "build_release.py")
 
 ENV = {
     "APPDATA": r"C:\Users\Tester\AppData\Roaming",
@@ -261,17 +263,12 @@ class TestGuardAsks(unittest.TestCase):
         self.assertEqual(result.kind, "ask", f"{tool}: {command!r} was {result}")
 
     def test_release_and_forced_pushes(self):
-        self.assertAsks("gh release create v2.4.0-rc1 dist/RYOS-windows.zip \\\n"
-                        "  -R lqvu-zen/RYOS --prerelease --latest=false --title \"v2.4.0-rc1\"")
         self.assertAsks("cmd /c gh release delete v1")
-        self.assertAsks("gh release upload v2.4.0 dist/SHA256SUMS.txt.sig", "PowerShell")
-        self.assertAsks("gh -R lqvu-zen/RYOS release edit v2.4.0 --draft=false")
         self.assertAsks("git push --force-with-lease")
         self.assertAsks("git push origin +main")
         self.assertAsks("git push -f origin main")
         self.assertAsks("git push --mirror")
         self.assertAsks("gh api -X DELETE repos/lqvu-zen/RYOS/releases/1")
-        self.assertAsks("gh api repos/lqvu-zen/RYOS/releases -f tag_name=v9")
 
     def test_the_guard_does_not_ask_for_release_reads(self):
         self.assertEqual(verdict("gh release list -R lqvu-zen/RYOS -L 5").kind, "allow")
@@ -347,11 +344,6 @@ class TestGuardSkillCommands(unittest.TestCase):
             with self.subTest(command=command[:70]):
                 result = verdict(command, secretary=dirty)
                 self.assertEqual(result.kind, "allow", f"{command!r} was {result}")
-
-    def test_publishing_a_release_asks(self):
-        for command in RELEASE_CREATES:
-            with self.subTest(command=command[:70]):
-                self.assertEqual(verdict(command).kind, "ask")
 
 
 class TestGuardMain(unittest.TestCase):
@@ -735,6 +727,468 @@ class TestCommentCheck(_RepoCase):
     def test_a_rewritten_line_keeping_its_comment_passes(self):
         self.repo.commit("feat", {"ryos/a.py": "def a():\n    return 2  # keeps one\n"})
         self.assertEqual(self.problems(), [])
+
+
+PROJECT_ENV = dict(ENV, CLAUDE_PROJECT_DIR=r"D:\Projects\RYOS")
+GATE = "uv run --python 3.14 python tests/release_check.py"
+
+
+def matching(target: str = "") -> None:
+    return None
+
+
+def refusing(problem: str):
+    return lambda target="": problem
+
+
+def never_called(target: str = "") -> str:
+    raise AssertionError("the stamp was checked for a command that publishes nothing")
+
+
+def gated(command: str, tool: str = "Bash", stamp=matching):
+    return guard.decide(tool, {"command": command}, PROJECT_ENV, clean, stamp_problem=stamp)
+
+
+def ungated(command: str, tool: str = "Bash"):
+    return guard.decide(tool, {"command": command}, PROJECT_ENV, clean)
+
+
+PUBLISHING = [
+    ("Bash", "gh release create v2.4.0-rc1 dist/RYOS-windows.zip \\\n"
+             "  -R lqvu-zen/RYOS --prerelease --latest=false --title \"v2.4.0-rc1\""),
+    ("Bash", "gh release create v2.4.0 --draft"),
+    ("Bash", "gh release new v2.4.0 dist/RYOS-agent.zip"),
+    ("PowerShell", "gh release upload v2.4.0 dist/SHA256SUMS.txt.sig"),
+    ("Bash", "gh release upload v2.4.0 dist/RYOS-windows.zip --clobber"),
+    ("Bash", "gh -R lqvu-zen/RYOS release edit v2.4.0 --draft=false"),
+    ("Bash", "gh release edit v2.4.0 --draft false"),
+    ("Bash", "gh release edit v2.4.0 --draft=0"),
+    ("Bash", "gh release edit v2.4.0-rc1 --prerelease=false -R lqvu-zen/RYOS"),
+    ("Bash", "gh release edit v2.4.0 --latest"),
+    ("Bash", "gh release edit v2.4.0 --latest=true"),
+    ("Bash", "gh api repos/lqvu-zen/RYOS/releases -f tag_name=v9"),
+    ("Bash", "gh api -X POST repos/lqvu-zen/RYOS/releases --input body.json"),
+    ("Bash", "gh api --method=PATCH repos/lqvu-zen/RYOS/releases/1 -F draft=false"),
+    ("Bash", "gh api -XPUT repos/lqvu-zen/RYOS/releases/1"),
+    ("Bash", "gh api --hostname uploads.github.com -X POST "
+             "'repos/lqvu-zen/RYOS/releases/1/assets?name=RYOS-agent.zip' --input dist/RYOS-agent.zip"),
+]
+
+WRAPPED = [
+    ("Bash", "cd D:/Projects/RYOS && gh release create v2.4.0 dist/RYOS-windows.zip"),
+    ("Bash", "cd /d/Projects/RYOS/dist && gh release upload v2.4.0 RYOS-agent.zip --clobber"),
+    ("Bash", "cmd /c gh release create v2.4.0 dist/RYOS-windows.zip"),
+    ("Bash", "cmd //c \"gh release upload v2.4.0 dist/RYOS-agent.zip --clobber\""),
+    ("Bash", "powershell -Command \"gh release create v2.4.0 dist/RYOS-windows.zip\""),
+    ("PowerShell", "pwsh -c 'gh release edit v2.4.0 --draft=false'"),
+    ("Bash", "bash -c \"gh release create v2.4.0 dist/RYOS-windows.zip\""),
+    ("Bash", "GH_TOKEN=x GH_REPO=lqvu-zen/RYOS gh release create v2.4.0"),
+    ("Bash", "env GH_REPO=lqvu-zen/RYOS gh release create v2.4.0"),
+    ("PowerShell", "$env:GH_REPO = 'lqvu-zen/RYOS'; gh release create v2.4.0"),
+    ("PowerShell", "& gh.exe release create v2.4.0"),
+    ("PowerShell", "cd D:\\Projects\\RYOS; gh release create v2.4.0 `\n  dist\\RYOS-windows.zip"),
+    ("Bash", "gh --repo lqvu-zen/RYOS release create v2.4.0"),
+    ("Bash", "gh --repo=lqvu-zen/RYOS release create v2.4.0"),
+    ("Bash", "timeout 600 gh release create v2.4.0"),
+    ("Bash", "git status && gh release create v2.4.0 dist/RYOS-windows.zip 2>&1 | tail -5"),
+    ("Bash", "\"/c/Program Files/GitHub CLI/gh.exe\" release create v2.4.0"),
+    ("Bash", "echo \"$(gh release create v2.4.0 dist/RYOS-windows.zip)\""),
+    ("Bash", "uv run python -c \"import os; os.system('gh release create v2.4.0')\""),
+    ("Bash", "gh release -R lqvu-zen/RYOS create v2.4.0 dist/RYOS-agent.zip --target 0123abcd"),
+    ("Bash", "gh release --repo=lqvu-zen/RYOS upload v2.4.0 x.zip --clobber"),
+    ("Bash", "gh release -Rlqvu-zen/RYOS create v2.4.0"),
+    ("Bash", "gh release --repo lqvu-zen/RYOS edit v2.4.0 --draft=false"),
+    ("Bash", "bash -c \"gh release -R lqvu-zen/RYOS create v2.4.0\""),
+    ("Bash", "echo \"$(gh release --repo=lqvu-zen/RYOS upload v2.4.0 x.zip)\""),
+    ("Bash", "uv run python -c \"import os; os.system('gh release -R lqvu-zen/RYOS create v2.4.0')\""),
+    ("Bash", "uv run python -c \"import os; os.system('gh release --repo=x upload v2.4.0 x.zip')\""),
+]
+
+STILL_ASK = [
+    ("Bash", "cmd /c gh release delete v1"),
+    ("Bash", "gh release delete v2.4.0-rc1 -R lqvu-zen/RYOS --yes"),
+    ("Bash", "gh release -R lqvu-zen/RYOS delete v1"),
+    ("Bash", "gh release delete-asset v2.4.0 RYOS-windows.zip"),
+    ("Bash", "gh release edit v2.4.0 --title \"v2.4.0\" --notes-file notes.md"),
+    ("Bash", "gh release edit v2.4.0 --draft"),
+    ("Bash", "gh release edit v2.4.0-rc1 --prerelease --latest=false"),
+    ("Bash", "gh api -X DELETE repos/lqvu-zen/RYOS/releases/1"),
+    ("Bash", "git push --force-with-lease"),
+    ("Bash", "git push origin +main"),
+    ("Bash", "git push -f origin main"),
+    ("Bash", "git push --mirror"),
+]
+
+READS = [
+    ("Bash", "gh release list -R lqvu-zen/RYOS -L 5"),
+    ("Bash", "gh release view v2.4.0 --json assets"),
+    ("Bash", "gh release download v2.4.0 -p SHA256SUMS.txt -D \"$S\""),
+    ("Bash", "gh api repos/lqvu-zen/RYOS/releases/latest"),
+    ("Bash", "gh api repos/lqvu-zen/RYOS/releases --jq '.[0].tag_name'"),
+    ("Bash", "gh api -X GET repos/lqvu-zen/RYOS/releases -f per_page=5"),
+    ("Bash", "TAG=$(gh api repos/lqvu-zen/RYOS/releases/latest --jq .tag_name)"),
+    ("Bash", "grep -n \"gh release create\" .claude/skills/release-ryos/SKILL.md"),
+    ("Bash", "git commit -m \"Refuse gh release create without a stamp\""),
+    ("PowerShell", "gh release list -R lqvu-zen/RYOS -L 5"),
+]
+
+STAMP_WRITES = [
+    ("Bash", "echo '{}' > dist/release_check.passed"),
+    ("Bash", "cd D:/Projects/RYOS/dist && printf x >> release_check.passed"),
+    ("Bash", "cp \"$S/fake.json\" dist/release_check.passed"),
+    ("Bash", "cp \"$S/release_check.passed\" dist/"),
+    ("Bash", "mv /tmp/stamp D:/Projects/RYOS/dist/release_check.passed"),
+    ("Bash", "echo {} | tee dist/release_check.passed"),
+    ("Bash", "touch dist/release_check.passed"),
+    ("Bash", "uv run python -c \"open('dist/release_check.passed', 'w').write('{}')\""),
+    ("Bash", "uv run python - <<'EOF'\nopen('dist/release_check.passed', 'w').write('{}')\nEOF"),
+    ("Bash", "cmd /c \"echo {} > dist\\release_check.passed\""),
+    ("Bash", "f=dist/release_check.passed; echo x > \"$f\""),
+    ("Bash", "find dist -name '*.json' -exec cp {} dist/release_check.passed \\;"),
+    ("PowerShell", "Set-Content -Path dist\\release_check.passed -Value '{}'"),
+    ("PowerShell", "'{}' | Out-File D:\\Projects\\RYOS\\dist\\release_check.passed"),
+    ("PowerShell", "Copy-Item $env:TEMP\\x.json -Destination .\\dist\\release_check.passed"),
+    ("PowerShell", "New-Item dist/release_check.passed -Value '{}'"),
+    ("PowerShell", "'{}' > dist\\release_check.passed"),
+]
+
+STAMP_READS = [
+    ("Bash", "cat dist/release_check.passed"),
+    ("Bash", "ls -l dist/release_check.passed"),
+    ("Bash", "find dist -name release_check.passed"),
+    ("Bash", "sha256sum dist/SHA256SUMS.txt dist/release_check.passed"),
+    ("Bash", "rm -f dist/release_check.passed"),
+    ("Bash", "cd D:/Projects/RYOS && rm -rf dist/* build"),
+    ("Bash", "uv run --python 3.14 python tests/release_check.py 2>&1 | tail -40"),
+    ("Bash", "grep -n release_check.passed .claude/skills/release-ryos/SKILL.md"),
+    ("Bash", "git commit -m \"release_check writes dist/release_check.passed\""),
+    ("PowerShell", "Get-Content dist\\release_check.passed"),
+    ("PowerShell", "Test-Path dist\\release_check.passed"),
+    ("PowerShell", "Remove-Item dist\\release_check.passed"),
+]
+
+
+class TestPublishGate(unittest.TestCase):
+    def assertRefused(self, tool: str, command: str, stamp, needle: str = "") -> str:
+        result = gated(command, tool, stamp)
+        self.assertEqual(result.kind, "deny", f"{tool}: {command!r} was {result}")
+        self.assertIn(GATE, result.reason)
+        self.assertIn(needle, result.reason)
+        return result.reason
+
+    def test_publishing_without_a_stamp_is_refused(self):
+        for tool, command in PUBLISHING + WRAPPED:
+            with self.subTest(tool=tool, command=command[:70]):
+                self.assertRefused(tool, command,
+                                   refusing("there is no dist/release_check.passed"),
+                                   "there is no dist/release_check.passed")
+
+    def test_without_a_stamp_check_publishing_is_refused(self):
+        for tool, command in PUBLISHING + WRAPPED:
+            with self.subTest(tool=tool, command=command[:70]):
+                result = ungated(command, tool)
+                self.assertEqual(result.kind, "deny", f"{tool}: {command!r} was {result}")
+                self.assertIn(GATE, result.reason)
+
+    def test_each_stamp_problem_is_named_in_the_refusal(self):
+        for problem in ("dist/release_check.passed is for commit 1111111 and HEAD is 2222222",
+                        "dist/SHA256SUMS.txt has changed since release_check passed",
+                        "dist/SHA256SUMS.txt.sig has changed since release_check passed",
+                        "dist/release_check.passed records no passed cases",
+                        "dist/release_check.passed cannot be read as a pass stamp (not JSON)"):
+            with self.subTest(problem=problem):
+                reason = self.assertRefused("Bash", RELEASE_CREATES[0], refusing(problem), problem)
+                self.assertIn("gh release create", reason)
+
+    def test_a_matching_stamp_asks(self):
+        for tool, command in PUBLISHING + WRAPPED:
+            with self.subTest(tool=tool, command=command[:70]):
+                result = gated(command, tool, matching)
+                self.assertEqual(result.kind, "ask", f"{tool}: {command!r} was {result}")
+                self.assertIn("release_check.passed", result.reason)
+
+    def test_the_skills_publish_commands_ask_only_with_a_matching_stamp(self):
+        for command in RELEASE_CREATES:
+            with self.subTest(command=command[:70]):
+                self.assertEqual(gated(command, stamp=matching).kind, "ask")
+                self.assertEqual(ungated(command).kind, "deny")
+
+    def test_a_stamp_check_that_raises_refuses(self):
+        def broken(target: str = "") -> str:
+            raise OSError("disk gone")
+
+        result = gated("gh release create v2.4.0", stamp=broken)
+        self.assertEqual(result.kind, "deny")
+        self.assertIn("OSError", result.reason)
+
+    def test_the_target_reaches_the_stamp_check(self):
+        seen = []
+
+        def recording(target: str = "") -> None:
+            seen.append(target)
+            return None
+
+        gated("gh release create v2.4.0 --target 0123abcd -R lqvu-zen/RYOS", stamp=recording)
+        gated("gh release create v2.4.0 --target=89abcdef", stamp=recording)
+        gated("gh release upload v2.4.0 dist/RYOS-agent.zip", stamp=recording)
+        self.assertEqual(seen, ["0123abcd", "89abcdef", ""])
+
+    def test_publishing_from_outside_the_project_is_refused(self):
+        for tool, command in (("Bash", "cd /c/elsewhere && gh release create v2.4.0 RYOS-windows.zip"),
+                              ("PowerShell", "Set-Location C:\\tmp; gh release upload v2.4.0 x.zip")):
+            with self.subTest(command=command):
+                result = gated(command, tool, matching)
+                self.assertEqual(result.kind, "deny", f"{command!r} was {result}")
+                self.assertIn("outside the project", result.reason)
+
+    def test_deletes_quiet_edits_and_forced_pushes_still_only_ask(self):
+        for tool, command in STILL_ASK:
+            with self.subTest(command=command):
+                self.assertEqual(gated(command, tool, never_called).kind, "ask")
+
+    def test_release_reads_are_allowed_without_checking_the_stamp(self):
+        for tool, command in READS:
+            with self.subTest(command=command):
+                result = gated(command, tool, never_called)
+                self.assertEqual(result.kind, "allow", f"{command!r} was {result}")
+
+
+class TestStampWrites(unittest.TestCase):
+    def test_writing_the_stamp_from_a_shell_is_refused(self):
+        for tool, command in STAMP_WRITES:
+            with self.subTest(tool=tool, command=command[:70]):
+                result = gated(command, tool, never_called)
+                self.assertEqual(result.kind, "deny", f"{tool}: {command!r} was {result}")
+                self.assertIn("release_check.passed", result.reason)
+
+    def test_reading_or_deleting_the_stamp_is_allowed(self):
+        for tool, command in STAMP_READS:
+            with self.subTest(tool=tool, command=command[:70]):
+                result = gated(command, tool, never_called)
+                self.assertEqual(result.kind, "allow", f"{tool}: {command!r} was {result}")
+
+    def test_write_tools_on_the_stamp_are_refused(self):
+        for tool, path in (("Write", r"D:\Projects\RYOS\dist\release_check.passed"),
+                           ("Edit", "dist/release_check.passed"),
+                           ("Write", "release_check.passed"),
+                           ("MultiEdit", "/d/Projects/RYOS/dist/release_check.passed"),
+                           ("Write", r"D:\Projects\RYOS\dist\..\dist\release_check.passed"),
+                           ("NotebookEdit", r".\dist\release_check.passed")):
+            with self.subTest(tool=tool, path=path):
+                key = "notebook_path" if tool == "NotebookEdit" else "file_path"
+                result = guard.decide(tool, {key: path, "content": "{}"}, PROJECT_ENV, clean)
+                self.assertEqual(result.kind, "deny", f"{tool} {path} was {result}")
+                self.assertIn("release_check.passed", result.reason)
+
+    def test_other_dist_files_and_reads_stay_allowed(self):
+        self.assertEqual(guard.decide("Write", {"file_path": r"D:\Projects\RYOS\dist\notes.md"},
+                                      PROJECT_ENV, clean).kind, "allow")
+        self.assertEqual(guard.decide("Read", {"file_path": r"D:\Projects\RYOS\dist\release_check.passed"},
+                                      PROJECT_ENV, clean).kind, "allow")
+
+
+HEAD = "0123456789abcdef0123456789abcdef01234567"
+OTHER_HEAD = "fedcba9876543210fedcba9876543210fedcba98"
+
+
+class TestStampReader(unittest.TestCase):
+    def setUp(self):
+        self.project = Path(tempfile.mkdtemp(prefix="ryos-stamp-"))
+        self.addCleanup(shutil.rmtree, self.project, ignore_errors=True)
+        self.dist = self.project / "dist"
+        self.dist.mkdir()
+        (self.dist / "SHA256SUMS.txt").write_bytes(b"ab  RYOS-agent.zip\n")
+        (self.dist / "SHA256SUMS.txt.sig").write_bytes(b"signed by Vu\n")
+        self.write_stamp()
+
+    def digest(self, name: str) -> str:
+        return hashlib.sha256((self.dist / name).read_bytes()).hexdigest()
+
+    def write_stamp(self, drop: tuple[str, ...] = (), **changes) -> None:
+        stamp = {"head": HEAD, "sha256sums": self.digest("SHA256SUMS.txt"),
+                 "sha256sums_sig": self.digest("SHA256SUMS.txt.sig"),
+                 "passed": 29, "skipped": 1, "python": "3.14.0"}
+        stamp.update(changes)
+        for field in drop:
+            stamp.pop(field)
+        (self.dist / "release_check.passed").write_text(json.dumps(stamp), encoding="utf-8")
+
+    def problem(self, head: str = HEAD, target: str = ""):
+        return guard.release_stamp_problem(str(self.project), lambda project: head, target)
+
+    def test_a_matching_stamp_has_no_problem(self):
+        self.assertIsNone(self.problem())
+        self.write_stamp(extra="ignored")
+        self.assertIsNone(self.problem())
+
+    def test_no_stamp(self):
+        (self.dist / "release_check.passed").unlink()
+        self.assertIn("no dist/release_check.passed", self.problem())
+
+    def test_a_failed_run_leaves_no_stamp_to_accept(self):
+        build_release.clear_stamp(self.dist)
+        self.assertIn("no dist/release_check.passed", self.problem())
+
+    def test_a_stamp_for_another_head(self):
+        found = self.problem(head=OTHER_HEAD)
+        self.assertIn(HEAD[:7], found)
+        self.assertIn(OTHER_HEAD[:7], found)
+
+    def test_head_must_be_the_full_head_exactly(self):
+        for head in (HEAD[:7], HEAD.upper(), HEAD + "\n", ""):
+            with self.subTest(head=head):
+                self.write_stamp(head=head)
+                self.assertIsNotNone(self.problem())
+
+    def test_head_unreadable(self):
+        self.assertIn("HEAD", self.problem(head=""))
+
+    def test_another_sums_file(self):
+        (self.dist / "SHA256SUMS.txt").write_bytes(b"cd  RYOS-agent.zip\n")
+        self.assertIn("dist/SHA256SUMS.txt has changed", self.problem())
+
+    def test_another_signature(self):
+        (self.dist / "SHA256SUMS.txt.sig").write_bytes(b"signed again\n")
+        self.assertIn("dist/SHA256SUMS.txt.sig has changed", self.problem())
+
+    def test_missing_sums_or_signature(self):
+        for name in ("SHA256SUMS.txt.sig", "SHA256SUMS.txt"):
+            with self.subTest(name=name):
+                (self.dist / name).unlink()
+                self.assertIn(f"dist/{name} is missing", self.problem())
+
+    def test_a_stamp_without_the_signature_hash(self):
+        self.write_stamp(drop=("sha256sums_sig",))
+        self.assertIn("sha256sums_sig", self.problem())
+
+    def test_passed_must_be_a_count_above_zero(self):
+        for value in (0, -1, "29", None, True, 1.5):
+            with self.subTest(passed=value):
+                self.write_stamp(passed=value)
+                self.assertIn("no passed cases", self.problem())
+
+    def test_a_garbled_stamp(self):
+        for raw in (b"", b"not json", b"[]", b"null", b'{"head": ', b"\xff\xfe\x00"):
+            with self.subTest(raw=raw):
+                (self.dist / "release_check.passed").write_bytes(raw)
+                self.assertIn("cannot be read as a pass stamp", self.problem())
+
+    def test_a_folder_where_the_stamp_should_be(self):
+        (self.dist / "release_check.passed").unlink()
+        (self.dist / "release_check.passed").mkdir()
+        self.assertIsNotNone(self.problem())
+
+    def test_the_target_must_be_head(self):
+        self.assertIsNone(self.problem(target=HEAD))
+        self.assertIsNone(self.problem(target=HEAD[:8]))
+        self.assertIn("--target", self.problem(target=OTHER_HEAD[:8]))
+
+    def test_an_unknown_project(self):
+        self.assertIn("project folder", guard.release_stamp_problem("", lambda project: HEAD, ""))
+
+    def test_the_reader_never_raises(self):
+        def broken(project: str) -> str:
+            raise RuntimeError("git exploded")
+
+        self.assertIn("RuntimeError", guard.release_stamp_problem(str(self.project), broken, ""))
+
+    def test_a_stamp_written_by_stamp_for_is_accepted(self):
+        sums, sig = self.digest("SHA256SUMS.txt"), self.digest("SHA256SUMS.txt.sig")
+        text = build_release.stamp_for([("zips", "PASS", ""), ("signature", "PASS", "")],
+                                       HEAD, sums, HEAD, sums, "3.14.0", sig=sig, sig_after=sig)
+        (self.dist / "release_check.passed").write_text(text, encoding="utf-8", newline="\n")
+        self.assertIsNone(self.problem())
+
+
+class TestGitHead(unittest.TestCase):
+    def test_git_head_reads_the_full_head_or_nothing(self):
+        tmp = Path(tempfile.mkdtemp(prefix="ryos-head-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        self.assertEqual(guard.git_head(str(tmp)), "")
+        head = GitRepo(tmp).commit("one", {"a.txt": "a\n"})
+        self.assertEqual(guard.git_head(str(tmp)), head)
+
+
+class TestPublishGateMain(unittest.TestCase):
+    CREATE = "gh release create v9.9.9-rc1 dist/RYOS-agent.zip -R lqvu-zen/RYOS --prerelease"
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="ryos-gate-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.repo = GitRepo(self.tmp)
+        self.head = self.repo.commit("Release candidate 9.9.9-rc1", {"README.md": "x\n"})
+        self.dist = self.tmp / "dist"
+        self.dist.mkdir()
+        (self.dist / "SHA256SUMS.txt").write_bytes(b"00  RYOS-agent.zip\n")
+        (self.dist / "SHA256SUMS.txt.sig").write_bytes(b"signed\n")
+        stamp = {"head": self.head,
+                 "sha256sums": hashlib.sha256(b"00  RYOS-agent.zip\n").hexdigest(),
+                 "sha256sums_sig": hashlib.sha256(b"signed\n").hexdigest(),
+                 "passed": 29, "skipped": 1, "python": "3.14.0"}
+        (self.dist / "release_check.passed").write_text(json.dumps(stamp), encoding="utf-8")
+
+    def run_hook(self, payload: dict, project: Path | None) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        env.update(ENV)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        if project is not None:
+            env["CLAUDE_PROJECT_DIR"] = str(project)
+        return subprocess.run([sys.executable, str(GUARD_PATH)], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8", env=env,
+                              timeout=30)
+
+    def publish(self, project: Path | None = None, cwd: Path | None = None):
+        payload = {"tool_name": "Bash", "tool_input": {"command": self.CREATE}}
+        if cwd is not None:
+            payload["cwd"] = str(cwd)
+        return self.run_hook(payload, project)
+
+    def assertRefused(self, result: subprocess.CompletedProcess, needle: str) -> None:
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertIn(GATE, result.stderr)
+        self.assertIn(needle, result.stderr)
+
+    def test_a_matching_stamp_asks(self):
+        result = self.publish(project=self.tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertEqual(output["permissionDecision"], "ask")
+        self.assertIn("release_check.passed", output["permissionDecisionReason"])
+
+    def test_the_project_comes_from_the_payload_cwd_without_claude_project_dir(self):
+        result = self.publish(project=None, cwd=self.tmp)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        self.assertIn("release_check.passed", output["permissionDecisionReason"])
+
+    def test_no_stamp_is_refused(self):
+        (self.dist / "release_check.passed").unlink()
+        self.assertRefused(self.publish(project=self.tmp), "no dist/release_check.passed")
+
+    def test_a_docs_commit_after_the_check_is_refused(self):
+        newer = self.repo.commit("docs: status", {"docs/STATUS.md": "x\n"})
+        self.assertRefused(self.publish(project=self.tmp), newer[:7])
+
+    def test_a_changed_sums_file_is_refused(self):
+        (self.dist / "SHA256SUMS.txt").write_bytes(b"11  RYOS-agent.zip\n")
+        self.assertRefused(self.publish(project=self.tmp), "SHA256SUMS.txt has changed")
+
+    def test_a_changed_signature_is_refused(self):
+        (self.dist / "SHA256SUMS.txt.sig").write_bytes(b"other\n")
+        self.assertRefused(self.publish(project=self.tmp), "SHA256SUMS.txt.sig has changed")
+
+    def test_a_folder_that_is_not_a_repository_is_refused(self):
+        bare = Path(tempfile.mkdtemp(prefix="ryos-nogit-"))
+        self.addCleanup(shutil.rmtree, bare, ignore_errors=True)
+        shutil.copytree(self.dist, bare / "dist")
+        self.assertRefused(self.publish(project=bare), "HEAD")
+
+    def test_writing_the_stamp_is_refused(self):
+        result = self.run_hook({"tool_name": "Write", "tool_input": {
+            "file_path": str(self.dist / "release_check.passed"), "content": "{}"}}, self.tmp)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("release_check.passed", result.stderr)
 
 
 if __name__ == "__main__":

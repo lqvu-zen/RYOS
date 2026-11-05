@@ -112,16 +112,26 @@ def sums_digest(dist: Path) -> str:
         return ""
 
 
+def sig_digest(dist: Path) -> str:
+    try:
+        return hashlib.sha256((dist / "SHA256SUMS.txt.sig").read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return ""
+
+
 def stamp_for(results: list[tuple[str, str, str]], head: str, sums: str,
-              head_after: str, sums_after: str, python: str) -> str | None:
+              head_after: str, sums_after: str, python: str, *, sig: str,
+              sig_after: str) -> str | None:
     if not head or not sums or head != head_after or sums != sums_after:
+        return None
+    if not sig or sig != sig_after:
         return None
     if any(outcome not in ("PASS", "SKIP") for _name, outcome, _why in results):
         return None
     if any(outcome == "SKIP" and name in NEVER_SKIPPED for name, outcome, _why in results):
         return None
     return json.dumps({
-        "head": head, "sha256sums": sums,
+        "head": head, "sha256sums": sums, "sha256sums_sig": sig,
         "passed": sum(1 for _n, o, _w in results if o == "PASS"),
         "skipped": sum(1 for _n, o, _w in results if o == "SKIP"),
         "python": python,

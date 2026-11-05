@@ -8896,20 +8896,51 @@ class TestReleaseStamp(unittest.TestCase):
 
     HEAD = "a" * 40
     SUMS = "b" * 64
+    SIG = "e" * 64
+    RELEASE_CHECK = Path(__file__).resolve().parent / "release_check.py"
 
     def setUp(self):
         self.br = _build_release()
 
-    def stamp(self, results, head=HEAD, sums=SUMS, head_after=HEAD, sums_after=SUMS):
-        return self.br.stamp_for(results, head, sums, head_after, sums_after, "3.13.5")
+    def stamp(self, results, head=HEAD, sums=SUMS, head_after=HEAD, sums_after=SUMS,
+              sig=SIG, sig_after=SIG):
+        return self.br.stamp_for(results, head, sums, head_after, sums_after, "3.13.5",
+                                 sig=sig, sig_after=sig_after)
 
-    def test_a_clean_run_stamps_head_sums_and_counts(self):
+    def test_a_clean_run_stamps_head_sums_signature_and_counts(self):
         text = self.stamp([("zips", "PASS", ""), ("launch_visible", "SKIP", "one monitor"),
                            ("portable", "PASS", "")])
         self.assertTrue(text.endswith("\n"))
         self.assertNotIn("\r", text)
         self.assertEqual(json.loads(text), {"head": self.HEAD, "sha256sums": self.SUMS,
+                                            "sha256sums_sig": self.SIG,
                                             "passed": 2, "skipped": 1, "python": "3.13.5"})
+
+    def test_no_stamp_without_a_signature_or_with_a_moved_one(self):
+        self.assertIsNone(self.stamp([("zips", "PASS", "")], sig="", sig_after=""))
+        self.assertIsNone(self.stamp([("zips", "PASS", "")], sig_after="f" * 64))
+
+    def test_stamp_for_needs_the_signature(self):
+        with self.assertRaises(TypeError):
+            self.br.stamp_for([("zips", "PASS", "")], self.HEAD, self.SUMS, self.HEAD,
+                              self.SUMS, "3.13.5")
+
+    def test_sig_digest(self):
+        import hashlib
+        dist = Path(tempfile.mkdtemp(prefix="ryos-stamp-"))
+        self.addCleanup(shutil.rmtree, dist, ignore_errors=True)
+        self.assertEqual(self.br.sig_digest(dist), "")
+        (dist / "SHA256SUMS.txt.sig").write_bytes(b"sig\n")
+        self.assertEqual(self.br.sig_digest(dist), hashlib.sha256(b"sig\n").hexdigest())
+
+    def test_release_check_binds_the_signature_before_and_after_the_run(self):
+        tree = ast.parse(self.RELEASE_CHECK.read_text(encoding="utf-8"))
+        calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute) and node.func.attr == "stamp_for"]
+        self.assertEqual(len(calls), 1)
+        keywords = {k.arg: ast.unparse(k.value) for k in calls[0].keywords}
+        self.assertEqual(set(keywords), {"sig", "sig_after"})
+        self.assertIn("sig_digest", keywords["sig_after"])
 
     def test_no_stamp_for_a_failure_or_a_moved_head_or_sums(self):
         self.assertIsNone(self.stamp([("zips", "PASS", ""), ("portable", "FAIL", "differs")]))
