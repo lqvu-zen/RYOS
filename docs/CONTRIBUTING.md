@@ -113,7 +113,10 @@ the extension to `quick_run_index_extensions` in `settings.py`. Add a case to
 2. Make the change; add or update tests in `tests/test_ryos.py`.
 3. Run `uvx ruff check .` and the test command above — both must pass.
 4. Open a PR. CI runs ruff + pytest on Ubuntu and Windows across Python
-   3.10 and 3.14; all four jobs must be green.
+   3.10 and 3.14; all four jobs must be green. The Frozen builds workflow
+   (`.github/workflows/frozen.yml`) builds the downloads nightly and runs
+   `tests/release_check.py --ci` on them; start it by hand with
+   `gh workflow run frozen.yml` when a change touches packaging.
 
 ## Building a release executable
 

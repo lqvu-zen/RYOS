@@ -102,6 +102,7 @@ def zip_portable(target: Path) -> list[str]:
 
 STAMP = "release_check.passed"
 FROZEN_ZIPS = ("RYOS-windows.zip", "RYOS-windows-ai.zip", "RYOS-agent.zip")
+NEVER_SKIPPED = ("signature",)
 
 
 def sums_digest(dist: Path) -> str:
@@ -116,6 +117,8 @@ def stamp_for(results: list[tuple[str, str, str]], head: str, sums: str,
     if not head or not sums or head != head_after or sums != sums_after:
         return None
     if any(outcome not in ("PASS", "SKIP") for _name, outcome, _why in results):
+        return None
+    if any(outcome == "SKIP" and name in NEVER_SKIPPED for name, outcome, _why in results):
         return None
     return json.dumps({
         "head": head, "sha256sums": sums,

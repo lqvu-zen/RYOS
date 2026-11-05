@@ -8789,6 +8789,15 @@ class TestReleaseStamp(unittest.TestCase):
         self.assertIsNone(self.stamp([("zips", "PASS", "")], head="", head_after=""))
         self.assertIsNone(self.stamp([("zips", "PASS", "")], sums="", sums_after=""))
 
+    def test_a_skipped_signature_never_stamps(self):
+        self.assertIsNone(self.stamp([("zips", "PASS", ""),
+                                      ("signature", "SKIP", "needs Vu's signature"),
+                                      ("portable", "PASS", "")]))
+        text = self.stamp([("zips", "PASS", ""), ("signature", "PASS", ""),
+                           ("launch_visible", "SKIP", "one monitor")])
+        self.assertEqual(json.loads(text)["passed"], 2)
+        self.assertEqual(json.loads(text)["skipped"], 1)
+
     def test_clear_stamp_and_sums_digest(self):
         import hashlib
         dist = Path(tempfile.mkdtemp(prefix="ryos-stamp-"))

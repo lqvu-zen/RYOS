@@ -278,4 +278,8 @@ command will not reproduce the failure.
 
 CI (`.github/workflows/ci.yml`) runs ruff and the unit suite on Ubuntu and
 Windows × Python 3.10/3.14, mypy, and the Qt, launch and session smokes
-offscreen on Ubuntu. See `docs/CONTRIBUTING.md` for the development workflow.
+offscreen on Ubuntu. The Frozen builds workflow (`.github/workflows/frozen.yml`,
+nightly and on demand) builds the four zips on `windows-latest` and runs
+`release_check.py --ci`, which skips only the release-key half of `signature`
+and never writes the pass stamp, so it is never the release gate.
+See `docs/CONTRIBUTING.md` for the development workflow.

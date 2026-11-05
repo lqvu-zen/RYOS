@@ -1,0 +1,109 @@
+name: Frozen builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      plant:
+        description: "Plant a packaging fault in RYOS-windows.zip; the run must then fail at the zips case"
+        type: choice
+        options:
+          - none
+          - missing-exe
+          - mcp-in-windows
+        default: none
+  schedule:
+    - cron: "23 1 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frozen-builds-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frozen:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: "1"
+      PYTHONFAULTHANDLER: "1"
+      RYOS_NO_TOASTS: "1"
+      RYOS_NO_REGISTRY: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - name: Build the four downloads
+        run: uv run --python 3.14 --extra mcp --with cx_Freeze python build_release.py
+
+      - name: Plant a packaging fault
+        if: inputs.plant && inputs.plant != 'none'
+        env:
+          PLANT: ${{ inputs.plant }}
+        run: |
+          uv run --no-project python - <<'EOF'
+          import hashlib
+          import os
+          import zipfile
+          from pathlib import Path
+
+          fault = os.environ["PLANT"]
+          dist = Path("dist")
+          name = "RYOS-windows.zip"
+          path = dist / name
+          planted = dist / (name + ".planted")
+          with zipfile.ZipFile(path) as src, zipfile.ZipFile(planted, "w", zipfile.ZIP_DEFLATED) as out:
+              for info in src.infolist():
+                  if fault == "missing-exe" and info.filename.rsplit("/", 1)[-1] == "ryos-cli.exe":
+                      continue
+                  out.writestr(info, src.read(info))
+              if fault == "mcp-in-windows":
+                  out.writestr("lib/mcp/__init__.pyc", b"")
+          planted.replace(path)
+          digest = hashlib.sha256(path.read_bytes()).hexdigest()
+          sums = dist / "SHA256SUMS.txt"
+          lines = []
+          for line in sums.read_text(encoding="utf-8").splitlines():
+              if line.strip() and line.split(None, 1)[1].strip().lstrip("*") == name:
+                  line = f"{digest}  {name}"
+              lines.append(line)
+          sums.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+          print(f"Planted {fault} in {name}: this run must fail at the zips case")
+          EOF
+
+      - name: Release check (--ci)
+        run: |
+          set -o pipefail
+          uv run --python 3.14 python tests/release_check.py --ci 2>&1 | tee "$RUNNER_TEMP/release_check.log"
+
+      - name: Skipped cases
+        if: always()
+        run: |
+          {
+            echo '```'
+            grep '^\[SKIP\]' "$RUNNER_TEMP/release_check.log" | tr -d '\r' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tree status
+        if: failure()
+        run: git status --porcelain
+
+      - name: Upload the log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-check-log
+          path: |
+            ${{ runner.temp }}/release_check.log
+            dist/SHA256SUMS.txt
+          retention-days: 7

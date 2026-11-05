@@ -3,7 +3,7 @@
 meet it, on throwaway data, with nothing opening on the first screen.
 
     uv run --extra mcp --with cx_Freeze python build_release.py
-    uv run python tests/release_check.py [--dist DIR] [--fixtures DIR]
+    uv run python tests/release_check.py [--dist DIR] [--fixtures DIR] [--ci]
 
 One line per case, `[PASS] case`, `[FAIL] case: why` or `[SKIP] case: why`,
 then a total and RELEASE CHECK PASSED / FAILED (exit 1). Cases:
@@ -57,6 +57,12 @@ other than the builds' (the self_update cases compile a _build_info.pyc).
 It deletes dist/release_check.passed when it starts, and writes it only when
 every case passed (skips allowed) and HEAD and SHA256SUMS.txt did not move:
 the full HEAD, the SHA-256 of SHA256SUMS.txt and the counts.
+
+* --ci -- for the Frozen builds workflow, which never holds Vu's signature:
+  the signature case only checks that each frozen build's verify refuses
+  SHA256SUMS.txt signed with the test key, then is skipped with its reason;
+  a passing run ends CI CHECK PASSED and never writes the stamp, so a --ci
+  run is never the release gate.
 """
 
 from __future__ import annotations
@@ -187,8 +193,9 @@ class ReleaseServer(ThreadingHTTPServer):
 
 
 class Check:
-    def __init__(self, dist: Path, fixtures: Path, root: Path):
+    def __init__(self, dist: Path, fixtures: Path, root: Path, ci: bool = False):
         self.dist, self.fixtures, self.root = dist, fixtures, root
+        self.ci = ci
         self.dirs: dict[str, Path] = {}
         self.results: list[tuple[str, str, str]] = []
         self._n = 0
@@ -346,7 +353,35 @@ class Check:
                 problems.append(f"{variant} says {said!r}, not RYOS {version} at {head}")
         need(not problems, "; ".join(problems))
 
+    def _test_key_refused(self) -> None:
+        sums = (self.dist / "SHA256SUMS.txt").read_bytes()
+        version = launch_smoke._source_version()
+        by_variant = {variant: name for name, variant in ZIPS.items()}
+        for variant in ("windows", "windows-ai", "agent"):
+            zip_path = self.dist / by_variant[variant]
+            folder = self.root / f"planted-ci-{variant}"
+            folder.mkdir()
+            try:
+                os.link(zip_path, folder / zip_path.name)
+            except OSError:
+                shutil.copy2(zip_path, folder / zip_path.name)
+            (folder / "SHA256SUMS.txt").write_bytes(sums)
+            (folder / "SHA256SUMS.txt.sig").write_bytes(
+                ed25519_signer.sig_file(ed25519_signer.TEST_SEED, version, sums))
+            got = self.cli(variant, self.appdata("planted-ci"), "verify",
+                           str(folder / zip_path.name))
+            need(got.returncode == 125,
+                 f"the {variant} build did not refuse {zip_path.name} with SHA256SUMS.txt "
+                 f"signed with the test key (exit {got.returncode}): "
+                 f"{(got.stdout + got.stderr)[-200:]!r}")
+
     def signature(self) -> None:
+        if self.ci:
+            self._test_key_refused()
+            raise Skipped("the release-key half needs Vu's signature (tools/sign_release.py), "
+                          "which never reaches CI; each frozen build's verify refused "
+                          "SHA256SUMS.txt signed with the test key (125); release_check on "
+                          "Vu's PC runs the whole case")
         sums = self.dist / "SHA256SUMS.txt"
         sig = self.dist / "SHA256SUMS.txt.sig"
         need(sig.exists(), "no SHA256SUMS.txt.sig in dist/: sign SHA256SUMS.txt with "
@@ -1136,6 +1171,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dist", default=str(ROOT / "dist"))
     parser.add_argument("--fixtures", default=str(TESTS / "fixtures" / "db"))
+    parser.add_argument("--ci", action="store_true")
     args = parser.parse_args()
     dist = Path(args.dist).resolve()
     build_release.clear_stamp(dist)
@@ -1149,7 +1185,7 @@ def main() -> int:
     real_before = launch_smoke._snapshot(REAL_FOLDER)
     updates_before = launch_smoke._snapshot(REAL_UPDATES)
     root = Path(tempfile.mkdtemp(prefix="ryos-release-check-"))
-    check = Check(dist, Path(args.fixtures).resolve(), root)
+    check = Check(dist, Path(args.fixtures).resolve(), root, ci=args.ci)
     print(f"RYOS release check: {check.dist}\n  (throwaway data in {root})", flush=True)
     check.unzip()
     check.server = ReleaseServer()
@@ -1196,6 +1232,11 @@ def main() -> int:
     if tally["FAIL"]:
         print(f"(throwaway data kept in {root})\n\nRELEASE CHECK FAILED")
         return 1
+    if args.ci:
+        shutil.rmtree(root, ignore_errors=True)
+        print("\nCI CHECK PASSED (release_check --ci: no stamp written; the release gate "
+              "is release_check on Vu's PC)")
+        return 0
     stamp = build_release.stamp_for(check.results, head, sums, full_head(),
                                     build_release.sums_digest(dist), platform.python_version())
     if stamp is None:
